@@ -89,3 +89,19 @@ export async function checkWhatsAppNumber(_: ActionResult | null, formData: Form
     return answer({ ok: false, message: safeErrorMessage(e, "Meta could not be asked. Try again.") });
   }
 }
+
+/** Settings → WhatsApp numbers: link a signed-up number's webhooks and start Meta's once-only syncs. */
+export async function finishWhatsAppConnect(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  await primeStore();
+  const user = await getCurrentUser();
+  const allowed = can(user, "user.manage");
+  if (!allowed.ok) return answer({ ok: false, message: allowed.message });
+  if (!isConvex()) return answer({ ok: false, message: "This needs the Convex backend; this build is running on the file store." });
+  const id = String(formData.get("finish") ?? "");
+  if (!id) return answer({ ok: false, message: "Choose a number." });
+  try {
+    return answer(await convexAction<{ ok: boolean; message: string }>("settings/whatsappNumbers:finishConnect", { id }));
+  } catch (e) {
+    return answer({ ok: false, message: safeErrorMessage(e, "Meta could not be reached. Try again.") });
+  }
+}

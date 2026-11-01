@@ -148,6 +148,12 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
     return new Response("OK", { status: 200 });
   }
 
+  // A TA's past chats and contacts, synced once when their number connects
+  // (coexistence, 1 Nov). Acknowledged and dropped: an old chat must never reach
+  // the assistant as if a candidate had just written.
+  const syncValue = body.entry?.[0]?.changes?.[0]?.value;
+  if (syncValue?.history || syncValue?.state_sync) return new Response("OK", { status: 200 });
+
   // 0. Early return for Meta status-only webhooks (delivery receipts, read receipts)
   // These have entry[0].changes[0].value.statuses but NO .messages — they contain zero text
   if (body.entry && body.entry[0]?.changes && body.entry[0].changes[0]?.value?.statuses && !body.entry[0].changes[0]?.value?.messages) {

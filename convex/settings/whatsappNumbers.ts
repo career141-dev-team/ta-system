@@ -98,6 +98,7 @@ export const listForSettings = internalQuery({
         ready: n.ready ?? null,
         readyNote: n.readyNote ?? null,
         checkedAt: n.checkedAt ?? null,
+        syncsDone: n.syncsDone ?? [],
       })),
     );
   },
@@ -153,5 +154,53 @@ export const checkWithMeta = internalAction({
     const { ready, note } = numberReadiness(row.phone, state);
     await ctx.runMutation(internal.settings.whatsappNumbers.setReadiness, { id: args.id, ready, note });
     return { ok: ready, message: `${row.name} (${row.phone}) — ${note}` };
+  },
+});
+
+export const markSyncDone = internalMutation({
+  args: { id: v.id("whatsappNumbers"), syncType: v.string() },
+  handler: async (ctx, args) => {
+    const row = await ctx.db.get(args.id);
+    if (row) await ctx.db.patch(args.id, { syncsDone: [...(row.syncsDone ?? []), args.syncType] });
+  },
+});
+
+/**
+ * "Finish connection" (1 Nov), after a TA's number has gone through Meta's
+ * signup and its account is assigned to the system user: send that account's
+ * webhooks to us, then start Meta's contacts and history syncs.
+ *
+ * Meta allows each sync once per onboarding, within 24 hours, so what has
+ * started is stored and never repeated. Nothing is sent to anyone.
+ */
+export const finishConnect = internalAction({
+  args: { id: v.id("whatsappNumbers") },
+  handler: async (ctx, args): Promise<{ ok: boolean; message: string }> => {
+    const token = process.env.META_ACCESS_TOKEN;
+    if (!token) return { ok: false, message: "Not done — META_ACCESS_TOKEN is not set on this deployment." };
+    const row = await ctx.runQuery(internal.settings.whatsappNumbers.getNumber, { id: args.id });
+    if (!row) return { ok: false, message: "That number is no longer listed." };
+    if (!row.wabaId) return { ok: false, message: `Not done — ${row.name}'s WhatsApp account ID is missing.` };
+
+    const post = async (path: string, body?: object): Promise<string | null> => {
+      const r = await fetch(`https://graph.facebook.com/v26.0/${path}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      if (r.ok) return null;
+      const answer = await r.json().catch(() => ({}));
+      return String(answer?.error?.message ?? `HTTP ${r.status}`).slice(0, 200);
+    };
+
+    const refused = await post(`${row.wabaId}/subscribed_apps`);
+    if (refused) return { ok: false, message: `${row.name}: Meta refused the webhook link (${refused}). Is the account assigned to the system user?` };
+    for (const syncType of ["smb_app_state_sync", "history"]) {
+      if (row.syncsDone?.includes(syncType)) continue;
+      const failed = await post(`${row.whatchimpPhoneId}/smb_app_data`, { messaging_product: "whatsapp", sync_type: syncType });
+      if (failed) return { ok: false, message: `${row.name}: the ${syncType} sync did not start (${failed}).` };
+      await ctx.runMutation(internal.settings.whatsappNumbers.markSyncDone, { id: args.id, syncType });
+    }
+    return { ok: true, message: `${row.name}: replies now reach us and the contacts and history syncs have started.` };
   },
 });
