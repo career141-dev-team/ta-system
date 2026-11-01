@@ -1,6 +1,6 @@
 "use client";
 
-import { checkWhatsAppNumber } from "@/app/demoSendActions";
+import { checkWhatsAppNumber, finishWhatsAppConnect } from "@/app/demoSendActions";
 import { ActionNote, SubmitButton, submitted, useInline } from "@/components/Submit";
 
 export type NumberRow = {
@@ -13,6 +13,7 @@ export type NumberRow = {
   ready: boolean | null;
   readyNote: string | null;
   checkedAt: number | null;
+  syncsDone: string[];
 };
 
 const BTN = "rounded-full border border-rule px-3 py-1 text-[12px] font-medium hover:bg-tag disabled:opacity-60";
@@ -20,8 +21,15 @@ const BTN = "rounded-full border border-rule px-3 py-1 text-[12px] font-medium h
 /** Settings → WhatsApp numbers: which line each TA's candidates hear from, and a check with Meta per number. */
 export function WhatsAppNumbers({ rows }: { rows: NumberRow[] }) {
   const check = useInline(checkWhatsAppNumber);
+  const finish = useInline(finishWhatsAppConnect);
   return (
-    <form onSubmit={(e) => check.run(submitted(e).formData)} className="space-y-3">
+    <form
+      onSubmit={(e) => {
+        const s = submitted(e);
+        (s.formData.has("finish") ? finish : check).run(s.formData);
+      }}
+      className="space-y-3"
+    >
       <div className="overflow-x-auto rounded-2xl border border-rule bg-surface">
         <table className="w-full text-left text-[12.5px]">
           <thead className="text-ink-soft">
@@ -54,6 +62,11 @@ export function WhatsAppNumbers({ rows }: { rows: NumberRow[] }) {
                   )}
                 </td>
                 <td className="px-4 py-2.5 text-right">
+                  {r.wabaId && r.syncsDone.length < 2 && (
+                    <SubmitButton name="finish" value={r.id} busy={finish.pending} locked={finish.pending} className={`${BTN} mr-2`}>
+                      Finish connection
+                    </SubmitButton>
+                  )}
                   {r.wabaId && (
                     <SubmitButton name="check" value={r.id} busy={check.pending} locked={check.pending} className={BTN}>
                       Check with Meta
@@ -73,6 +86,7 @@ export function WhatsAppNumbers({ rows }: { rows: NumberRow[] }) {
         </table>
       </div>
       <ActionNote result={check.result} />
+      <ActionNote result={finish.result} />
     </form>
   );
 }

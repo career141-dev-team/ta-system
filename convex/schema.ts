@@ -2503,6 +2503,8 @@ export default defineSchema({
     ready: v.optional(v.boolean()),
     readyNote: v.optional(v.string()),
     checkedAt: v.optional(v.number()),
+    /** Meta's once-only coexistence syncs already started (`smb_app_state_sync`, `history`). */
+    syncsDone: v.optional(v.array(v.string())),
   }).index("by_phone", ["phone"]),
 
   // ■■ QUICK CV SCANS (Ad-Hoc Keyword & Criteria Scanning) ■■■■■■■■■■■■■■■■■■■
