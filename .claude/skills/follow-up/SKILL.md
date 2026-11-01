@@ -325,9 +325,9 @@ Repo hard rules that apply: never run `convex deploy|run|import|env set` against
 - 2026-10-30 Each TA's own WhatsApp number (coexistence): `whatsappNumbers` gains `userId`, `ready`, `readyNote`, `checkedAt`; every outbound sender (template, free text, pre-application chat) asks `senderPhoneId`; Settings → WhatsApp numbers → "Check with Meta" (`settings/whatsappNumbers:checkWithMeta`) sets `ready` when the number is on the Cloud API, both templates are approved in its account and an app is subscribed; TA rows are added by the dry-run migration `admin/addTaWhatsAppNumbers:run`. Free text is still sent from the TA's number even when the candidate's open 24-hour window is on the main line; Meta's 131047 then falls back to the template (known limit).
 
 <!-- skill-meta
-verified-commit: ad13fee2
-verified-hash: dad2b88e8370a068d52ed4fda11708ac0d3881b0
-verified-date: 2026-10-30
+verified-commit: 95293286
+verified-hash: da56ab59d15b16e9b8ca5a7b05f3ee101c9a2cbb
+verified-date: 2026-11-01
 sources:
   tests/addToAssignedJob.test.ts
   convex/ta/followUp.ts
