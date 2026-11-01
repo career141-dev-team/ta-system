@@ -136,7 +136,9 @@ Two send paths create a `taWorkdayMail` receipt in status `sending` before any p
 Midday, revised (`revised`/`parentId`), failed, uncertain and reopened sends never complete or retime the day. After the clock stops, Follow-up/Add-on and further 100% positions (up to 5 100% a day, `MAX_100_PER_DAY`) can still be added and sent; the clock stays at the first 100% EOD. Also called from `recordActiveMode` and `reconcileMail`.
 
 ### Flow 8 - Stale days and recovery
-- `recoverStaleDays(ctx, userId)` (called by `start`): every unfinished day with `date < today` is first passed to `autoCompleteWorkday`; if still open it is closed `expired` at `Date.parse(date + "T00:00:00+05:30") + 86400000` (next Colombo midnight), no notification. An expired day is "Incomplete (expired)" in the UI and never counts as success.
+- `recoverStaleDays(ctx, userId)` (called by `start`): every unfinished day with `date < today` is first passed to `autoCompleteWorkday`; if still open it is closed `expired` at `Date.parse(date + "T00:00:00+05:30") + 86400000` (next Colombo midnight). Since 2 Nov `closeWorkday` then bells each distinct `entry.leadId` once (`notify` type `workday_expired`, "Workday <date> expired without an end-of-day email", `workdayId` set so the bell opens that day in Today's Checks); before this an expired day closed with nobody told and the lead found the missing EOD by opening the panel. An expired day is "Incomplete (expired)" in the UI and never counts as success.
+- A missed end of day for a past day (`ta/dailyEmails:begin` with `forDate`, see /eod-email Flow F, 30 Oct) is sent outside the workday: no receipt, no checks, no `autoCompleteWorkday`; the expired day stays expired.
+- The 17:30 / 18:30 Colombo reminders about today's missing EODs live in `convex/ta/eodReminders.ts` (crons `ta-eod-reminder`, `ta-eod-lead-digest`; bells `eod_reminder` to the TA, `eod_lead_digest` to the lead); they read today's open days through `by_finished_date` and count 100% entries only (see /eod-email Flow D).
 - `ta/workdays:recoverOpenWorkdays({dryRun})` (internalMutation, pipeline `run_function` only): lists all unfinished days dated before today (`by_finished` index), returns `{dryRun, affected}`, applies `recoverStaleDays` per user when `dryRun:false`. Idempotent.
 - `ta/dailyEmails:enableRequirement({dryRun})`: seeds `dailyEmailPolicy {key:"midday", requiredFrom: next Colombo day}` once; later runs never move the date.
 - One-off incident repairs (do not re-run, both date/title-guarded): `convex/admin/repairSanduniMistimedEod.ts` (19 Oct) and `convex/admin/reopenShihabEarlyEod.ts` `run({dryRun})` (20 Oct, guard `workdayDate(Date.now()) === "2026-10-20"`, one user email, opening id, title check; runbook `docs/RECOVERY-SHIHAB-EOD-2026-10-20.md`). Both mark receipts `recoveryReopenedAt`, which every completion filter honours.
@@ -182,7 +184,7 @@ All in `convex/schema.ts` (top of file). Indexes in brackets.
 - `taSourcingRuns` [by_job]: Suggestions run rounds (`userId?`, `round`, `count`, `at`).
 - `taWorkdayLeads` [by_lead, by_lead_finished, by_workday], `taWorkdayRequests` [by_workday, by_lead_status] (legacy approvals), `taWorkdayActivity` [by_workday_job] (written by `commit.ts` for `researchReports`/`benchmarks` ops during an open day; display counters only).
 - `dailyEmailPolicy` [by_key]: `{key:"midday", requiredFrom}`.
-- Read-only inputs: `jobs` (`jdStatus`, `jobDescription`, `taLeadId`, `workLocations`, `assignedTaIds`, `status`), `jobAssignments` [by_jobId_userId, by_userId_isActive, by_jobId] (+`workingStage`), `taSettings` [by_key], `applications` [by_job_stage_reviewed, by_jobId, by_workday_owner(jobId, ownerTaId, shortlistedAt), by_workday_review, by_workday_reapply, by_candidate_job] (+`workdayReviewedAt/By`, `isAddOn`, `followUp*`), `linkVault` [by_workday_added, by_workday_outcome, by_opening], `jobPosts`, `profileSuggestions`, `researchReports`, `benchmarks`, `reviewRounds`, `cvUploads` [by_status, by_assignToJob], `dailyEmails`, `notifications` (types `workday_started|finished|request|decision|exception`).
+- Read-only inputs: `jobs` (`jdStatus`, `jobDescription`, `taLeadId`, `workLocations`, `assignedTaIds`, `status`), `jobAssignments` [by_jobId_userId, by_userId_isActive, by_jobId] (+`workingStage`), `taSettings` [by_key], `applications` [by_job_stage_reviewed, by_jobId, by_workday_owner(jobId, ownerTaId, shortlistedAt), by_workday_review, by_workday_reapply, by_candidate_job] (+`workdayReviewedAt/By`, `isAddOn`, `followUp*`), `linkVault` [by_workday_added, by_workday_outcome, by_opening], `jobPosts`, `profileSuggestions`, `researchReports`, `benchmarks`, `reviewRounds`, `cvUploads` [by_status, by_assignToJob], `dailyEmails`, `notifications` (types `workday_started|finished|request|decision|exception|expired`, and from the reminders `eod_reminder|eod_lead_digest`, from stuck sends `eod_stuck`).
 Status vocabularies: check status `incomplete|complete|waiting` (+ UI-only "excused" when `exception` set); request status `pending|approved|denied`; closure `eod|expired`.
 Partner read lists the workday tables in `convex/integrations/partnerRead.ts` (keep in sync when adding a table).
 
@@ -277,11 +279,13 @@ Repo hard rules that apply: never run `convex deploy/run/import/env set` against
 - 2026-10-26 `d5497ab` `/api/workday` logs which call failed on 503 (reviewers' panel failed on every 20 s poll).
 - 2026-10-29 Closed lead drawer and hidden TA rail stop polling (`WorkdayDashboard active`); every closed drawer still asked for the whole team's checks every 20 s during the 29 Oct freeze.
 - 2026-10-29 Reviewers' panel: today's open days only, listed as summaries; a day's checklist is built when its row is opened (`summaryView`, `TeamDayChecks`, index `by_finished_date`).
+- 2026-10-30 `e3ed042` missed end of day for a past day (`forDate`) is sent outside the workday and never completes or reopens a day.
+- 2026-11-02 an expired day bells its leads (`workday_expired`); 17:30/18:30 reminders about today's missing EODs (`convex/ta/eodReminders.ts`); a stuck send bells the admins and the job's lead (`eod_stuck`).
 
 <!-- skill-meta
-verified-commit: c9ecb09
-verified-hash: 60c0013b8f83c2018ad92f597cf3597f61e27a4c
-verified-date: 2026-10-30
+verified-commit: 9deff7ef
+verified-hash: 588b1b980af13af6f369c3eaae107e399c951a03
+verified-date: 2026-11-01
 sources:
   convex/ta/workdays.ts
   convex/lib/workdayChecks.ts
@@ -293,6 +297,7 @@ sources:
   convex/ta/openings.ts
   convex/ta/commit.ts
   convex/ta/notifications.ts
+  convex/ta/eodReminders.ts
   convex/admin/repairSanduniMistimedEod.ts
   convex/admin/reopenShihabEarlyEod.ts
   convex/schema.ts
