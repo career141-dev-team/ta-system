@@ -74,7 +74,7 @@ Every mode may send an activity-only EOD with zero candidates (`director_cv` is 
 - Read defaults: app `repo.workingStage` (`src/data/store.ts:2725`) and `workdays:eodContext` fall back to `"100%"`. The drawer picker default is different: `dashboard.options[].workType = assignment.workingStage ?? (job in a previously finished workday ? "Follow-up" : "100%")`.
 - Inside a day the authoritative mode is `taWorkdays.jobs[].workType` + `modeHistory`; `taWorkdayMail.workType` freezes the mode at send time (`autoCompleteWorkday` reads `r.workType ?? modeHistory at r.startedAt ?? entry.workType`).
 - `workSessionStart(entry)` (`src/lib/workdayRequirements.ts`): for Add-on the `at` of the last Add-on `modeHistory` item, else `entry.addedAt`. Add-on evidence (accepted receipts, no-candidate reason) before that is ignored, so a second Add-on session starts clean.
-- Quirk "Save team resets stages": `repo.setAssignments` (`src/data/store.ts:2680`) deletes every assignment row of the opening and re-pushes rows without `workingStage`, so saving the team resets every TA on it to the default (100%); `taSettings` copies for non-members survive. Reached via `writeOpeningTeam` (`src/lib/openings/admin.ts`). The effect on the Convex `jobAssignments` rows goes through `convex/ta/model/tables.ts` (`toDoc` only writes `workingStage` when present); end-to-end backend behaviour not re-verified (unverified).
+- Save team keeps stages (2 Nov): `repo.setAssignments` (`src/data/store.ts`) re-creates every assignment row of the opening but carries each member's previous `workingStage` across; until 2 Nov the rows were pushed without it and every TA on the team fell back to 100%. `taSettings` copies for non-members are untouched either way. Reached via `writeOpeningTeam` (`src/lib/openings/admin.ts`); the Convex `jobAssignments` rows go through `convex/ta/model/tables.ts` (`toDoc` writes `workingStage` when present).
 
 ### Flow 4 - Evaluating a job: `jobView` and `requiredChecks`
 `jobView(ctx, day, entry, now)` in `convex/ta/workdays.ts` builds one `WorkdayJobView`. It is a pure read (queries and mutations both call it) and never writes. All queues use `.take(LIMIT + 1)` with `LIMIT = 1200`; if any exceeds the limit a `capacity` check ("This job needs a lead review: its work queue exceeds the checklist limit.") is added so a day is never closed from a truncated queue. `job_access` is added when the opening is gone.
@@ -225,7 +225,7 @@ Partner read lists the workday tables in `convex/integrations/partnerRead.ts` (k
 
 - `docs/TA-WORKDAY-FEATURE-PLAN.md` (13 Oct) is superseded: it describes `/workday` page and Start/Finish buttons. `docs/WORKDAY-CHECKS.md` is the maintained doc.
 - Drawer default mode vs stored default differ (`dashboard.options` uses "Follow-up" for jobs worked in the last 30 days (only read when a job has no stage of its own, 29 Oct); `repo.workingStage`/`eodContext` default "100%").
-- "Save team resets stages" (see Work modes); backend-side effect unverified.
+- (Fixed 2 Nov) "Save team resets stages": the store now carries `workingStage` across a team save (see Work modes).
 - `excel_profiles` counts all-time own profiles on the job, not only today's; the doc says "added by the TA".
 - `jd_review` confirmation is per (user, job) across days; `chatgpt` confirmation is per day.
 - `midday_email` is absent from Follow-up/Add-on drawer checks but enforced at send time by `dailyEmails`.
@@ -279,9 +279,9 @@ Repo hard rules that apply: never run `convex deploy/run/import/env set` against
 - 2026-10-29 Reviewers' panel: today's open days only, listed as summaries; a day's checklist is built when its row is opened (`summaryView`, `TeamDayChecks`, index `by_finished_date`).
 
 <!-- skill-meta
-verified-commit: c9ecb09
-verified-hash: 60c0013b8f83c2018ad92f597cf3597f61e27a4c
-verified-date: 2026-10-30
+verified-commit: 9deff7ef
+verified-hash: 05a224e76a281f3a7493014b8345e712a0fc363b
+verified-date: 2026-11-02
 sources:
   convex/ta/workdays.ts
   convex/lib/workdayChecks.ts
