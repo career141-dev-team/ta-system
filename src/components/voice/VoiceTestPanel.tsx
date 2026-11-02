@@ -89,7 +89,12 @@ export function VoiceTestPanel({ openings }: { openings: OpeningOption[] }) {
       jobTitle,
       jobDescription,
       detailsToCollect: details.split("\n"),
-    });
+    }).catch(() => null);
+    if (!r) {
+      setPhase("error");
+      setMessage("The call could not start. Try again.");
+      return;
+    }
     if (!r.ok) {
       setPhase("error");
       setMessage(r.message);

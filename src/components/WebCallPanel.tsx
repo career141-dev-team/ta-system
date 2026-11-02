@@ -44,7 +44,12 @@ export function WebCallPanel({ applicationId, openingId }: { applicationId: stri
     setMessage(null);
     setLines([]);
     setPhase("connecting");
-    const r = await startWebCall(applicationId, openingId);
+    const r = await startWebCall(applicationId, openingId).catch(() => null);
+    if (!r) {
+      setPhase("error");
+      setMessage("The call could not start. Try again.");
+      return;
+    }
     if (!r.ok) {
       setPhase("error");
       setMessage(r.message);

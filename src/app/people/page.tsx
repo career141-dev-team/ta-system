@@ -71,6 +71,7 @@ export default async function PeoplePage({
             max={100}
             defaultValue={repo.setting("autoShortlistScore", "75")}
             disabled={!canEdit}
+            title={canEdit ? undefined : "Only people who can manage users can change this."}
             className={`${inputClass} w-[90px]`}
           />
           {canEdit && (
@@ -100,13 +101,14 @@ export default async function PeoplePage({
           {questions.map((q) => (
             <div key={q.id} className="flex flex-wrap items-center gap-3">
               <label className="flex items-center gap-2 text-[12.5px]">
-                <input type="checkbox" name={`on_${q.id}`} value="1" defaultChecked={q.enabled} disabled={!canEdit} />
+                <input type="checkbox" name={`on_${q.id}`} value="1" defaultChecked={q.enabled} disabled={!canEdit} title={canEdit ? undefined : "Only people who can manage users can change this."} />
                 Ask
               </label>
               <input
                 name={`label_${q.id}`}
                 defaultValue={q.label}
                 disabled={!canEdit}
+                title={canEdit ? undefined : "Only people who can manage users can change this."}
                 className={`${inputClass} max-w-[320px]`}
               />
             </div>

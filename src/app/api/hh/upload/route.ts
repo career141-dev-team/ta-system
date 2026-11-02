@@ -5,6 +5,7 @@ import { isConvex } from "@/data/mode";
 import { currentUser } from "@/lib/session";
 import { convexMutation, convexQuery, internalUploadUrl } from "@/lib/convexServer";
 import { safeErrorMessage } from "@/lib/userError";
+import { workdayBlock } from "@/lib/openings/workdayGate";
 import { HEADHUNT_MAX_BYTES, mayUploadHeadHuntCv, queueHeadHuntCv } from "@/lib/openings/hhUpload";
 
 /**
@@ -44,6 +45,9 @@ export async function POST(req: NextRequest) {
 
   const { user, message, status } = await mayUpload(openingId);
   if (!user) return refuse(message, status);
+  // The workday rule before the file is stored, not after (2 Nov).
+  const blocked = await workdayBlock(user, openingId);
+  if (blocked) return refuse(blocked, 409);
   const result = await queueHeadHuntCv(
     user,
     openingId,

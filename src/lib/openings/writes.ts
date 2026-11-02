@@ -44,7 +44,7 @@ export async function decideOn(
     try {
       await deps.convexQuery("ta/workdays:checkScope", { actorId: user.id, jobId: openingId });
     } catch (error) {
-      return { ok: false, status: 403, message: safeErrorMessage(error, "Check your workday before continuing.") };
+      return { ok: false, status: 403, message: safeErrorMessage(error, "Could not check your workday. Try again in a moment.") };
     }
   }
   return { ok: true };

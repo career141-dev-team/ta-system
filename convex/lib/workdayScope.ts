@@ -18,10 +18,14 @@ export async function assertWorkdayScope(
     .collect();
   const today = active.find(d => d.finishedAt === undefined || d.closureReason === "eod");
   if (today) {
-    if (!today.jobs.some((j) => j.jobId === jobId))
+    if (!today.jobs.some((j) => j.jobId === jobId)) {
+      // Says which position and where to fix it: a bare "add it first" read as
+      // a broken upload to TAs (2 Nov, scoop CVs on a position not on the day).
+      const job = await ctx.db.get(jobId);
       throw new Error(
-        "Add this assigned position to your workday first.",
+        `${job ? `"${job.title}"` : "This position"} is not on today's workday. Open Today's Checks, choose "Add another position", pick it, then try again.`,
       );
+    }
     return;
   }
   const prior = await ctx.db
@@ -31,5 +35,5 @@ export async function assertWorkdayScope(
     .first();
   // Existing accounts continue to work until their first explicit Start click.
   if (prior)
-    throw new Error("Start your workday before continuing recruitment work.");
+    throw new Error("Your workday has not started today. Open Today's Checks and start it, then try again.");
 }

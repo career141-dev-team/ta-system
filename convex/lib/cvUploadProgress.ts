@@ -74,3 +74,16 @@ export function uploadProgress(
   };
 }
 
+
+/**
+ * What a TA is told when a CV could not be read (2 Nov). The extraction keeps
+ * engineering text in `errorMessage` ("LLM failed to extract…", "File URL not
+ * found…"); that stays in the record and never reaches the screen.
+ */
+export function friendlyUploadError(raw: string | undefined): string {
+  const m = (raw ?? "").toLowerCase();
+  if (/not found|storage/.test(m) && /file|url|storage/.test(m)) return "The stored file is gone. Remove this row and upload the CV again.";
+  if (/time(d)? ?out|interrupted|>s?10m/.test(m)) return "The reader timed out on this CV. Press Try again; if it fails twice, upload a cleaner PDF.";
+  if (/safety|guard/.test(m)) return "This CV could not be read safely. Upload a cleaner PDF or Word copy.";
+  return "The CV could not be read. Press Try again; if it fails again, upload a cleaner PDF or tell your lead.";
+}

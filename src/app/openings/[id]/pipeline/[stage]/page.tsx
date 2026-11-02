@@ -17,6 +17,7 @@ import { primeStore } from "@/data/prime";
 import { ProblemState } from "@/components/ProblemState";
 import { workLocationView, inWorkLocation } from "@/lib/workLocations";
 import { WorkLocationTabs } from "@/components/WorkLocationTabs";
+import { workdayBlock } from "@/lib/openings/workdayGate";
 
 export default async function StagePage({
   params,
@@ -183,7 +184,7 @@ export default async function StagePage({
         </div>
       )}
 
-      {s === "ta_follow_up" && canAct && workLocationId !== "" && <HhUpload key={workLocationId} openingId={id} workLocationId={workLocationId} />}
+      {s === "ta_follow_up" && canAct && workLocationId !== "" && <HhUpload key={workLocationId} openingId={id} workLocationId={workLocationId} blocked={await workdayBlock(user, id)} />}
 
       {s === "ta_follow_up" && (
         <AskQuestion

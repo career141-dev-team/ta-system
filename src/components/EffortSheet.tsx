@@ -55,6 +55,7 @@ export function EffortSheet({
     }
   }
   const [draft, setDraft] = useState<Draft>(initial);
+  const [stageError, setStageError] = useState<string | null>(null);
   // The draft as the page opened with it, before anything kept was read back.
   const opened = useRef(draft);
 
@@ -182,6 +183,8 @@ export function EffortSheet({
                       value={draft.kind}
                       onChange={(e) => {
                         const val = e.target.value;
+                        const previous = draft.kind;
+                        setStageError(null);
                         setDraft((d) => ({ ...d, kind: val }));
                         window.dispatchEvent(
                           new CustomEvent("working-stage-changed", {
@@ -193,7 +196,15 @@ export function EffortSheet({
                             const fd = new FormData();
                             fd.append("openingId", openingId);
                             fd.append("stage", val);
-                            await setWorkingStage(fd);
+                            // 2 Nov 2026: the result was dropped, so a refused stage still showed as saved.
+                            const result = await setWorkingStage(fd).catch(() => ({ ok: false as const, message: "The working stage could not be saved." }));
+                            if (!result.ok) {
+                              setDraft((d) => ({ ...d, kind: previous }));
+                              setStageError(result.message);
+                              window.dispatchEvent(
+                                new CustomEvent("working-stage-changed", { detail: { openingId, stage: previous } }),
+                              );
+                            }
                             router.refresh();
                           });
                         }
@@ -204,6 +215,7 @@ export function EffortSheet({
                         <option key={t}>{t}</option>
                       ))}
                     </select>
+                    {stageError && <p role="alert" className="mt-1 text-[12px] text-danger">{stageError}</p>}
                   </td>
                 );
               }

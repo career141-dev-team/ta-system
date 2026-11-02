@@ -14,6 +14,7 @@ import { LinkSearch } from "./LinkSearch";
 import { LinkExportMenu } from "./LinkExportMenu";
 import { visibleEyeMarked } from "@/lib/eyeMarkedStore";
 import { HhUpload } from "./HhUpload";
+import { workdayBlock } from "@/lib/openings/workdayGate";
 import { awaitingShortlist, movedBackToTables } from "@/lib/pipeline";
 import { bulkStages } from "@/lib/bulkStages";
 import { BulkBar, BulkStageControls } from "./BulkSelect";
@@ -37,7 +38,7 @@ const BULK_FORM = "bulk-links";
  * two. What was a spreadsheet column — outcome, the number, how it was got — is
  * now the row's own state, and the approach log sits underneath it.
  */
-export function LinkVaultTable({
+export async function LinkVaultTable({
   openingId,
   user,
   q = "",
@@ -254,7 +255,7 @@ export function LinkVaultTable({
       {imark && (
         <div className="mb-4 text-[13px] text-ink-soft">
           <p className="mb-3">Call these candidates and request their CVs. Once received, add them to TA Follow-up and prepare them for Director Review.</p>
-          {workLocationId !== "" && can(user, "opening.act", { assignment: repo.assignmentFor(openingId, user.id) ?? null }).ok && <HhUpload key={workLocationId} openingId={openingId} workLocationId={workLocationId} />}
+          {workLocationId !== "" && can(user, "opening.act", { assignment: repo.assignmentFor(openingId, user.id) ?? null }).ok && <HhUpload key={workLocationId} openingId={openingId} workLocationId={workLocationId} blocked={await workdayBlock(user, openingId)} />}
         </div>
       )}
 

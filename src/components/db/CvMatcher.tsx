@@ -71,9 +71,9 @@ export function CvMatcher({
         method: "POST",
         body: formData,
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({} as any));
       if (!res.ok || !data.ok) {
-        throw new Error(data.message || "Failed to extract criteria from the CV file.");
+        throw new Error(data.message || "The reader did not answer. Try again, or paste the CV text.");
       }
 
       setBlueprint(data.blueprint);
@@ -98,9 +98,9 @@ export function CvMatcher({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: pasteText }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({} as any));
       if (!res.ok || !data.ok) {
-        throw new Error(data.message || "Failed to extract criteria from text.");
+        throw new Error(data.message || "The reader did not answer. Try again, or paste the CV text.");
       }
 
       setBlueprint(data.blueprint);
@@ -122,9 +122,9 @@ export function CvMatcher({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ candidateId: cid }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({} as any));
       if (!res.ok || !data.ok) {
-        throw new Error(data.message || "Failed to read candidate blueprint.");
+        throw new Error(data.message || "The reader did not answer. Try again, or paste the CV text.");
       }
 
       setBlueprint(data.blueprint);
@@ -145,9 +145,9 @@ export function CvMatcher({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ blueprint: bp, prompt: userPrompt }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({} as any));
       if (!res.ok || !data.ok) {
-        throw new Error(data.message || "Failed to search lookalike candidates.");
+        throw new Error(data.message || "The reader did not answer. Try again, or paste the CV text.");
       }
 
       setMatches(data.results?.matches ?? []);
@@ -265,7 +265,10 @@ export function CvMatcher({
                 placeholder="Paste reference CV text, summary, career history, and skills here..."
                 className="w-full rounded-xl border border-rule bg-surface p-3.5 text-[13px] text-ink placeholder:text-ink-faint focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
               />
-              <div className="flex justify-end">
+              <div className="flex items-center justify-end gap-3">
+                {pasteText.trim().length < 25 && (
+                  <span className="text-[12px] text-ink-faint">Paste at least 25 characters of the CV to continue.</span>
+                )}
                 <button
                   type="button"
                   onClick={extractFromPastedText}

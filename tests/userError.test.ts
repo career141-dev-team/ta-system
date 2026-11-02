@@ -23,3 +23,13 @@ assert.equal(isTechnicalMessage("Please choose an opening."), false);
 assert.equal(isTechnicalMessage("Request ID: abc123"), true);
 
 console.log("  ok  user-facing errors preserve useful instructions and hide technical details");
+
+// 2 Nov: a code in front is engineering text; the CV reader's own errors never reach the screen.
+assert.equal(safeErrorMessage(new Error("[403] Access denied. Your role (ta) cannot do this."), "Fallback."), "Fallback.");
+assert.equal(safeErrorMessage(new Error("Uncaught Error: Your workday has not started today. Open Today's Checks and start it, then try again."), "x"), "Your workday has not started today. Open Today's Checks and start it, then try again.");
+import { friendlyUploadError } from "../convex/lib/cvUploadProgress";
+assert.match(friendlyUploadError("File URL not found (neither R2 nor Convex storage)"), /stored file is gone/);
+assert.match(friendlyUploadError("Process interrupted or timed out (>10m)"), /timed out/);
+assert.match(friendlyUploadError("CV extraction safety guard tripped"), /read safely/);
+assert.doesNotMatch(friendlyUploadError("LLM failed to extract candidate data (API timeout)"), /LLM|API/);
+assert.doesNotMatch(friendlyUploadError(undefined), /undefined/);

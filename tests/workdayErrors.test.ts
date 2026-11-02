@@ -14,11 +14,11 @@ assert.match(MAX_100_MESSAGE, /at most 5 100% positions/);
 assert.equal(
   workdayErrorMessage(
     new Error(
-      "Convex refused ta/workdays:addPosition: [Request ID: def456] Server Error Uncaught Error: A workday supports at most ten positions.\n    at handler (../../convex/ta/workdays.ts:1519:13)",
+      "Convex refused ta/workdays:addPosition: [Request ID: def456] Server Error Uncaught Error: A workday supports at most ten positions. You already have ten today, so add this one tomorrow or ask your TA Lead.\n    at handler (../../convex/ta/workdays.ts:1519:13)",
     ),
     "addPosition",
   ),
-  "A workday supports at most ten positions.",
+  "A workday supports at most ten positions. You already have ten today, so add this one tomorrow or ask your TA Lead.",
 );
 assert.equal(
   workdayErrorMessage(new Error("Convex refused ta/workdays:addPosition: HTTP 500"), "addPosition"),

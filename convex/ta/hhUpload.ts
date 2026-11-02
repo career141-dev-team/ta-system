@@ -22,7 +22,7 @@ import { toTaStage } from "./stages";
 import { assertWorkdayScope } from "../lib/workdayScope";
 import { profileSlug } from "../lib/samePerson";
 import { refreshWorkdayChecks } from "./workdays";
-import { uploadProgress } from "../lib/cvUploadProgress";
+import { friendlyUploadError, uploadProgress } from "../lib/cvUploadProgress";
 import { requireWorkLocation } from "../../src/lib/workLocations";
 import { SCOOP_CHANNEL } from "./scoopUpload";
 
@@ -282,7 +282,7 @@ export const status = internalQuery({
         name: candidate?.fullName ?? null,
         applicationId: app ? (app._id as string) : null,
         stage: app ? toTaStage(app.currentStage) : null,
-        note: progress.state === "failed" ? (upload.errorMessage ?? "The CV could not be read.") : (upload.routeNote ?? null),
+        note: progress.state === "failed" ? friendlyUploadError(upload.errorMessage) : (upload.routeNote ?? null),
       });
     }
     return out;
