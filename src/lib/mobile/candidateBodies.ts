@@ -61,6 +61,13 @@ export const candidateClosingBody = z.discriminatedUnion("action", [
     action: z.literal("place"),
     offerId: z.string().min(1).max(100),
     joinDate: z.string().max(20),
+    // Required by the write since 2 Nov (docs/19 7.9): the phone sends the
+    // agreed package and the id of an already-uploaded offer letter.
+    salary: z.number().finite(),
+    salaryBasis: z.enum(["monthly", "annual"]),
+    currency: z.enum(["LKR", "USD"]),
+    packageNotes: z.string().max(4000),
+    offerLetterFileId: z.string().min(1).max(200),
   }).strict(),
 ]);
 

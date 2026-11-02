@@ -6,7 +6,16 @@ import { decideOn, type OpeningWriteDeps } from "@/lib/openings/writes";
 export type CandidateClosingWrite =
   | { action: "offer"; salary: number; salaryBasis: SalaryBasis; currency: Currency; startDate: string; terms: string }
   | { action: "respond"; offerId: string; status: "accepted" | "declined" | "withdrawn"; reason: string }
-  | { action: "place"; offerId: string; joinDate: string };
+  | {
+      action: "place";
+      offerId: string;
+      joinDate: string;
+      salary: number;
+      salaryBasis: SalaryBasis;
+      currency: Currency;
+      packageNotes: string;
+      offerLetterFileId: string;
+    };
 
 export type CandidateClosingResult =
   | { ok: true; message: string; placementId?: string }
@@ -70,7 +79,24 @@ export async function writeCandidateClosing(
   } else {
     const joinDate = colomboDay(input.joinDate);
     if (joinDate === null) return { ok: false, status: 400, message: "A placement needs a join date." };
-    const saved = repo.recordPlacement({ offerId: input.offerId, joinDate, byUserId: user.id });
+    // Both used to be collected weeks later, by hand, from whoever remembered
+    // (docs/19 7.9). Accounts and the guarantee both run off them.
+    if (!Number.isFinite(input.salary) || input.salary <= 0) {
+      return { ok: false, status: 400, message: "A placement needs the agreed package." };
+    }
+    if (!clean(input.offerLetterFileId)) {
+      return { ok: false, status: 400, message: "A placement needs the signed offer letter." };
+    }
+    const saved = repo.recordPlacement({
+      offerId: input.offerId,
+      joinDate,
+      salary: input.salary,
+      salaryBasis: input.salaryBasis,
+      currency: input.currency,
+      packageNotes: clean(input.packageNotes),
+      offerLetterFileId: clean(input.offerLetterFileId),
+      byUserId: user.id,
+    });
     result = saved.ok
       ? { ok: true, message: "Placement recorded.", placementId: saved.id }
       : { ok: false, status: 400, message: saved.message };

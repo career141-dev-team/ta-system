@@ -30,6 +30,7 @@ const base: Placement = {
   feePercent: 12, flatFee: null,
   invoiceSentAt: now - 28 * DAY, invoiceNumber: "INV-1", invoicePaidAt: now - 10 * DAY,
   guaranteeDays: 90, fellThroughAt: null, fellThroughReason: null,
+  packageNotes: null, offerLetterFileId: "file_offer",
   notes: null, createdAt: now - 40 * DAY,
 };
 eq("30 days in on a 90-day guarantee → running", guaranteeFor(base, now).state, "running");

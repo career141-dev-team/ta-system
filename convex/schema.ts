@@ -1851,6 +1851,9 @@ export default defineSchema({
     fellThroughReason: v.optional(v.string()),
     taSourcingChannel: v.optional(v.string()),
     notes: v.optional(v.string()),
+    // Asked for at Place since 2 Nov, so accounts and Ops have them on day one.
+    packageNotes: v.optional(v.string()),
+    offerLetterFileId: v.optional(v.string()),
   })
     .index("by_jobId", ["jobId"])
     .index("by_placedBy", ["placedBy"])

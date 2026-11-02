@@ -1516,6 +1516,11 @@ export interface Placement {
   fellThroughAt: number | null;
   fellThroughReason: string | null;
 
+  /** What was actually agreed beyond the figure — allowances, bonus, car (2 Nov). */
+  packageNotes: string | null;
+  /** The signed offer letter, asked for at Place rather than two months later. */
+  offerLetterFileId: string | null;
+
   notes: string | null;
   createdAt: number;
 }
