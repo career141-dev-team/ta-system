@@ -769,6 +769,7 @@ export const checkAndRecordEmailReply = internalMutation({
     const followUpApp = apps.find((a: any) => isFollowUpStage(a.currentStage));
     const activeApp = followUpApp ?? apps[0];
 
+    const receivedAt = Date.now();
     await ctx.db.insert("communications", {
       candidateId: candidate._id,
       applicationId: activeApp?._id,
@@ -778,10 +779,17 @@ export const checkAndRecordEmailReply = internalMutation({
       subject: args.subject,
       body: args.body,
       deliveryStatus: "read",
-      sentAt: Date.now(),
+      sentAt: receivedAt,
       stoppedSequence: false,
       externalMessageId: args.messageId,
     });
+
+    // An email reply counts as a reply, as a WhatsApp one always did
+    // (whatsappOutbound.checkAndRecordFollowUpReply). Without this the Follow-up
+    // dialog said "no reply yet" to a TA reading the candidate's email, and the
+    // one-day "expired, no reply" rule in crons.ts kept chasing them (docs/19
+    // 7.7, 2 Nov).
+    if (activeApp) await ctx.db.patch(activeApp._id, { lastCandidateReplyAt: receivedAt });
 
     if (followUpApp) {
       // Run text extraction in background to parse details and trigger dynamic email reply
