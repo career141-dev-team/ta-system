@@ -132,7 +132,7 @@ UI toggle "Automatic follow-up" on both follow-up stage pages -> `setOpeningAuto
 
 ### Flow G: replies
 
-WhatsApp: Meta POST to `convex/http.ts` routes `/whatsapp`, `/api/whatsapp`, `/whatsapp-whatchimp`, `/api/whatsapp-whatchimp` -> `communications/whatchimp.ts:handleWhatChimpWebhook`. Checks in order: `META_APP_SECRET` set (else 503) and `X-Hub-Signature-256` valid (else 401) - added 23 Sep (36d139d); status-only payloads ignored; messages from the business/TA number ignored; documents/images -> `cvs/ingestion:processInboundCV`; text -> `whatsappOutbound:checkAndRecordFollowUpReply({senderPhone,textBody,messageId})` (`messageId` = Meta's `message.id`, 30 Oct). If it returns `isFollowUpReply` the webhook stops; otherwise keyword/pre-application handling continues (/cv-extraction territory).
+WhatsApp: Meta POST to `convex/http.ts` routes `/whatsapp`, `/api/whatsapp`, `/whatsapp-whatchimp`, `/api/whatsapp-whatchimp` -> `communications/whatchimp.ts:handleWhatChimpWebhook`. Checks in order: `META_APP_SECRET` set (else 503) and `X-Hub-Signature-256` valid (else 401) - added 23 Sep (36d139d); status-only payloads ignored; every standard Meta payload first stamps the receiving number (`settings/whatsappNumbers:markInbound` from `value.metadata.display_phone_number`, falling back to `phone_number_id`; an unknown number is ignored) so `whatsappNumbers.lastInboundAt` exists and the 15-minute `check-readers-healthy` cron can bell an admin when a number goes quiet for two working hours - a delivery outage used to be noticed by nobody (2 Nov, docs/19 7.11); messages from the business/TA number ignored; documents/images -> `cvs/ingestion:processInboundCV`; text -> `whatsappOutbound:checkAndRecordFollowUpReply({senderPhone,textBody,messageId})` (`messageId` = Meta's `message.id`, 30 Oct). If it returns `isFollowUpReply` the webhook stops; otherwise keyword/pre-application handling continues (/cv-extraction territory).
 
 `checkAndRecordFollowUpReply` (`whatsappOutbound.ts`):
 1. `findCandidateByPhone` -> `candidatesWithPhone` gathers every record holding the number in any spelling (`by_phone`, `by_phoneClean`, +94/0 forms, tail-9 fallback over the newest 200); several matches -> prefers a record with an open application in `follow_up`/`ta_shortlist`/`matched_candidates` (rank 2), then any open application, then newest (23 Sep, f6bcaba).
@@ -326,8 +326,8 @@ Repo hard rules that apply: never run `convex deploy|run|import|env set` against
 - 2026-11-01 Coexistence signup: Settings → WhatsApp numbers has `WhatsAppConnect` (Meta popup, config 3026772220995087, `featureType: whatsapp_business_app_onboarding`) and "Finish connection" (`finishConnect`: `subscribed_apps`, then Meta's once-only `smb_app_data` syncs, tracked in `syncsDone`; 24-hour deadline). Sync webhooks (`history`, `state_sync`) are acknowledged and dropped so old chats never reach the assistant.
 
 <!-- skill-meta
-verified-commit: 9deff7ef
-verified-hash: d79d7c90769325c531169e68198453fe5bd9675f
+verified-commit: ebd1f4d0
+verified-hash: 31897b63deea9a49c81ce1354ed290cb096484ff
 verified-date: 2026-11-02
 sources:
   tests/addToAssignedJob.test.ts

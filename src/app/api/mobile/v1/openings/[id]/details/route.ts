@@ -26,7 +26,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const decision = await decideOn(user, "opening.manage", { openingId: id }, MOBILE_OPENING_DEPS);
   if (!decision.ok) return refuse(decision.status, decision.message);
   const existing = repo.opening(id)?.workLocations;
-  const r = writeOpeningDetails(id, body.value, existing?.length ? existing : undefined, MOBILE_OPENING_DEPS);
+  const r = await writeOpeningDetails(user, id, body.value, existing?.length ? existing : undefined, MOBILE_OPENING_DEPS);
   if (!r.ok) return refuse(400, r.message);
   return ok<ActionResult>({ ok: true, message: "Opening saved." });
 }

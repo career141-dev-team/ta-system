@@ -22,6 +22,26 @@ export const isTaNumber = internalQuery({
   }
 });
 
+/**
+ * The webhook delivered something to this number. Written on every inbound
+ * message so the health check can notice when they stop (docs/19 7.11, 2 Nov).
+ * An unknown number is ignored: the common number is not in this table.
+ */
+export const markInbound = internalMutation({
+  args: { phone: v.string(), phoneNumberId: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const clean = args.phone.startsWith("+") ? args.phone : `+${args.phone.replace(/[^0-9]/g, "")}`;
+    const row =
+      (await ctx.db.query("whatsappNumbers").withIndex("by_phone", (q) => q.eq("phone", clean)).first()) ??
+      (args.phoneNumberId
+        ? (await ctx.db.query("whatsappNumbers").collect()).find((n) => n.whatchimpPhoneId === args.phoneNumberId) ?? null
+        : null);
+    if (!row) return { ok: false };
+    await ctx.db.patch(row._id, { lastInboundAt: Date.now() });
+    return { ok: true };
+  },
+});
+
 export const add = internalMutation({
   args: {
     name: v.string(),
