@@ -256,8 +256,8 @@ Pre-merge checklist:
 - 26 Oct `2b9c52f` a person on the opening twice counts as on it (CVs not refiled); setCvs repair of set CVs not on the opening.
 
 <!-- skill-meta
-verified-commit: 4877a27a
-verified-hash: 06bf81e1ccb6cccb982038010a902c077d2f2857
+verified-commit: 76a5a2ee
+verified-hash: f997cd27c0b2e6a52744920da5e78e2f653fefee
 verified-date: 2026-11-02
 sources:
   tests/addToAssignedJob.test.ts

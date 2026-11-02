@@ -299,8 +299,8 @@ Repo rules that apply: never run `convex deploy/run/import/env set` against live
 - 2026-10-29 Graph webhook: one scheduled read per mailbox (`scheduleWebhookPoll`, 20 s), not one per message.
 
 <!-- skill-meta
-verified-commit: 4877a27a
-verified-hash: 5bc55541f201da4bf8c8b8320770c8b55bf5d315
+verified-commit: 76a5a2ee
+verified-hash: 4640fba5ad6a1634c2f92cfd8d96b985db2fc315
 verified-date: 2026-11-02
 sources:
   convex/mailIntake/**
