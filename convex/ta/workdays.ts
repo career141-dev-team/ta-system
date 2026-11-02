@@ -1187,7 +1187,9 @@ export const dashboard = internalQuery({
     const worker = ["ta", "ta_support"].includes(role);
     const lead = canLead(user);
     const review = canReviewWorkdays(role);
-    const deskWide = role === "admin" || role === "director" || role === "ta_lead";
+    // The web counts ops as desk-wide (src/lib/auth.ts DESK_WIDE); this list
+    // left ops out, so ops could not open the reviewers' panel (docs/19 P3, 2 Nov).
+    const deskWide = role === "admin" || role === "director" || role === "ta_lead" || role === "ops";
     if (!worker && !review) throw new Error("You cannot access workdays.");
     const now = Date.now();
     const active = worker ? await activeFor(ctx, user._id) : null;

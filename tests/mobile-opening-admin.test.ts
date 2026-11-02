@@ -92,6 +92,52 @@ test("the team saves one seat per person, the last row winning", async () => {
   assert(revalidated.includes(`/openings/${opening.id}`));
 });
 
+test("saving the team keeps each member's work mode (it used to reset everyone to 100%)", async () => {
+  const { deps } = fakeDeps();
+  const opening = repo.openings()[0];
+  const tas = repo.users().filter((u) => u.role === "ta" && u.isActive);
+  assert(tas.length >= 2, "the seed has two active TAs");
+  await writeOpeningTeam(synthetic("admin"), opening.id, [
+    { userId: tas[0].id, role: "primary_recruiter" },
+    { userId: tas[1].id, role: "supporting_recruiter" },
+  ], deps);
+  repo.setWorkingStage(opening.id, tas[1].id, "Follow-up");
+  // A third person joins; the two already on it keep what they had.
+  const r = await writeOpeningTeam(synthetic("admin"), opening.id, [
+    { userId: tas[0].id, role: "primary_recruiter" },
+    { userId: tas[1].id, role: "supporting_recruiter" },
+    { userId: synthetic("director").id, role: "director" },
+  ], deps);
+  assert.deepEqual(r, { ok: true });
+  assert.equal(repo.workingStage(opening.id, tas[1].id), "Follow-up");
+  assert.equal(repo.workingStage(opening.id, tas[0].id), "100%");
+});
+
+test("the TA Lead can be handed on by an admin or the current lead, to an active lead only", async () => {
+  const { deps, convex } = fakeDeps();
+  const opening = repo.openings()[0];
+  const [ta, second] = repo.users().filter((u) => u.role === "ta" && u.isActive);
+  // The seed's only active lead already owns this opening, so make a second lead to hand it to.
+  repo.updateUser(second.id, { role: "ta_lead" });
+  const other = repo.user(second.id)!;
+  const team = [{ userId: ta.id, role: "primary_recruiter" }];
+  // A TA on the team may save the team but not move the lead.
+  const refused = await writeOpeningTeam({ ...synthetic("ta"), id: ta.id }, opening.id, team, deps, other.id);
+  assert.deepEqual(refused, { ok: false, message: "Only this opening's TA Lead or an admin can hand it to another lead. Nothing was changed." });
+  // Nobody can hand it to someone who is not a lead.
+  const notALead = await writeOpeningTeam(synthetic("admin"), opening.id, team, deps, ta.id);
+  assert.deepEqual(notALead, { ok: false, message: "The TA Lead must be an active TA Lead or admin. Nothing was changed." });
+  // An admin can; the new lead is told.
+  const before = convex.length;
+  const ok = await writeOpeningTeam(synthetic("admin"), opening.id, team, deps, other.id);
+  assert.deepEqual(ok, { ok: true });
+  assert.equal(repo.opening(opening.id)!.taLeadId, other.id);
+  assert.equal(convex.slice(before).filter((n) => n === "ta/notifications:create").length >= 1, true);
+  // The same lead again is not a change and needs no permission.
+  assert.deepEqual(await writeOpeningTeam({ ...synthetic("ta"), id: ta.id }, opening.id, team, deps, other.id), { ok: true });
+  repo.updateUser(second.id, { role: "ta" });
+});
+
 test("details are checked in the web form's order and words", () => {
   const { deps } = fakeDeps();
   const id = repo.openings()[0].id;

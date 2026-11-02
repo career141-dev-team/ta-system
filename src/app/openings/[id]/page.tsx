@@ -291,6 +291,8 @@ export default async function OverviewPage({
                 workLocations={o.workLocations}
                 priorityTier={o.priorityTier}
                 team={repo.assignments(id).map((a) => ({ userId: a.userId, role: a.role }))}
+                taLeadId={o.taLeadId}
+                canChangeLead={user.role === "admin" || o.taLeadId === user.id}
                 people={users
                   .filter((u) => u.isActive)
                   .map((u) => ({ id: u.id, name: u.name, role: u.role }))}
