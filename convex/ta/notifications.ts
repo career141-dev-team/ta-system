@@ -28,6 +28,8 @@ const NOTIFICATION_TYPE = v.union(
   v.literal("mailbox_stalled"),
   // End-of-day emails nobody was told about (ta/eodReminders.ts, ta/eodCopies.ts, 2 Nov).
   v.literal("eod_stuck"), v.literal("eod_reminder"), v.literal("eod_lead_digest"), v.literal("workday_expired"),
+  // A priority tier or a status was changed on an opening (2 Nov).
+  v.literal("opening_changed"),
 );
 
 export const create = internalMutation({
@@ -102,7 +104,9 @@ export const listForUser = internalQuery({
                       ? `/openings/${n.jobId}/eod`
                       : n.type === "eod_lead_digest"
                         ? "/openings?checks=open"
-                        : null,
+                        : (n.type === "opening_changed" || n.type === "candidate_placed") && n.jobId
+                          ? `/openings/${n.jobId}`
+                          : null,
         read: n.read,
         createdAt: n.createdAt,
       })),
