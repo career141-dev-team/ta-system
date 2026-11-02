@@ -33,6 +33,8 @@ export function OpeningAdmin({
   headcount,
   priorityTier,
   team,
+  taLeadId,
+  canChangeLead,
   people,
   canEdit,
   canDelete,
@@ -50,6 +52,10 @@ export function OpeningAdmin({
   headcount: number;
   priorityTier: PriorityTier;
   team: { userId: string; role: AssignmentRole }[];
+  /** The opening's lead, a field of the record rather than a seat. */
+  taLeadId: string;
+  /** Only the current lead or an admin may hand the opening to another lead (2 Nov). */
+  canChangeLead: boolean;
   people: { id: string; name: string; role: string }[];
   canEdit: boolean;
   canDelete: boolean;
@@ -117,6 +123,8 @@ export function OpeningAdmin({
         <TeamEditor
           openingId={openingId}
           team={team}
+          taLeadId={taLeadId}
+          canChangeLead={canChangeLead}
           people={people}
           onClose={() => setPane(null)}
         />
@@ -154,17 +162,23 @@ const ROLES: AssignmentRole[] = [
 function TeamEditor({
   openingId,
   team,
+  taLeadId,
+  canChangeLead,
   people,
   onClose,
 }: {
   openingId: string;
   team: { userId: string; role: AssignmentRole }[];
+  taLeadId: string;
+  canChangeLead: boolean;
   people: { id: string; name: string; role: string }[];
   onClose: () => void;
 }) {
   const [rows, setRows] = useState(
     team.length ? team : [{ userId: people[0]?.id ?? "", role: "primary_recruiter" as AssignmentRole }],
   );
+  const leads = people.filter((p) => p.role === "ta_lead" || p.role === "admin");
+  const currentLead = people.find((p) => p.id === taLeadId);
 
   return (
     <form action={setOpeningTeam} className="flex flex-col gap-3">
@@ -172,6 +186,21 @@ function TeamEditor({
       <span className="text-[11.5px] text-ink-faint">
         Somebody has to be recruiting it — a team of reviewers alone is refused.
       </span>
+
+      {/* The lead is not a seat: access requests, workday starts and reconciles key on it. */}
+      <label className="block">
+        <span className="mb-1 block text-[11.5px] text-ink-soft">TA Lead</span>
+        {canChangeLead ? (
+          <select name="taLeadId" defaultValue={taLeadId} className={`${inputClass} cursor-pointer py-1.5`}>
+            {!currentLead && <option value="">— no active lead —</option>}
+            {leads.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        ) : (
+          <span className="block text-[12px] text-ink">{currentLead?.name ?? "No active lead — ask an admin to set one."}</span>
+        )}
+      </label>
 
       {rows.map((r, i) => (
         <div key={i} className="flex flex-col gap-1.5">

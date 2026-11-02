@@ -1898,8 +1898,10 @@ export async function setOpeningTeam(formData: FormData) {
   const openingId = String(formData.get("openingId"));
   const ids = formData.getAll("memberId").map(String);
   const roles = formData.getAll("memberRole").map(String);
+  // Absent on the mobile API's form; the lead field only exists on the web (2 Nov).
+  const taLeadId = formData.get("taLeadId") ? String(formData.get("taLeadId")) : undefined;
   // Shared with the mobile API (lib/openings/admin, 22 Oct).
-  const r = await writeOpeningTeam(user, openingId, ids.map((userId, i) => ({ userId, role: roles[i] })), OPENING_DEPS);
+  const r = await writeOpeningTeam(user, openingId, ids.map((userId, i) => ({ userId, role: roles[i] })), OPENING_DEPS, taLeadId);
   if (!r.ok) redirect(`/openings/${openingId}?msg=${encodeURIComponent(r.message)}`);
 }
 
