@@ -168,11 +168,13 @@ test("the shared decision refuses what the web refuses", async () => {
 
 test("status and working stage write and revalidate as the web's actions did", async () => {
   const opening = repo.openings()[0];
-  const { deps, revalidated } = fakeDeps();
-  writeOpeningStatus(opening.id, "on_hold", deps);
+  const { deps, revalidated, convex } = fakeDeps();
+  await writeOpeningStatus(synthetic("admin"), opening.id, "on_hold", deps);
   assert.equal(repo.opening(opening.id)!.status, "on_hold");
   assert.deepEqual(revalidated, ["/openings", `/openings/${opening.id}`]);
-  writeOpeningStatus(opening.id, "open", deps);
+  // On hold stops everyone's work on the job, so the team hears about it (2 Nov).
+  assert(convex.includes("ta/notifications:create"), "the status change was told");
+  await writeOpeningStatus(synthetic("admin"), opening.id, "open", deps);
 
   const admin = synthetic("admin");
   const bad = await writeWorkingStage(admin, opening.id, "50%", deps);
