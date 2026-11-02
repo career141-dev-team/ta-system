@@ -30,6 +30,10 @@ function fakeCtx(tables: Record<string, any[]>) {
   const scheduled: { args: any }[] = [];
   const db = {
     get: async (id: string) => Object.values(tables).flat().find((r) => r._id === id) ?? null,
+    patch: async (id: string, fields: any) => {
+      const row = Object.values(tables).flat().find((r) => r._id === id);
+      if (row) Object.assign(row, fields);
+    },
     insert: async (table: string, doc: any) => {
       const row = { ...doc, _id: `id${next++}`, _creationTime: Date.now() };
       (tables[table] ??= []).push(row);
@@ -132,6 +136,8 @@ test("an email from a candidate at interview is recorded but not answered", asyn
   assert.equal(ctx.tables.communications.length, 1);
   assert.equal(ctx.tables.communications[0].applicationId, "a0");
   assert.equal(ctx.scheduled.length, 0, "no AI reply scheduled");
+  // Recorded as a reply even at interview, as the WhatsApp path does (2 Nov).
+  assert.equal(typeof ctx.tables.applications[0].lastCandidateReplyAt, "number");
 });
 
 test("an email is answered for the application in Follow-up, not the newest one", async () => {
@@ -140,11 +146,17 @@ test("an email is answered for the application in Follow-up, not the newest one"
   await run(checkAndRecordEmailReply, ctx, email("m2"));
   assert.equal(ctx.scheduled.length, 1);
   assert.equal(ctx.scheduled[0].args.applicationId, "a0");
+  // The reply is dated on the application it was matched to, not the newest one.
+  assert.equal(typeof ctx.tables.applications[0].lastCandidateReplyAt, "number");
+  assert.equal(ctx.tables.applications[1].lastCandidateReplyAt, undefined);
 });
 
 test("the WhatsApp reply path uses the same rule", () => {
   const src = read("convex/communications/whatsappOutbound.ts");
   assert.match(src, /if \(!isFollowUpStage\(activeApp\.currentStage\)\)/);
+  // Both channels date the reply on the application (docs/19 7.7).
+  assert.match(src, /lastCandidateReplyAt/);
+  assert.match(read("convex/communications/emailAgent.ts"), /lastCandidateReplyAt/);
 });
 
 // ── 3. One email, one answer ─────────────────────────────────────────────────

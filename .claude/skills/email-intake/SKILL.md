@@ -140,7 +140,7 @@ Chrome extension touchpoint (not mail): `POST /api/extension/capture` (`src/app/
 
 ### 6. Candidate replies (job@) and hand-off to /follow-up
 
-Poller path: `emailAgent.checkAndRecordEmailReply` (mutation, so the check+insert is one transaction): maps the test mailbox sender back to the last outbound's candidate when `!outreachLive()` and `OUTREACH_TEST_EMAIL` matches; looks up `candidates.by_email` with the sender as written (no lower-casing); dedupes on `communications.by_externalMessageId` (the 2 Oct double-AI-reply bug); picks the newest application in a follow-up stage (`isFollowUpStage`) else `apps[0]`; inserts an inbound `communications` row (`deliveryStatus: "read"`); only if an application is in Follow-up it schedules `inboundExtraction.extractDetailsFromText` with `applicationId` and `subject` (the subject spots out-of-office replies). The body is passed raw; the extraction itself cuts it to the new words (`lib/mailParse.ts latestReplyText`). Returns `isFollowUpReply` (stage `follow_up`, or rejected for "Did not complete requirements within 7-day window"). That is where intake stops; the AI reading and any reply are /follow-up's (and go through `mayReplyTo` + do-not-contact guards).
+Poller path: `emailAgent.checkAndRecordEmailReply` (mutation, so the check+insert is one transaction): maps the test mailbox sender back to the last outbound's candidate when `!outreachLive()` and `OUTREACH_TEST_EMAIL` matches; looks up `candidates.by_email` with the sender as written (no lower-casing); dedupes on `communications.by_externalMessageId` (the 2 Oct double-AI-reply bug); picks the newest application in a follow-up stage (`isFollowUpStage`) else `apps[0]`; inserts an inbound `communications` row (`deliveryStatus: "read"`) and patches that application's `lastCandidateReplyAt` to the same instant (2 Nov; it used to leave the field unset, so the Follow-up dialog said "no reply yet" and the one-day AI-follow-up rule kept chasing); only if an application is in Follow-up it schedules `inboundExtraction.extractDetailsFromText` with `applicationId` and `subject` (the subject spots out-of-office replies). The body is passed raw; the extraction itself cuts it to the new words (`lib/mailParse.ts latestReplyText`). Returns `isFollowUpReply` (stage `follow_up`, or rejected for "Did not complete requirements within 7-day window"). That is where intake stops; the AI reading and any reply are /follow-up's (and go through `mayReplyTo` + do-not-contact guards).
 
 Intake path (only if job@ is enabled in Settings): `replyingCandidate` + `recordInboundEmail` (dedupe by `sentAt === receivedAt` among inbound rows, sets `applications.lastCandidateReplyAt`), `applicationIdFrom` reads an `x-c141-candidatejobid` echo from the quoted body to pick the application, else the one last written to. Candidate mail with a CV attached goes down the CV branch instead.
 
@@ -299,9 +299,9 @@ Repo rules that apply: never run `convex deploy/run/import/env set` against live
 - 2026-10-29 Graph webhook: one scheduled read per mailbox (`scheduleWebhookPoll`, 20 s), not one per message.
 
 <!-- skill-meta
-verified-commit: f8f4b53d
-verified-hash: 3807302e2482f7fd058c69d085c84abfb1ed365f
-verified-date: 2026-10-29
+verified-commit: 9deff7ef
+verified-hash: af5e73d4d679f4e4a05d048761039037bd2b022d
+verified-date: 2026-11-02
 sources:
   convex/mailIntake/**
   convex/communications/emailAgent.ts
