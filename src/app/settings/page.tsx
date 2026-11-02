@@ -207,6 +207,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           ) : (
             <WhatsAppNumbers rows={numbers} />
           )}
+          <WhatsAppConnect />
         </section>
       )}
 

@@ -4,6 +4,7 @@ import { internal } from "../_generated/api";
 import { getOpenAI, getModelForTask } from "../lib/llm";
 import { postRoutingOn, routeByPosts, type EmailRoute } from "../pipeline/postFiling";
 import { cleanMessage, nextCursor, notYetHandled, oldestFirst, pollBatch, readsByLog, STALLED_AFTER_MS, stalledUnreported, wellFormed } from "../lib/mailCursor";
+import { cvQueueProblem, mailboxProblem, whatsappProblem, type ReaderProblem } from "../lib/readerHealth";
 import { isNotAnApplication, parseApplicationEmail } from "../lib/mailParse";
 import { linkedinJobId, linkedinProjectId } from "../lib/postRouting";
 import { placeOnPosts } from "../mailIntake/process";
@@ -768,6 +769,7 @@ export const checkAndRecordEmailReply = internalMutation({
     const followUpApp = apps.find((a: any) => isFollowUpStage(a.currentStage));
     const activeApp = followUpApp ?? apps[0];
 
+    const receivedAt = Date.now();
     await ctx.db.insert("communications", {
       candidateId: candidate._id,
       applicationId: activeApp?._id,
@@ -777,10 +779,17 @@ export const checkAndRecordEmailReply = internalMutation({
       subject: args.subject,
       body: args.body,
       deliveryStatus: "read",
-      sentAt: Date.now(),
+      sentAt: receivedAt,
       stoppedSequence: false,
       externalMessageId: args.messageId,
     });
+
+    // An email reply counts as a reply, as a WhatsApp one always did
+    // (whatsappOutbound.checkAndRecordFollowUpReply). Without this the Follow-up
+    // dialog said "no reply yet" to a TA reading the candidate's email, and the
+    // one-day "expired, no reply" rule in crons.ts kept chasing them (docs/19
+    // 7.7, 2 Nov).
+    if (activeApp) await ctx.db.patch(activeApp._id, { lastCandidateReplyAt: receivedAt });
 
     if (followUpApp) {
       // Run text extraction in background to parse details and trigger dynamic email reply
@@ -1191,6 +1200,92 @@ export const checkMailboxesRead = internalMutation({
       await ctx.db.patch(row._id, { mailStallReportedAt: new Date(now).toISOString() });
       console.warn(`[EmailAgent] ${inbox} not read since ${since}; ${people.length} people told.`);
     }
+  },
+});
+
+/**
+ * Is anything that reads for us quietly dead? (docs/19 7.11, 2 Nov)
+ *
+ * The mailbox stall bell above has been there since 23 October, at an hour, for
+ * mail only. This is the same idea for all three readers — the mail pollers at
+ * 20 minutes for job@ and 30 for the rest, each WhatsApp number that has
+ * received nothing for two hours of working time, and the CV reading queue when
+ * it is deep or files are piling up unread — with one bell per problem per four
+ * hours. The rules are in lib/readerHealth.ts; this only reads and tells.
+ *
+ * Nothing is retried or restarted here. A person reads the bell and tells the
+ * developer, which is what the text says.
+ */
+export const checkReadersHealthy = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const problems: { problem: ReaderProblem; remember: () => Promise<void> }[] = [];
+
+    for (const inbox of WATCHED_MAILBOXES) {
+      const row = await ctx.db.query("appSettings").withIndex("by_key", (q) => q.eq("key", `email_fetch_${inbox}`)).first();
+      if (!row?.mailPollOkAt) continue;
+      const problem = mailboxProblem({
+        mailbox: inbox,
+        lastOkAt: Date.parse(row.mailPollOkAt),
+        reportedAt: row.mailStallReportedAt ? Date.parse(row.mailStallReportedAt) : null,
+        now,
+      });
+      if (problem) problems.push({ problem, remember: () => ctx.db.patch(row._id, { mailStallReportedAt: new Date(now).toISOString() }) });
+    }
+
+    for (const number of await ctx.db.query("whatsappNumbers").collect()) {
+      const problem = whatsappProblem({
+        phone: number.phone,
+        name: number.name,
+        lastInboundAt: number.lastInboundAt ?? null,
+        reportedAt: number.inboundStallReportedAt ?? null,
+        now,
+      });
+      if (problem) problems.push({ problem, remember: () => ctx.db.patch(number._id, { inboundStallReportedAt: now }) });
+    }
+
+    // `take` caps the read: the counts only have to cross a threshold, and the
+    // backend refuses a query that reads too much (6 Oct).
+    const pending = await ctx.db.query("cvUploads").withIndex("by_status", (q) => q.eq("status", "pending")).take(200);
+    // `needs_review` is a status of its own, as cvs/healer.ts counts it.
+    const review = await ctx.db.query("cvUploads").withIndex("by_status", (q) => q.eq("status", "needs_review")).take(200);
+    const queueRow = await ctx.db.query("appSettings").withIndex("by_key", (q) => q.eq("key", "cv_queue_health")).first();
+    const queue = cvQueueProblem({
+      waiting: pending.length,
+      needsReview: review.length,
+      reportedAt: queueRow?.cvQueueReportedAt ?? null,
+      now,
+    });
+    if (queue) {
+      problems.push({
+        problem: queue,
+        remember: async () => {
+          if (queueRow) await ctx.db.patch(queueRow._id, { cvQueueReportedAt: now });
+          else await ctx.db.insert("appSettings", { key: "cv_queue_health", cvQueueReportedAt: now });
+        },
+      });
+    }
+
+    if (!problems.length) return { told: 0, problems: [] as string[] };
+
+    const people = (await ctx.db.query("users").withIndex("by_active", (q) => q.eq("isActive", true)).collect())
+      .filter((u) => u.taRole === "admin" || u.role === "admin");
+    for (const { problem, remember } of problems) {
+      for (const person of people) {
+        await ctx.db.insert("notifications", {
+          userId: person._id,
+          type: "mailbox_stalled",
+          title: problem.title,
+          body: problem.body,
+          read: false,
+          createdAt: new Date(now).toISOString(),
+        });
+      }
+      await remember();
+      console.warn(`[readerHealth] ${problem.key}: ${problem.title}; ${people.length} people told.`);
+    }
+    return { told: people.length, problems: problems.map((p) => p.problem.key) };
   },
 });
 

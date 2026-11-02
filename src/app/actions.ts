@@ -1870,10 +1870,10 @@ export async function decideOpeningAccess(formData: FormData) {
 
 export async function setOpeningStatus(formData: FormData) {
   await primeStore({ allApplications: true });
-  await authorize(formData, "opening.manage", { opening: "openingId" });
+  const user = await authorize(formData, "opening.manage", { opening: "openingId" });
   const openingId = String(formData.get("openingId"));
   const status = String(formData.get("status")) as OpeningStatusValue;
-  writeOpeningStatus(openingId, status, OPENING_DEPS);
+  await writeOpeningStatus(user, openingId, status, OPENING_DEPS);
 }
 
 export async function setWorkingStage(formData: FormData) {
@@ -1898,8 +1898,10 @@ export async function setOpeningTeam(formData: FormData) {
   const openingId = String(formData.get("openingId"));
   const ids = formData.getAll("memberId").map(String);
   const roles = formData.getAll("memberRole").map(String);
+  // Absent on the mobile API's form; the lead field only exists on the web (2 Nov).
+  const taLeadId = formData.get("taLeadId") ? String(formData.get("taLeadId")) : undefined;
   // Shared with the mobile API (lib/openings/admin, 22 Oct).
-  const r = await writeOpeningTeam(user, openingId, ids.map((userId, i) => ({ userId, role: roles[i] })), OPENING_DEPS);
+  const r = await writeOpeningTeam(user, openingId, ids.map((userId, i) => ({ userId, role: roles[i] })), OPENING_DEPS, taLeadId);
   if (!r.ok) redirect(`/openings/${openingId}?msg=${encodeURIComponent(r.message)}`);
 }
 
@@ -2084,12 +2086,13 @@ function binOpeningNamed(user: User, openingId: string) {
  */
 export async function updateOpening(formData: FormData) {
   await primeStore({ allApplications: true });
-  await authorize(formData, "opening.manage", { opening: "openingId" });
+  const user = await authorize(formData, "opening.manage", { opening: "openingId" });
   const openingId = String(formData.get("openingId"));
   const field = (name: string, fallback = "") => String(formData.get(name) ?? fallback);
   const workLocations = readWorkLocations(formData, repo.opening(openingId)?.workLocations);
   // Checked and saved by the code the mobile API uses too (lib/openings/admin, 22 Oct).
-  const r = writeOpeningDetails(
+  const r = await writeOpeningDetails(
+    user,
     openingId,
     {
       title: field("title"),

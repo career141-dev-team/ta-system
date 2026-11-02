@@ -192,8 +192,10 @@ async function notify(
     | "workday_started"
     | "workday_finished"
     | "workday_request"
-    | "workday_decision",
+    | "workday_decision"
+    | "workday_expired",
   title: string,
+  workdayId?: Id<"taWorkdays">,
 ) {
   if (!leadId) return;
   await ctx.db.insert("notifications", {
@@ -202,6 +204,7 @@ async function notify(
     type,
     title,
     body: `${user.fullName} · ${new Date().toLocaleString("en-GB", { timeZone: "Asia/Colombo" })}`,
+    ...(workdayId ? { workdayId } : {}),
     read: false,
     createdAt: new Date().toISOString(),
   });
@@ -942,9 +945,18 @@ async function closeWorkday(ctx: MutationCtx, day: Doc<"taWorkdays">, at: number
   for (const request of requests.filter(r => r.status === "pending")) await ctx.db.patch(request._id, {
     status: "denied", decidedAt: at, reason: "Workday closed before approval",
   });
+  const user = await ctx.db.get(day.userId);
   if (reason === "eod") {
-    const user = await ctx.db.get(day.userId);
     if (user) for (const entry of day.jobs) await notify(ctx, entry.leadId, user, entry.jobId, "workday_finished", "Workday completed by EOD email");
+  } else if (user) {
+    // An expired day used to close with nobody told; the lead found the missing EOD by opening
+    // the panel next morning (2 Nov). One bell per lead, linked to the day.
+    const told = new Set<Id<"users">>();
+    for (const entry of day.jobs) {
+      if (!entry.leadId || told.has(entry.leadId)) continue;
+      told.add(entry.leadId);
+      await notify(ctx, entry.leadId, user, entry.jobId, "workday_expired", `Workday ${day.date} expired without an end-of-day email`, day._id);
+    }
   }
 }
 
@@ -1175,7 +1187,9 @@ export const dashboard = internalQuery({
     const worker = ["ta", "ta_support"].includes(role);
     const lead = canLead(user);
     const review = canReviewWorkdays(role);
-    const deskWide = role === "admin" || role === "director" || role === "ta_lead";
+    // The web counts ops as desk-wide (src/lib/auth.ts DESK_WIDE); this list
+    // left ops out, so ops could not open the reviewers' panel (docs/19 P3, 2 Nov).
+    const deskWide = role === "admin" || role === "director" || role === "ta_lead" || role === "ops";
     if (!worker && !review) throw new Error("You cannot access workdays.");
     const now = Date.now();
     const active = worker ? await activeFor(ctx, user._id) : null;

@@ -2675,11 +2675,13 @@ const rawRepo = {
   },
 
   /** Replaces the whole team in one write, and keeps `assignedTaIds` in step
-   *  because the rest of the product reads that for "who is on this". */
+   *  because the rest of the product reads that for "who is on this".
+   *  `taLeadId` is optional: the lead is a field of the opening, not a seat. */
   setAssignments(
     openingId: Id,
     rows: { userId: Id; role: AssignmentRole }[],
     byUserId: Id,
+    taLeadId?: Id,
   ) {
     // The rule lives here as well as in the action. A team with nobody
     // recruiting it is not a team, and a guard that only exists in one form
@@ -2690,9 +2692,16 @@ const rawRepo = {
     if (rows.length > 0 && recruiters.length === 0) return;
 
     mutate((db) => {
+      // Rows are re-created, so a member's work mode must be carried across: every
+      // team save used to flip the whole team back to 100% and the lead then told each
+      // TA on WhatsApp to set it again (2 Nov).
+      const modes = new Map(
+        db.assignments.filter((a) => a.openingId === openingId && a.workingStage).map((a) => [a.userId, a.workingStage]),
+      );
       db.assignments = db.assignments.filter((a) => a.openingId !== openingId);
       for (const r of rows) {
         if (!r.userId) continue;
+        const workingStage = modes.get(r.userId);
         db.assignments.push({
           id: `as_${Math.random().toString(36).slice(2, 10)}`,
           openingId,
@@ -2700,6 +2709,7 @@ const rawRepo = {
           role: r.role,
           assignedAt: Date.now(),
           assignedBy: byUserId,
+          ...(workingStage ? { workingStage } : {}),
         });
       }
       const o = db.openings.find((x) => x.id === openingId);
@@ -2709,6 +2719,7 @@ const rawRepo = {
           .map((r) => r.userId);
         const director = rows.find((r) => r.role === "director");
         o.directorId = director?.userId ?? o.directorId;
+        if (taLeadId) o.taLeadId = taLeadId;
         o.updatedAt = Date.now();
       }
     });
