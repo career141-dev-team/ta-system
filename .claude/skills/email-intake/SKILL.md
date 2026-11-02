@@ -149,7 +149,7 @@ Intake path (only if job@ is enabled in Settings): `replyingCandidate` + `record
 shortlists@ (`kind: "shortlist"`, no grace). `handleShortlistMessage`:
 1. Auto-replies/bounces (`isAutoReply`) -> `skipped`.
 2. `attachRoundTransport` teaches the matching `reviewRounds` row its Graph thread ids; the TA's own tracked EOD copy (same subject, sender in the round, within 1 h, no In-Reply-To) -> `skipped` (22 Oct fix: it carried CVs and was filed as the Director's shortlist).
-3. **No CV**: `decisions.processReply` reads the reply (rules `lib/shortlistReply.parseShortlistReply`, then the AI reader `aiReader.readDirectorReply` for set rebuilds) into a `shortlistDecisionReviews` row. Applied automatically only when `C141_SHORTLIST_AUTO_APPLY === "on"` and the read is clear (historical catch-up needs `applyClear`); otherwise `requireReview` and a `candidate_replied` notification "Shortlist reply needs review" to the set's sender and TA lead. Outcome `filed` (auto) or `held`.
+3. **No CV**: `decisions.processReply` reads the reply (rules `lib/shortlistReply.parseShortlistReply`, then the AI reader `aiReader.readDirectorReply` for set rebuilds) into a `shortlistDecisionReviews` row. Applied automatically only when `C141_SHORTLIST_AUTO_APPLY === "on"` and the read is clear (historical catch-up needs `applyClear`); otherwise `requireReview` and a `candidate_replied` notification "Shortlist reply needs review" to the set's sender and TA lead. What a lead then confirms is stored as `confirmedDecisions` (2 Nov), and `decisions:autoApplyComparison` / `:autoApplyReport` compare it with what the parser proposed — the evidence for turning the flag on (docs/19 7.6). Outcome `filed` (auto) or `held`.
 4. **CVs attached**: sender must be a recorded Director (`shortlist.context`: `DIRECTOR_MAILBOXES` = joborders@ and shamra@ plus active People entries with the director role, both `email` and `routingEmail`); a house subject from anyone else is `held` unread. Director subject `CLIENT > POSITION > SET 01` (`parseHouseSubject`, `matchHouseSubject`) names the opening; a Director without the house subject, or a client, uses `inferOpening`. CVs go through `ingestCvs` with `shortlistCopy: true` (writes nothing onto a held person, 2 Oct), then `fileShortlist` -> `shortlist.moveShortlisted` (forward only via `shouldMove`; missing people get an application first; stage change by `executeStageTransition` as actor `shortlist-mail`, `skipAutoOutreach`, `decidedByReviewer`; `recordShortlistDecision`). Targets: director -> `director_shortlist`, client -> `client_review`. No opening decided -> `held` (a lead places them). Nothing is ever sent.
 
 interviews@ (`kind: "interview"`, 20 min grace): `interviews.readOne` -> `handleInterviewMail` -> `lib/interviewMail.readInterviewMail`. Subject `CLIENT [INTERVIEW] > ROLE > CANDIDATE`; from `@career141.com` = invite (cancel when subject starts "Canceled:", a "Re:" from a TA is ignored); from anyone else = candidate reply (`readAnswer`: confirmed/declined/replied); "CAREER141 INTERVIEW" is the firm's own hiring and ignored. `findApplication`: by recipient address (invite) or sender (reply) at the client (`sameClient`), every record with that address, furthest application wins, ties by `roleOverlap`, ambiguous -> unmatched; no address -> name match only among that client's applications at Second Shortlist or later. `applyInterviewMail`: idempotent through a marker `interviews@ <last 40 chars of message id>` on `pipelineEvents.metadata`; an invite moves to `interview` (actor `interview-mail`) from `second_shortlist|director_shortlist|client_review`, or from `new_cvs|matched_candidates|ta_shortlist|follow_up` only when found by their own address; otherwise it writes an `interview_mail` pipeline event.
@@ -299,9 +299,9 @@ Repo rules that apply: never run `convex deploy/run/import/env set` against live
 - 2026-10-29 Graph webhook: one scheduled read per mailbox (`scheduleWebhookPoll`, 20 s), not one per message.
 
 <!-- skill-meta
-verified-commit: f8f4b53d
-verified-hash: 3807302e2482f7fd058c69d085c84abfb1ed365f
-verified-date: 2026-10-29
+verified-commit: 4877a27a
+verified-hash: 5bc55541f201da4bf8c8b8320770c8b55bf5d315
+verified-date: 2026-11-02
 sources:
   convex/mailIntake/**
   convex/communications/emailAgent.ts
