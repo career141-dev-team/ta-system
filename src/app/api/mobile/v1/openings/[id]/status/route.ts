@@ -20,6 +20,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const decision = await decideOn(user, "opening.manage", { openingId: id }, MOBILE_OPENING_DEPS);
   if (!decision.ok) return refuse(decision.status, decision.message);
-  writeOpeningStatus(id, body.value.status, MOBILE_OPENING_DEPS);
+  await writeOpeningStatus(user, id, body.value.status, MOBILE_OPENING_DEPS);
   return ok<ActionResult>({ ok: true, message: `Status set to ${OPENING_STATUS_LABEL[body.value.status]}.` });
 }

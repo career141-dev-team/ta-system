@@ -262,8 +262,8 @@ Repo hard rules that apply: never run `convex deploy/run/import/env set` or any 
 - 2026-10-28 DeepSeek reasoning off for CV tasks + cut-off JSON retried ("not readable JSON (323 characters)"); Try again / Remove on failed HH and Scoop cards.
 
 <!-- skill-meta
-verified-commit: 4877a27a
-verified-hash: f51834f9c7f90acf115cf461ae3e511a81c7b28e
+verified-commit: b8db147d
+verified-hash: c8c7d0e93bdbfd42c24fa7385ec903c50b9f093f
 verified-date: 2026-11-02
 sources:
   src/components/HhUpload.tsx

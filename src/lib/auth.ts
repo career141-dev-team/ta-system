@@ -156,9 +156,11 @@ export function can(user: User, capability: Capability, ctx: AuthContext = {}): 
       return user.role === "admin" ? ALLOW : deny("Only an admin can manage people.");
 
     case "client.manage":
-      return user.role === "admin" || user.role === "director" || user.role === "ta_lead"
+      // Ops already keeps the commercial records and owns each client, and the
+      // Ops system creates clients through ops (docs/19 A2, 2 Nov).
+      return user.role === "admin" || user.role === "director" || user.role === "ta_lead" || user.role === "ops"
         ? ALLOW
-        : deny("Only a director, lead or admin can change client records.");
+        : deny("Only ops, a director, lead or admin can change client records.");
 
     case "strategy.assign":
     case "strategy.manage":

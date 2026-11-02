@@ -17,6 +17,7 @@ import { getGraphToken } from "../lib/graphClient";
 import { DIRECTOR_MAILBOXES } from "../lib/shortlistMail";
 import type { AiReading } from "../lib/directorReplyAi";
 import { SHORTLIST_MAILBOX } from "./model";
+import { compareReplies, type AutoApplyReport, type ComparedReply } from "../lib/autoApplyCompare";
 
 const decisionValidator = v.object({
   applicationId: v.id("applications"),
@@ -473,6 +474,63 @@ export const processReply = internalAction({
   },
 });
 
+/**
+ * The evidence for turning C141_SHORTLIST_AUTO_APPLY on (docs/19 7.6, 2 Nov).
+ *
+ * Read-only. It compares what the reply reader proposed with what the lead
+ * confirmed, over the last `days` days of live replies. The flag itself is a
+ * backend environment change through the release pipeline and needs the owner's
+ * go-ahead; this only answers whether it would have been right.
+ */
+export const autoApplyComparison = internalQuery({
+  args: { days: v.optional(v.number()) },
+  handler: async (ctx, args): Promise<AutoApplyReport> => {
+    const days = Math.min(Math.max(args.days ?? 7, 1), 120);
+    const since = Date.now() - days * 24 * 60 * 60 * 1000;
+    const rows = (await ctx.db.query("shortlistDecisionReviews").collect())
+      .filter((row) => row.receivedAt >= since && !row.historical);
+
+    // Only a reply a lead has confirmed can answer the question; the rest are
+    // still waiting, were ignored, or were applied automatically already.
+    const answerable: ComparedReply[] = rows
+      .filter((row) => row.status === "confirmed" && (row.confirmedDecisions ?? []).length > 0)
+      .map((row) => ({
+        id: row._id as string,
+        receivedAt: row.receivedAt,
+        clear: (row.reviewReasons ?? []).length === 0,
+        proposed: (row.decisions ?? []).map((d) => ({ applicationId: d.applicationId as string, outcome: d.outcome })),
+        confirmed: (row.confirmedDecisions ?? []).map((d) => ({ applicationId: d.applicationId as string, outcome: d.outcome })),
+      }));
+
+    return {
+      days,
+      flag: process.env.C141_SHORTLIST_AUTO_APPLY === "on" ? "on" : "off",
+      repliesInWindow: rows.length,
+      waitingOnALead: rows.filter((row) => row.status === "review_required").length,
+      confirmedByALead: rows.filter((row) => row.status === "confirmed").length,
+      appliedAutomatically: rows.filter((row) => row.status === "auto_applied").length,
+      ...compareReplies(answerable),
+    };
+  },
+});
+
+/** The same report in plain words, for a pipeline `run_function`. */
+export const autoApplyReport = internalAction({
+  args: { days: v.optional(v.number()) },
+  handler: async (ctx, args): Promise<AutoApplyReport> => {
+    const report: AutoApplyReport = await ctx.runQuery(internal.mailIntake.decisions.autoApplyComparison, { days: args.days });
+    console.log(`[autoApplyReport] Last ${report.days} days. Auto-apply is ${report.flag}.`);
+    console.log(`[autoApplyReport] ${report.summary}`);
+    console.log(`[autoApplyReport] ${report.repliesInWindow} live replies: ${report.waitingOnALead} waiting on a lead, ${report.confirmedByALead} confirmed by a lead, ${report.appliedAutomatically} applied automatically.`);
+    for (const reply of report.disagreements.slice(0, 20)) {
+      for (const d of reply.differences) {
+        console.log(`[autoApplyReport] changed · review ${reply.id} · application ${d.applicationId} · read as ${d.proposed} · confirmed as ${d.confirmed}`);
+      }
+    }
+    return report;
+  },
+});
+
 export const list = internalQuery({
   args: { actorId: v.id("users"), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
@@ -526,7 +584,7 @@ export const confirm = internalMutation({
     if (!review || ["confirmed", "ignored", "auto_applied"].includes(review.status)) throw new Error("That reply has already been completed.");
     if (!review.roundId) throw new Error("Choose the correct review round first.");
     const result = await apply(ctx, review, args.decisions, true, user._id);
-    await ctx.db.patch(review._id, { status: "confirmed", appliedAt: Date.now(), reviewedAt: Date.now(), reviewedBy: user._id, reviewNote: args.note?.slice(0, 500) });
+    await ctx.db.patch(review._id, { status: "confirmed", appliedAt: Date.now(), reviewedAt: Date.now(), reviewedBy: user._id, reviewNote: args.note?.slice(0, 500), confirmedDecisions: args.decisions });
     return result;
   },
 });

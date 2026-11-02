@@ -9,7 +9,7 @@
 // The app hides a copy the moment its month is over (src/data/store.ts
 // eodCopies), so this only has to catch up, not be on time.
 
-import { internalMutation } from "../_generated/server";
+import { internalMutation, type MutationCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { v } from "convex/values";
@@ -25,6 +25,27 @@ const BATCH = 200;
 // Longer than the send action can run (Convex actions stop at 10 minutes), so a live send is never flagged.
 const STUCK_SENDING_MS = 15 * 60000;
 
+/**
+ * The flip to "uncertain" blocked the TA on that opening until they asked somebody (2 Nov):
+ * only the job's TA Lead or an admin can reconcile, so they are the ones told, once per flip.
+ */
+async function tellStuck(ctx: MutationCtx, userId: Id<"users">, jobId: Id<"jobs">, workdayId: Id<"taWorkdays"> | undefined, startedAt: number) {
+  const [user, job] = await Promise.all([ctx.db.get(userId), ctx.db.get(jobId)]);
+  if (!user || !job) return;
+  const people = (await ctx.db.query("users").withIndex("by_active", (q) => q.eq("isActive", true)).collect())
+    .filter((u) => u.taRole === "admin" || u.role === "admin" || u._id === job.taLeadId);
+  const started = new Date(startedAt).toLocaleString("en-GB", { timeZone: "Asia/Colombo" });
+  for (const u of people) {
+    await ctx.db.insert("notifications", {
+      userId: u._id, jobId, ...(workdayId ? { workdayId } : {}),
+      type: "eod_stuck",
+      title: `Stuck end-of-day email: ${user.fullName} · ${job.title}`,
+      body: `The send started at ${started} and never reported a result, so it is marked uncertain and ${user.fullName} cannot send on this opening until it is reconciled. Check the sending mailbox, then reconcile it in Today's Checks.`,
+      read: false, createdAt: new Date().toISOString(),
+    });
+  }
+}
+
 /** Flag sends that never got a result, in their own small transaction so the purge is unaffected. */
 export const flagStuckSends = internalMutation({
   args: {},
@@ -32,14 +53,17 @@ export const flagStuckSends = internalMutation({
     const stuck = await ctx.db.query("dailyEmails").withIndex("by_status", q => q.eq("status", "sending").lt("startedAt", Date.now() - STUCK_SENDING_MS)).take(25);
     for (const email of stuck) {
       await ctx.db.patch(email._id, { status: "uncertain" });
-      if (email.receiptId) await ctx.db.patch(email.receiptId, { status: "uncertain" });
+      const receipt = email.receiptId ? await ctx.db.get(email.receiptId) : null;
+      if (receipt) await ctx.db.patch(receipt._id, { status: "uncertain" });
       await refreshWorkdayChecks(ctx, email.jobId, email.userId);
+      await tellStuck(ctx, email.userId, email.jobId, receipt?.workdayId, email.startedAt ?? email.createdAt);
     }
     // Receipts of the older send path have no daily email to flip them.
     const legacy = await ctx.db.query("taWorkdayMail").withIndex("by_status", q => q.eq("status", "sending").lt("startedAt", Date.now() - STUCK_SENDING_MS)).take(25);
     for (const receipt of legacy.filter(r => !r.dailyEmailId)) {
       await ctx.db.patch(receipt._id, { status: "uncertain" });
       await refreshWorkdayChecks(ctx, receipt.jobId, receipt.userId);
+      await tellStuck(ctx, receipt.userId, receipt.jobId, receipt.workdayId, receipt.startedAt);
     }
     return { flagged: stuck.length + legacy.length };
   },
