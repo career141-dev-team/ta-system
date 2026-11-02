@@ -2241,7 +2241,11 @@ export default defineSchema({
       // A shared mailbox not read for an hour (emailAgent.checkMailboxesRead, 23 Oct).
       v.literal("mailbox_stalled"),
       v.literal("workday_started"), v.literal("workday_finished"),
-      v.literal("workday_request"), v.literal("workday_decision"), v.literal("workday_exception")
+      v.literal("workday_request"), v.literal("workday_decision"), v.literal("workday_exception"),
+      // End-of-day emails nobody was told about (2 Nov): a send flagged uncertain told no one and
+      // blocked the TA until they asked; a missed EOD surfaced next morning; an expired day closed
+      // silently. Raised by ta/eodCopies.flagStuckSends, ta/eodReminders.ts and closeWorkday.
+      v.literal("eod_stuck"), v.literal("eod_reminder"), v.literal("eod_lead_digest"), v.literal("workday_expired")
     ),
     title: v.string(),
     body: v.string(),

@@ -26,6 +26,8 @@ const NOTIFICATION_TYPE = v.union(
   v.literal("strategy_assigned"),
   // A shared mailbox not read for an hour (emailAgent.checkMailboxesRead, 23 Oct).
   v.literal("mailbox_stalled"),
+  // End-of-day emails nobody was told about (ta/eodReminders.ts, ta/eodCopies.ts, 2 Nov).
+  v.literal("eod_stuck"), v.literal("eod_reminder"), v.literal("eod_lead_digest"), v.literal("workday_expired"),
 );
 
 export const create = internalMutation({
@@ -93,7 +95,14 @@ export const listForUser = internalQuery({
                 ? `/openings/${n.jobId}/strategies`
                 : n.type === "mailbox_stalled"
                   ? "/settings?tab=mailboxes"
-                  : null,
+                  // The lead reconciles a stuck send and reads an expired day in Today's Checks (2 Nov).
+                  : (n.type === "eod_stuck" || n.type === "workday_expired") && n.workdayId
+                    ? `/openings?checks=open&checkDay=${encodeURIComponent(n.workdayId)}${n.jobId ? `&checkJob=${encodeURIComponent(n.jobId)}` : ""}`
+                    : n.type === "eod_reminder" && n.jobId
+                      ? `/openings/${n.jobId}/eod`
+                      : n.type === "eod_lead_digest"
+                        ? "/openings?checks=open"
+                        : null,
         read: n.read,
         createdAt: n.createdAt,
       })),
