@@ -331,7 +331,7 @@ function backendMessage(e: unknown, fallback: string): string {
  */
 async function write<T>(run: () => T): Promise<T> {
   try {
-    return run();
+    return await run();
   } catch (e) {
     unstable_rethrow(e);
     return fail(backendMessage(e, "That change could not be saved. Reload the page and try again."));
@@ -1886,10 +1886,10 @@ export async function decideOpeningAccess(formData: FormData) {
 
 export async function setOpeningStatus(formData: FormData) {
   await primeStore({ allApplications: true });
-  await authorize(formData, "opening.manage", { opening: "openingId" });
+  const user = await authorize(formData, "opening.manage", { opening: "openingId" });
   const openingId = String(formData.get("openingId"));
   const status = String(formData.get("status")) as OpeningStatusValue;
-  await write(() => writeOpeningStatus(openingId, status, OPENING_DEPS));
+  await write(() => writeOpeningStatus(user, openingId, status, OPENING_DEPS));
 }
 
 export async function setWorkingStage(formData: FormData) {
@@ -2102,12 +2102,13 @@ function binOpeningNamed(user: User, openingId: string) {
  */
 export async function updateOpening(formData: FormData) {
   await primeStore({ allApplications: true });
-  await authorize(formData, "opening.manage", { opening: "openingId" });
+  const user = await authorize(formData, "opening.manage", { opening: "openingId" });
   const openingId = String(formData.get("openingId"));
   const field = (name: string, fallback = "") => String(formData.get(name) ?? fallback);
   const workLocations = readWorkLocations(formData, repo.opening(openingId)?.workLocations);
   // Checked and saved by the code the mobile API uses too (lib/openings/admin, 22 Oct).
-  const r = writeOpeningDetails(
+  const r = await writeOpeningDetails(
+    user,
     openingId,
     {
       title: field("title"),

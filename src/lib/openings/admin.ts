@@ -5,6 +5,7 @@ import { isTa } from "@/lib/auth";
 import { safeErrorMessage } from "@/lib/userError";
 import type { WorkLocation } from "@/lib/workLocations";
 import type { OpeningWriteDeps } from "@/lib/openings/writes";
+import { RECRUITER_SEATS, tellOpeningPeople } from "@/lib/openings/bells";
 
 /**
  * The Overview's admin actions — access requests, the team, the details form —
@@ -161,12 +162,13 @@ const num = (v: string) => {
 };
 
 /** The details form, checked in the web form's order and words; then saved. */
-export function writeOpeningDetails(
+export async function writeOpeningDetails(
+  user: User,
   openingId: string,
   input: OpeningDetailsInput,
   workLocations: WorkLocation[] | undefined,
-  deps: Pick<OpeningWriteDeps, "revalidatePath">,
-): { ok: true } | { ok: false; message: string } {
+  deps: Pick<OpeningWriteDeps, "revalidatePath" | "convexMutation">,
+): Promise<{ ok: true } | { ok: false; message: string }> {
   const title = input.title.trim();
   if (!title) return { ok: false, message: "An opening needs a title." };
   const salaryMin = num(input.salaryMin);
@@ -178,6 +180,8 @@ export function writeOpeningDetails(
   if (!/^[A-Z]{3}$/.test(currency)) return { ok: false, message: "Pick a currency from the list." };
 
   const live = workLocations?.filter((l) => !l.archived);
+  // Read before the write, so the bell can say what it moved from (docs/19 7.8).
+  const wasTier = repo.opening(openingId)?.priorityTier ?? null;
   repo.updateOpening(openingId, {
     ...(workLocations ? { workLocations } : {}),
     title,
@@ -191,5 +195,12 @@ export function writeOpeningDetails(
     priorityTier: tier as PriorityTier,
   });
   deps.revalidatePath(`/openings/${openingId}`, "layout");
+  if (wasTier && wasTier !== tier) {
+    await tellOpeningPeople(user, openingId, RECRUITER_SEATS, {
+      type: "opening_changed",
+      title: "Priority changed on an opening",
+      body: `${user.name} moved ${title} from ${wasTier} to ${tier}.`,
+    }, deps);
+  }
   return { ok: true };
 }

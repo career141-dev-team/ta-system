@@ -2243,7 +2243,13 @@ export default defineSchema({
       // A shared mailbox not read for an hour (emailAgent.checkMailboxesRead, 23 Oct).
       v.literal("mailbox_stalled"),
       v.literal("workday_started"), v.literal("workday_finished"),
-      v.literal("workday_request"), v.literal("workday_decision"), v.literal("workday_exception")
+      v.literal("workday_request"), v.literal("workday_decision"), v.literal("workday_exception"),
+      // End-of-day emails nobody was told about (2 Nov): a send flagged uncertain told no one and
+      // blocked the TA until they asked; a missed EOD surfaced next morning; an expired day closed
+      // silently. Raised by ta/eodCopies.flagStuckSends, ta/eodReminders.ts and closeWorkday.
+      v.literal("eod_stuck"), v.literal("eod_reminder"), v.literal("eod_lead_digest"), v.literal("workday_expired"),
+      // A priority tier or a status was changed on an opening (2 Nov).
+      v.literal("opening_changed")
     ),
     title: v.string(),
     body: v.string(),
@@ -2308,6 +2314,8 @@ export default defineSchema({
     mailStallReportedAt: v.optional(v.string()),
     /** Messages still waiting after the last run — the catch-up, for Settings. */
     mailWaiting: v.optional(v.number()),
+    /** When the desk was last told the CV reading queue was behind (2 Nov, key `cv_queue_health`). */
+    cvQueueReportedAt: v.optional(v.number()),
     channel_toggles: v.optional(v.object({
       whatsappIngestion: v.boolean(),
       emailIngestion: v.boolean(),
@@ -2507,6 +2515,10 @@ export default defineSchema({
     checkedAt: v.optional(v.number()),
     /** Meta's once-only coexistence syncs already started (`smb_app_state_sync`, `history`). */
     syncsDone: v.optional(v.array(v.string())),
+    /** The last message Meta delivered to this number (2 Nov, docs/19 7.11). */
+    lastInboundAt: v.optional(v.number()),
+    /** When the desk was last told this number had gone quiet. */
+    inboundStallReportedAt: v.optional(v.number()),
   }).index("by_phone", ["phone"]),
 
   // ■■ QUICK CV SCANS (Ad-Hoc Keyword & Criteria Scanning) ■■■■■■■■■■■■■■■■■■■
@@ -3172,6 +3184,16 @@ export default defineSchema({
     reviewedAt: v.optional(v.number()),
     reviewedBy: v.optional(v.id("users")),
     reviewNote: v.optional(v.string()),
+    /**
+     * What the lead actually confirmed, beside `decisions`, which is what the
+     * parser proposed. Kept since 2 Nov so the two can be compared before
+     * C141_SHORTLIST_AUTO_APPLY is turned on live (docs/19 7.6).
+     */
+    confirmedDecisions: v.optional(v.array(v.object({
+      applicationId: v.id("applications"),
+      outcome: v.union(v.literal("shortlisted"), v.literal("rejected"), v.literal("hold")),
+      evidence: v.string(),
+    }))),
   })
     .index("by_source_message", ["sourceMessageId"])
     .index("by_status_received", ["status", "receivedAt"])

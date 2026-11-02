@@ -713,6 +713,17 @@ crons.interval(
   {}
 );
 
+// Every reader, not only the mailboxes: the mail pollers at 20 minutes for job@
+// and 30 for the rest, each WhatsApp number quiet for two working hours, and the
+// CV queue when it is deep or files are piling up unread. One bell per problem
+// per four hours, to admins (docs/19 7.11, 2 Nov).
+crons.interval(
+  "check-readers-healthy",
+  { minutes: 15 },
+  internal.communications.emailAgent.checkReadersHealthy,
+  {}
+);
+
 // Poll per-job dedicated email inboxes (configured via job channel settings) every 17 minutes.
 // System inboxes (linkedin@, cv@, job@) are excluded from this run — they have their own cron entries above.
 crons.interval(
@@ -950,6 +961,10 @@ function addEodCopies(registry: ReturnType<typeof cronJobs>) {
   registry.interval("ta-purge-eod-copies", { minutes: 41 }, internal.ta.eodCopies.purgeExpired, {});
   registry.interval("ta-flag-stuck-sends", { minutes: 5 }, internal.ta.eodCopies.flagStuckSends, {});
   registry.interval("ta-purge-tracking", { minutes: 30 }, makeFunctionReference<"mutation">("ta/tracking:purgeExpired"), {});
+  // Nothing reminded a TA to send the EOD, so a missed one surfaced next morning (2 Nov).
+  // 12:00 UTC = 17:30 Colombo for the TA; 13:00 UTC = 18:30 Colombo for the lead's digest.
+  registry.daily("ta-eod-reminder", { hourUTC: 12, minuteUTC: 0 }, makeFunctionReference<"mutation">("ta/eodReminders:remindMissingEods"), {});
+  registry.daily("ta-eod-lead-digest", { hourUTC: 13, minuteUTC: 0 }, makeFunctionReference<"mutation">("ta/eodReminders:digestMissingEods"), {});
 }
 
 addMailIntake(crons);

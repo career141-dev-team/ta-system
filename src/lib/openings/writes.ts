@@ -4,6 +4,7 @@ import type { User, WorkingStage } from "@/data/types";
 import { can, isTa, type Capability } from "@/lib/auth";
 import { BIN_DAYS } from "@/lib/bin";
 import { safeErrorMessage } from "@/lib/userError";
+import { RECRUITER_SEATS, tellOpeningPeople } from "@/lib/openings/bells";
 
 /**
  * The opening-level decision and writes shared by the web's server actions
@@ -52,11 +53,33 @@ export async function decideOn(
 export const OPENING_STATUSES = ["open", "on_hold", "closed", "filled"] as const;
 export type OpeningStatusValue = (typeof OPENING_STATUSES)[number];
 
+const STATUS_WORDS: Record<OpeningStatusValue, string> = {
+  open: "open again",
+  on_hold: "on hold",
+  closed: "closed",
+  filled: "placed",
+};
+
 /** The status write, after `opening.manage` has been decided. */
-export function writeOpeningStatus(openingId: string, status: OpeningStatusValue, deps: Pick<OpeningWriteDeps, "revalidatePath">): void {
+export async function writeOpeningStatus(
+  user: User,
+  openingId: string,
+  status: OpeningStatusValue,
+  deps: Pick<OpeningWriteDeps, "revalidatePath" | "convexMutation">,
+): Promise<void> {
+  const was = repo.opening(openingId)?.status ?? null;
+  const title = repo.opening(openingId)?.title ?? "an opening";
   repo.setOpeningStatus(openingId, status);
   deps.revalidatePath("/openings", "layout");
   deps.revalidatePath(`/openings/${openingId}`, "layout");
+  // A job going on hold or closing stops everyone's work on it, so say so (2 Nov).
+  if (was && was !== status) {
+    await tellOpeningPeople(user, openingId, RECRUITER_SEATS, {
+      type: "opening_changed",
+      title: "An opening's status changed",
+      body: `${user.name} marked ${title} ${STATUS_WORDS[status]}.`,
+    }, deps);
+  }
 }
 
 export const WORKING_STAGES: WorkingStage[] = ["100%", "Follow-up", "Add-on"];

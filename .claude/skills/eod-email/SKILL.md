@@ -105,6 +105,8 @@ Order of work in `emailEod` matters: CV PDFs and the workbook are built **before
 - `ta/dailyEmails:reconcile` (UI: `DailyEmailView` form -> `reconcileDailyEmail` action): any `admin`, `ta_lead` or `director` since 2 Nov — it used to be only `admin` or the job's own `taLeadId` lead, which held a TA's whole day whenever that one lead was away ("Only a TA Lead, Director or admin can reconcile the email."); status must be `sending`/`uncertain`/`accepted` with no `finalizedAt`; reason 1-1000 chars ("Record how you verified the sending mailbox and its message reference."); `sending` needs >=5 min old ("Wait five minutes and check the sending mailbox before reconciling."); `accepted` cannot be turned into failed. "Verified sent" -> `accepted` + `acceptedAt` + `finalizeDailyEmail` (no resend); "Verified not sent" -> `failed`. Patches `reconciledBy`, `reconciliationReason` on email and receipt, then `refreshWorkdayChecks`.
 - Today's Checks also surfaces reconcile (Workday UI; see /workday).
 - Stuck sends (30 Oct): cron `ta-flag-stuck-sends` (every 5 min, `flagStuckSends`, index `dailyEmails.by_status`) turns any `sending` email older than 15 minutes into `uncertain` (and its receipt) so the Lead sees it; before this a dead action left `sending` for days (Sameera 29 Oct, Priya 23 Oct) and blocked that sender. It never resends. It also flips receipts of the older send path (`taWorkdayMail.by_status`, no daily email). An email with no location holds only a job without locations; midday and corrections now check the research link with the sender's real role.
+- Stuck sends are told (2 Nov): every flip inserts a `notifications` row type `eod_stuck` ("Stuck end-of-day email: <TA> · <opening>") for every active admin and the job's `taLeadId` (`tellStuck` in `ta/eodCopies.ts`; `workdayId` from the receipt so the bell opens Today's Checks at that day and job). Before this the TA was blocked on the opening until they asked somebody; the flag itself told no one.
+- Reminders (2 Nov, `convex/ta/eodReminders.ts`): cron `ta-eod-reminder` at 12:00 UTC (17:30 Colombo) sends each TA one bell `eod_reminder` naming the 100% positions on today's open day with no accepted original EOD (`outstandingToday`: `taWorkdays.by_finished_date` for today, 100% entries only, `jobEodComplete` per entry; linked to the opening's `/eod` page when there is one); cron `ta-eod-lead-digest` at 13:00 UTC (18:30 Colombo) sends each lead one bell `eod_lead_digest` listing "<TA> · <opening>" for their entries (`entry.leadId`, else the job's `taLeadId`). Wording in `src/lib/eodReminders.ts` (tests/eodReminders.test.ts). Returning positions never count; a day with no 100% entry gets nothing.
 
 ### Flow E - Retention and purge
 
@@ -185,7 +187,7 @@ Browser draft behaviour (src/lib/eodDraft.ts): an edit is stored with the record
 ## Backend wiring
 
 - Convex (all internal; called from Next via `convexQuery`/`convexMutation`/`convexAction` in src/lib/convexServer): `ta/dailyEmails:` `list`, `sent`, `createDraft`, `saveDraft`, `begin`, `result`, `reconcile`, `saveAttachment`, `attachment`, `enableRequirement`; `ta/eodMail:send` (action, Node); `ta/eodCopies:` `purgeExpired`, `normalizeRetention`; `ta/workdays:` `eodContext`, `emailPreflight`, `researchExceptionAllowed`, `mailResult`, `beginMail` (legacy), `refreshWorkdayChecks`, `autoCompleteWorkday`; `ta/cv:uploadUrl`; helpers `convex/lib/dailyEmail.ts` (`finalizeDailyEmail`, `dailyEmailsFor`, `middayRequired`), `convex/lib/workLocationEmails.ts`, `convex/lib/workdayChecks.ts` (`requiredChecks`), `convex/lib/graphMail.ts`, `convex/lib/graphClient.ts` (`getGraphToken`), `convex/lib/outreachSafety.ts`, `convex/lib/outboundGuard.ts`.
-- Cron: `ta-purge-eod-copies`, every 41 minutes, no gate (convex/crons.ts).
+- Crons (convex/crons.ts, main registry only): `ta-purge-eod-copies` every 41 minutes; `ta-flag-stuck-sends` every 5 minutes; `ta-eod-reminder` daily 12:00 UTC and `ta-eod-lead-digest` daily 13:00 UTC (`ta/eodReminders:` `remindMissingEods`, `digestMissingEods`, referenced with `makeFunctionReference` because `_generated/api` is checked in). No gate.
 - Next: server actions in src/app/actions.ts (`sendDailyEmail`, `sendEod`, `resendEod`, `addMiddayEmail`, `saveMiddayDraft`, `reconcileDailyEmail`, `emailEod`, `eodResearchSubmission`, `eodWorkContext`, `currentRefereeCalls`, `saveEodEdits`); API route `GET /api/eod/attachment`; `GET /api/prepared-cv/[applicationId]` (preview only). `eodInFlight` (a per-process `Set`) guards the legacy path only; the durable guard for the new path is `begin`.
 - Env names: `EOD_TEST_EMAIL`, `OUTREACH_LIVE`, `OUTREACH_TEST_EMAIL`, `C141_OUTBOUND_ALLOW_EMAILS`, `MS_TENANT_ID`, `MS_CLIENT_ID`, `MS_CLIENT_SECRET`, `MS_SENDER_EMAIL`, `OUTBOUND_EMAIL_SENDER`. Setting `shortlistInbox` (taSettings, via `repo.setting`). No feature kill switch exists for daily emails; the outbound lock and `OUTREACH_LIVE` are the brakes.
 - External: Microsoft Graph (`https://graph.microsoft.com`, via `GRAPH_BASE` in graphMail.ts). Never call it from a laptop-pointed-at-live setup.
@@ -286,11 +288,12 @@ Short hashes from `git log`; dates are commit dates.
 - 2026-10-21 4dd30a8 - work locations: per-location drafts, receipts, EOD; 904e51f, 23fc0f3 - workbook tabs/names by client, position, location; e28b259 - auto-detect profile updates in the composer.
 - 2026-10-22 cc0fca0, 5f8900e, fa22cc4 - TA note edits survive reload, profile updates win, drafts saved before review visits were stamped are kept (release of #243 had wiped box edits); REVISED correction flow reuses the original roster (see 95a32e4 / `previewConfirmed`).
 - 2026-10-23 f3d57d6 - EOD can be sent without CVs (activity-only); c28e1b1 - referee calls section in the email (`refereeCalls` on snapshot, `eodEmailHtml`).
+- 2026-11-02 - nobody was told about end-of-day trouble: a stuck send now bells the admins and the job's lead (`eod_stuck`), a 17:30 reminder bells each TA with a 100% position still without an EOD (`eod_reminder`), an 18:30 digest bells each lead (`eod_lead_digest`), and an expired day bells the lead (`workday_expired`, see /workday). New `convex/ta/eodReminders.ts`, `src/lib/eodReminders.ts`.
 
 <!-- skill-meta
-verified-commit: 69baf76
-verified-hash: ac966bc8dc1c0d7b84efe8e8a355534f9838f336
-verified-date: 2026-10-30
+verified-commit: 1a5d31c5
+verified-hash: ca446ad446f53bfcc7a035a826c6da0e5632e9f5
+verified-date: 2026-11-02
 sources:
   src/app/openings/[id]/eod/page.tsx
   src/app/openings/[id]/midday/page.tsx
@@ -311,6 +314,9 @@ sources:
   convex/ta/dailyEmails.ts
   convex/ta/eodMail.ts
   convex/ta/eodCopies.ts
+  convex/ta/eodReminders.ts
+  src/lib/eodReminders.ts
+  tests/eodReminders.test.ts
   convex/lib/dailyEmail.ts
   convex/lib/graphMail.ts
   convex/lib/workLocationEmails.ts
