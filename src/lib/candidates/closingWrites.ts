@@ -2,6 +2,7 @@ import { repo } from "@/data/store";
 import type { Currency, SalaryBasis, User } from "@/data/types";
 import { colomboLocalToInstant } from "@/lib/calendar";
 import { decideOn, type OpeningWriteDeps } from "@/lib/openings/writes";
+import { tellOpeningPeople } from "@/lib/openings/bells";
 
 export type CandidateClosingWrite =
   | { action: "offer"; salary: number; salaryBasis: SalaryBasis; currency: Currency; startDate: string; terms: string }
@@ -27,7 +28,7 @@ export async function writeCandidateClosing(
   openingId: string,
   applicationId: string,
   input: CandidateClosingWrite,
-  deps: Pick<OpeningWriteDeps, "convexQuery" | "revalidatePath">,
+  deps: Pick<OpeningWriteDeps, "convexQuery" | "revalidatePath" | "convexMutation">,
 ): Promise<CandidateClosingResult> {
   const opening = repo.opening(openingId);
   const app = repo.application(applicationId);
@@ -79,6 +80,16 @@ export async function writeCandidateClosing(
   if (result.ok) {
     deps.revalidatePath(`/openings/${openingId}/candidate/${applicationId}`);
     deps.revalidatePath("/placements");
+    // Asma and the Director used to hear about a placement weeks later, by hand
+    // (docs/19 7.8). `candidate_placed` had never been sent by anything.
+    if (input.action === "place") {
+      const name = repo.candidate(app.candidateId)?.fullName ?? "A candidate";
+      await tellOpeningPeople(user, openingId, ["director"], {
+        type: "candidate_placed",
+        title: "A candidate was placed",
+        body: `${user.name} placed ${name} on ${opening.title}, joining ${input.joinDate}.`,
+      }, deps);
+    }
   }
   return result;
 }

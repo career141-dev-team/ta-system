@@ -11,7 +11,12 @@ const { repo } = await import("@/data/store");
 const { writeCandidateClosing } = await import("@/lib/candidates/closingWrites");
 const { seatFor, visibleToSeat } = await import("@/lib/visibility");
 
-const deps = { convexQuery: async <T,>() => undefined as T, revalidatePath: () => undefined };
+const bells: Record<string, unknown>[] = [];
+const deps = {
+  convexQuery: async <T,>() => undefined as T,
+  convexMutation: async <T,>(_name: string, args: Record<string, unknown>) => (bells.push(args), undefined as T),
+  revalidatePath: () => undefined,
+};
 repo.reset();
 
 test("another recruiter cannot make an offer by direct address", async () => {
@@ -53,6 +58,11 @@ test("an offer can be recorded and turned into a placement", async () => {
   assert.equal(repo.application(app.id)?.stage, "placed");
   assert.equal(repo.offer(offer.id)?.status, "accepted");
   assert.equal(repo.placementForApplication(app.id)?.offerId, offer.id);
+  // `candidate_placed` was declared from the start and never sent (2 Nov).
+  const placedBells = bells.filter((b) => b.type === "candidate_placed");
+  assert(placedBells.length >= 1, "the placement is told to somebody");
+  assert(placedBells.every((b) => b.userId !== lead.id), "not back to the person who placed");
+  assert(String(placedBells[0].body).includes("2030-03-10"), "the bell says the joining day");
 });
 
 test("declining an offer closes it and records why", async () => {

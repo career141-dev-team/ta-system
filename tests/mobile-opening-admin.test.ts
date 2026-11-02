@@ -92,19 +92,37 @@ test("the team saves one seat per person, the last row winning", async () => {
   assert(revalidated.includes(`/openings/${opening.id}`));
 });
 
-test("details are checked in the web form's order and words", () => {
-  const { deps } = fakeDeps();
-  const id = repo.openings()[0].id;
-  assert.deepEqual(writeOpeningDetails(id, details({ title: "  " }), undefined, deps), { ok: false, message: "An opening needs a title." });
-  assert.deepEqual(writeOpeningDetails(id, details({ salaryMin: "500000", salaryMax: "100000" }), undefined, deps), { ok: false, message: "The salary 'from' is higher than the 'to'." });
-  assert.deepEqual(writeOpeningDetails(id, details({ priorityTier: "P9" }), undefined, deps), { ok: false, message: "Pick a priority from the list." });
-  assert.deepEqual(writeOpeningDetails(id, details({ salaryCurrency: "rupees" }), undefined, deps), { ok: false, message: "Pick a currency from the list." });
+test("a priority change tells the people working the opening, but not the person who changed it", async () => {
+  const { deps, convex } = fakeDeps();
+  const opening = repo.openings()[0];
+  const ta = repo.users().find((u) => u.role === "ta" && u.isActive)!;
+  await writeOpeningTeam(synthetic("admin"), opening.id, [{ userId: ta.id, role: "primary_recruiter" }], deps);
+  const was = repo.opening(opening.id)!.priorityTier;
+  const to = was === "P1" ? "P2" : "P1";
+
+  const before = convex.filter((n) => n === "ta/notifications:create").length;
+  assert.deepEqual(await writeOpeningDetails(synthetic("admin"), opening.id, details({ priorityTier: to }), undefined, deps), { ok: true });
+  assert(convex.filter((n) => n === "ta/notifications:create").length > before, "somebody was told");
+
+  // Saving the same tier again is not a change, so nobody is told twice.
+  const after = convex.filter((n) => n === "ta/notifications:create").length;
+  assert.deepEqual(await writeOpeningDetails(synthetic("admin"), opening.id, details({ priorityTier: to }), undefined, deps), { ok: true });
+  assert.equal(convex.filter((n) => n === "ta/notifications:create").length, after, "no bell without a change");
 });
 
-test("details save as the web saved them: numbers read, lists split, a negative is no amount", () => {
+test("details are checked in the web form's order and words", async () => {
   const { deps } = fakeDeps();
   const id = repo.openings()[0].id;
-  assert.deepEqual(writeOpeningDetails(id, details({ salaryMax: "-5000" }), undefined, deps), { ok: true });
+  assert.deepEqual(await writeOpeningDetails(synthetic("admin"), id, details({ title: "  " }), undefined, deps), { ok: false, message: "An opening needs a title." });
+  assert.deepEqual(await writeOpeningDetails(synthetic("admin"), id, details({ salaryMin: "500000", salaryMax: "100000" }), undefined, deps), { ok: false, message: "The salary 'from' is higher than the 'to'." });
+  assert.deepEqual(await writeOpeningDetails(synthetic("admin"), id, details({ priorityTier: "P9" }), undefined, deps), { ok: false, message: "Pick a priority from the list." });
+  assert.deepEqual(await writeOpeningDetails(synthetic("admin"), id, details({ salaryCurrency: "rupees" }), undefined, deps), { ok: false, message: "Pick a currency from the list." });
+});
+
+test("details save as the web saved them: numbers read, lists split, a negative is no amount", async () => {
+  const { deps } = fakeDeps();
+  const id = repo.openings()[0].id;
+  assert.deepEqual(await writeOpeningDetails(synthetic("admin"), id, details({ salaryMax: "-5000" }), undefined, deps), { ok: true });
   const o = repo.opening(id)!;
   assert.equal(o.salaryMin, 250000);
   assert.equal(o.salaryMax, null);

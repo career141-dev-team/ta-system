@@ -26,6 +26,8 @@ const NOTIFICATION_TYPE = v.union(
   v.literal("strategy_assigned"),
   // A shared mailbox not read for an hour (emailAgent.checkMailboxesRead, 23 Oct).
   v.literal("mailbox_stalled"),
+  // A priority tier or a status was changed on an opening (2 Nov).
+  v.literal("opening_changed"),
 );
 
 export const create = internalMutation({
@@ -93,7 +95,9 @@ export const listForUser = internalQuery({
                 ? `/openings/${n.jobId}/strategies`
                 : n.type === "mailbox_stalled"
                   ? "/settings?tab=mailboxes"
-                  : null,
+                  : (n.type === "opening_changed" || n.type === "candidate_placed") && n.jobId
+                    ? `/openings/${n.jobId}`
+                    : null,
         read: n.read,
         createdAt: n.createdAt,
       })),

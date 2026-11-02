@@ -2241,7 +2241,9 @@ export default defineSchema({
       // A shared mailbox not read for an hour (emailAgent.checkMailboxesRead, 23 Oct).
       v.literal("mailbox_stalled"),
       v.literal("workday_started"), v.literal("workday_finished"),
-      v.literal("workday_request"), v.literal("workday_decision"), v.literal("workday_exception")
+      v.literal("workday_request"), v.literal("workday_decision"), v.literal("workday_exception"),
+      // A priority tier or a status was changed on an opening (2 Nov).
+      v.literal("opening_changed")
     ),
     title: v.string(),
     body: v.string(),
