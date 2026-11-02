@@ -171,6 +171,13 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
     const value = body.entry[0].changes[0].value;
     const toNumber = value.metadata?.display_phone_number || "WhatChimp Number";
 
+    // Stamp the receiving number before anything else: a webhook that stops
+    // delivering used to be noticed by nobody (docs/19 7.11, 2 Nov).
+    await ctx.runMutation(internal.settings.whatsappNumbers.markInbound, {
+      phone: toNumber,
+      phoneNumberId: value.metadata?.phone_number_id ?? undefined,
+    });
+
     for (const message of value.messages) {
       const fromNumber = message.from;
       const cleanFromNumber = fromNumber.replace(/[^0-9]/g, "");
