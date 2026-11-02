@@ -59,6 +59,8 @@ HH and Scoop uploads share limits: 10 files per click (`MAX_FILES` in `HhUpload.
 
 ### 3. cvUploads status and processingStage
 
+Queue health (2 Nov): the `check-readers-healthy` cron (15 min, `communications/emailAgent.ts`, rules in `convex/lib/readerHealth.ts`) bells active admins when 25+ uploads sit at `status:"pending"` or 10+ at `status:"needs_review"`, once per 4 h (remembered in `appSettings` key `cv_queue_health`, field `cvQueueReportedAt`). It counts with `take(200)` and never retries anything - the healer crons do that.
+
 `status` (free `v.string()`, no union) values in use: `uploaded`, `pending`, `queued`, `paused`, `processing`, `processed` (also the terminal for "not a CV" and out-of-credits), `completed` (only accepted by `checkUploadedFile`), `failed`, `failed_retry`, `pending_retry`, `extraction_failed_permanent`, `needs_review`, `healing`, `cancelled`, `replaced` (cvReplace). `processingStage` (union in schema, 21 Oct 3528eba): `queued, downloading, extracting_text, ocr, structuring, validating, saving, filing, completed, needs_review, failed`. Stage writes go through `candidates/candidates:updateCvUpload` (also stamps `stageChangedAt`; `countAttempt:true` increments `extractionAttempts`/`lastAttemptAt`; returns `upload.assignToJob`, which is how extraction learns the job to file on).
 
 UI translation of stage -> label/percent/estimate is `convex/lib/cvUploadProgress.ts:uploadProgress` (pure; "Waiting for a CV reader" 8%, "Opening the CV" 16, "Extracting document text" 28, "Reading a scanned CV" 38, "Extracting all CV details" 62, "Checking extracted details" 78, "Saving the complete profile" 88, "Adding the candidate to the opening" 95, "Complete" 100). `FAILED` set = failed, failed_retry, extraction_failed_permanent, cancelled, paused, needs_review. HH/Scoop `status` queries (`ta/hhUpload:status`, `ta/scoopUpload:status`, max 20 ids) add business state `done`/`held` (held = `routeNote` set and not owner) and the panels poll every 4 s via GET on the upload routes; on `done`/`held` the route calls `resetStore()` + `revalidatePath`. A failed card shows **Try again** (PATCH on the upload route -> `ta/hhUpload:retry`, used by HH and Scoop: uploader only, job access + workday scope, resets `status:"uploaded"`, `extractionAttempts:0`, clears `errorMessage`, `enqueueExtraction` from the stored file into the same stub candidate) and **Remove** (drops the card from the list only).
@@ -260,9 +262,9 @@ Repo hard rules that apply: never run `convex deploy/run/import/env set` or any 
 - 2026-10-28 DeepSeek reasoning off for CV tasks + cut-off JSON retried ("not readable JSON (323 characters)"); Try again / Remove on failed HH and Scoop cards.
 
 <!-- skill-meta
-verified-commit: c471ec77
-verified-hash: 5e524749745b92140a339f5b57d4a36cb2f3058b
-verified-date: 2026-10-29
+verified-commit: b8db147d
+verified-hash: c8c7d0e93bdbfd42c24fa7385ec903c50b9f093f
+verified-date: 2026-11-02
 sources:
   src/components/HhUpload.tsx
   src/components/ScoopUpload.tsx

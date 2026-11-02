@@ -2312,6 +2312,8 @@ export default defineSchema({
     mailStallReportedAt: v.optional(v.string()),
     /** Messages still waiting after the last run — the catch-up, for Settings. */
     mailWaiting: v.optional(v.number()),
+    /** When the desk was last told the CV reading queue was behind (2 Nov, key `cv_queue_health`). */
+    cvQueueReportedAt: v.optional(v.number()),
     channel_toggles: v.optional(v.object({
       whatsappIngestion: v.boolean(),
       emailIngestion: v.boolean(),
@@ -2511,6 +2513,10 @@ export default defineSchema({
     checkedAt: v.optional(v.number()),
     /** Meta's once-only coexistence syncs already started (`smb_app_state_sync`, `history`). */
     syncsDone: v.optional(v.array(v.string())),
+    /** The last message Meta delivered to this number (2 Nov, docs/19 7.11). */
+    lastInboundAt: v.optional(v.number()),
+    /** When the desk was last told this number had gone quiet. */
+    inboundStallReportedAt: v.optional(v.number()),
   }).index("by_phone", ["phone"]),
 
   // ■■ QUICK CV SCANS (Ad-Hoc Keyword & Criteria Scanning) ■■■■■■■■■■■■■■■■■■■

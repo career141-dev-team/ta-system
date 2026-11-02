@@ -713,6 +713,17 @@ crons.interval(
   {}
 );
 
+// Every reader, not only the mailboxes: the mail pollers at 20 minutes for job@
+// and 30 for the rest, each WhatsApp number quiet for two working hours, and the
+// CV queue when it is deep or files are piling up unread. One bell per problem
+// per four hours, to admins (docs/19 7.11, 2 Nov).
+crons.interval(
+  "check-readers-healthy",
+  { minutes: 15 },
+  internal.communications.emailAgent.checkReadersHealthy,
+  {}
+);
+
 // Poll per-job dedicated email inboxes (configured via job channel settings) every 17 minutes.
 // System inboxes (linkedin@, cv@, job@) are excluded from this run — they have their own cron entries above.
 crons.interval(
