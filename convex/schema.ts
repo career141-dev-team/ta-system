@@ -3176,6 +3176,16 @@ export default defineSchema({
     reviewedAt: v.optional(v.number()),
     reviewedBy: v.optional(v.id("users")),
     reviewNote: v.optional(v.string()),
+    /**
+     * What the lead actually confirmed, beside `decisions`, which is what the
+     * parser proposed. Kept since 2 Nov so the two can be compared before
+     * C141_SHORTLIST_AUTO_APPLY is turned on live (docs/19 7.6).
+     */
+    confirmedDecisions: v.optional(v.array(v.object({
+      applicationId: v.id("applications"),
+      outcome: v.union(v.literal("shortlisted"), v.literal("rejected"), v.literal("hold")),
+      evidence: v.string(),
+    }))),
   })
     .index("by_source_message", ["sourceMessageId"])
     .index("by_status_received", ["status", "receivedAt"])
