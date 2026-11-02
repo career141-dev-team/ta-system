@@ -46,8 +46,8 @@ export function ExtrasSales() {
     setLoading(true);
     try {
       const r = await fetch(`/api/extras/sales-contacts?${filters(from ? { cursor: from } : {})}`, { cache: "no-store" });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || "Could not load the list.");
+      const d = await r.json().catch(() => null); // a proxy error page is not JSON
+      if (!r.ok || !d) throw new Error(d?.error || "Could not load the list.");
       if (id !== request.current) return;
       setRows((prev) => (more ? [...prev, ...d.rows] : d.rows));
       setCursor(d.cursor);
@@ -71,9 +71,13 @@ export function ExtrasSales() {
 
   const refresh = async () => {
     setError("");
-    const r = await fetch(`/api/extras/sales-contacts${segment ? `?segment=${segment}` : ""}`, { method: "POST" });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) setError(d.error || "Could not start the refresh.");
+    try {
+      const r = await fetch(`/api/extras/sales-contacts${segment ? `?segment=${segment}` : ""}`, { method: "POST" });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) setError(d.error || "Could not start the refresh.");
+    } catch {
+      setError("Could not start the refresh. Try again.");
+    }
     await loadSummary();
   };
 

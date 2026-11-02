@@ -112,7 +112,7 @@ export function LinkExportMenu({ openingId, filters, matchingCount }: LinkExport
             ? "border-brand bg-brand-soft text-brand shadow-xs"
             : "border-rule bg-surface text-ink-soft hover:border-brand-line hover:text-ink hover:shadow-2xs"
         }`}
-        title="Export or copy links into an Excel spreadsheet"
+        title={matchingCount === 0 ? "No rows match these filters." : "Export or copy links into an Excel spreadsheet"}
       >
         <svg
           width={13}

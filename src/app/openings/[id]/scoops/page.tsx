@@ -8,6 +8,8 @@ import { requireSourcingSeat } from "../sourcingGate";
 import { CandidateList, applyFilters, type ListFilters } from "@/components/CandidateList";
 import { StatRow } from "@/components/StatRow";
 import { ScoopUpload } from "@/components/ScoopUpload";
+import { WorkdayBlocked } from "@/components/WorkdayBlocked";
+import { workdayBlock } from "@/lib/openings/workdayGate";
 
 /**
  * Scoops on an opening (29 Sep).
@@ -36,6 +38,7 @@ export default async function ScoopsPage({
   const apps = applyFilters(everyone, filters, user.id);
   const waiting = everyone.filter((a) => !a.ownerTaId).length;
   const canAct = allows(user, "opening.act", { openingId: id, assignment: repo.assignmentFor(id, user.id) ?? null });
+  const blocked = canAct ? await workdayBlock(user, id) : null;
   // Who can have sent it — the same people the scoop rule accepts.
   const senders = repo
     .users()
@@ -54,7 +57,7 @@ export default async function ScoopsPage({
         ]}
       />
 
-      {canAct && <ScoopUpload openingId={id} senders={senders} />}
+      {canAct && (blocked ? <WorkdayBlocked message={blocked} what="upload scoops" /> : <ScoopUpload openingId={id} senders={senders} />)}
 
       <CandidateList
         openingId={id}

@@ -18,7 +18,7 @@ import type { Id } from "../_generated/dataModel";
 import { requireActor, assertJobAccess, optionalActor, WORKS_THE_DESK } from "./guard";
 import { toTaStage } from "./stages";
 import { isScoopSender, scoopFlag } from "../lib/scoopMail";
-import { uploadProgress } from "../lib/cvUploadProgress";
+import { friendlyUploadError, uploadProgress } from "../lib/cvUploadProgress";
 
 /** The pipeline's channel name for it; it reads as E in the TA System, like any uploaded CV. */
 export const SCOOP_CHANNEL = "scoop";
@@ -160,7 +160,7 @@ export const status = internalQuery({
         name: candidate?.fullName ?? null,
         applicationId: app ? (app._id as string) : null,
         stage: app ? toTaStage(app.currentStage) : null,
-        note: progress.state === "failed" ? (upload.errorMessage ?? "The CV could not be read.") : (upload.routeNote ?? null),
+        note: progress.state === "failed" ? friendlyUploadError(upload.errorMessage) : (upload.routeNote ?? null),
       });
     }
     return out;

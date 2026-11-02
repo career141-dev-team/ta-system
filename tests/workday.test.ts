@@ -193,7 +193,7 @@ try {
   assert.equal(rows("taWorkdays")[0].startedAt, clock);
   await assert.rejects(
     () => assertWorkdayScope(ctx, rows("users")[0] as any, "job2" as any),
-    /Add this assigned position to your workday first/,
+    /is not on today's workday/,
   );
   const addedSecond = await run("addPosition", {
     actorId: "ta",

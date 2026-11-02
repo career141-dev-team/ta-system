@@ -120,7 +120,7 @@ export function FeedbackWidget({ isTa = true }: { isTa?: boolean } = {}) {
           setErrorMessage(res.message);
         }
       } catch (err: unknown) {
-        setErrorMessage(err instanceof Error ? err.message : "Failed to submit feedback.");
+        setErrorMessage("Feedback could not be sent. Try again.");
       }
     });
   };

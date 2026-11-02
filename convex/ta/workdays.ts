@@ -80,7 +80,7 @@ async function assignedJob(ctx: Ctx, user: Doc<"users">, id: Id<"jobs">) {
   if (!job || isGone(job)) throw new Error("That job is no longer available.");
   if (!job.taLeadId)
     throw new Error(
-      "Ask the lead to assign a TA Lead to this job before starting work.",
+      "This job has no TA Lead yet. Ask an admin to set one on the opening, then pick it again.",
     );
   return job;
 }
@@ -1703,7 +1703,7 @@ export const addPosition = internalMutation({
     const day = await ownedActive(ctx, user, args.workdayId);
     if (day.jobs.some((j) => j.jobId === args.jobId)) return { pending: false };
     if (day.jobs.filter(j => !j.carried).length >= 10)
-      throw new Error("A workday supports at most ten positions.");
+      throw new Error("A workday supports at most ten positions. You already have ten today, so add this one tomorrow or ask your TA Lead.");
     const job = await assignedJob(ctx, user, args.jobId);
     const mode = await suggestedMode(ctx, user._id, args.jobId, args.workType);
     if (mode === "100%" && count100(day.jobs) >= MAX_100_PER_DAY) throw new Error(MAX_100_MESSAGE);

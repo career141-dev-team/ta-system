@@ -7,6 +7,7 @@ import { currentUser } from "@/lib/session";
 import { mayChangeCv } from "@/lib/cvAccess";
 import { convexMutation, internalUploadUrl } from "@/lib/convexServer";
 import { safeErrorMessage } from "@/lib/userError";
+import { workdayBlock } from "@/lib/openings/workdayGate";
 
 /**
  * A CV added from the candidate sheet (21 Sep: "uploading one from here is not
@@ -51,8 +52,11 @@ export async function POST(req: NextRequest) {
   const app = repo.application(applicationId);
   if (!app) return answer(false, "That application no longer exists. Reload the page.", 404);
   if (!mayChangeCv(user, app.id)) {
-    return answer(false, "You cannot change this candidate's CV through this opening.", 403);
+    return answer(false, "You cannot change this candidate's CV through this opening. If another recruiter has claimed this candidate, ask them or your TA Lead.", 403);
   }
+  // The workday rule before the file is stored, not after (2 Nov).
+  const blocked = await workdayBlock(user, app.openingId);
+  if (blocked) return answer(false, blocked, 409);
 
   if (!isConvex()) {
     // The file store keeps no files, so there is nowhere to put one.

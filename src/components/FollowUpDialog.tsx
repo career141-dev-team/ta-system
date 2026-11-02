@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { sendFollowUpNowInline, stopFollowUpNowInline } from "@/app/actions";
+import { safeErrorMessage } from "@/lib/userError";
 import { ActionNote, SubmitButton, latest, submitted, useInline } from "./Submit";
 
 /**
@@ -80,7 +81,8 @@ export function FollowUpDialog({
     fetch(`/api/conversation/${applicationId}`)
       .then(async (r) => (r.ok ? r.json() : Promise.reject(new Error(await r.text()))))
       .then(setData)
-      .catch(() => setError("The conversation could not be loaded."));
+      // Show the server's sentence when it is plain; safeErrorMessage drops stack traces and URLs.
+      .catch((e) => setError(safeErrorMessage(e, "The conversation could not be loaded.")));
     const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
     document.addEventListener("keydown", esc);
     return () => document.removeEventListener("keydown", esc);

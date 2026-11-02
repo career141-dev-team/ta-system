@@ -193,7 +193,11 @@ export function DeskAssistant() {
       ]);
       if (body.ok) router.refresh();
     } catch {
-      setTurns((t) => t.map((x, i) => (i === index ? { ...x, decision: "failed" } : x)));
+      // 2 Nov 2026: a dropped connection showed "Not done" with no reason, and the action may have run.
+      setTurns((t) => [
+        ...t.map((x, i) => (i === index ? { ...x, decision: "failed" as Turn["decision"] } : x)),
+        { role: "assistant", text: "Couldn't reach the desk. Check before trying again, it may already have run.", error: true },
+      ]);
     }
   };
 

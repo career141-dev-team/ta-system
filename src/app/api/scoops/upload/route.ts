@@ -7,6 +7,7 @@ import { currentUser } from "@/lib/session";
 import { allows } from "@/lib/auth";
 import { convexMutation, convexQuery, internalUploadUrl } from "@/lib/convexServer";
 import { safeErrorMessage } from "@/lib/userError";
+import { workdayBlock } from "@/lib/openings/workdayGate";
 
 /**
  * Scoops on an opening (29 Sep): the CVs a lead sent the TA, uploaded here
@@ -59,6 +60,9 @@ export async function POST(req: NextRequest) {
 
   const { user, message, status } = await mayUpload(openingId);
   if (!user) return refuse(message, status);
+  // The workday rule before the file is stored, not after (2 Nov).
+  const blocked = await workdayBlock(user, openingId);
+  if (blocked) return refuse(blocked, 409);
   if (!isConvex()) {
     // The file store keeps no files and runs no extraction.
     return refuse("CV files are read by the candidate database, which this local build is not connected to.", 501);

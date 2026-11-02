@@ -13,6 +13,14 @@ async function settings() {
   return { ...DEFAULTS, ...(await chrome.storage.sync.get(null)) };
 }
 
+// 2 Nov 2026: the popup showed raw codes ("not_a_linkedin_profile", "Platform said 502").
+// Known codes become a sentence saying what to do; anything else gets a plain fallback.
+function plainReason(data) {
+  if (data.error === "not_a_linkedin_profile") return "This page is not a LinkedIn profile. Open the person's profile, then capture.";
+  if (data.error === "bad_token") return "Paste a fresh access token in the extension.";
+  return "Could not save this profile. Try again.";
+}
+
 async function post(path, body) {
   const { platformUrl, token } = await settings();
   if (!token) throw new Error("No access token — open the extension and paste one");
@@ -23,7 +31,7 @@ async function post(path, body) {
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.message || data.error || `Platform said ${res.status}`);
+  if (!res.ok) throw new Error(plainReason(data));
   return data;
 }
 
@@ -34,7 +42,7 @@ async function get(path) {
     headers: { "X-C141-Token": token },
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.message || data.error || `Platform said ${res.status}`);
+  if (!res.ok) throw new Error(plainReason(data));
   return data;
 }
 

@@ -46,7 +46,7 @@ import { BACK_TO_TABLES_REASON, movedBackToTables, awaitingShortlist } from "@/l
 import { BULK_STAGES } from "@/lib/bulkStages";
 import { linkedinPostUrl } from "@/lib/workdayRequirements";
 import { extractFromText, EMPTY_EXTRACT } from "@/lib/intake";
-import { redirect as nextRedirect } from "next/navigation";
+import { redirect as nextRedirect, unstable_rethrow } from "next/navigation";
 import { invalidateCandidate, markTablesStale, resetStore, withRealIds } from "@/data/primeState";
 import { contextFor } from "@/lib/openings/jdDraft";
 import { saveNewClient as sharedSaveNewClient, saveNewOpening as sharedSaveNewOpening } from "@/lib/openings/create";
@@ -320,6 +320,22 @@ function reasonInWords(reason: string | undefined): string {
 /** The backend's own reason, without the transport's wrapping. */
 function backendMessage(e: unknown, fallback: string): string {
   return safeErrorMessage(e, fallback);
+}
+
+/**
+ * Run a repo write that is saved to the backend. A refusal there (someone else
+ * changed the record, a location was archived) used to throw out of the action
+ * and replace the page with "This page could not load", losing what was typed
+ * and the plain sentence the backend gave (2 Nov). It now goes back to the page
+ * as a red message, like any other refusal.
+ */
+async function write<T>(run: () => T): Promise<T> {
+  try {
+    return run();
+  } catch (e) {
+    unstable_rethrow(e);
+    return fail(backendMessage(e, "That change could not be saved. Reload the page and try again."));
+  }
 }
 
 /** What the shared opening writes (lib/openings/writes) need from this app. */
@@ -1324,7 +1340,7 @@ export async function setPostStatus(formData: FormData) {
   const openingId = String(formData.get("openingId"));
   const postId = String(formData.get("postId"));
   const status = String(formData.get("status")) as "draft" | "live" | "paused" | "closed";
-  const r = repo.updatePost(postId, { status, postedAt: status === "live" ? Date.now() : undefined });
+  const r = await write(() => repo.updatePost(postId, { status, postedAt: status === "live" ? Date.now() : undefined }));
   // "Set live" before the JD is approved used to fail with no message at all.
   if (!r.ok) await fail(r.message);
   revalidatePath(`/openings/${openingId}`, "layout");
@@ -1337,7 +1353,7 @@ export async function transferCvs(formData: FormData) {
   const openingId = String(formData.get("openingId"));
   const from = String(formData.get("fromPostId"));
   const to = String(formData.get("toPostId"));
-  if (from && to && from !== to) repo.transferApplications(from, to);
+  if (from && to && from !== to) await write(() => repo.transferApplications(from, to));
   revalidatePath(`/openings/${openingId}`, "layout");
 }
 
@@ -1350,7 +1366,7 @@ export async function declineOffer(formData: FormData) {
   const appId = String(formData.get("appId"));
   const openingId = String(formData.get("openingId"));
   const reason = String(formData.get("reason") ?? "Declined the offer");
-  repo.declineOffer(appId, reason, user.id);
+  await write(() => repo.declineOffer(appId, reason, user.id));
   revalidatePath(`/openings/${openingId}`, "layout");
   redirect(
     `/openings/${openingId}/pipeline/dropped_out?msg=${encodeURIComponent(
@@ -1873,7 +1889,7 @@ export async function setOpeningStatus(formData: FormData) {
   await authorize(formData, "opening.manage", { opening: "openingId" });
   const openingId = String(formData.get("openingId"));
   const status = String(formData.get("status")) as OpeningStatusValue;
-  writeOpeningStatus(openingId, status, OPENING_DEPS);
+  await write(() => writeOpeningStatus(openingId, status, OPENING_DEPS));
 }
 
 export async function setWorkingStage(formData: FormData) {
@@ -2197,7 +2213,7 @@ export async function deleteJobPost(formData: FormData) {
   await primeStore({ allApplications: true });
   await authorize(formData, "opening.manage", { post: "postId", opening: "openingId" });
   const openingId = String(formData.get("openingId"));
-  repo.deleteJobPost(String(formData.get("postId")));
+  await write(() => repo.deleteJobPost(String(formData.get("postId"))));
   revalidatePath(`/openings/${openingId}`, "layout");
 }
 
@@ -3160,7 +3176,7 @@ export async function runBenchmark(formData: FormData) {
 export async function pickBenchmark(formData: FormData) {
   await primeStore({ allApplications: true });
   await authorize(formData, "opening.sourcing", { benchmark: "entryId", opening: "openingId" });
-  repo.toggleBenchmark(String(formData.get("entryId")));
+  await write(() => repo.toggleBenchmark(String(formData.get("entryId"))));
   revalidatePath(`/openings/${String(formData.get("openingId"))}/hh`, "layout");
 }
 
@@ -3356,7 +3372,7 @@ export async function keepSuggestion(formData: FormData) {
   const id = String(formData.get("suggestionId"));
   const s = repo.suggestions(openingId).find((x) => x.id === id);
   if (!s) await fail("That suggestion is no longer there — the list may have been regenerated.");
-  repo.setSuggestionStatus(id, "kept", "more_like_this", user.id);
+  await write(() => repo.setSuggestionStatus(id, "kept", "more_like_this", user.id));
   let held: CvMatch | null = null;
   let also = "";
   if (s!.linkedinUrl) {
@@ -3481,7 +3497,7 @@ export async function chooseCvInline(_: ActionResult | null, formData: FormData)
 export async function dismissSuggestion(formData: FormData) {
   await primeStore({ allApplications: true });
   await authorize(formData, "opening.sourcing", { suggestion: "suggestionId", opening: "openingId" });
-  repo.setSuggestionStatus(String(formData.get("suggestionId")), "dismissed", "not_relevant");
+  await write(() => repo.setSuggestionStatus(String(formData.get("suggestionId")), "dismissed", "not_relevant"));
   revalidatePath(`/openings/${String(formData.get("openingId"))}/hh/suggestions`);
 }
 
@@ -3895,7 +3911,7 @@ export async function recordFollowUpAttempt(formData: FormData) {
     taName: user.name.split(" ")[0],
   }).filter((d) => !only || only === "both" || d.channel === only);
 
-  const r = repo.recordAttempt({ applicationId: appId, drafts, byUserId: user.id });
+  const r = await write(() => repo.recordAttempt({ applicationId: appId, drafts, byUserId: user.id }));
   revalidatePath("/alerts");
   redirect(`${here}${r.ok ? "" : `&msg=${encodeURIComponent(r.message)}`}`);
 }
@@ -3936,7 +3952,7 @@ export async function saveFollowUpAnswers(formData: FormData) {
     if (k.startsWith("q_")) extra[k.slice(2)] = String(v).trim();
     if (k.startsWith("std_")) standard[k.slice(4)] = String(v).trim();
   }
-  repo.saveAnswers(appId, Object.fromEntries(Object.entries(extra).filter(([, v]) => v)));
+  await write(() => repo.saveAnswers(appId, Object.fromEntries(Object.entries(extra).filter(([, v]) => v))));
   const notice = standard.noticePeriodDays ? Number(standard.noticePeriodDays.replace(/[^\d]/g, "")) : null;
   repo.updateCandidate(app.candidateId, {
     ...(standard.currentSalary ? { currentSalary: standard.currentSalary } : {}),
@@ -4017,7 +4033,7 @@ export async function setOpeningQuestions(formData: FormData) {
     id: existing.find((q) => q.label === label)?.id ?? `q${Math.random().toString(36).slice(2, 8)}`,
     label,
   }));
-  repo.setOpeningQuestions(openingId, questions);
+  await write(() => repo.setOpeningQuestions(openingId, questions));
   revalidatePath(`/openings/${openingId}`, "layout");
   await back("Follow-up questions saved.");
 }
@@ -4552,11 +4568,11 @@ export async function sendDailyEmail(formData: FormData) {
     catch { message += " Email sent; profile edits could not be saved. Review the candidate records."; }
     await afterBackendWrite(openingId);
   } catch (e) {
-    message = sentId ? "Email sent and recorded. Reload to see its saved copy." : backendMessage(e, "Could not send the email. Check its status before retrying.");
+    message = sentId ? "Email sent and recorded. Reload to see its saved copy." : backendMessage(e, "Could not confirm the email was sent. Do not send it again yet: ask your TA Lead to check the mailbox and reconcile it in Today's Checks.");
   }
   revalidatePath(`/openings/${openingId}`, "layout");
   const mail = sentId || draftId || parentId;
-  redirect(`${baseUrl}?${workLocationId ? `location=${encodeURIComponent(workLocationId)}&` : ""}${mail ? `mail=${encodeURIComponent(mail)}&` : ""}${sentId ? `sent=${encodeURIComponent(sentId)}&` : ""}msg=${encodeURIComponent(message)}`);
+  redirect(`${baseUrl}?${workLocationId ? `location=${encodeURIComponent(workLocationId)}&` : ""}${mail ? `mail=${encodeURIComponent(mail)}&` : ""}${sentId ? `sent=${encodeURIComponent(sentId)}&` : ""}msg=${encodeURIComponent(message)}${sentId ? "" : "&tone=error"}`);
 }
 
 export async function sendEod(formData: FormData) {

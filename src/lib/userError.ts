@@ -17,6 +17,8 @@ const TECHNICAL = [
   /[A-Z]:\\|\/home\/|\/var\/|\/opt\//,
   /https?:\/\//i,
   /<\/?(?:html|body|pre)\b/i,
+  // "[403] Access denied…", "[StateMachine] …": a code in front is engineering text (2 Nov).
+  /^\[/,
 ];
 
 export function isTechnicalMessage(value: string): boolean {

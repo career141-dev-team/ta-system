@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Spinner } from "./Submit";
+import { WorkdayBlocked } from "./WorkdayBlocked";
 
 /**
  * "Upload headhunted CV" on TA Follow-up (28 Sep).
@@ -39,7 +40,7 @@ const LINE: Record<Row["state"], string> = {
 
 const shortTime = (ms: number) => ms < 60_000 ? `${Math.max(1, Math.round(ms / 1000))}s` : `${Math.floor(ms / 60_000)}m ${Math.round((ms % 60_000) / 1000)}s`;
 
-export function HhUpload({ openingId, workLocationId }: { openingId: string; workLocationId?: string }) {
+export function HhUpload({ openingId, workLocationId, blocked }: { openingId: string; workLocationId?: string; blocked?: string | null }) {
   const queueKey = `hh-upload-queue:${openingId}${workLocationId ? `:${workLocationId}` : ""}`;
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState<Row[]>([]);
@@ -160,7 +161,7 @@ export function HhUpload({ openingId, workLocationId }: { openingId: string; wor
           if (json.ok && json.id) patch(fresh[i].key, { id: json.id, state: "reading", stage: "queued", label: "Waiting for a CV reader", progress: 8 });
           else patch(fresh[i].key, { state: "failed", note: json.message ?? "The upload failed." });
         } catch {
-          patch(fresh[i].key, { state: "failed", note: "The upload did not reach the server. Try again." });
+          patch(fresh[i].key, { state: "failed", note: "No answer from the server. Check the list below before uploading this file again." });
         }
       }
     };
@@ -176,8 +177,14 @@ export function HhUpload({ openingId, workLocationId }: { openingId: string; wor
     const tick = async () => {
       try {
         const res = await fetch(`/api/hh/upload?openingId=${encodeURIComponent(openingId)}&ids=${encodeURIComponent(waitingKey)}`);
-        const json = (await res.json()) as { ok: boolean; files?: (Pick<Row, "state" | "name" | "note" | "stage" | "label" | "progress" | "elapsedMs" | "estimateSeconds"> & { id: string })[] };
-        if (stop || !json.ok || !json.files) return;
+        const json = (await res.json()) as { ok: boolean; message?: string; files?: (Pick<Row, "state" | "name" | "note" | "stage" | "label" | "progress" | "elapsedMs" | "estimateSeconds"> & { id: string })[] };
+        if (stop) return;
+        // A refusal (signed out, no longer on the opening) used to leave the row spinning for ever (2 Nov).
+        if (json.ok === false) {
+          setRows((rs) => rs.map((r) => (r.state === "reading" && r.id ? { ...r, state: "failed", note: json.message ?? "Could not check this CV. Reload the page." } : r)));
+          return;
+        }
+        if (!json.files) return;
         let landed = false;
         setRows((rs) =>
           rs.map((r) => {
@@ -187,7 +194,8 @@ export function HhUpload({ openingId, workLocationId }: { openingId: string; wor
               seenDone.current.add(f.id);
               landed = true;
             }
-            return { ...r, ...f, name: f.name ?? r.name };
+            const stuck = f.state === "reading" && r.createdAt && Date.now() - r.createdAt > 10 * 60_000;
+            return { ...r, ...f, name: f.name ?? r.name, ...(stuck ? { note: "Still not finished after 10 minutes. Reload the page; if it stays like this, tell your lead." } : {}) };
           }),
         );
         if (landed) router.refresh();
@@ -202,6 +210,8 @@ export function HhUpload({ openingId, workLocationId }: { openingId: string; wor
       clearInterval(timer);
     };
   }, [waitingKey, openingId, router]);
+
+  if (blocked && rows.length === 0) return <WorkdayBlocked message={blocked} what="upload headhunted CVs" />;
 
   const activeCount = rows.filter((r) => r.state === "uploading" || r.state === "reading").length;
 
@@ -288,7 +298,7 @@ export function HhUpload({ openingId, workLocationId }: { openingId: string; wor
                     <div className="min-w-0">
                       <div className="truncate font-medium">{r.name ?? r.fileName}</div>
                       {r.name && <div className="truncate text-[11.5px] text-ink-faint">{r.fileName}</div>}
-                      {r.note && <div className="text-[11.5px] text-ink-soft">{r.note}</div>}
+                      {r.note && <div className={`text-[11.5px] ${r.state === "failed" || r.state === "missing" ? "text-danger" : "text-ink-soft"}`}>{r.note}</div>}
                       {r.state === "reading" && typeof r.progress === "number" && (
                         <>
                           <div className="mt-1.5 h-1.5 w-48 max-w-full overflow-hidden rounded-full bg-rule">
@@ -308,7 +318,7 @@ export function HhUpload({ openingId, workLocationId }: { openingId: string; wor
                       }`}
                     >
                       {(r.state === "uploading" || r.state === "reading") && <Spinner tone="dark" />}
-                      {r.state === "reading" ? (r.label ?? LINE.reading) : LINE[r.state]}
+                      {r.state === "reading" ? (r.label ?? LINE.reading) : r.state === "failed" && !r.id ? "Not uploaded" : LINE[r.state]}
                       {r.state === "failed" && r.id && (
                         <button type="button" onClick={() => retry(r)} className="ml-2 rounded-full border border-brand-line px-2.5 py-0.5 text-[11.5px] font-medium text-brand hover:bg-brand-soft cursor-pointer">
                           Try again

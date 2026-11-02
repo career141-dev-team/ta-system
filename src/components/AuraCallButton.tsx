@@ -113,7 +113,13 @@ function AuraCallDialog({
     setLines([]);
     heard.current = [];
     setPhase("connecting");
-    const r = await startWebCall(applicationId, openingId);
+    // 2 Nov 2026: a rejected action used to leave the dialog stuck on "connecting".
+    const r = await startWebCall(applicationId, openingId).catch(() => null);
+    if (!r) {
+      setPhase("error");
+      setMessage("The call could not start. Try again.");
+      return;
+    }
     if (!r.ok) {
       setPhase("error");
       setMessage(r.message);
@@ -179,11 +185,14 @@ function AuraCallDialog({
       durationSeconds: (Date.now() - startedAt.current) / 1000,
       lines: heard.current,
       reason,
-    });
+    }).catch(() => ({ ok: false, answered: false }));
     setPhase(failed ? "error" : "ended");
     if (!failed) {
+      // 2 Nov 2026: a save that failed read "Nobody answered"; say it was not saved.
       setMessage(
-        r.answered
+        !r.ok
+          ? "The call could not be saved. Note the answers now."
+          : r.answered
           ? "Call saved. The answers are being read into the candidate's record — they show on the Call tab in a few seconds."
           : heard.current.length === 0
             ? "Aura never joined the call, so nothing was saved. Is the Aura voice agent running?"

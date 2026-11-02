@@ -172,8 +172,10 @@ export function FeedbackDesk({ initialFeedbacks, currentUser }: FeedbackDeskProp
     setIsBulkPending(true);
     try {
       const ids = Array.from(selectedIds);
-      await markFeedbacksReadAction(ids);
-      setSelectedIds(new Set());
+      // 2 Nov 2026: {ok:false} used to clear the selection as if it worked.
+      const res = await markFeedbacksReadAction(ids);
+      if (res.ok) setSelectedIds(new Set());
+      else setActionError("Could not mark these as read. Sign in again and try once more.");
     } catch {
       setActionError("Failed to mark feedback as read.");
     } finally {
@@ -277,7 +279,7 @@ export function FeedbackDesk({ initialFeedbacks, currentUser }: FeedbackDeskProp
           setActionError(res.message);
         }
       } catch (err: unknown) {
-        setActionError(err instanceof Error ? err.message : "Failed to submit review.");
+        setActionError("Failed to submit review.");
       }
     });
   };
@@ -318,7 +320,7 @@ export function FeedbackDesk({ initialFeedbacks, currentUser }: FeedbackDeskProp
           setActionError(res.message);
         }
       } catch (err: unknown) {
-        setActionError(err instanceof Error ? err.message : "Failed to update status.");
+        setActionError("Failed to update status.");
       }
     });
   };
@@ -396,7 +398,7 @@ export function FeedbackDesk({ initialFeedbacks, currentUser }: FeedbackDeskProp
           setActionError(res.message);
         }
       } catch (err: unknown) {
-        setActionError(err instanceof Error ? err.message : "Submission failed.");
+        setActionError("Submission failed.");
       }
     });
   };
@@ -637,6 +639,8 @@ export function FeedbackDesk({ initialFeedbacks, currentUser }: FeedbackDeskProp
                 Delete
               </button>
             )}
+            {/* The modals show actionError too; the bulk bar has none open, so show it here. */}
+            {actionError && !isBulkPending && <p role="alert" className="w-full text-[12px] text-danger">{actionError}</p>}
           </div>
         )}
       </div>
