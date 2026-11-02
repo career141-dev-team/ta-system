@@ -101,7 +101,7 @@ Order of work in `emailEod` matters: CV PDFs and the workbook are built **before
 ### Flow D - Failure, uncertainty, reconcile
 
 - Graph failure classification (`ta/eodMail:send`): result `ok:false` -> `uncertain` when the error matches `/could not be reached|returned 5\d\d/i`, else `failed`. A thrown error in the action -> `uncertain` and rethrown. **Uncertain is never retried automatically**; `dailySendProblem` and `begin` block every later send on that location until reconciled. `failed` drafts (midday) can be retried; a failed EOD shows "Return to the composer to retry".
-- `ta/dailyEmails:reconcile` (UI: `DailyEmailView` form -> `reconcileDailyEmail` action): only `admin` or the job's `taLeadId` lead; status must be `sending`/`uncertain`/`accepted` with no `finalizedAt`; reason 1-1000 chars ("Record how you verified the sending mailbox and its message reference."); `sending` needs >=5 min old ("Wait five minutes and check the sending mailbox before reconciling."); `accepted` cannot be turned into failed. "Verified sent" -> `accepted` + `acceptedAt` + `finalizeDailyEmail` (no resend); "Verified not sent" -> `failed`. Patches `reconciledBy`, `reconciliationReason` on email and receipt, then `refreshWorkdayChecks`.
+- `ta/dailyEmails:reconcile` (UI: `DailyEmailView` form -> `reconcileDailyEmail` action): any `admin`, `ta_lead` or `director` since 2 Nov — it used to be only `admin` or the job's own `taLeadId` lead, which held a TA's whole day whenever that one lead was away ("Only a TA Lead, Director or admin can reconcile the email."); status must be `sending`/`uncertain`/`accepted` with no `finalizedAt`; reason 1-1000 chars ("Record how you verified the sending mailbox and its message reference."); `sending` needs >=5 min old ("Wait five minutes and check the sending mailbox before reconciling."); `accepted` cannot be turned into failed. "Verified sent" -> `accepted` + `acceptedAt` + `finalizeDailyEmail` (no resend); "Verified not sent" -> `failed`. Patches `reconciledBy`, `reconciliationReason` on email and receipt, then `refreshWorkdayChecks`.
 - Today's Checks also surfaces reconcile (Workday UI; see /workday).
 - Stuck sends (30 Oct): cron `ta-flag-stuck-sends` (every 5 min, `flagStuckSends`, index `dailyEmails.by_status`) turns any `sending` email older than 15 minutes into `uncertain` (and its receipt) so the Lead sees it; before this a dead action left `sending` for days (Sameera 29 Oct, Priya 23 Oct) and blocked that sender. It never resends. It also flips receipts of the older send path (`taWorkdayMail.by_status`, no daily email). An email with no location holds only a job without locations; midday and corrections now check the research link with the sender's real role.
 
@@ -287,9 +287,9 @@ Short hashes from `git log`; dates are commit dates.
 - 2026-10-23 f3d57d6 - EOD can be sent without CVs (activity-only); c28e1b1 - referee calls section in the email (`refereeCalls` on snapshot, `eodEmailHtml`).
 
 <!-- skill-meta
-verified-commit: e3ed042
-verified-hash: 08b68c06390cb68c99dc845533423d2ca5daa7c2
-verified-date: 2026-10-30
+verified-commit: 9deff7ef
+verified-hash: 34715fde790e617da0218f8ad2f6145bd8069ecd
+verified-date: 2026-11-02
 sources:
   src/app/openings/[id]/eod/page.tsx
   src/app/openings/[id]/midday/page.tsx
