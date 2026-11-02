@@ -17,11 +17,10 @@ import { v } from "convex/values";
 import { internalMutation } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
 
-// From WhatsApp Manager, 29–30 Oct. Sanduni's phone_number_id is not known
-// yet; her row is skipped until it is filled in here.
+// From WhatsApp Manager, 29 Oct – 1 Nov.
 const NUMBERS: { firstName: string | null; label: string; phone: string; wabaId: string; phoneId: string | null }[] = [
   { firstName: null, label: "TA lead", phone: "+94742932084", wabaId: "2715214465539258", phoneId: "1287046157815437" },
-  { firstName: "Sanduni", label: "Sanduni", phone: "+94764263120", wabaId: "1811583086509201", phoneId: null },
+  { firstName: "Sanduni", label: "Sanduni", phone: "+94764263120", wabaId: "1811583086509201", phoneId: "1425366410654591" },
   { firstName: "Priya", label: "Priya", phone: "+919821761894", wabaId: "1870438294389613", phoneId: "1377752375423047" },
   { firstName: "Thushini", label: "Thushini", phone: "+94779077728", wabaId: "2352137355594113", phoneId: "1147756625098092" },
   { firstName: "Hassan", label: "Hassan", phone: "+94740110140", wabaId: "1005624849012436", phoneId: "1276466655555760" },

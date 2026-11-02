@@ -323,11 +323,12 @@ Repo hard rules that apply: never run `convex deploy|run|import|env set` against
 - 2026-10-30 Any TA lead (desk-wide roles) can switch automatic follow-up on for any opening, as the page already offered; panel text now says Day 0 goes at shortlist when on.
 - 2026-10-30 `career141_initial_outreach` `{{3}}` is the opening's LinkedIn job link (else short apply link, else a sentence), and the stored text is the owner's approved wording (`roleLink`, `initialOutreachText`).
 - 2026-10-30 Each TA's own WhatsApp number (coexistence): `whatsappNumbers` gains `userId`, `ready`, `readyNote`, `checkedAt`; every outbound sender (template, free text, pre-application chat) asks `senderPhoneId`; Settings → WhatsApp numbers → "Check with Meta" (`settings/whatsappNumbers:checkWithMeta`) sets `ready` when the number is on the Cloud API, both templates are approved in its account and an app is subscribed; TA rows are added by the dry-run migration `admin/addTaWhatsAppNumbers:run`. Free text is still sent from the TA's number even when the candidate's open 24-hour window is on the main line; Meta's 131047 then falls back to the template (known limit).
+- 2026-11-01 Coexistence signup: Settings → WhatsApp numbers has `WhatsAppConnect` (Meta popup, config 3026772220995087, `featureType: whatsapp_business_app_onboarding`) and "Finish connection" (`finishConnect`: `subscribed_apps`, then Meta's once-only `smb_app_data` syncs, tracked in `syncsDone`; 24-hour deadline). Sync webhooks (`history`, `state_sync`) are acknowledged and dropped so old chats never reach the assistant.
 
 <!-- skill-meta
-verified-commit: ad13fee2
-verified-hash: dad2b88e8370a068d52ed4fda11708ac0d3881b0
-verified-date: 2026-10-30
+verified-commit: 2c498101
+verified-hash: ffadfd275bd12b2e25b3107a8b2aa45082900793
+verified-date: 2026-11-02
 sources:
   tests/addToAssignedJob.test.ts
   convex/ta/followUp.ts
@@ -364,6 +365,7 @@ sources:
   src/app/demoSendActions.ts
   src/app/settings/FollowUpDemo.tsx
   src/app/settings/WhatsAppNumbers.tsx
+  src/app/settings/WhatsAppConnect.tsx
   convex/lib/senderRouting.ts
   convex/settings/whatsappNumbers.ts
   convex/admin/addTaWhatsAppNumbers.ts

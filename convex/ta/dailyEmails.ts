@@ -266,8 +266,9 @@ export const reconcile = internalMutation({
     const email = await ctx.db.get(args.id);
     if (!email) throw new Error("That email no longer exists.");
     const lead = await access(ctx, args.actorId, email.jobId);
-    const job = await ctx.db.get(email.jobId);
-    if (mapUser(lead).role !== "admin" && (mapUser(lead).role !== "ta_lead" || job?.taLeadId !== lead._id)) throw new Error("Only this opening's TA Lead can reconcile the email.");
+    // Any lead or admin, not only this opening's lead: a stuck send held the
+    // TA's whole day while the one named lead was away (docs/19 A3, 2 Nov).
+    if (!["admin", "ta_lead", "director"].includes(mapUser(lead).role)) throw new Error("Only a TA Lead, Director or admin can reconcile the email.");
     if (email.finalizedAt || !["sending", "uncertain", "accepted"].includes(email.status)) throw new Error("This email does not need reconciliation.");
     if (!args.reason.trim() || args.reason.length > 1000) throw new Error("Record how you verified the sending mailbox and its message reference.");
     if (email.status === "sending" && Date.now() - (email.startedAt ?? 0) < 300000) throw new Error("Wait five minutes and check the sending mailbox before reconciling.");

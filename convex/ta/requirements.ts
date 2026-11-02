@@ -23,7 +23,7 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
-import { requireActor, assertJobAccess } from "./guard";
+import { requireActor, assertJobAccess, isDeskWideUser } from "./guard";
 import {
   EDUCATION_LEVELS, INDUSTRIES, RECRUITMENT_TYPES, REQUIREMENT_FIELDS, SENIORITY_LEVELS,
   mapIndustry, mergeRequirements, splitSkills, type RequirementField, type RequirementValues,
@@ -110,7 +110,8 @@ export const reextract = internalMutation({
     const jobId = args.openingId as Id<"jobs">;
     const job = await ctx.db.get(jobId);
     if (!job) throw new Error("That opening no longer exists.");
-    await assertJobAccess(ctx, user, jobId, MANAGES_OPENING);
+    // The web's `opening.manage` is desk-wide (docs/19 A1, 2 Nov).
+    if (!isDeskWideUser(user)) await assertJobAccess(ctx, user, jobId, MANAGES_OPENING);
     if (!(job.jobDescription ?? "").trim()) throw new Error("There is no JD to extract from yet.");
     await scheduleExtraction(ctx, jobId, "replace");
     return { ok: true };
@@ -147,7 +148,8 @@ export const save = internalMutation({
     const jobId = args.openingId as Id<"jobs">;
     const job = await ctx.db.get(jobId);
     if (!job) throw new Error("That opening no longer exists.");
-    await assertJobAccess(ctx, user, jobId, MANAGES_OPENING);
+    // The web's `opening.manage` is desk-wide (docs/19 A1, 2 Nov).
+    if (!isDeskWideUser(user)) await assertJobAccess(ctx, user, jobId, MANAGES_OPENING);
 
     const patch: Record<string, unknown> = {};
     const touched: RequirementField[] = [];

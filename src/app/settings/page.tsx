@@ -9,6 +9,7 @@ import { SubmitButton } from "@/components/Submit";
 import { AutoRefresh } from "./AutoRefresh";
 import { FollowUpDemo } from "./FollowUpDemo";
 import { WhatsAppNumbers, type NumberRow } from "./WhatsAppNumbers";
+import { WhatsAppConnect } from "./WhatsAppConnect";
 import { convexQuery } from "@/lib/convexServer";
 import { safeErrorMessage } from "@/lib/userError";
 
@@ -206,6 +207,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           ) : (
             <WhatsAppNumbers rows={numbers} />
           )}
+          <WhatsAppConnect />
         </section>
       )}
 

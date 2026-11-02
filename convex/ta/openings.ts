@@ -135,7 +135,13 @@ export const updateTaFields = internalMutation({
     const jobId = args.openingId as Id<"jobs">;
     const job = await ctx.db.get(jobId);
     if (!job) throw new Error("Opening not found");
-    await assertJobAccess(ctx, user, jobId, ["primary_recruiter", "supporting_recruiter", "director"]);
+    // Admin, director, TA lead and ops on any opening; a recruiter on their own
+    // — the web's `opening.manage` (src/lib/auth.ts), which this used to
+    // contradict: a director or a lead without a seat was refused with "You are
+    // not assigned to this opening" (docs/19 A1, 2 Nov; followUp.ts:169 since 30 Oct).
+    if (!isDeskWideUser(user)) {
+      await assertJobAccess(ctx, user, jobId, ["primary_recruiter", "supporting_recruiter", "director"]);
+    }
 
     const { actorId: _a, openingId: _o, clientId, ...rest } = args;
     const patch: Record<string, unknown> = { updatedAt: new Date().toISOString() };
@@ -259,7 +265,13 @@ export const approveJd = internalMutation({
     const jobId = args.openingId as Id<"jobs">;
     const job = await ctx.db.get(jobId);
     if (!job) throw new Error("Opening not found");
-    await assertJobAccess(ctx, user, jobId, ["primary_recruiter", "supporting_recruiter", "director"]);
+    // Admin, director, TA lead and ops on any opening; a recruiter on their own
+    // — the web's `opening.manage` (src/lib/auth.ts), which this used to
+    // contradict: a director or a lead without a seat was refused with "You are
+    // not assigned to this opening" (docs/19 A1, 2 Nov; followUp.ts:169 since 30 Oct).
+    if (!isDeskWideUser(user)) {
+      await assertJobAccess(ctx, user, jobId, ["primary_recruiter", "supporting_recruiter", "director"]);
+    }
 
     const approvedText = args.jdMarkdown ?? job.jobDescription;
     if (!approvedText.trim()) throw new Error("Add the job description before approving it.");
@@ -317,7 +329,13 @@ export const saveJd = internalMutation({
     const jobId = args.openingId as Id<"jobs">;
     const job = await ctx.db.get(jobId);
     if (!job) throw new Error("Opening not found");
-    await assertJobAccess(ctx, user, jobId, ["primary_recruiter", "supporting_recruiter", "director"]);
+    // Admin, director, TA lead and ops on any opening; a recruiter on their own
+    // — the web's `opening.manage` (src/lib/auth.ts), which this used to
+    // contradict: a director or a lead without a seat was refused with "You are
+    // not assigned to this opening" (docs/19 A1, 2 Nov; followUp.ts:169 since 30 Oct).
+    if (!isDeskWideUser(user)) {
+      await assertJobAccess(ctx, user, jobId, ["primary_recruiter", "supporting_recruiter", "director"]);
+    }
     const changed = (job.jobDescription ?? "") !== args.jdMarkdown;
     if (changed) await invalidateJdReviews(ctx, jobId);
     await ctx.db.patch(jobId, { jobDescription: args.jdMarkdown, updatedAt: new Date().toISOString() });
