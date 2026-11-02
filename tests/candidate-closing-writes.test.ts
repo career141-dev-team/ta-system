@@ -51,6 +51,8 @@ test("an offer can be recorded and turned into a placement", async () => {
 
   const placed = await writeCandidateClosing(lead, opening.id, app.id, {
     action: "place", offerId: offer.id, joinDate: "2030-03-10",
+    salary: 335_000, salaryBasis: "monthly", currency: "LKR",
+    packageNotes: " + fuel ", offerLetterFileId: "file_offer_1",
   }, deps);
   assert.equal(placed.ok, true);
   assert.equal(placed.message, "Placement recorded.");
@@ -58,6 +60,10 @@ test("an offer can be recorded and turned into a placement", async () => {
   assert.equal(repo.application(app.id)?.stage, "placed");
   assert.equal(repo.offer(offer.id)?.status, "accepted");
   assert.equal(repo.placementForApplication(app.id)?.offerId, offer.id);
+  // The package and the signed letter are part of placing now (docs/19 7.9).
+  assert.equal(repo.placementForApplication(app.id)?.salary, 335_000);
+  assert.equal(repo.placementForApplication(app.id)?.packageNotes, "+ fuel");
+  assert.equal(repo.placementForApplication(app.id)?.offerLetterFileId, "file_offer_1");
   // `candidate_placed` was declared from the start and never sent (2 Nov).
   const placedBells = bells.filter((b) => b.type === "candidate_placed");
   assert(placedBells.length >= 1, "the placement is told to somebody");
@@ -83,12 +89,16 @@ test("declining an offer closes it and records why", async () => {
   assert.equal(repo.application(app.id)?.offerDeclineReason, "Accepted a counter-offer");
 });
 
-test("a placement still needs a readable join date", async () => {
+test("a placement needs a readable join date, a package and the offer letter", async () => {
   const lead = repo.users().find((row) => row.role === "ta_lead" && row.isActive)!;
   const offer = repo.offers().find((row) => row.status === "pending")!;
   assert(offer);
-  const result = await writeCandidateClosing(lead, offer.openingId, offer.applicationId, {
-    action: "place", offerId: offer.id, joinDate: "",
-  }, deps);
-  assert.deepEqual(result, { ok: false, status: 400, message: "A placement needs a join date." });
+  const full = { action: "place" as const, offerId: offer.id, joinDate: "2030-04-01", salary: 280_000, salaryBasis: "monthly" as const, currency: "LKR" as const, packageNotes: "", offerLetterFileId: "file_offer_2" };
+  const place = (over: Partial<typeof full>) =>
+    writeCandidateClosing(lead, offer.openingId, offer.applicationId, { ...full, ...over }, deps);
+
+  assert.deepEqual(await place({ joinDate: "" }), { ok: false, status: 400, message: "A placement needs a join date." });
+  assert.deepEqual(await place({ salary: 0 }), { ok: false, status: 400, message: "A placement needs the agreed package." });
+  assert.deepEqual(await place({ offerLetterFileId: "  " }), { ok: false, status: 400, message: "A placement needs the signed offer letter." });
+  assert.equal(repo.placementForApplication(offer.applicationId), undefined, "nothing was written by the refusals");
 });

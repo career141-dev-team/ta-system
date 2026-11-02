@@ -4011,6 +4011,10 @@ const rawRepo = {
     offerId: Id;
     joinDate: number;
     salary?: number;
+    salaryBasis?: SalaryBasis;
+    currency?: Currency;
+    packageNotes?: string | null;
+    offerLetterFileId?: string | null;
     byUserId: Id;
   }): { ok: true; id: Id } | { ok: false; message: string } {
     const db = load();
@@ -4049,8 +4053,8 @@ const rawRepo = {
         placedBy: input.byUserId,
         sourcingChannel: app.sourcingChannel,
         salary: input.salary ?? offer.salary,
-        salaryBasis: offer.salaryBasis,
-        currency: offer.currency,
+        salaryBasis: input.salaryBasis ?? offer.salaryBasis,
+        currency: input.currency ?? offer.currency,
         joinDate: input.joinDate,
         joinConfirmedAt: null,
         feePercent: esa?.feePercent ?? DEFAULT_FEE_PERCENT,
@@ -4061,6 +4065,8 @@ const rawRepo = {
         guaranteeDays: esa?.guaranteeDays ?? DEFAULT_GUARANTEE_DAYS,
         fellThroughAt: null,
         fellThroughReason: null,
+        packageNotes: input.packageNotes?.trim() || null,
+        offerLetterFileId: input.offerLetterFileId ?? null,
         notes: null,
         createdAt: now,
       });

@@ -1,6 +1,6 @@
 import type { Application, Offer, Placement } from "@/data/types";
 import { dateAt } from "@/lib/format";
-import { makeOffer, recordPlacement, respondToOffer } from "@/app/actions";
+import { makeOffer, recordPlacement, respondToOffer, setOpeningStatus } from "@/app/actions";
 import { SubmitButton } from "./Submit";
 
 /**
@@ -24,6 +24,8 @@ export function ClosingPanel({
   offer,
   placement,
   expectedSalary,
+  openingFilled = false,
+  canManageOpening = false,
   locked = false,
 }: {
   app: Application;
@@ -31,6 +33,10 @@ export function ClosingPanel({
   offer: Offer | undefined;
   placement: Placement | undefined;
   expectedSalary: string | null;
+  /** The opening's own status, so the panel can offer to mark it Placed (2 Nov). */
+  openingFilled?: boolean;
+  /** Only `opening.manage` may change the status — the lead confirms. */
+  canManageOpening?: boolean;
   /** Someone else's candidate, or a seat that reads only. */
   locked?: boolean;
 }) {
@@ -46,9 +52,27 @@ export function ClosingPanel({
       <div className={`mt-3 ${box}`}>
         <h2 className="text-[13px] font-semibold">Placed</h2>
         <p className="mt-1 text-[12.5px] text-ink-soft">
-          Joining {dateAt(placement.joinDate)}. The morning they start, you are reminded to call
+          {placement.currency} {placement.salary.toLocaleString()}{" "}
+          {placement.salaryBasis === "monthly" ? "a month" : "a year"}
+          {placement.packageNotes ? ` · ${placement.packageNotes}` : ""}. Joining{" "}
+          {dateAt(placement.joinDate)}. The morning they start, you are reminded to call
           and check they arrived.
         </p>
+        {/* The opening stayed Active after a placement, so a filled job kept
+            being worked (docs/19 7.9). One click, for whoever may. */}
+        {!openingFilled && canManageOpening && (
+          <form action={setOpeningStatus} className="mt-3 flex items-center gap-2">
+            <input type="hidden" name="openingId" value={openingId} />
+            <input type="hidden" name="status" value="filled" />
+            <span className="text-[12.5px] text-ink-soft">Is the opening filled?</span>
+            <SubmitButton
+              pendingLabel="Marking…"
+              className="rounded border border-rule-strong px-3 py-1 text-[12px] font-medium disabled:opacity-60"
+            >
+              Mark the opening Placed
+            </SubmitButton>
+          </form>
+        )}
       </div>
     );
   }
@@ -81,6 +105,34 @@ export function ClosingPanel({
                   offer.startDate ? new Date(offer.startDate).toISOString().slice(0, 10) : ""
                 }
                 className={input}
+              />
+            </label>
+            {/* The agreed package and the signed letter, asked for here rather
+                than chased out of the TA two months later (docs/19 7.9). */}
+            <label className="block">
+              <span className={label}>Agreed package</span>
+              <input name="salary" defaultValue={offer.salary || ""} placeholder="335000" required className={input} />
+            </label>
+            <label className="block">
+              <span className={label}>Per</span>
+              <select name="salaryBasis" defaultValue={offer.salaryBasis} className={`${input} cursor-pointer`}>
+                <option value="monthly">a month</option>
+                <option value="annual">a year</option>
+              </select>
+            </label>
+            <input type="hidden" name="currency" value={offer.currency} />
+            <label className="block">
+              <span className={label}>Package notes</span>
+              <input name="packageNotes" placeholder="+ fuel, phone allowance" className={input} />
+            </label>
+            <label className="block">
+              <span className={label}>Signed offer letter</span>
+              <input
+                type="file"
+                name="offerLetter"
+                accept=".pdf,.doc,.docx,image/*"
+                required
+                className="block w-full text-[12px]"
               />
             </label>
             <SubmitButton

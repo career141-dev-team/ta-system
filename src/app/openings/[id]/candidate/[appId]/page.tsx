@@ -509,6 +509,8 @@ export default async function CandidateDrawer({
         offer={repo.offers(app.id)[0]}
         placement={repo.placementForApplication(app.id)}
         expectedSalary={c.expectedSalary}
+        openingFilled={opening.status === "filled"}
+        canManageOpening={allows(user, "opening.manage", { openingId: id, assignment })}
         locked={locked}
       />
 

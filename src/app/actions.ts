@@ -4166,14 +4166,54 @@ export async function recordPlacement(formData: FormData) {
   const user = await getCurrentUser();
   const appId = String(formData.get("applicationId"));
   const openingId = String(formData.get("openingId"));
+  const here = `/openings/${openingId}/candidate/${appId}`;
+
+  // The signed letter goes to storage before the record is written, so a failed
+  // upload does not leave a placement with nothing behind it (docs/19 7.9).
+  const letter = formData.get("offerLetter");
+  let offerLetterFileId = "";
+  if (letter instanceof File && letter.size > 0) {
+    const stored = await storeOfferLetter(letter);
+    if (!stored.ok) redirect(`${here}?msg=${encodeURIComponent(stored.message)}`);
+    offerLetterFileId = stored.fileId;
+  }
+
+  const rawSalary = String(formData.get("salary") ?? "").replace(/[^\d.]/g, "");
   const r = await writeCandidateClosing(user, openingId, appId, {
     action: "place",
     offerId: String(formData.get("offerId")),
     joinDate: String(formData.get("joinDate") ?? ""),
+    salary: rawSalary && Number.isFinite(Number(rawSalary)) ? Number(rawSalary) : 0,
+    salaryBasis: String(formData.get("salaryBasis") ?? "monthly") as "monthly" | "annual",
+    currency: String(formData.get("currency") ?? "LKR") as "LKR" | "USD",
+    packageNotes: String(formData.get("packageNotes") ?? ""),
+    offerLetterFileId,
   }, OPENING_DEPS);
-  if (!r.ok)
-    redirect(`/openings/${openingId}/candidate/${appId}?msg=${encodeURIComponent(r.message)}`);
-  redirect(`/placements/${r.placementId}`);
+  if (!r.ok) redirect(`${here}?msg=${encodeURIComponent(r.message)}`);
+  // It used to redirect to /placements/{id}, a page that has never existed, so
+  // every placement ended on a 404 (docs/19 7.9).
+  redirect(`${here}?msg=${encodeURIComponent("Placement recorded. Asma and the Director have been told.")}`);
+}
+
+/** The offer letter, into the same storage the screenshots use. */
+async function storeOfferLetter(file: File): Promise<{ ok: true; fileId: string } | { ok: false; message: string }> {
+  if (file.size > 10 * 1024 * 1024) return { ok: false, message: "The offer letter must be under 10 MB." };
+  const type = file.type || "application/pdf";
+  if (!isConvex()) return { ok: true, fileId: `local_${file.name}` };
+  try {
+    const uploadUrl = await convexMutation<string>("ta/storage:recordingUploadUrl", {});
+    const put = await fetch(internalUploadUrl(uploadUrl), {
+      method: "POST",
+      headers: { "content-type": type },
+      body: Buffer.from(await file.arrayBuffer()),
+    });
+    if (!put.ok) return { ok: false, message: `The offer letter could not be saved (${put.status}). Nothing was placed.` };
+    const { storageId } = (await put.json()) as { storageId: string };
+    return { ok: true, fileId: storageId };
+  } catch (e) {
+    console.error("[recordPlacement] offer letter upload failed:", e);
+    return { ok: false, message: "The offer letter could not be saved. Nothing was placed." };
+  }
 }
 
 // ─── Screening calls ─────────────────────────────────────────────────────────

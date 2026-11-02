@@ -931,6 +931,8 @@ function makeClosings(): { offers: Offer[]; placements: Placement[] } {
         // shape 3: walked out inside the guarantee.
         fellThroughAt: shape === 3 ? ago(6) : null,
         fellThroughReason: shape === 3 ? "Counter-offered by the previous employer in week two." : null,
+        packageNotes: shape === 1 ? "+ fuel and a phone allowance" : null,
+        offerLetterFileId: null,
         notes: null,
         createdAt: ago(joinedDaysAgo + 6),
       });
