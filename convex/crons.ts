@@ -950,6 +950,10 @@ function addEodCopies(registry: ReturnType<typeof cronJobs>) {
   registry.interval("ta-purge-eod-copies", { minutes: 41 }, internal.ta.eodCopies.purgeExpired, {});
   registry.interval("ta-flag-stuck-sends", { minutes: 5 }, internal.ta.eodCopies.flagStuckSends, {});
   registry.interval("ta-purge-tracking", { minutes: 30 }, makeFunctionReference<"mutation">("ta/tracking:purgeExpired"), {});
+  // Nothing reminded a TA to send the EOD, so a missed one surfaced next morning (2 Nov).
+  // 12:00 UTC = 17:30 Colombo for the TA; 13:00 UTC = 18:30 Colombo for the lead's digest.
+  registry.daily("ta-eod-reminder", { hourUTC: 12, minuteUTC: 0 }, makeFunctionReference<"mutation">("ta/eodReminders:remindMissingEods"), {});
+  registry.daily("ta-eod-lead-digest", { hourUTC: 13, minuteUTC: 0 }, makeFunctionReference<"mutation">("ta/eodReminders:digestMissingEods"), {});
 }
 
 addMailIntake(crons);

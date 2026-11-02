@@ -60,6 +60,14 @@ eq("the director can", ok(user("director"), "decide.director"), true);
 eq("a client contact records a client decision", ok(client, "decide.client", { assignment: on("client_contact", client.id) }), true);
 eq("TA cannot fake a client decision", ok(ta, "decide.client", { assignment: on("primary_recruiter") }), false);
 
+console.log("\nclient records: ops keeps them too (2 Nov)");
+eq(
+  "ops, lead, director and admin change client records",
+  (["ops", "ta_lead", "director", "admin"] as const).map((r) => ok(user(r), "client.manage")),
+  [true, true, true, true],
+);
+eq("a TA cannot, even on the opening", ok(ta, "client.manage", { assignment: on("primary_recruiter") }), false);
+
 console.log("\nadministration");
 eq("only admin manages people", [ok(user("admin"), "user.manage"), ok(user("director"), "user.manage"), ok(ta, "user.manage")], [true, false, false]);
 

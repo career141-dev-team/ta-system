@@ -69,43 +69,68 @@ export async function decideAccess(
 
 export const ASSIGNMENT_ROLES: AssignmentRole[] = ["primary_recruiter", "supporting_recruiter", "director", "client_contact"];
 
+/** Who may hold the opening's `taLeadId`: an active TA Lead or admin. */
+export function assignableLeads(users: User[]): User[] {
+  return users.filter((u) => u.isActive && (u.role === "ta_lead" || u.role === "admin"));
+}
+
 /**
  * Who is on the opening, and as what. One person, one seat (the last row wins),
  * and a team with nobody recruiting is refused. Newly seated recruiters get a
  * bell notification. Called after `opening.manage` has been decided.
+ *
+ * `taLeadId` (optional) hands the opening to another lead. It was written once
+ * at creation with no way to change it, and access requests, workday starts and
+ * reconciles all key on it, so an opening whose lead left was stuck with "Ask an
+ * administrator to assign one" and the administrator had no screen either (2 Nov).
+ * Only the current lead or an admin may hand it on.
  */
 export async function writeOpeningTeam(
   user: User,
   openingId: string,
   rows: { userId: string; role: string }[],
   deps: Pick<OpeningWriteDeps, "convexMutation" | "revalidatePath">,
+  taLeadId?: string,
 ): Promise<{ ok: true } | { ok: false; message: string }> {
   const valid = rows.filter((r) => r.userId && r.role).map((r) => ({ userId: r.userId, role: r.role as AssignmentRole }));
   const unique = [...new Map(valid.map((r) => [r.userId, r])).values()];
   const recruiters = unique.filter((r) => r.role === "primary_recruiter" || r.role === "supporting_recruiter");
   if (recruiters.length === 0) return { ok: false, message: "A team needs at least one recruiter on it. Nothing was changed." };
 
+  const opening = repo.opening(openingId);
+  const newLead = taLeadId && taLeadId !== opening?.taLeadId ? taLeadId : undefined;
+  if (newLead) {
+    if (user.role !== "admin" && opening?.taLeadId !== user.id) {
+      return { ok: false, message: "Only this opening's TA Lead or an admin can hand it to another lead. Nothing was changed." };
+    }
+    if (!assignableLeads(repo.users()).some((u) => u.id === newLead)) {
+      return { ok: false, message: "The TA Lead must be an active TA Lead or admin. Nothing was changed." };
+    }
+  }
+
   // Captured before the write, since after it the old team is gone.
   const previousTeam = new Set(repo.assignments(openingId).map((a) => a.userId));
   const newlyAssigned = recruiters.filter((r) => r.userId !== user.id && !previousTeam.has(r.userId));
 
-  repo.setAssignments(openingId, unique, user.id);
+  repo.setAssignments(openingId, unique, user.id, newLead);
   deps.revalidatePath(`/openings/${openingId}`, "layout");
   deps.revalidatePath("/alerts");
   deps.revalidatePath("/api/notifications");
 
-  if (newlyAssigned.length) {
-    const title = repo.opening(openingId)?.title ?? "an opening";
+  const title = repo.opening(openingId)?.title ?? "an opening";
+  const bells = newlyAssigned.map((r) => ({
+    userId: r.userId,
+    title: "You were assigned to an opening",
+    body: `${user.name} added you to ${title} as ${ASSIGNMENT_LABEL[r.role]}.`,
+  }));
+  if (newLead && newLead !== user.id) {
+    bells.push({ userId: newLead, title: "You are now the TA Lead of an opening", body: `${user.name} made you the TA Lead of ${title}.` });
+  }
+  if (bells.length) {
     await Promise.all(
-      newlyAssigned.map((r) =>
+      bells.map((b) =>
         deps
-          .convexMutation("ta/notifications:create", {
-            userId: r.userId,
-            type: "opening_assigned",
-            title: "You were assigned to an opening",
-            body: `${user.name} added you to ${title} as ${ASSIGNMENT_LABEL[r.role]}.`,
-            jobId: openingId,
-          })
+          .convexMutation("ta/notifications:create", { ...b, type: "opening_assigned", jobId: openingId })
           .catch((e) => console.error("[notifications] opening_assigned failed:", e)),
       ),
     );

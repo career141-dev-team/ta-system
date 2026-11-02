@@ -326,9 +326,9 @@ Repo hard rules that apply: never run `convex deploy|run|import|env set` against
 - 2026-11-01 Coexistence signup: Settings → WhatsApp numbers has `WhatsAppConnect` (Meta popup, config 3026772220995087, `featureType: whatsapp_business_app_onboarding`) and "Finish connection" (`finishConnect`: `subscribed_apps`, then Meta's once-only `smb_app_data` syncs, tracked in `syncsDone`; 24-hour deadline). Sync webhooks (`history`, `state_sync`) are acknowledged and dropped so old chats never reach the assistant.
 
 <!-- skill-meta
-verified-commit: 1a7c27bc
-verified-hash: d79d7c90769325c531169e68198453fe5bd9675f
-verified-date: 2026-11-01
+verified-commit: 2c498101
+verified-hash: ffadfd275bd12b2e25b3107a8b2aa45082900793
+verified-date: 2026-11-02
 sources:
   tests/addToAssignedJob.test.ts
   convex/ta/followUp.ts
