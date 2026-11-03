@@ -75,3 +75,12 @@ test("on a TA's own number only candidates being followed up are handled; the ma
   assert.equal(handleOnLine(true, ["rejected", "follow_up"], followUp), true);
   assert.equal(handleOnLine(true, ["ta_shortlist"], followUp), true);
 });
+
+test("a candidate who belongs to a TA is never sent from another TA's number", () => {
+  // Hassan owns the candidate but his number is off; Thushini is first on the opening.
+  assert.equal(pickSender({ ownerTaId: "u_hassan", assignedTaIds: ["u_thushini"], numbers }), null);
+  // The opening's channel being Thushini's number does not hand her Hassan's candidate either.
+  assert.equal(pickSender({ ownerTaId: "u_hassan", channelNumber: "+94779077728", numbers }), null);
+  // The main line as the channel is still fine.
+  assert.equal(pickSender({ ownerTaId: "u_hassan", channelNumber: "+94742197476", numbers })?.phoneId, MAIN.phoneId);
+});

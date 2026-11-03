@@ -25,10 +25,17 @@ const last9 = (s: string | null | undefined) => String(s ?? "").replace(/\D/g, "
 /**
  * The phone_number_id to send from, or null for the main line. In order:
  *  1. the number typed on the opening (`outreachWhatsAppNumber`), unless known not ready
- *  2. the candidate's owner TA's number, then the opening's first assigned TA's — only when ready
- *  3. the opening's inbound WhatsApp channel number, unless known not ready
+ *  2. the candidate's owner TA's number — only when ready
+ *  3. no owner yet: the opening's first assigned TA's number — only when ready
+ *  4. the opening's inbound WhatsApp channel number, unless known not ready
  * A TA's number is checked before the channel number because the channel is
  * usually the main line, which would otherwise always win.
+ *
+ * A candidate who belongs to a TA is never messaged from another TA's number
+ * (the owner, 3 Nov): with two TAs on one opening, the owner's number not
+ * being ready used to fall through to the first assigned TA's, so the
+ * candidate replied to the wrong person. The channel line is skipped too when
+ * it is another TA's number.
  */
 export function pickSender(o: {
   override?: string | null;
@@ -40,7 +47,10 @@ export function pickSender(o: {
   const byPhone = (p?: string | null) =>
     last9(p) ? o.numbers.find((n) => last9(n.phone) === last9(p) && n.ready !== false) ?? null : null;
   const byTa = (id?: string | null) => (id ? o.numbers.find((n) => n.userId === id && n.ready === true) ?? null : null);
-  return byPhone(o.override) ?? byTa(o.ownerTaId) ?? byTa(o.assignedTaIds?.[0]) ?? byPhone(o.channelNumber);
+  const owner = o.ownerTaId ?? null;
+  const channel = byPhone(o.channelNumber);
+  const channelOk = channel && (channel.userId === undefined || !owner || channel.userId === owner) ? channel : null;
+  return byPhone(o.override) ?? (owner ? byTa(owner) : byTa(o.assignedTaIds?.[0])) ?? channelOk;
 }
 
 /**
