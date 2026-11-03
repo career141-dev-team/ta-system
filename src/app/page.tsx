@@ -15,6 +15,9 @@ import { matchesQuery, pageOf, type Params } from "@/lib/paging";
 import { linkedinStatus } from "@/lib/linkedinStatus";
 import { LinkedInPill } from "@/components/LinkedInPill";
 import { openingNeed } from "@/lib/openingNeed";
+import { TargetsTable } from "@/components/TargetsTable";
+import { isConvex } from "@/data/mode";
+import { targetsMine } from "@/data/convex/backend";
 
 /**
  * The day, not the database. What is urgent, what is scheduled, what each of my
@@ -83,6 +86,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     );
   }
 
+  const myTargets = isConvex() ? await targetsMine({ id: user.id }) : [];
   // The TA's own view: the header search narrows the lists, each pages on its own.
   const urgentList = pageOf(urgent.filter((a) => matchesQuery(q, a.detail, a.kind.replace(/_/g, " "))), sp, "upage", 10, "/");
   const myOpenings = pageOf(
@@ -105,6 +109,14 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           {interviews.length > 0 && ` · ${interviews.length} interviews ahead`}
         </p>
       </header>
+
+      {/* The daily CV and LinkedIn-link targets a lead set for this TA (3 Nov). */}
+      {myTargets.length > 0 && (
+        <section className="mb-8">
+          <h2 className="mb-3 text-[14px] font-semibold">Your targets today</h2>
+          <TargetsTable rows={myTargets} canEdit={false} showTa={false} showJob empty="" />
+        </section>
+      )}
 
       {urgentList.pager.total > 0 && (
         <section className="mb-8 rounded-xl border border-rule bg-surface">

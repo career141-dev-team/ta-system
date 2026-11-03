@@ -2402,6 +2402,30 @@ export async function deleteClients(formData: FormData) {
   );
 }
 
+// ─── Targets (3 Nov) ─────────────────────────────────────────────────────────
+
+/** A lead or admin sets one TA's daily CV and LinkedIn-link targets on one opening. */
+export async function setTargets(formData: FormData) {
+  const user = await getCurrentUser();
+  if (user.role !== "admin" && user.role !== "ta_lead") await fail("Only a TA lead or admin can set targets.");
+  if (!isConvex()) await fail("Targets need the live backend.");
+  const cvsPerDay = Number(formData.get("cvsPerDay"));
+  const linksPerDay = Number(formData.get("linksPerDay"));
+  try {
+    await convexMutation("ta/targets:set", {
+      actorId: user.id,
+      jobId: String(formData.get("jobId") ?? ""),
+      userId: String(formData.get("userId") ?? ""),
+      cvsPerDay,
+      linksPerDay,
+    });
+  } catch (e) {
+    await fail(backendMessage(e, "The target could not be saved."));
+  }
+  revalidatePath("/", "layout");
+  await done("Target saved.");
+}
+
 // ─── The Bin (28 Sep) ────────────────────────────────────────────────────────
 
 function binTarget(formData: FormData): { kind: "opening" | "client"; id: string } {

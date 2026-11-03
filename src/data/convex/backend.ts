@@ -828,6 +828,22 @@ export async function syncMailboxNow(mailbox: string) {
   return convexMutation<{ ok: boolean }>("mailIntake/model:syncNow", { mailbox });
 }
 
+// ─── Targets (3 Nov) ─────────────────────────────────────────────────────────
+
+/** One TA's daily targets on one opening, with today's progress (convex/ta/targets.ts). */
+export interface TargetRow {
+  jobId: string; jobTitle: string; clientName: string;
+  userId: string; userName: string;
+  cvsPerDay: number | null; linksPerDay: number | null;
+  cvsToday: number; linksToday: number;
+}
+
+/** Everyone's targets (lead/admin), the caller's own, or one opening's. */
+export const targetsBoard = (actor: Actor) => convexQuery<TargetRow[]>("ta/targets:board", { actorId: actor.id ?? undefined });
+export const targetsMine = (actor: Actor) => convexQuery<TargetRow[]>("ta/targets:mine", { actorId: actor.id ?? undefined });
+export const targetsForJob = (actor: Actor, jobId: string) =>
+  convexQuery<TargetRow[]>("ta/targets:forJob", { actorId: actor.id ?? undefined, jobId });
+
 // ─── Bin ─────────────────────────────────────────────────────────────────────
 
 /** What is in the Bin (convex/ta/bin.ts), openings and clients together, newest first. */

@@ -56,7 +56,7 @@ what users see or what is sent to candidates for the owner to decide.
 works **today** (flows, files, tables, guards, quirks, how to change it safely):
 `follow-up`, `scoop`, `sets-shortlist`, `strategy-planner`, `voice-agent`,
 `email-intake`, `cv-extraction`, `workday`, `eod-email`, `database-search`,
-`excel-tables`, `openings`. Claude Code: type `/follow-up` etc. Other tools: open
+`excel-tables`, `openings`, `targets`. Claude Code: type `/follow-up` etc. Other tools: open
 `.claude/skills/<name>/SKILL.md`.
 
 If your change touches a file a skill lists under `sources:`, update that skill in

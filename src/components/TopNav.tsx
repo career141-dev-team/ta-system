@@ -37,6 +37,8 @@ const NAV = [
   { href: "/alerts", label: "Alerts" },
   { href: "/reports", label: "Reports" },
   { href: "/ta-track", label: "TA Track" },
+  // Daily CV and LinkedIn-link targets per TA per opening, set by leads and admins (3 Nov).
+  { href: "/targets", label: "Targets" },
   // Practice calls with the AI screening agent (as the CV platform's Aura page).
   { href: "/voice", label: "Voice agent" },
   { href: "/feedback", label: "Feedback" },
@@ -78,6 +80,7 @@ export function TopNav({
       (n.href !== "/voice" || allows(user, "voice.practice")) &&
       (n.href !== "/strategy" || allows(user, "strategy.assign")) &&
       (n.href !== "/ta-track" || user.role === "admin" || user.role === "ta_lead") &&
+      (n.href !== "/targets" || user.role === "admin" || user.role === "ta_lead") &&
       (n.href !== "/support-tables" || allows(user, "tables.readAll")) &&
       (n.href !== "/feedback" || !isTa(user)) &&
       (n.href !== "/extras" || user.role === "admin"),
