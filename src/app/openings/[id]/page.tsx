@@ -15,6 +15,9 @@ import { allows, isTa } from "@/lib/auth";
 import { seatFor, visibleToSeat } from "@/lib/visibility";
 import { primeStore } from "@/data/prime";
 import { MatchingStatus } from "@/components/MatchingStatus";
+import { TargetsTable } from "@/components/TargetsTable";
+import { isConvex } from "@/data/mode";
+import { targetsForJob } from "@/data/convex/backend";
 
 /**
  * Modelled on Recruiter's project overview: a short state line, a few suggested
@@ -48,6 +51,8 @@ export default async function OverviewPage({
   const apps = visibleToSeat(repo.applications(id), deskSeat);
   const posts = repo.jobPosts(id).filter((p) => p.status === "live");
   const cvsToday = posts.reduce((n, p) => n + p.cvCountToday, 0);
+  const canSetTargets = user.role === "admin" || user.role === "ta_lead";
+  const taTargets = isConvex() ? await targetsForJob({ id: user.id }, id) : [];
   const days = o.assignedAt ? colomboDaysBetween(o.assignedAt) : 0;
   const health = repo.health(id);
   const target = PRIORITY_TARGET[o.priorityTier];
@@ -137,6 +142,14 @@ export default async function OverviewPage({
 
       {/* Is this role on track, and if not, what is wrong with it. */}
       {health && <HealthBar health={health} />}
+
+      {/* Daily CV and LinkedIn-link targets: a TA sees their own, a lead or admin everyone's, editable (3 Nov). */}
+      {taTargets.length > 0 && (
+        <section className="mb-8">
+          <h2 className="mb-3 text-[14px] font-semibold">{canSetTargets ? "Targets" : "Your targets"}</h2>
+          <TargetsTable rows={taTargets} canEdit={canSetTargets} showTa={canSetTargets} showJob={false} empty="" />
+        </section>
+      )}
 
       {o.jdStatus === "pending_ta_approval" && (
         <JdApproval

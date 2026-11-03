@@ -182,16 +182,58 @@ export async function callHaikuVisionOCR(file: { kind: "pdf" | "image"; mime: st
   const base = (process.env.C141_APP_INTERNAL_URL ?? "").trim().replace(/\/+$/, "");
   const secret = (process.env.C141_CLAUDE_BRIDGE_SECRET ?? "").trim();
   if (!base || secret.length < 16) return "";
+  const body = JSON.stringify(file);
+  // A busy bridge answers 503 within seconds; one retry then, because three CVs
+  // read at once often found every slot taken and went straight to the weaker
+  // fallback (3 Nov). A slow or timed-out call is not retried.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const started = Date.now();
+    try {
+      const response = await fetch(`${base}/api/internal/claude-cv-vision`, {
+        method: "POST", headers: { "content-type": "application/json", "x-c141-secret": secret },
+        body, signal: AbortSignal.timeout(55_000),
+      });
+      if (response.ok) {
+        const result = await response.json() as { ok?: boolean; text?: unknown };
+        return result.ok && typeof result.text === "string" ? result.text.trim() : "";
+      }
+    } catch (err: any) {
+      console.warn(`[callHaikuVisionOCR] Subscription bridge unavailable: ${err?.name || "error"}`);
+    }
+    if (Date.now() - started > 12_000) return "";
+    await new Promise((r) => setTimeout(r, 3_000));
+  }
+  return "";
+}
+
+/**
+ * A scanned PDF read by OpenRouter's PDF reader (Mistral OCR) when the Haiku bridge
+ * gave nothing (3 Nov). The PDF itself goes, so there is no page-image step to fail.
+ * Opt-in: only with C141_PDF_OCR=on (it sends the whole PDF to OpenRouter); needs an OpenRouter key, else returns "".
+ */
+export async function callOpenRouterPdfOCR(base64: string, fileName = "cv.pdf"): Promise<string> {
+  if ((process.env.C141_PDF_OCR ?? "").trim().toLowerCase() !== "on") return "";
+  const hasKey = [process.env.OPENROUTER_API_KEY, process.env.OPENROUTER_API_KEY_1, process.env.OPENROUTER_API_KEYS]
+    .some((k) => (k ?? "").trim().length > 10);
+  if (!hasKey) return "";
   try {
-    const response = await fetch(`${base}/api/internal/claude-cv-vision`, {
-      method: "POST", headers: { "content-type": "application/json", "x-c141-secret": secret },
-      body: JSON.stringify(file), signal: AbortSignal.timeout(55_000),
-    });
-    if (!response.ok) return "";
-    const result = await response.json() as { ok?: boolean; text?: unknown };
-    return result.ok && typeof result.text === "string" ? result.text.trim() : "";
+    const response = await getOpenAI("cv_pdf_ocr", 90_000).chat.completions.create({
+      model: OPENROUTER_CV_EXTRACTION_MODEL,
+      messages: [{
+        role: "user",
+        content: [
+          { type: "text", text: "Transcribe all text from the attached document verbatim, in reading order. Return only the document text, with no commentary." },
+          { type: "file", file: { filename: fileName, file_data: `data:application/pdf;base64,${base64}` } },
+        ] as any,
+      }],
+      temperature: 0,
+      max_tokens: 8000,
+      // OpenRouter-only field: OCR the pages before the model sees them.
+      plugins: [{ id: "file-parser", pdf: { engine: "mistral-ocr" } }],
+    } as any);
+    return response.choices?.[0]?.message?.content?.trim() ?? "";
   } catch (err: any) {
-    console.warn(`[callHaikuVisionOCR] Subscription bridge unavailable: ${err?.name || "error"}`);
+    console.warn(`[callOpenRouterPdfOCR] failed: ${err?.message || "error"}`);
     return "";
   }
 }

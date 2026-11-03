@@ -15,7 +15,7 @@ import { passesFilters } from "@/lib/listFilters";
 import { BulkBar, BulkConfirm, BulkStageControls, DownloadCvsButton } from "./BulkSelect";
 import { bulkStages } from "@/lib/bulkStages";
 import { SubmitButton } from "./Submit";
-import { confirmShortlist, removeApplications } from "@/app/actions";
+import { confirmShortlist, removeApplications, removeScoops } from "@/app/actions";
 import { inLevelOrder } from "@/lib/levels";
 import { AssignWorkLocation, WorkLocationBulkControls } from "./AssignWorkLocation";
 
@@ -78,6 +78,8 @@ export function CandidateList({
   title,
   filters = {},
   claimable = false,
+  /** The Scoops tab: a TA on the opening may remove a scoop from it (3 Nov). */
+  removeScoopsOn = false,
   /**
    * Whether to score and rank.
    *
@@ -99,6 +101,7 @@ export function CandidateList({
   title: string;
   filters?: ListFilters;
   claimable?: boolean;
+  removeScoopsOn?: boolean;
   scored?: boolean;
   basePath: string;
   /** Query the filter form must carry through — the post being viewed, say. */
@@ -133,6 +136,7 @@ export function CandidateList({
   const canDecideDirector = allows(currentUser, "decide.director", { openingId, assignment });
   const canDecideClient = allows(currentUser, "decide.client", { openingId, assignment });
   const canManage = allows(currentUser, "opening.manage", { openingId, assignment, onStrategy });
+  const removableScoops = removeScoopsOn && allows(currentUser, "opening.act", { openingId, assignment });
   const apps = visibleToSeat(given, seat);
   const destinationJobs = repo.openings().filter((o) => {
     if (o.id === openingId || o.status !== "open") return false;
@@ -364,7 +368,7 @@ export function CandidateList({
       ) : (
         <div className="divide-y divide-rule">
           <div className="px-4 sm:px-8 pt-4">
-            <BulkBar form={BULK_FORM} noun={["candidate", "candidates"]} action={canManage ? removeApplications : undefined}>
+            <BulkBar form={BULK_FORM} noun={["candidate", "candidates"]} action={canManage ? removeApplications : removableScoops ? removeScoops : undefined}>
               <input type="hidden" name="openingId" value={openingId} />
               {allows(currentUser, "opening.sourcing", { openingId, assignment }) && <WorkLocationBulkControls locations={opening?.workLocations} />}
               {claimable && (
@@ -378,11 +382,13 @@ export function CandidateList({
               )}
               <DownloadCvsButton field="appId" />
               <BulkStageControls stages={bulkStages(onPage.filter((a) => allows(currentUser, "opening.act", { openingId, assignment, ownerTaId: a.ownerTaId })).map((a) => a.stage), canDecideDirector, canDecideClient)} />
-              {canManage && (
+              {(canManage || removableScoops) && (
                 <BulkConfirm
                   label="Remove from this job"
                   noun={["candidate", "candidates"]}
-                  warning="They move to Dropped out and can be brought back from there."
+                  warning={canManage
+                    ? "They move to Dropped out and can be brought back from there."
+                    : "They are removed from this job. The CV stays in the database."}
                 />
               )}
             </BulkBar>

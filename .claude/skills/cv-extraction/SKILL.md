@@ -261,10 +261,14 @@ Repo hard rules that apply: never run `convex deploy/run/import/env set` or any 
 - 2026-10-26 138de24 fair queue `cvExtractionQueue` after 800 CVs took 20-25 min; 56768fa urgent slot for HH/Scoop; 8942ad5 failures say why; ef9df4f one malformed list no longer rejects a CV; a730c71 re-upload of a failed CV is read.
 - 2026-10-28 DeepSeek reasoning off for CV tasks + cut-off JSON retried ("not readable JSON (323 characters)"); Try again / Remove on failed HH and Scoop cards.
 
+## Unreadable scans (3 Nov)
+
+When no reader recovers text, the applicant is kept and named `Unread CV – <file name>` (`convex/lib/unreadCvName.ts`) unless the file name reads as a person's name. `readThinCvWithVision` returns `why` (which reader gave nothing); it is joined into the upload's `errorMessage` and logged. A later successful read replaces the name. Scan order in `readThinCvWithVision`: Haiku via the app bridge (`readWithHaiku`: whole file, or 4-page batches, max 3 calls, when over 8 MB or over 6 pages; the bridge retries once when busy and waits 8 s for a slot), then OpenRouter's PDF reader (`callOpenRouterPdfOCR`, Mistral OCR; PDFs only; opt-in with `C141_PDF_OCR=on`, off by default; sends the PDF to OpenRouter), then NVIDIA on pdf.js-extracted raw images. A .docx with no text has its pictures (`docxPictures`, first 4 JPEG/PNG) read the same way. The whole read is capped near 150 s to stay inside the 210 s extraction deadline.
+
 <!-- skill-meta
-verified-commit: b8db147d
-verified-hash: c8c7d0e93bdbfd42c24fa7385ec903c50b9f093f
-verified-date: 2026-11-02
+verified-commit: 89cc6f1
+verified-hash: 7829f9a2a4652eff494d4aed4a9fa28be111518d
+verified-date: 2026-11-03
 sources:
   src/components/HhUpload.tsx
   src/components/ScoopUpload.tsx

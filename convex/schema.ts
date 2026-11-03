@@ -271,6 +271,20 @@ export default defineSchema({
     .index("by_jobId_assignmentRole", ["jobId", "assignmentRole"])
     .index("by_userId_isActive", ["userId", "isActive"]),
 
+  // Daily targets a lead or admin sets for one TA on one opening (3 Nov):
+  // CVs to shortlist per day and LinkedIn links to add to the Excel sheet per day.
+  // One row per (job, TA); the same numbers apply every day until changed.
+  taTargets: defineTable({
+    jobId: v.id("jobs"),
+    userId: v.id("users"),
+    cvsPerDay: v.number(),
+    linksPerDay: v.number(),
+    setBy: v.id("users"),
+    updatedAt: v.number(),
+  })
+    .index("by_jobId_userId", ["jobId", "userId"])
+    .index("by_userId", ["userId"]),
+
   // A TA can ask to join an opening without becoming a member of its team.
   // Approval is the only operation that creates/reactivates jobAssignments.
   openingAccessRequests: defineTable({

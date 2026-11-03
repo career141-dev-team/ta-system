@@ -14,6 +14,7 @@ Neighbours (do not duplicate; follow the link):
 - Follow-up sequences, auto follow-up switch (`ta/followUp:setAuto`), outreach: /follow-up
 - Scoops (CVs mailed/uploaded to a TA): /scoop
 - Strategy Planner (`/openings/[id]/strategies`): /strategy-planner
+- Daily CV / LinkedIn-link targets shown on the Overview and TA dashboard: /targets
 - Voice agent / screening calls: /voice-agent
 - Mailbox intake, `routeShared` post routing internals: /email-intake
 - CV reading, Prepared CV: /cv-extraction

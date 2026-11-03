@@ -33,3 +33,7 @@ assert.match(friendlyUploadError("Process interrupted or timed out (>10m)"), /ti
 assert.match(friendlyUploadError("CV extraction safety guard tripped"), /read safely/);
 assert.doesNotMatch(friendlyUploadError("LLM failed to extract candidate data (API timeout)"), /LLM|API/);
 assert.doesNotMatch(friendlyUploadError(undefined), /undefined/);
+assert.match(friendlyUploadError("The reader could not recover enough text from this file (Haiku gave no answer). The CV needs review."), /scan/);
+import { unreadCvName } from "../convex/lib/unreadCvName";
+assert.equal(unreadCvName("Scan_0012.pdf"), "Unread CV – Scan 0012");
+assert.equal(unreadCvName(null), "Unread CV");

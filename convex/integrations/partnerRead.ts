@@ -35,6 +35,7 @@ export const PARTNER_READ_TABLES = [
   "taWorkdays", "taWorkdayRequests", "taWorkdayCarry", "taWorkdayMail",
   "taWorkdayLeads", "taWorkdayActivity",
   "taWorkdayCheckNotes", "taWorkdayTaskEvents", "taWorkdayExceptions", "taSourcingRuns", "taWorkdayEvidence",
+  "taTargets",
 ] as const;
 
 const partnerTableSet = new Set<string>(PARTNER_READ_TABLES);

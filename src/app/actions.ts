@@ -2232,6 +2232,10 @@ export async function deleteLink(formData: FormData) {
 export async function removeApplication(formData: FormData) {
   await primeStore({ allApplications: true });
   await authorize(formData, "opening.manage", { application: "appId", opening: "openingId" });
+  await dropApplication(formData);
+}
+
+async function dropApplication(formData: FormData) {
   const user = await getCurrentUser();
   const openingId = String(formData.get("openingId"));
   const appId = String(formData.get("appId"));
@@ -2280,6 +2284,29 @@ function one(formData: FormData, fields: Record<string, string>) {
   for (const [k, v] of formData.entries()) if (typeof v === "string") fd.append(k, v);
   for (const [k, v] of Object.entries(fields)) fd.set(k, v);
   return fd;
+}
+
+/**
+ * A TA takes a scoop they added by mistake off the opening (3 Nov). The CV stays in
+ * the database — only this opening's application moves to Dropped out, which a lead
+ * can bring back. `opening.act` carries the collision lock, so another TA's
+ * shortlisted scoop is refused.
+ */
+export async function removeScoop(formData: FormData) {
+  await primeStore({ allApplications: true });
+  await authorize(formData, "opening.act", { application: "appId", opening: "openingId" });
+  const app = repo.application(String(formData.get("appId")));
+  if (!app?.scoopReceivedAt && !app?.scoopFrom) await fail("Only a scoop can be removed from here.");
+  await dropApplication(formData);
+}
+
+export async function removeScoops(formData: FormData) {
+  const ids = formData.getAll("appId").map(String);
+  if (ids.length === 0) await fail("Tick at least one candidate.");
+  const r = await eachInline(ids, (appId) => removeScoop(one(formData, { appId })));
+  await (r.ok ? (r.notOk ? note : done) : fail)(
+    bulkSummary(r, "removed from the opening — the CV stays in the database"),
+  );
 }
 
 export async function removeApplications(formData: FormData) {
@@ -2373,6 +2400,30 @@ export async function deleteClients(formData: FormData) {
   await (deleted ? (kept.length ? note : done) : fail)(
     kept.length ? `${said} Kept — they still have openings: ${kept.join(", ")}.` : said,
   );
+}
+
+// ─── Targets (3 Nov) ─────────────────────────────────────────────────────────
+
+/** A lead or admin sets one TA's daily CV and LinkedIn-link targets on one opening. */
+export async function setTargets(formData: FormData) {
+  const user = await getCurrentUser();
+  if (user.role !== "admin" && user.role !== "ta_lead") await fail("Only a TA lead or admin can set targets.");
+  if (!isConvex()) await fail("Targets need the live backend.");
+  const cvsPerDay = Number(formData.get("cvsPerDay"));
+  const linksPerDay = Number(formData.get("linksPerDay"));
+  try {
+    await convexMutation("ta/targets:set", {
+      actorId: user.id,
+      jobId: String(formData.get("jobId") ?? ""),
+      userId: String(formData.get("userId") ?? ""),
+      cvsPerDay,
+      linksPerDay,
+    });
+  } catch (e) {
+    await fail(backendMessage(e, "The target could not be saved."));
+  }
+  revalidatePath("/", "layout");
+  await done("Target saved.");
 }
 
 // ─── The Bin (28 Sep) ────────────────────────────────────────────────────────

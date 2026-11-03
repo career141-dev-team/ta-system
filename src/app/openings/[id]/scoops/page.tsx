@@ -34,7 +34,7 @@ export default async function ScoopsPage({
   if (!opening) notFound();
   const user = await getCurrentUser();
 
-  const everyone = repo.applications(id).filter((a) => a.scoopReceivedAt || a.scoopFrom);
+  const everyone = repo.applications(id).filter((a) => (a.scoopReceivedAt || a.scoopFrom) && a.stage !== "dropped_out");
   const apps = applyFilters(everyone, filters, user.id);
   const waiting = everyone.filter((a) => !a.ownerTaId).length;
   const canAct = allows(user, "opening.act", { openingId: id, assignment: repo.assignmentFor(id, user.id) ?? null });
@@ -66,6 +66,7 @@ export default async function ScoopsPage({
         title="Scoops"
         filters={filters}
         claimable
+        removeScoopsOn
         basePath={`/openings/${id}/scoops`}
       />
     </>
