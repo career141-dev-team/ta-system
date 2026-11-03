@@ -119,3 +119,28 @@ export const suggestionsWriteBody = z.discriminatedUnion("action", [
   z.object({ action: z.literal("send_message"), body: text(2_000) }).strict(),
   z.object({ action: z.literal("save_empty_reason"), reason: text(1_000) }).strict(),
 ]);
+
+const excelOutcome = z.enum(["no_contact", "contacted", "responded", "cv_received", "shortlisted", "declined", "unreachable"]);
+const excelId = z.string().min(1).max(200);
+const locationId = z.string().max(80).nullable();
+export const excelTablesWriteBody = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("add_link"), url: text(2_000), name: text(200), note: text(2_000), workLocationId: locationId, level: z.number().int().min(1).max(10_000).nullable() }).strict(),
+  z.object({ action: z.literal("add_level"), workLocationId: locationId }).strict(),
+  z.object({ action: z.literal("rename_level"), level: z.number().int().min(1).max(10_000), name: text(40), workLocationId: locationId }).strict(),
+  z.object({ action: z.literal("delete_level"), level: z.number().int().min(1).max(10_000), workLocationId: locationId }).strict(),
+  z.object({ action: z.literal("update_row"), entryId: excelId, outcome: excelOutcome, name: text(200), company: text(200), phoneNumber: text(80), phoneSource: text(80) }).strict(),
+  z.object({ action: z.literal("log_outreach"), entryId: excelId, channel: text(40), note: text(2_000) }).strict(),
+  z.object({ action: z.literal("toggle_eye"), entryId: excelId }).strict(),
+  z.object({ action: z.literal("toggle_add_on"), entryId: excelId, on: z.boolean() }).strict(),
+  z.object({ action: z.literal("set_interest"), entryId: excelId, interest: z.enum(["interested", "not_interested"]), reason: text(300) }).strict(),
+  z.object({ action: z.literal("add_to_pipeline"), entryId: excelId }).strict(),
+  z.object({ action: z.literal("decide_cv_match"), entryId: excelId, decision: z.enum(["same", "different"]) }).strict(),
+  z.object({ action: z.literal("add_ta_note"), entryId: excelId, note: text(2_000) }).strict(),
+  z.object({ action: z.literal("remove_ta_note"), entryId: excelId, noteId: excelId }).strict(),
+  z.object({ action: z.literal("add_lead_note"), entryId: excelId, note: text(2_000) }).strict(),
+  z.object({ action: z.literal("remove_lead_note"), entryId: excelId, noteId: excelId }).strict(),
+  z.object({ action: z.literal("delete_row"), entryId: excelId }).strict(),
+  z.object({ action: z.literal("bulk_add_to_pipeline"), entryIds: z.array(excelId).min(1).max(25) }).strict(),
+  z.object({ action: z.literal("bulk_move"), entryIds: z.array(excelId).min(1).max(25), stage: text(80), reason: text(300) }).strict(),
+  z.object({ action: z.literal("bulk_assign_location"), entryIds: z.array(excelId).min(1).max(25), workLocationId: excelId }).strict(),
+]);
