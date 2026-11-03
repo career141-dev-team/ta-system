@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isNumberLevelError, numberReadiness, pickSender, type SenderNumber } from "../convex/lib/senderRouting";
+import { handleOnLine, isNumberLevelError, numberReadiness, pickSender, type SenderNumber } from "../convex/lib/senderRouting";
 
 const MAIN = { phone: "+94742197476", phoneId: "965783109962872" };
 const thushini: SenderNumber = { phone: "+94779077728", phoneId: "1147756625098092", userId: "u_thushini", ready: true };
@@ -65,4 +65,13 @@ test("ready only when connected on the Cloud API, both templates approved and re
   const noAccess = numberReadiness("+94779077728", { phone: "Unsupported get request", templates: "x", subscribedApps: "y" });
   assert.equal(noAccess.ready, false);
   assert.match(noAccess.note, /API user cannot reach this number/);
+});
+
+test("on a TA's own number only candidates being followed up are handled; the main line is unchanged", () => {
+  const followUp = (s: string) => s === "follow_up" || s === "ta_shortlist";
+  assert.equal(handleOnLine(false, [], followUp), true);
+  assert.equal(handleOnLine(true, [], followUp), false);
+  assert.equal(handleOnLine(true, ["second_shortlist", "rejected"], followUp), false);
+  assert.equal(handleOnLine(true, ["rejected", "follow_up"], followUp), true);
+  assert.equal(handleOnLine(true, ["ta_shortlist"], followUp), true);
 });

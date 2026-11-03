@@ -130,7 +130,7 @@ export const recordTaPhoneMessage = internalMutation({
   },
 });
 import { isFollowUpStage } from "../ta/stages";
-import { isNumberLevelError, pickSender } from "../lib/senderRouting";
+import { handleOnLine, isNumberLevelError, pickSender } from "../lib/senderRouting";
 
 /**
  * The Meta `phone_number_id` for the line an opening sends from.
@@ -171,6 +171,23 @@ export const getMetaPhoneNumberId = internalQuery({
         `via settings.whatsappNumbers:add to fix.`,
     );
     return null;
+  },
+});
+
+/** `handleOnLine` for one incoming message: is the receiving number a TA's, and is the sender being followed up? */
+export const handleOnTaLine = internalQuery({
+  args: { phoneNumberId: v.optional(v.string()), senderPhone: v.string() },
+  handler: async (ctx, args) => {
+    if (!args.phoneNumberId) return true;
+    const row = (await ctx.db.query("whatsappNumbers").collect()).find((n) => n.whatchimpPhoneId === args.phoneNumberId);
+    // A TA row has a TA or a readiness (admin/addTaWhatsAppNumbers); the main line has neither.
+    const isTaLine = !!row && (row.userId !== undefined || row.ready !== undefined);
+    if (!isTaLine) return true;
+    const candidate = await findCandidateByPhone(ctx, args.senderPhone);
+    const apps = candidate
+      ? await ctx.db.query("applications").withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidate._id)).collect()
+      : [];
+    return handleOnLine(true, apps.map((a: any) => a.currentStage), isFollowUpStage);
   },
 });
 
