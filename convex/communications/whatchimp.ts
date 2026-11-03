@@ -182,6 +182,17 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
       const fromNumber = message.from;
       const cleanFromNumber = fromNumber.replace(/[^0-9]/g, "");
 
+      // A TA's own number carries their personal chats too: only candidates
+      // being followed up are handled there (lib/senderRouting handleOnLine, 3 Nov).
+      const ours = await ctx.runQuery(internal.communications.whatsappOutbound.handleOnTaLine, {
+        phoneNumberId: value.metadata?.phone_number_id ?? undefined,
+        senderPhone: cleanFromNumber,
+      });
+      if (!ours) {
+        console.log(`[WhatChimp Webhook] Left to the TA: a message on their own number from someone not being followed up.`);
+        continue;
+      }
+
       const isCandidateReply = await ctx.runQuery(internal.communications.whatsappOutbound.isCandidatePhone, { phone: cleanFromNumber });
       const isTaNumber = await ctx.runQuery(internal.settings.whatsappNumbers.isTaNumber, { phone: cleanFromNumber });
 

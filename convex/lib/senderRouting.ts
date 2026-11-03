@@ -52,6 +52,17 @@ export function pickSender(o: {
 export const isNumberLevelError = (metaError: string) =>
   /"code":\s*(10|190|200|131031|131042|132001|133010)\b/.test(metaError);
 
+/**
+ * Whether a message that arrived on a TA's own number is ours to handle
+ * (3 Nov). A TA's number stays on their phone, so their friends, family and
+ * other work chats arrive here too: only a candidate the desk is following up
+ * is read, answered or filed. Everyone else is left to the TA on the phone -
+ * no CV made from a holiday photo, no job reply to a cousin. The main line
+ * keeps its old behaviour (`isTaLine` false).
+ */
+export const handleOnLine = (isTaLine: boolean, senderStages: string[], isFollowUpStage: (s: string) => boolean) =>
+  !isTaLine || senderStages.some(isFollowUpStage);
+
 /** What Meta says about one number, as `checkWithMeta` reads it. Any part may be an error message. */
 export interface MetaNumberState {
   phone: { status?: string; platform_type?: string; display_phone_number?: string } | string;
