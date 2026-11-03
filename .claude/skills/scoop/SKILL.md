@@ -25,6 +25,10 @@ Neighbours (do not duplicate, link):
 
 Candidate rows, including scoop rows, can add a candidate to another assigned job via `ta/applications:addToAssignedJob`; the original application is retained.
 
+## Removing a scoop (3 Nov)
+
+A TA on the opening (`opening.act`, with the collision lock) can tick scoops on the Scoops tab and press "Remove from this job" (`removeScoops` -> `removeScoop` in `src/app/actions.ts`; `CandidateList` prop `removeScoopsOn`). Only flagged scoops; it is the same reversible move to Dropped out as `removeApplication`, not a delete - the CV and candidate stay in the database. The Scoops page hides `dropped_out` rows; a lead brings one back from Dropped out.
+
 ## How it works now
 
 ### Flow 1 - Upload (TA, Scoops tab)
@@ -233,9 +237,9 @@ Repo hard rules that apply: never run `convex deploy`/`convex run`/`convex impor
 - 2026-10-28 `d34d9a6` a scoop moved to Follow-up or Director Shortlist gets the opening's only active work location (`placeInOnlyLocation` in `ta/applications.ts`); Try again / Remove on failed scoop cards (`ta/hhUpload:retry`).
 
 <!-- skill-meta
-verified-commit: c471ec77
-verified-hash: bc4d48925a4fb892b8d45c4ca9a7163363d55c31
-verified-date: 2026-10-29
+verified-commit: 89cc6f1
+verified-hash: 5dcbbf59c81fc5ae2cc3ea8143336459250542f7
+verified-date: 2026-11-03
 sources:
   convex/ta/scoopUpload.ts
   convex/lib/scoopMail.ts

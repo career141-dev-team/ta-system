@@ -2232,6 +2232,10 @@ export async function deleteLink(formData: FormData) {
 export async function removeApplication(formData: FormData) {
   await primeStore({ allApplications: true });
   await authorize(formData, "opening.manage", { application: "appId", opening: "openingId" });
+  await dropApplication(formData);
+}
+
+async function dropApplication(formData: FormData) {
   const user = await getCurrentUser();
   const openingId = String(formData.get("openingId"));
   const appId = String(formData.get("appId"));
@@ -2280,6 +2284,29 @@ function one(formData: FormData, fields: Record<string, string>) {
   for (const [k, v] of formData.entries()) if (typeof v === "string") fd.append(k, v);
   for (const [k, v] of Object.entries(fields)) fd.set(k, v);
   return fd;
+}
+
+/**
+ * A TA takes a scoop they added by mistake off the opening (3 Nov). The CV stays in
+ * the database — only this opening's application moves to Dropped out, which a lead
+ * can bring back. `opening.act` carries the collision lock, so another TA's
+ * shortlisted scoop is refused.
+ */
+export async function removeScoop(formData: FormData) {
+  await primeStore({ allApplications: true });
+  await authorize(formData, "opening.act", { application: "appId", opening: "openingId" });
+  const app = repo.application(String(formData.get("appId")));
+  if (!app?.scoopReceivedAt && !app?.scoopFrom) await fail("Only a scoop can be removed from here.");
+  await dropApplication(formData);
+}
+
+export async function removeScoops(formData: FormData) {
+  const ids = formData.getAll("appId").map(String);
+  if (ids.length === 0) await fail("Tick at least one candidate.");
+  const r = await eachInline(ids, (appId) => removeScoop(one(formData, { appId })));
+  await (r.ok ? (r.notOk ? note : done) : fail)(
+    bulkSummary(r, "removed from the opening — the CV stays in the database"),
+  );
 }
 
 export async function removeApplications(formData: FormData) {

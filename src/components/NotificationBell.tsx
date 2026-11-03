@@ -190,6 +190,7 @@ export function NotificationBell() {
   // null until the first poll lands, so arriving on an already-unread inbox
   // does not itself sound the chime.
   const seenIds = useRef<Set<string> | null>(null);
+  const [toast, setToast] = useState<NotificationItem | null>(null);
 
   const poll = useCallback(async () => {
     try {
@@ -205,6 +206,10 @@ export function NotificationBell() {
         if (newUnread.length > 0) {
           playNotificationBell();
           flashNotificationTitle(newUnread[0].title);
+          // A silent bell (browser blocks sound until the first click) went unnoticed by
+          // a TA Lead, so an access request also gets an on-screen banner (3 Nov).
+          const request = newUnread.find((n) => n.type === "opening_access_requested");
+          if (request) setToast(request);
         }
       }
       seenIds.current = new Set(unread.map((n) => n.id));
@@ -270,6 +275,27 @@ export function NotificationBell() {
 
   return (
     <div className="relative">
+      {toast && (
+        <div role="alert" className="fixed right-4 top-16 z-[60] w-80 rounded-lg border border-rule bg-surface p-3 shadow-lg">
+          <div className="text-[12.5px] font-semibold">{toast.title}</div>
+          <div className="mt-0.5 text-[11.5px] leading-snug text-ink-soft">{toast.body}</div>
+          <div className="mt-2 flex items-center gap-3">
+            <Link
+              href={toast.href ?? "/openings?accessRequests=open"}
+              onClick={() => {
+                markRead(toast.id);
+                setToast(null);
+              }}
+              className="text-[11.5px] font-medium text-brand hover:underline"
+            >
+              Review request
+            </Link>
+            <button type="button" onClick={() => setToast(null)} className="text-[11px] text-ink-faint hover:text-ink cursor-pointer">
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
       <button
         onClick={() => setOpen((v) => !v)}
         aria-label="Notifications"

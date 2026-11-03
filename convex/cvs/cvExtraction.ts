@@ -89,6 +89,7 @@ import OpenAI from "openai";
 import crypto from "crypto";
 import { z } from "zod";
 import mammoth from "mammoth";
+import { PDFDocument } from "pdf-lib";
 import { resolveCandidateLocation } from "../lib/locationResolver";
 // Polyfill DOMMatrix for Node.js environment required by pdfjs-dist
 if (typeof globalThis.DOMMatrix === "undefined") {
@@ -121,7 +122,7 @@ import {
   deriveTotalExperienceYears,
   deriveCurrentRole,
 } from "../candidates/derivations";
-import { generateNvidiaEmbedding, logLLMUsage, callNvidiaVisionOCR, callHaikuVisionOCR, getOpenAI, getModelForTask, executeLLMWithNvidiaFallback, OPENROUTER_PRIMARY_MODEL, OPENROUTER_FALLBACK_MODELS, OPENROUTER_CV_EXTRACTION_MODEL, OPENROUTER_CV_FALLBACK_MODELS } from "../lib/llm";
+import { generateNvidiaEmbedding, logLLMUsage, callNvidiaVisionOCR, callHaikuVisionOCR, callOpenRouterPdfOCR, getOpenAI, getModelForTask, executeLLMWithNvidiaFallback, OPENROUTER_PRIMARY_MODEL, OPENROUTER_FALLBACK_MODELS, OPENROUTER_CV_EXTRACTION_MODEL, OPENROUTER_CV_FALLBACK_MODELS } from "../lib/llm";
 
 /** The shared-mailbox channels post routing decides for. */
 const isEmailChannel = (channel: string | undefined) =>
@@ -322,6 +323,7 @@ function extractRawPdfStreamTextFallback(buffer: ArrayBuffer): string {
 
 import { extractPageTextWithLayout } from "../lib/pdfLayout";
 import { within } from "../lib/within";
+import { unreadCvName } from "../lib/unreadCvName";
 
 /*
  * No PDF reader may hold an action slot for long (6 Oct). The backend runs
@@ -427,6 +429,26 @@ async function extractTextFromDocx(buffer: ArrayBuffer): Promise<string> {
     console.error("Docx extraction failed:", error);
     throw new Error("Docx extraction failed: " + (error as any).message);
   }
+}
+
+const DOCX_MAX_PICTURES = 4;
+
+/** The page pictures inside a Word file, in order — what a scanned .docx holds instead of text. */
+async function docxPictures(buffer: ArrayBuffer): Promise<Buffer[]> {
+  const found: Buffer[] = [];
+  try {
+    await mammoth.convertToHtml({ buffer: Buffer.from(buffer) }, {
+      convertImage: mammoth.images.imgElement(async (image) => {
+        if (found.length < DOCX_MAX_PICTURES && ["image/jpeg", "image/png"].includes(image.contentType)) {
+          found.push(Buffer.from(await image.read()));
+        }
+        return { src: "" };
+      }),
+    });
+  } catch (err) {
+    console.warn("[CvExtraction] Could not list pictures in the Word file:", err);
+  }
+  return found;
 }
 
 function ensureDOMMatrixPolyfill() {
@@ -694,17 +716,70 @@ export async function extractTextWithTesseract(
 
 // Bound the base64 request size; oversized files can still use NVIDIA's image fallback.
 const HAIKU_MAX_BYTES = 8 * 1024 * 1024;
-async function readThinCvWithVision(buffer: ArrayBuffer, ctx?: ActionCtx, cvUploadId?: Id<"cvUploads">): Promise<{ text: string; model: string }> {
-  if (!ctx) return { text: "", model: "" };
+const PDF_OCR_LIMIT_MS = 90_000;
+const HAIKU_PAGES_PER_CALL = 4;
+const HAIKU_MAX_CALLS = 3;
+
+async function readWithHaiku(bytes: Buffer, isPdf: boolean, imageMime: string, why: string[]): Promise<string> {
+  const ask = (data: Buffer) =>
+    within(callHaikuVisionOCR({ kind: isPdf ? "pdf" : "image", mime: isPdf ? "application/pdf" : imageMime, base64: data.toString("base64") }), VISION_LIMIT_MS, "", "Haiku vision OCR");
+  let chunks: Buffer[] = [bytes];
+  if (isPdf) {
+    try {
+      const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+      if (bytes.length > HAIKU_MAX_BYTES || doc.getPageCount() > HAIKU_PAGES_PER_CALL + 2) {
+        chunks = [];
+        for (let from = 0; from < doc.getPageCount() && chunks.length < HAIKU_MAX_CALLS; from += HAIKU_PAGES_PER_CALL) {
+          const part = await PDFDocument.create();
+          const pages = await part.copyPages(doc, Array.from({ length: Math.min(HAIKU_PAGES_PER_CALL, doc.getPageCount() - from) }, (_, i) => from + i));
+          pages.forEach((pg) => part.addPage(pg));
+          chunks.push(Buffer.from(await part.save()));
+        }
+      }
+    } catch (err: any) {
+      why.push(`PDF could not be split (${err?.message || "error"})`);
+    }
+  }
+  const usable = chunks.filter((c) => c.length <= HAIKU_MAX_BYTES);
+  if (!usable.length) { why.push("file over 8 MB, Haiku skipped"); return ""; }
+  let text = "";
+  const started = Date.now();
+  for (const c of usable) {
+    if (Date.now() - started > 100_000) { why.push("Haiku ran out of time on later pages"); break; }
+    const part = await ask(c);
+    if (!part) { why.push("Haiku gave no answer (bridge off, busy or slow)"); break; }
+    text += (text ? "\n" : "") + part;
+  }
+  if (text && cleanRawText(text).trim().length < 50) why.push("Haiku read too little");
+  return text;
+}
+
+// `why` says which reader gave nothing, so a scanned CV that fails names its step
+// on the upload card and in the logs instead of one generic sentence (3 Nov).
+async function readThinCvWithVision(buffer: ArrayBuffer, ctx?: ActionCtx, cvUploadId?: Id<"cvUploads">): Promise<{ text: string; model: string; why: string[] }> {
+  const why: string[] = [];
+  const t0 = Date.now();
+  if (!ctx) return { text: "", model: "", why: ["no action context"] };
   const bytes = Buffer.from(buffer);
   const isPdf = bytes.subarray(0, 5).toString() === "%PDF-";
   const imageMime = bytes[0] === 0xff && bytes[1] === 0xd8 ? "image/jpeg"
     : bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ? "image/png"
     : bytes.subarray(0, 4).toString() === "RIFF" && bytes.subarray(8, 12).toString() === "WEBP" ? "image/webp" : "";
-  if (!isPdf && !imageMime) return { text: "", model: "" };
-  if (bytes.length <= HAIKU_MAX_BYTES) {
-    const text = await within(callHaikuVisionOCR({ kind: isPdf ? "pdf" : "image", mime: isPdf ? "application/pdf" : imageMime, base64: bytes.toString("base64") }), VISION_LIMIT_MS, "", "Haiku vision OCR");
-    if (cleanRawText(text).trim().length >= 50) return { text, model: "haiku-4.5" };
+  if (!isPdf && !imageMime) return { text: "", model: "", why: ["the file is not a PDF or an image"] };
+  // Haiku reads the file whole when it is small; a big or long scan goes in page
+  // batches so it stays under the size and time limits (3 Nov).
+  const haikuText = await readWithHaiku(bytes, isPdf, imageMime, why);
+  if (cleanRawText(haikuText).trim().length >= 50) return { text: haikuText, model: "haiku-4.5", why };
+  // The whole read must leave room before the 210 s extraction deadline.
+  if (isPdf && Date.now() - t0 < 90_000) {
+    const text = await within(callOpenRouterPdfOCR(bytes.toString("base64"), "cv.pdf"), PDF_OCR_LIMIT_MS, "", "OpenRouter PDF OCR");
+    if (cleanRawText(text).trim().length >= 50) return { text, model: "openrouter-pdf-ocr", why };
+    why.push(text ? "OpenRouter PDF reader read too little" : "OpenRouter PDF reader gave nothing (off, no key or failed)");
+  }
+  if (Date.now() - t0 > 150_000) {
+    why.push("out of time before the NVIDIA step");
+    console.warn(`[CvExtraction] Scan unreadable for upload ${cvUploadId}: ${why.join("; ")}`);
+    return { text: "", model: "", why };
   }
   try {
     const images = isPdf
@@ -712,12 +787,17 @@ async function readThinCvWithVision(buffer: ArrayBuffer, ctx?: ActionCtx, cvUplo
       : [`data:${imageMime};base64,${bytes.toString("base64")}`];
     if (images.length) {
       const text = await within(callNvidiaVisionOCR(ctx, images, cvUploadId), VISION_LIMIT_MS, "", "NVIDIA vision OCR");
-      if (cleanRawText(text).trim().length >= 50) return { text, model: "vision-nvidia" };
+      if (cleanRawText(text).trim().length >= 50) return { text, model: "vision-nvidia", why };
+      why.push("NVIDIA read too little");
+    } else {
+      why.push("no page images could be pulled out of the PDF");
     }
   } catch (err: any) {
     console.warn("[CvExtraction] NVIDIA vision OCR failed:", err?.message || String(err));
+    why.push(`NVIDIA failed (${err?.message || "error"})`);
   }
-  return { text: "", model: "" };
+  console.warn(`[CvExtraction] Scan unreadable for upload ${cvUploadId}: ${why.join("; ")}`);
+  return { text: "", model: "", why };
 }
 
 export async function extractText(
@@ -726,7 +806,7 @@ export async function extractText(
   skipOCR: boolean = false,
   ctx?: ActionCtx,
   cvUploadId?: Id<"cvUploads">
-): Promise<{ text: string; extractionModel: string; method: string; ocrAttempted: boolean }> {
+): Promise<{ text: string; extractionModel: string; method: string; ocrAttempted: boolean; ocrWhy?: string[] }> {
   const type = fileType.toLowerCase();
 
   const header = Buffer.from(buffer);
@@ -752,7 +832,7 @@ export async function extractText(
     }
     const vision = await readThinCvWithVision(buffer, ctx, cvUploadId);
     if (vision.text) return { text: vision.text, extractionModel: vision.model, method: "vision_ocr", ocrAttempted: true };
-    return { text: pdfText || "", extractionModel: "pdf_text_thin", method: "ocr_failed", ocrAttempted: true };
+    return { text: pdfText || "", extractionModel: "pdf_text_thin", method: "ocr_failed", ocrAttempted: true, ocrWhy: vision.why };
   }
 
 
@@ -762,7 +842,23 @@ export async function extractText(
 
   if (type === "docx" || type === "doc" || type.includes("wordprocessingml") || isZipHeader) {
     const docxText = await extractTextFromDocx(buffer);
-    return { text: docxText, extractionModel: "deepseek-v4-flash", method: "docx_text", ocrAttempted: false };
+    if (cleanRawText(docxText).trim().length >= 50) {
+      return { text: docxText, extractionModel: "deepseek-v4-flash", method: "docx_text", ocrAttempted: false };
+    }
+    // A scanned Word file is pictures of pages: read them like any scan (3 Nov).
+    const pictures = await docxPictures(buffer);
+    if (!pictures.length) return { text: docxText, extractionModel: "deepseek-v4-flash", method: "docx_text", ocrAttempted: false };
+    if (ctx && cvUploadId) {
+      await ctx.runMutation(internal.candidates.candidates.updateCvUpload, { cvUploadId, processingStage: "ocr" });
+    }
+    const why: string[] = [];
+    let text = "";
+    for (const picture of pictures) {
+      const vision = await readThinCvWithVision(picture.buffer.slice(picture.byteOffset, picture.byteOffset + picture.byteLength) as ArrayBuffer, ctx, cvUploadId);
+      why.push(...vision.why);
+      text += (text ? "\n" : "") + vision.text;
+    }
+    return { text, extractionModel: text ? "docx_pictures_ocr" : "vision_failed", method: text ? "vision_ocr" : "ocr_failed", ocrAttempted: true, ocrWhy: why };
   }
 
   // 3. Images (PNG, JPG, JPEG, WEBP, TIFF)
@@ -771,7 +867,7 @@ export async function extractText(
       await ctx.runMutation(internal.candidates.candidates.updateCvUpload, { cvUploadId, processingStage: "ocr" });
     }
     const vision = await readThinCvWithVision(buffer, ctx, cvUploadId);
-    return { text: vision.text, extractionModel: vision.model || "vision_failed", method: vision.text ? "vision_ocr" : "ocr_failed", ocrAttempted: true };
+    return { text: vision.text, extractionModel: vision.model || "vision_failed", method: vision.text ? "vision_ocr" : "ocr_failed", ocrAttempted: true, ocrWhy: vision.why };
   }
 
   // Do not decode a broken or mislabeled binary PDF as plausible text.
@@ -1243,7 +1339,7 @@ async function runCvExtractionLocked(
     candidateId = cvUpload.candidateId ?? unreadHolder?._id ?? null;
     const tTextStart = Date.now();
     await ctx.runMutation(internal.candidates.candidates.updateCvUpload, { cvUploadId, processingStage: "extracting_text" });
-    let { text: rawText, extractionModel, method: textExtractionMethod, ocrAttempted } = await extractText(buffer, fileType, !!skipLLM, ctx, cvUploadId);
+    let { text: rawText, extractionModel, method: textExtractionMethod, ocrAttempted, ocrWhy } = await extractText(buffer, fileType, !!skipLLM, ctx, cvUploadId);
     await ctx.runMutation(internal.candidates.candidates.updateCvUpload, { cvUploadId, textExtractionMethod });
     t_text = Date.now() - tTextStart;
     checkDeadline("post_text_extraction");
@@ -1259,11 +1355,14 @@ async function runCvExtractionLocked(
         extractionModel = vision.model;
         textExtractionMethod = "vision_ocr";
         await ctx.runMutation(internal.candidates.candidates.updateCvUpload, { cvUploadId, textExtractionMethod });
+      } else {
+        ocrWhy = vision.why;
       }
     }
 
     if (trimmed.length < 50) {
-      throw new Error("The reader could not recover enough text from this file. The CV needs review.");
+      const detail = ocrWhy?.length ? ` (${ocrWhy.join("; ")})` : "";
+      throw new Error(`The reader could not recover enough text from this file${detail}. The CV needs review.`);
     }
     let cappedRawText = trimmed.length > MAX_RAW_TEXT_LENGTH
       ? trimmed.slice(0, MAX_RAW_TEXT_LENGTH)
@@ -1614,10 +1713,7 @@ async function runCvExtractionLocked(
     // failed read must not rename them after the file (29 Sep).
     if (candidateId) {
       // A person's name from the file name when it reads as one, else the file name.
-      const fallbackName = guessNameFromCv("", cvUpload?.fileName)
-        ?? (cvUpload?.fileName
-          ? cvUpload.fileName.replace(/\.[^/.]+$/, "").replace(/[_\-]/g, " ")
-          : "Applicant");
+      const fallbackName = guessNameFromCv("", cvUpload?.fileName) ?? unreadCvName(cvUpload?.fileName);
 
       // createCandidate can return a held person through dedup. A failed read
       // must never overwrite their name or mark a previously read profile unread.

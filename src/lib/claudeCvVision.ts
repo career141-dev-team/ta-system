@@ -19,7 +19,7 @@ export function readCvVisionRequest(value: unknown): CvVisionFile | null {
 }
 
 export async function askCvVision(file: CvVisionFile, run = runClaude): Promise<string | null> {
-  if (!hasToken() || !(await takeSlot(1000))) return null;
+  if (!hasToken() || !(await takeSlot(8000))) return null;
   try {
     const block = { type: file.kind === "pdf" ? "document" : "image", source: { type: "base64", media_type: file.mime, data: file.base64 } };
     const input = JSON.stringify({ type: "user", message: { role: "user", content: [
