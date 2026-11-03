@@ -30,6 +30,14 @@ import {
 import { movePipelineCandidate } from "@/lib/openings/pipelineWrites";
 import { sourceFor } from "@/lib/openings/suggestionRuns";
 import {
+  chooseOpeningSuggestionCv,
+  dismissOpeningSuggestion,
+  findOpeningSuggestionCv,
+  keepOpeningSuggestion,
+  runOpeningSuggestions,
+  sendOpeningSuggestionMessage,
+} from "@/lib/openings/suggestionWrites";
+import {
   correctOpeningClient,
   researchOpening,
   runOpeningBenchmark,
@@ -2944,20 +2952,11 @@ export async function pickBenchmark(formData: FormData) {
 
 export async function runSuggestions(formData: FormData) {
   await primeStore({ allApplications: true });
-  const user = await authorize(formData, "opening.sourcing", { opening: "openingId" });
   const openingId = String(formData.get("openingId"));
-  const r = await sourceFor(openingId, user.id);
-  revalidatePath(`/openings/${openingId}/hh/suggestions`);
-  if (r.error) await fail(`Suggestions did not run — ${searchReasonInWords(r.error)}`);
-  const searched = `${r.scanned} profiles read from ${r.queries} searches`;
-  if (r.found === 0) {
-    await note(
-      r.note === "nothing_survived_filter"
-        ? `No new profiles this round (${searched}) — everyone found was already suggested or in Excel Tables. Keep or reject a few, or widen the brief, then refine.`
-        : `No profiles found (${searched}). Widen the brief or tick target employers on Research, then try again.`,
-    );
-  }
-  await done(`${r.found} new ${r.found === 1 ? "profile" : "profiles"} to review · ${searched}.`);
+  const result = await runOpeningSuggestions(await getCurrentUser(), openingId, OPENING_DEPS);
+  if (!result.ok) await fail(result.message);
+  if (result.ok && "tone" in result && result.tone === "note") await note(result.message);
+  await done(result.message);
 }
 
 /**
@@ -2984,28 +2983,11 @@ export async function correctClientAndRerun(formData: FormData) {
 /** Keeping a profile sends it to the link vault, where the approach is logged. */
 export async function keepSuggestion(formData: FormData) {
   await primeStore({ allApplications: true });
-  const user = await authorize(formData, "opening.sourcing", { suggestion: "suggestionId", opening: "openingId" });
   const openingId = String(formData.get("openingId"));
-  const id = String(formData.get("suggestionId"));
-  const s = repo.suggestions(openingId).find((x) => x.id === id);
-  if (!s) await fail("That suggestion is no longer there — the list may have been regenerated.");
-  repo.setSuggestionStatus(id, "kept", "more_like_this", user.id);
-  let held: CvMatch | null = null;
-  let also = "";
-  if (s!.linkedinUrl) {
-    const already = linkFor(openingId, s!, user);
-    if (already) {
-      revalidatePath(`/openings/${openingId}/hh`, "layout");
-      await note(`${s!.name ?? "They"} ${s!.name ? "is" : "are"} already in Excel Tables${already.addedBy !== user.id ? `, added by ${repo.user(already.addedBy)?.name ?? "another TA"}` : ""}.`);
-    }
-    const entryId = repo.addLink(openingId, s!.linkedinUrl, user.id);
-    repo.updateLink(entryId, { name: s!.name, title: s!.headline, company: s!.company });
-    held = await matchLink(entryId, user.id);
-    const key = linkKey(s!.linkedinUrl);
-    if (key) also = alsoHeldLine(otherHolders(repo.linksByUrl(openingId, key), user, deskWideCheck()));
-  }
-  revalidatePath(`/openings/${openingId}/hh`, "layout");
-  await back(`${heldLine(held)}${s!.name ?? "They"} selected and added to Excel Tables.${also}`);
+  const result = await keepOpeningSuggestion(await getCurrentUser(), openingId, String(formData.get("suggestionId")), OPENING_DEPS);
+  if (!result.ok) await fail(result.message);
+  if (result.ok && "tone" in result && result.tone === "note") await note(result.message);
+  await back(result.message);
 }
 
 /** The Excel Tables row a suggestion already has on this opening — by its address, or name and company (1 Oct). */
@@ -3027,6 +3009,10 @@ export async function findCv(input: {
 }): Promise<{ ok: true; hits: CvHit[] } | { ok: false; message: string }> {
   await primeStore({ openingId: input.openingId });
   const user = await getCurrentUser();
+  if (input.suggestionId && !input.entryId) {
+    const result = await findOpeningSuggestionCv(user, input.openingId, input.suggestionId, OPENING_DEPS);
+    return result.ok ? { ok: true, hits: result.hits ?? [] } : { ok: false, message: result.message };
+  }
   const assignment = repo.assignmentFor(input.openingId, user.id) ?? null;
   const allowed = can(user, "opening.sourcing", { openingId: input.openingId, assignment });
   if (!allowed.ok) return { ok: false, message: allowed.message };
@@ -3075,6 +3061,11 @@ export async function chooseCv(formData: FormData) {
   await primeStore({ openingId });
   const entryId = String(formData.get("entryId") ?? "") || undefined;
   const suggestionId = String(formData.get("suggestionId") ?? "") || undefined;
+  if (suggestionId && !entryId) {
+    const result = await chooseOpeningSuggestionCv(await getCurrentUser(), openingId, suggestionId, String(formData.get("candidateId") ?? ""), OPENING_DEPS);
+    if (!result.ok) return fail(result.message);
+    return done(result.message);
+  }
   const user = entryId
     ? await authorize(formData, "opening.sourcing", { link: "entryId", opening: "openingId" })
     : await authorize(formData, "opening.sourcing", { suggestion: "suggestionId", opening: "openingId" });
@@ -3113,9 +3104,8 @@ export async function chooseCvInline(_: ActionResult | null, formData: FormData)
 
 export async function dismissSuggestion(formData: FormData) {
   await primeStore({ allApplications: true });
-  await authorize(formData, "opening.sourcing", { suggestion: "suggestionId", opening: "openingId" });
-  repo.setSuggestionStatus(String(formData.get("suggestionId")), "dismissed", "not_relevant");
-  revalidatePath(`/openings/${String(formData.get("openingId"))}/hh/suggestions`);
+  const result = await dismissOpeningSuggestion(await getCurrentUser(), String(formData.get("openingId")), String(formData.get("suggestionId")), OPENING_DEPS);
+  if (!result.ok) await fail(result.message);
 }
 
 export async function generateJdWithModel(formData: FormData) {
@@ -3156,110 +3146,11 @@ export async function editResearchField(formData: FormData) {
  */
 export async function sendChatMessage(formData: FormData) {
   await primeStore({ allApplications: true });
-  const user = await authorize(formData, "opening.act", { opening: "openingId" });
   const openingId = String(formData.get("openingId"));
   const body = String(formData.get("body") ?? "").trim();
   if (!body) return;
-  const o = repo.opening(openingId);
-  if (!o) return;
-
-  repo.addChat({ openingId, role: "user", body, action: null, affected: 0, sources: [], byUserId: user.id, at: Date.now() });
-
-  const open = repo.suggestions(openingId).filter((s) => s.status === "new");
-  const roster = open
-    .map((s) => `${(s.linkedinUrl ?? "").split("/in/")[1] ?? s.name} | ${s.tier} | ${s.name} — ${s.headline} | ${s.why} | ${s.concern ?? ""}`)
-    .join("\n");
-
-  const prompt = `A recruiter is working a shortlist for this role and has asked you something.
-
-ROLE: ${o.title} — ${o.locations.join(", ")} — ${o.packageNotes}
-SPECIFICATION:
-"""
-${(o.jdMarkdown || o.title).slice(0, 3000)}
-"""
-
-THE CURRENT SHORTLIST (handle | tier | who | why | concern):
-${roster || "(empty — nothing has been sourced yet)"}
-
-THEY SAID: "${body}"
-
-Decide which ONE of these it is and answer in exactly that format:
-
-If it can be settled by re-reading the people above — reordering, retiering, or dropping some:
-REFINE
-CHANGES: handle=tier or handle=drop, semicolon separated. Only people who should change.
-REPLY: one or two plain sentences telling them what you changed and why.
-
-If it needs new people to be found:
-SEARCH
-TERMS: the specific extra search terms this implies, semicolon separated.
-REPLY: one or two sentences saying what you will look for. Mention that it spends one of the three rounds.
-
-If it is a question about the shortlist rather than an instruction:
-ANSWER
-REPLY: answer it from the evidence above. Where the evidence does not say, say that plainly rather than guessing.
-
-Never invent a person. Never claim experience the lines above do not show.`;
-
-  const res = await gemini("rank", prompt, { maxTokens: 3000 });
-  if (!res.ok) {
-    repo.addChat({
-      openingId, role: "assistant",
-      body:
-        res.reason === "rate_limited"
-          ? "The model is rate-limited right now — try again in a minute."
-          : "I could not reach the model just then.",
-      action: null, affected: 0, sources: [], byUserId: null, at: Date.now(),
-    });
-    revalidatePath(`/openings/${openingId}/hh/suggestions`);
-    return;
-  }
-
-  const text = res.text;
-  const reply = (text.match(/^REPLY:\s*([\s\S]*)$/im)?.[1] ?? text).trim().slice(0, 900);
-  let action: "refine" | "search" | "answer" | null = null;
-  let affected = 0;
-
-  if (/^\s*REFINE\b/im.test(text)) {
-    action = "refine";
-    const line = text.match(/^CHANGES:\s*(.*)$/im)?.[1] ?? "";
-    type Change = { url: string; tier?: "priority" | "screen"; drop?: boolean };
-    const changes: Change[] = [];
-    for (const raw of line.split(";")) {
-      const [handle, what = ""] = raw.trim().split("=").map((y) => y.trim());
-      if (!handle) continue;
-      if (/^drop$/i.test(what)) changes.push({ url: handle, drop: true });
-      else if (/^(priority|screen)$/i.test(what)) {
-        changes.push({ url: handle, tier: what.toLowerCase() as "priority" | "screen" });
-      }
-    }
-    // An instruction that empties the shortlist is almost never what was meant —
-    // "drop anyone not in renewable energy" is a preference, not a rule, and
-    // acting on it literally leaves a TA with nothing and no way back. So it is
-    // reported rather than applied, and they decide.
-    const dropping = changes.filter((c) => c.drop).length;
-    const wouldEmpty = open.length > 0 && dropping >= Math.max(3, Math.ceil(open.length * 0.7));
-    if (wouldEmpty) {
-      repo.addChat({
-        openingId, role: "assistant",
-        body: `Taken literally that removes ${dropping} of ${open.length} — the whole list. That is usually a preference rather than a rule, so I have left it alone.\n\nIf it really is a hard requirement, the honest answer is that nobody found so far meets it, and the next step is another round with those terms rather than an empty page. Otherwise tell me to treat it as a preference and I will re-tier instead of dropping.`,
-        action: "answer", affected: 0, sources: [], byUserId: null, at: Date.now(),
-      });
-      revalidatePath(`/openings/${openingId}/hh/suggestions`);
-      return;
-    }
-    affected = repo.applyRefinement(openingId, changes);
-  } else if (/^\s*SEARCH\b/im.test(text)) {
-    action = "search";
-  } else {
-    action = "answer";
-  }
-
-  repo.addChat({
-    openingId, role: "assistant", body: reply, action, affected,
-    sources: [], byUserId: null, at: Date.now(),
-  });
-  revalidatePath(`/openings/${openingId}/hh/suggestions`);
+  const result = await sendOpeningSuggestionMessage(await getCurrentUser(), openingId, body, OPENING_DEPS);
+  if (!result.ok) await fail(result.message);
 }
 
 // ─── Intake (the CV queue) ───────────────────────────────────────────────────

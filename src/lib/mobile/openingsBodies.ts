@@ -109,3 +109,13 @@ export const researchWriteBody = z.discriminatedUnion("action", [
   z.object({ action: z.literal("toggle_benchmark"), entryId: z.string().min(1).max(200) }).strict(),
   z.object({ action: z.literal("confirm"), unavailable: z.partialRecord(researchField, text(1_000)) }).strict(),
 ]);
+
+export const suggestionsWriteBody = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("run") }).strict(),
+  z.object({ action: z.literal("keep"), suggestionId: z.string().min(1).max(200) }).strict(),
+  z.object({ action: z.literal("dismiss"), suggestionId: z.string().min(1).max(200) }).strict(),
+  z.object({ action: z.literal("find_cv"), suggestionId: z.string().min(1).max(200) }).strict(),
+  z.object({ action: z.literal("choose_cv"), suggestionId: z.string().min(1).max(200), candidateId: z.string().min(1).max(200) }).strict(),
+  z.object({ action: z.literal("send_message"), body: text(2_000) }).strict(),
+  z.object({ action: z.literal("save_empty_reason"), reason: text(1_000) }).strict(),
+]);
