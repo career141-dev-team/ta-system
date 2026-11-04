@@ -59,9 +59,19 @@ export const isNumberLevelError = (metaError: string) =>
  * is read, answered or filed. Everyone else is left to the TA on the phone -
  * no CV made from a holiday photo, no job reply to a cousin. The main line
  * keeps its old behaviour (`isTaLine` false).
+ *
+ * And only on that candidate's own line (4 Nov): the follow-up must belong to
+ * the TA whose number the message reached - its owner, or with no owner yet
+ * the opening's first assigned TA. A test candidate followed up by Sanduni
+ * wrote privately to Uzmaan's number, and the assistant read it and answered
+ * from Sanduni's number.
  */
-export const handleOnLine = (isTaLine: boolean, senderStages: string[], isFollowUpStage: (s: string) => boolean) =>
-  !isTaLine || senderStages.some(isFollowUpStage);
+export const handleOnLine = (
+  isTaLine: boolean,
+  lineUserId: string | undefined,
+  followUps: { stage: string; lineUserId?: string | null }[],
+  isFollowUpStage: (s: string) => boolean,
+) => !isTaLine || (!!lineUserId && followUps.some((f) => isFollowUpStage(f.stage) && f.lineUserId === lineUserId));
 
 /** What Meta says about one number, as `checkWithMeta` reads it. Any part may be an error message. */
 export interface MetaNumberState {
