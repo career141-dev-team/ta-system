@@ -170,7 +170,8 @@ test("job facts that are not set are never told to the candidate", async () => {
   await turn(w, "Is it remote?");
   assert.doesNotMatch(prompts[0], /Colombo|Hybrid/);
   assert.doesNotMatch(w.reply() ?? "", /Colombo|hybrid/i);
-  assert.match(w.reply() ?? "", /consultant will confirm/);
+  // 4 Nov: an unknown answer hands over to a person rather than guessing.
+  assert.match(w.reply() ?? "", /team members will reach out to you shortly/);
 });
 
 test("a model that keeps failing still leaves the candidate a follow-up", async () => {

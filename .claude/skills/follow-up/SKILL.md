@@ -326,12 +326,15 @@ Repo hard rules that apply: never run `convex deploy|run|import|env set` against
 - 2026-11-01 Coexistence signup: Settings → WhatsApp numbers has `WhatsAppConnect` (Meta popup, config 3026772220995087, `featureType: whatsapp_business_app_onboarding`) and "Finish connection" (`finishConnect`: `subscribed_apps`, then Meta's once-only `smb_app_data` syncs, tracked in `syncsDone`; 24-hour deadline). Sync webhooks (`history`, `state_sync`) are acknowledged and dropped so old chats never reach the assistant.
 - 2026-11-03 TA numbers carry the TA's personal chats (coexistence): `whatchimp.ts` asks `whatsappOutbound:handleOnTaLine` before handling any Meta message; on a TA row (has `userId` or `ready`) only a sender with an application in a Follow-up stage is read, answered or filed as a CV (`lib/senderRouting` `handleOnLine`). Everyone else is skipped and left to the TA on the phone. The main line is unchanged.
 - 2026-11-04 `handleOnLine` also requires the follow-up to belong to the TA whose number the message reached (the application's `ownerTaId`, else the opening's first `assignedTaIds`); a TA row with no `userId` handles nobody. A test candidate followed up by Sanduni wrote privately to Uzmaan's number and the assistant answered from Sanduni's.
+- 2026-11-04 Questions answered from the JD's PRE-REQUISITES first (`lib/jdFacts.ts jdForQuestions`; the bot saw only the first 400 characters before), two sentences at most, then "One of our team members will reach out to you shortly." (`withHandover`), and the TA gets a bell to reach out. An expected salary above the opening's `salaryMax` bells the TA to call (`aboveBudget`); nothing is said about the budget.
 
 <!-- skill-meta
-verified-commit: 34a0935b
-verified-hash: 999c2a7989ef1beb9f581427a92b996801b3b165
+verified-commit: d2035d9a
+verified-hash: 8902b56f8ad290973e9da41d495e50a079529f6b
 verified-date: 2026-11-04
 sources:
+  convex/lib/jdFacts.ts
+  tests/jdfacts.test.ts
   tests/addToAssignedJob.test.ts
   convex/ta/followUp.ts
   convex/ta/outreach.ts

@@ -9,6 +9,7 @@ import { isAutomaticReply, latestReplyText } from "../lib/mailParse";
 import { followUpBlockers, isFollowUpStage } from "../ta/stages";
 import { burstToAnswer } from "../lib/followUpWindow";
 import { assistantQuietReason, historyLine } from "../lib/assistantControl";
+import { aboveBudget, jdForQuestions, withHandover } from "../lib/jdFacts";
 
 /**
  * One WhatsApp turn, after the candidate's pause (30 Oct). Each message
@@ -183,6 +184,8 @@ export const extractDetailsFromText = internalAction({
       ? (job as any).requiredSkills.slice(0, 12).join(", ")
       : "Not specified";
 
+    const jd = jdForQuestions(job.jobDescription);
+
     const toneMap: Record<string, string> = {
       warm_friendly: "Warm, encouraging, conversational, and helpful with natural emojis. Speak like a friendly talent acquisition colleague.",
       professional_formal: "Polite, clear, structured, corporate, and precise.",
@@ -209,7 +212,10 @@ JOB SPECIFICATION CONTEXT:
 - Workplace Type: ${(job as any).workplaceType || "Not specified"}
 - Key Requirements: ${requirementsText}
 - Application Stage: ${activeApp.currentStage}
-- Job Description Summary: ${(job.jobDescription || "").substring(0, 400)}
+- PRE-REQUISITES (the client's requirements - answer from here first):
+${jd.prerequisites || "Not specified"}
+- The role (from the JD):
+${jd.role || "Not specified"}
 
 CONVERSATION TONE TO USE:
 ${selectedTone}
@@ -287,7 +293,7 @@ Rules:
    - 'provided_partial': Candidate provided some of the missing details in this message. Write a warm, human 'nextActionMessage' matching the CONVERSATION TONE that acknowledges what was received and naturally asks ONLY for the remaining missing fields. Do not use robotic bulleted email templates.
    - 'promised_eta': Use this ONLY IF the candidate's CURRENT message explicitly specifies a time/duration (e.g. "in 10 minutes", "tonight", "tomorrow at 3 PM", "in 2 hours"). Estimate 'candidateEtaMinutes' and write a polite acknowledgement matching CONVERSATION TONE confirming we will follow up after that time (e.g. "No problem! We'll follow up after tonight 😊").
    - 'interested_no_eta': Candidate expresses willingness or interest to send details (e.g. "Sure, I will send it", "I'm interested", "will share soon", "will do") WITHOUT specifying an exact time in their current message. Set candidateEtaMinutes: null, nextActionTimeHours: 24, and set nextActionMessage to a warm message asking by when they can share them. DO NOT copy or carry over any past ETA from conversation history!
-   - 'asked_question': Candidate asked a question (e.g. company, salary, location, tech stack). Answer their question logically using the JOB SPECIFICATION CONTEXT above in the CONVERSATION TONE while pivoting back to ask for the remaining missing details. YOU MUST ALWAYS PROVIDE A REPLY MESSAGE.
+   - 'asked_question': Candidate asked a question about the role (skills, product exposure, experience, responsibilities, location). Answer ONLY what they asked, from the PRE-REQUISITES first, then the role. Give the main point in one or two short sentences (e.g. "SAP is the main skill they need."). Never list the whole JD, never more than two sentences, and never add details they did not ask for (cities, client, budget). Do NOT ask for missing details in this message and do NOT add a closing line - "One of our team members will reach out to you shortly." is added for you. If the answer is not in the JOB SPECIFICATION CONTEXT, set nextActionMessage to null. YOU MUST ALWAYS SET intent to 'asked_question' for a question.
    - 'not_interested': Candidate clearly declines THIS ROLE ("not interested in this one", "I've accepted another offer", "not looking right now"). Write one short, kind nextActionMessage thanking them and saying we will keep them in mind for other roles. Ask nothing.
    - 'opt_out': Candidate asks us to stop contacting them at all ("stop messaging me", "remove my number", "don't contact me again", "unsubscribe"). Set nextActionMessage to null.
    - 'wants_human': Candidate asks to speak to a person / call / a consultant. Write one short nextActionMessage saying a consultant will contact them. Ask nothing.
@@ -559,6 +565,16 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
         // what is still missing.
         const reminderBody = `Hi ${firstName}, a quick reminder about your application for *${job.title}*. To move it forward we still need:\n${remainingMissing.map((m) => `• ${m}`).join("\n")}\n\nPlease reply when you can. Thank you!`;
 
+        // Above the budget: a person calls, nobody bargains by message (4 Nov).
+        // A bell only - the chase and the reply carry on as before.
+        if (typeof updates.expectedSalary === "number" && aboveBudget(updates.expectedSalary, (job as any).salaryMax)) {
+          await ctx.runMutation(internal.communications.followUpMutations.notifyFollowUpTa, {
+            applicationId: activeApp._id,
+            title: `${updatedCandidate?.fullName || "A candidate"} expects more than the budget (${job.title})`,
+            body: `Expected salary ${updates.expectedSalary}, the opening's top figure is ${(job as any).salaryMax}. Please call them.`,
+          });
+        }
+
         if (extracted.intent === "opt_out") {
           await ctx.runMutation(internal.candidates.candidates.setDoNotContact, {
             candidateId: args.candidateId,
@@ -622,8 +638,16 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
         } else if (isQuestion) {
           // No invented facts: the fallback said "a hybrid position based in
           // Colombo" for any opening missing those fields.
-          aiAnswer = extracted.nextActionMessage || `Thank you for asking — a consultant will confirm that for you.`;
-          replyMessage = extracted.nextActionMessage || `Thank you for asking — a consultant will confirm that for you.\n\nIn the meantime, to progress your application, please share:\n${remainingMissing.map(m => `• ${m}`).join("\n")}`;
+          // Answered from the PRE-REQUISITES, two sentences at most, then the
+          // hand-over line (4 Nov). The TA is told, so "a team member will
+          // reach out" is a promise someone keeps.
+          aiAnswer = withHandover(extracted.nextActionMessage);
+          replyMessage = aiAnswer;
+          await ctx.runMutation(internal.communications.followUpMutations.notifyFollowUpTa, {
+            applicationId: activeApp._id,
+            title: `${updatedCandidate?.fullName || "A candidate"} asked about ${job.title}`,
+            body: `They asked: "${textBody.trim().slice(0, 200)}". The assistant replied: "${aiAnswer}" Please reach out to them.`,
+          });
         } else if (remainingMissing.length > 0) {
           replyMessage = extracted.nextActionMessage || `Hi ${updatedCandidate?.fullName?.split(" ")[0] || "there"},\n\n${preludeText}\n\nWe are still waiting on your ${remainingMissing.join(", ")} to progress your application. Please share these at your convenience. Thank you!`;
         }
