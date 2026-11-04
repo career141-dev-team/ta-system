@@ -10,8 +10,8 @@ name: Deploy Production
 #   1. PRODUCTION_ENABLED (repository variable) must be "true". It is off until
 #      the production target is provisioned and approved (docs/CI-CD.md).
 #   2. The commit must already be on main.
-#   3. The "production" GitHub Environment requires a reviewer to approve the
-#      deploy job, and allows only the production branch.
+#   3. The "production" GitHub Environment allows only the production branch.
+#      It has no required reviewer: Sanjeev and Binath both release (4 Nov 2026).
 #
 # A database backup is taken first only when the release runs a function (a
 # migration) or a manual run asks for one (backup: always). The owner takes a
