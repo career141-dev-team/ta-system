@@ -187,7 +187,13 @@ export const handleOnTaLine = internalQuery({
     const apps = candidate
       ? await ctx.db.query("applications").withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidate._id)).collect()
       : [];
-    return handleOnLine(true, apps.map((a: any) => a.currentStage), isFollowUpStage);
+    const followUps = [];
+    for (const a of apps as any[]) {
+      if (!isFollowUpStage(a.currentStage)) continue;
+      const job: any = a.ownerTaId ? null : await ctx.db.get(a.jobId);
+      followUps.push({ stage: a.currentStage, lineUserId: a.ownerTaId ?? job?.assignedTaIds?.[0] ?? null });
+    }
+    return handleOnLine(true, row.userId, followUps, isFollowUpStage);
   },
 });
 

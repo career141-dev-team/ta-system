@@ -67,11 +67,18 @@ test("ready only when connected on the Cloud API, both templates approved and re
   assert.match(noAccess.note, /API user cannot reach this number/);
 });
 
-test("on a TA's own number only candidates being followed up are handled; the main line is unchanged", () => {
+test("on a TA's own number only that TA's candidates in follow-up are handled; the main line is unchanged", () => {
   const followUp = (s: string) => s === "follow_up" || s === "ta_shortlist";
-  assert.equal(handleOnLine(false, [], followUp), true);
-  assert.equal(handleOnLine(true, [], followUp), false);
-  assert.equal(handleOnLine(true, ["second_shortlist", "rejected"], followUp), false);
-  assert.equal(handleOnLine(true, ["rejected", "follow_up"], followUp), true);
-  assert.equal(handleOnLine(true, ["ta_shortlist"], followUp), true);
+  // The main line: everything, as before.
+  assert.equal(handleOnLine(false, undefined, [], followUp), true);
+  // A stranger on Sanduni's number.
+  assert.equal(handleOnLine(true, "u_sanduni", [], followUp), false);
+  // Sanduni's candidate, but no longer in follow-up.
+  assert.equal(handleOnLine(true, "u_sanduni", [{ stage: "second_shortlist", lineUserId: "u_sanduni" }], followUp), false);
+  // Sanduni's candidate in follow-up, writing to Sanduni's number.
+  assert.equal(handleOnLine(true, "u_sanduni", [{ stage: "follow_up", lineUserId: "u_sanduni" }], followUp), true);
+  // 4 Nov: the same candidate writing privately to Uzmaan's number is left alone.
+  assert.equal(handleOnLine(true, "u_uzmaan", [{ stage: "follow_up", lineUserId: "u_sanduni" }], followUp), false);
+  // A number with no TA (the TA lead's, unmatched) handles nobody.
+  assert.equal(handleOnLine(true, undefined, [{ stage: "ta_shortlist", lineUserId: undefined }], followUp), false);
 });
