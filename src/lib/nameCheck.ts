@@ -40,7 +40,9 @@ const WIDE = 6;
 const ids = new Map<string, { at: number; p: Promise<string[]> }>();
 
 async function lookup(name: string, actorId: string | null, loose: boolean): Promise<string[]> {
-  const ask = (q: string) => convexQuery<string[]>("ta/candidates:quickSearch", { ...(actorId ? { actorId } : {}), q, limit: 10 });
+  // No actorId: quickSearch refuses the TA role, and /search calls it without one too.
+  // The page is already gated by database.read. (4 Nov: TAs got "Could not check the names".)
+  const ask = (q: string) => convexQuery<string[]>("ta/candidates:quickSearch", { q, limit: 10 });
   const found = await ask(name);
   if (found.length || !loose) return found;
   // A first name or a surname spelt differently finds nobody as a whole, but

@@ -171,11 +171,15 @@ async function Results({ q, drop, email, asQuestion }: { q: string; drop: string
       own = await findByNames(names, actorId);
     } catch (e) {
       console.warn("[referral-search] name check failed:", (e as Error)?.message);
-      return (
-        <p className="mt-8 rounded-xl border border-rule bg-surface px-6 py-10 text-center text-[13px] text-ink-soft">
-          Could not check the names just now. Try again in a moment.
-        </p>
-      );
+      // 4 Nov: a single entry ("Asiri Hospital") is a question, not a list, so a failed
+      // name lookup (a TA is refused by quickSearch's full-access check) must not block it.
+      if (names.length >= 2) {
+        return (
+          <p className="mt-8 rounded-xl border border-rule bg-surface px-6 py-10 text-center text-[13px] text-ink-soft">
+            Could not check the names just now. Try again in a moment.
+          </p>
+        );
+      }
     }
     if (names.length >= 2) return <NameCheckList q={q} checks={own} />;
   }
