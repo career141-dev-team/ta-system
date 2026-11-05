@@ -4,7 +4,10 @@
  * New rows start `ready: false`: nothing sends from them until Settings →
  * WhatsApp numbers → "Check with Meta" passes (lib/senderRouting). A number
  * already in the table only gains its TA and WhatsApp account ID; its
- * readiness is left alone, so a line that sends today keeps sending.
+ * readiness is left alone, so a line that sends today keeps sending - unless
+ * Meta gave it a new phone ID (5 Nov: Sameera's account vanished and came back
+ * as a new one). Then the ID is replaced and the row goes back to not ready
+ * until "Check with Meta" passes on the new one.
  *
  * The TA is found by the user's own phone, else by first name among active
  * users, and must be exactly one person — the dry run lists who matched.
@@ -17,7 +20,7 @@ import { v } from "convex/values";
 import { internalMutation } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
 
-// From WhatsApp Manager, 29 Oct – 3 Nov.
+// From WhatsApp Manager, 29 Oct – 5 Nov.
 const NUMBERS: { firstName: string | null; label: string; phone: string; wabaId: string; phoneId: string | null }[] = [
   { firstName: null, label: "TA lead", phone: "+94742932084", wabaId: "2715214465539258", phoneId: "1287046157815437" },
   { firstName: "Sanduni", label: "Sanduni", phone: "+94764263120", wabaId: "1811583086509201", phoneId: "1425366410654591" },
@@ -25,7 +28,7 @@ const NUMBERS: { firstName: string | null; label: string; phone: string; wabaId:
   { firstName: "Thushini", label: "Thushini", phone: "+94779077728", wabaId: "2352137355594113", phoneId: "1147756625098092" },
   { firstName: "Hassan", label: "Hassan", phone: "+94740110140", wabaId: "1005624849012436", phoneId: "1276466655555760" },
   { firstName: "Uzmaan", label: "Uzmaan", phone: "+94753778899", wabaId: "150536594816720", phoneId: "151216248081257" },
-  { firstName: "Sameera", label: "Sameera", phone: "+94740110120", wabaId: "1821332492545238", phoneId: "1471989765991151" },
+  { firstName: "Sameera", label: "Sameera", phone: "+94740110120", wabaId: "1432442428233216", phoneId: "1510787038773882" },
 ];
 
 const last9 = (s: string | null | undefined) => String(s ?? "").replace(/\D/g, "").slice(-9);
@@ -55,9 +58,15 @@ export const run = internalMutation({
       const existing = rows.find((r) => last9(r.phone) === last9(n.phone));
       if (existing) {
         report.push(`${n.label} ${n.phone}: already listed — set TA ${who}, WhatsApp account ${n.wabaId}.`);
-        if (existing.whatchimpPhoneId !== n.phoneId)
-          report.push(`  note: its phone_number_id is ${existing.whatchimpPhoneId}, Meta's list says ${n.phoneId}; left as it is.`);
-        if (!args.dryRun) await ctx.db.patch(existing._id, { wabaId: n.wabaId, ...(user ? { userId: user._id } : {}) });
+        const newId = existing.whatchimpPhoneId !== n.phoneId;
+        if (newId)
+          report.push(`  phone_number_id ${existing.whatchimpPhoneId} -> ${n.phoneId}; set not ready until checked with Meta.`);
+        if (!args.dryRun)
+          await ctx.db.patch(existing._id, {
+            wabaId: n.wabaId,
+            ...(user ? { userId: user._id } : {}),
+            ...(newId ? { whatchimpPhoneId: n.phoneId, ready: false, readyNote: "Not ready: new phone ID, not checked with Meta yet." } : {}),
+          });
         continue;
       }
       report.push(`${n.label} ${n.phone}: add (not ready) — TA ${who}, phone_number_id ${n.phoneId}.`);

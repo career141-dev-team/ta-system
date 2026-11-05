@@ -327,11 +327,12 @@ Repo hard rules that apply: never run `convex deploy|run|import|env set` against
 - 2026-11-03 TA numbers carry the TA's personal chats (coexistence): `whatchimp.ts` asks `whatsappOutbound:handleOnTaLine` before handling any Meta message; on a TA row (has `userId` or `ready`) only a sender with an application in a Follow-up stage is read, answered or filed as a CV (`lib/senderRouting` `handleOnLine`). Everyone else is skipped and left to the TA on the phone. The main line is unchanged.
 - 2026-11-04 `handleOnLine` also requires the follow-up to belong to the TA whose number the message reached (the application's `ownerTaId`, else the opening's first `assignedTaIds`); a TA row with no `userId` handles nobody. A test candidate followed up by Sanduni wrote privately to Uzmaan's number and the assistant answered from Sanduni's.
 - 2026-11-04 Questions answered from the JD's PRE-REQUISITES first (`lib/jdFacts.ts jdForQuestions`; the bot saw only the first 400 characters before), two sentences at most, then "One of our team members will reach out to you shortly." (`withHandover`), and the TA gets a bell to reach out. An expected salary above the opening's `salaryMax` bells the TA to call (`aboveBudget`); nothing is said about the budget.
+- 2026-11-05 `admin/addTaWhatsAppNumbers:run` replaces a row's `whatchimpPhoneId` when Meta's differs (it only noted it before) and sets the row not ready until Check with Meta. Sameera's account came back with new IDs (phone 1510787038773882, account 1432442428233216).
 
 <!-- skill-meta
-verified-commit: d2035d9a
-verified-hash: 8902b56f8ad290973e9da41d495e50a079529f6b
-verified-date: 2026-11-04
+verified-commit: 21671d3a
+verified-hash: cb3209ac40c5321ecdb2b10c3b29906658a8c7a8
+verified-date: 2026-11-05
 sources:
   convex/lib/jdFacts.ts
   tests/jdfacts.test.ts
