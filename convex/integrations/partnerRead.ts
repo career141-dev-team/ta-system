@@ -10,7 +10,7 @@ import { internal } from "../_generated/api";
 // The Extras sales contact list is an admin-only campaign export of candidates' contact details.
 // "opsApiWrites" is private: the Ops System's idempotency keys are its own
 // integration's business, and the capacity planner has none in them (5 Nov).
-export const PARTNER_PRIVATE_TABLES = ["taTrackingDevices", "taTrackingRows", "demoTemplateSends", "salesContacts", "salesContactRuns", "automobileContacts", "automobileContactRuns", "opsApiWrites"] as const;
+export const PARTNER_PRIVATE_TABLES = ["taTrackingDevices", "taTrackingRows", "demoTemplateSends", "salesContacts", "salesContactRuns", "automobileContacts", "automobileContactRuns", "opsApiWrites", "opsEvents"] as const;
 export const PARTNER_READ_TABLES = [
   "dailyEmailPolicy", "dailyEmails", "dailyEmailAttachments",
   "users", "teams", "teamMembers", "jobAssignments", "openingAccessRequests", "roleAuditLog",

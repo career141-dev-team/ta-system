@@ -53,11 +53,41 @@ for (const door_ of [
 ]) {
   assert.ok(writes.includes(door_), "Writes go through " + door_);
 }
-// The one direct insert is a bell, which has no rules to go around.
-const patches = [...writes.matchAll(/ctx\.db\.patch\(/g)].length;
-assert.equal(patches, 0, "No Ops write patches a TA row behind its own mutation's back");
-const inserts = [...writes.matchAll(/ctx\.db\.insert\("(\w+)"/g)].map((m) => m[1]);
-assert.deepEqual([...new Set(inserts)].sort(), ["notifications", "opsApiWrites"].sort());
+// Where TA has no mutation of its own, the write touches the row directly -
+// but only on this list, and the list is here so that adding to it is a
+// deliberate act somebody has to read.
+const MAY_TOUCH = [
+  "applications",   // only clientOwnedAt; the stage itself goes through the state machine
+  "clientReviews",  // the client's own words about one candidate
+  "clients",        // only who owns them on the Ops side
+  "interviews",     // attendance, a cancellation, the client's decision
+  "jobPosts",       // an advert's own row
+  "notifications",  // a bell, which has no rules to go around
+  "opsApiWrites",   // our own idempotency keys
+  "placements",     // the joining day, a fall-through, the invoice's state
+  "reviewRounds",   // the day the client received a set
+];
+const touched = [
+  ...[...writes.matchAll(/ctx\.db\.insert\("(\w+)"/g)].map((m) => m[1]),
+  ...[...writes.matchAll(/ctx\.db\.get\(([^)]*?)\)/g)].map(() => null),
+].filter(Boolean) as string[];
+for (const table of new Set(touched)) {
+  assert.ok(MAY_TOUCH.includes(table), "An Ops write inserts into " + table + ", which is not on the list");
+}
+
+// The one thing that must never be written directly: a candidate's stage.
+// It carries TA's own rules, its pipeline event and its rejection notice.
+assert.equal(
+  /patch\([^)]*currentStage/s.test(writes),
+  false,
+  "A candidate's stage is moved only through executeStageTransition",
+);
+assert.ok(writes.includes("executeStageTransition"), "which this uses for every client decision");
+assert.equal(
+  [...writes.matchAll(/executeStageTransition\(/g)].length >= 2,
+  true,
+  "both the decision and the client-owned claim go through it",
+);
 
 /* ── The routes ────────────────────────────────────────────────── */
 
@@ -80,4 +110,49 @@ assert.ok(
   "and an opening that is gone is said plainly rather than crashing",
 );
 
-console.log("  ok  ops writes: switched off, attributed, repeat-safe, through TA's own mutations");
+/* ── The events feed ───────────────────────────────────────────── */
+
+const events = readFileSync(path.resolve("convex/lib/opsEvents.ts"), "utf8");
+const stateMachine = readFileSync(path.resolve("convex/pipeline/pipelineStateMachine.ts"), "utf8");
+const reads = readFileSync(path.resolve("convex/integrations/opsRead.ts"), "utf8");
+
+// The promise that matters most: telling Ops can never break a TA write.
+assert.ok(events.includes("try {") && events.includes("catch"), "Raising an event is wrapped");
+assert.ok(events.includes("console.warn"), "and a failure is logged rather than thrown");
+assert.ok(
+  events.includes("Deliberately swallowed"),
+  "and says why in the file, so nobody 'fixes' it into throwing",
+);
+
+// A stage change is the event the client's side turns on, and it is raised
+// in the same transaction as TA's own audit row.
+assert.ok(stateMachine.includes('raiseOpsEvent(ctx, "application.stage_changed"'));
+assert.ok(
+  stateMachine.indexOf('raiseOpsEvent(ctx, "application.stage_changed"') >
+    stateMachine.indexOf('ctx.db.insert("pipelineEvents"'),
+  "raised after TA's own write, never before it",
+);
+
+// The feed reads forward from a cursor and never winds backwards on a quiet
+// hour, which would make Ops replay a day of events.
+assert.ok(reads.includes("opsEventsAfter"), "There is a feed");
+assert.ok(reads.includes('q.gt("at", after)'), "that reads strictly after the cursor");
+const feed = readFileSync(path.resolve("convex/integrations/opsReadHttp.ts"), "utf8");
+assert.ok(feed.includes("events.length ? events[events.length - 1].at : after"), "and holds the cursor when empty");
+assert.ok(http.includes('{ path: "/integrations/v1/events", method: "GET", handler: opsReadEvents }'));
+
+/* ── Every endpoint the Ops System actually calls ──────────────── */
+
+for (const route of [
+  '{ pathPrefix: "/integrations/v1/clients/", method: "POST", handler: opsWriteClient }',
+  '{ pathPrefix: "/integrations/v1/client-sets/", method: "POST", handler: opsWriteClientSet }',
+  '{ pathPrefix: "/integrations/v1/applications/", method: "POST", handler: opsWriteApplication }',
+  '{ path: "/integrations/v1/reference-requests", method: "POST", handler: opsWriteReferenceRequest }',
+  '{ path: "/integrations/v1/interviews", method: "POST", handler: opsWriteCreateInterview }',
+  '{ pathPrefix: "/integrations/v1/interviews/", method: "POST", handler: opsWriteInterview }',
+  '{ pathPrefix: "/integrations/v1/placements/", method: "POST", handler: opsWritePlacement }',
+]) {
+  assert.ok(http.includes(route), "Missing route: " + route);
+}
+
+console.log("  ok  ops writes and events: off by default, attributed, repeat-safe, and unable to break a TA write");

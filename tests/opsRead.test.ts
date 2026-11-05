@@ -125,9 +125,18 @@ for (const route of [
 const handlers = readFileSync(path.resolve("convex/integrations/opsReadHttp.ts"), "utf8");
 assert.ok(handlers.includes("process.env.OPS_API_TOKEN"), "Ops reads must use their own token");
 assert.equal(handlers.includes("CAPACITY_PLANNER_READ_TOKEN"), false, "and never the planner's");
-// Read-only, and provably so: no mutation, no action, no insert, no patch.
-for (const word of ["runMutation", "runAction", "ctx.db.insert", "ctx.db.patch"]) {
+// Read-only, and provably so: nothing that changes a row.
+for (const word of ["runMutation", "ctx.db.insert", "ctx.db.patch", "ctx.db.delete"]) {
   assert.equal(handlers.includes(word), false, "The Ops read API must not " + word);
 }
+// There is exactly one action, and it is the partner API's own CV download -
+// a read that has to sign a URL. Any other action here would need its own
+// reason, so the test names this one rather than allowing actions in general.
+const actions = [...handlers.matchAll(/ctx\.runAction\((\w+)/g)].map((m) => m[1]);
+assert.deepEqual(actions, ["cvDownloadRef"], "The only action is the signed CV download");
+assert.ok(
+  handlers.includes('"integrations/partnerRead:getCvDownload"'),
+  "and it is the partner API's own, not a second copy of it",
+);
 
 console.log("  ok  ops read API: shapes, honest gaps, routes, its own key, read-only");

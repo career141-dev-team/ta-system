@@ -236,3 +236,174 @@ export const opsPipeline = internalQuery({
     return toOpsPipeline(wanted);
   },
 });
+
+/* ── The sets, the placements, and the prepared CV ──────────────── */
+
+export interface OpsClientSet {
+  id: string;
+  setNumber: number;
+  openingId: string;
+  applicationIds: string[];
+  applications: { id: string; name: string; preparedCv: boolean }[];
+  dispatch: string;
+  status: string;
+  sentAt: number | null;
+  receivedAt: number | null;
+}
+
+/**
+ * One round of CVs as TA keeps it.
+ *
+ * Ops fetches each prepared CV once and keeps its own copy, because what the
+ * client actually received must still be readable a year later even if TA
+ * replaces a CV. `preparedCv` says whether there is one to fetch at all - a
+ * candidate with none is taken out of the set with a reason, which is exactly
+ * the refusal the Ops side shows.
+ */
+export const opsClientSets = internalQuery({
+  args: { openingId: v.string(), setNumber: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const jobId = args.openingId as Doc<"jobs">["_id"];
+    const job = await ctx.db.get(jobId).catch(() => null);
+    if (!job || !("title" in job)) return null;
+
+    const rounds = (await ctx.db.query("reviewRounds").take(1000)).filter(
+      (round) => round.openingId === jobId && round.kind === "client",
+    );
+    const wanted = args.setNumber ? rounds.filter((round) => round.setNumber === args.setNumber) : rounds;
+
+    const sets: OpsClientSet[] = [];
+    for (const round of wanted) {
+      const applications = [];
+      for (const applicationId of round.applicationIds) {
+        const application = await ctx.db.get(applicationId).catch(() => null);
+        if (!application || !("currentStage" in application)) continue;
+        applications.push({
+          id: application._id as string,
+          name: application.candidateName ?? "",
+          preparedCv: Boolean(application.cvFileId ?? application.candidateCvUploadId),
+        });
+      }
+      sets.push({
+        id: round._id as string,
+        setNumber: round.setNumber ?? 0,
+        openingId: round.openingId as string,
+        applicationIds: round.applicationIds as unknown as string[],
+        applications,
+        dispatch: round.dispatch,
+        status: round.status,
+        sentAt: round.sentAt ?? null,
+        receivedAt: round.receivedAt ?? null,
+      });
+    }
+    return sets.sort((a, b) => a.setNumber - b.setNumber);
+  },
+});
+
+export interface OpsPlacement {
+  id: string;
+  applicationId: string;
+  openingId: string;
+  clientId: string;
+  candidateName: string;
+  placedSalary: number | null;
+  currency: string | null;
+  salaryBasis: string | null;
+  package: string | null;
+  offerLetterFileId: string | null;
+  joinDateMs: number | null;
+  joinConfirmedAt: number | null;
+  fellThroughAt: number | null;
+  fellThroughReason: string | null;
+}
+
+/**
+ * A placement, which is TA's own.
+ *
+ * Ops reads it rather than keeping its own version, because the package and
+ * the joining day are TA's record and the invoice is built from them. The
+ * joining day is a date string in TA and milliseconds here: Ops counts thirty
+ * days from it, and counting on a string is how a fee goes out a day late.
+ */
+export const opsPlacements = internalQuery({
+  args: { placementId: v.optional(v.string()), openingId: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db.query("placements").order("desc").take(500);
+    const wanted = args.placementId
+      ? rows.filter((row) => (row._id as string) === args.placementId)
+      : args.openingId
+        ? rows.filter((row) => (row.jobId as string) === args.openingId)
+        : [];
+
+    const out: OpsPlacement[] = [];
+    for (const row of wanted.slice(0, OPS_READ_LIMIT)) {
+      const application = await ctx.db.get(row.applicationId).catch(() => null);
+      const day = Date.parse(row.joinDate);
+      out.push({
+        id: row._id as string,
+        applicationId: row.applicationId as string,
+        openingId: row.jobId as string,
+        clientId: (row.clientId as string) ?? "",
+        candidateName:
+          application && "candidateName" in application ? (application.candidateName ?? "") : "",
+        placedSalary: row.placedSalary ?? null,
+        currency: row.placedSalaryCurrency ?? null,
+        salaryBasis: row.salaryBasis ?? null,
+        package: (row as { packageNotes?: string }).packageNotes ?? null,
+        offerLetterFileId: (row as { offerLetterFileId?: string }).offerLetterFileId ?? null,
+        joinDateMs: Number.isFinite(day) ? day : null,
+        joinConfirmedAt: row.joinConfirmedAt ?? null,
+        fellThroughAt: (row as { fellThroughAt?: number }).fellThroughAt ?? null,
+        fellThroughReason: (row as { fellThroughReason?: string }).fellThroughReason ?? null,
+      });
+    }
+    return out;
+  },
+});
+
+/** Which file is an application's prepared CV, for streaming it to Ops. */
+export const opsPreparedCvId = internalQuery({
+  args: { applicationId: v.string() },
+  handler: async (ctx, args) => {
+    const application = await ctx.db.get(args.applicationId as Doc<"applications">["_id"]).catch(() => null);
+    if (!application || !("currentStage" in application)) return null;
+    const uploadId = application.cvFileId ?? application.candidateCvUploadId ?? null;
+    return uploadId ? { uploadId: uploadId as string } : null;
+  },
+});
+
+/* ── The events feed ────────────────────────────────────────────── */
+
+/**
+ * What TA has to tell Ops, in order, after a cursor.
+ *
+ * The cursor is the `at` of the last event Ops handled, so a reader that
+ * crashes halfway through a batch asks for the same batch again - handlers on
+ * the Ops side are idempotent for exactly that reason. Ordering is by time,
+ * and two events in the same millisecond are broken by their own id, so the
+ * cursor can never stick.
+ */
+export const opsEventsAfter = internalQuery({
+  args: { after: v.optional(v.number()), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const after = args.after ?? 0;
+    const limit = Math.min(Math.max(args.limit ?? 100, 1), 200);
+    const rows = await ctx.db
+      .query("opsEvents")
+      .withIndex("by_at", (q) => q.gt("at", after))
+      .order("asc")
+      .take(limit);
+    return rows.map((row) => ({
+      id: row._id as string,
+      type: row.type,
+      at: row.at,
+      data: ((): Record<string, unknown> => {
+        try {
+          return JSON.parse(row.data) as Record<string, unknown>;
+        } catch {
+          return {};
+        }
+      })(),
+    }));
+  },
+});

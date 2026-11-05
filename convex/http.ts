@@ -15,10 +15,21 @@ import {
   opsReadOpening,
   opsReadOpenings,
   opsReadPeople,
+  opsReadPlacementOrCv,
+  opsReadPlacements,
+  opsReadPreparedCv,
+  opsReadEvents,
 } from "./integrations/opsReadHttp";
 import {
+  opsWriteApplication,
+  opsWriteClient,
+  opsWriteClientSet,
+  opsWriteCreateInterview,
   opsWriteCreateOpening,
+  opsWriteInterview,
   opsWriteNotify,
+  opsWritePlacement,
+  opsWriteReferenceRequest,
   opsWriteUnderOpening,
 } from "./integrations/opsWriteHttp";
 import type { Id } from "./_generated/dataModel";
@@ -51,6 +62,10 @@ http.route({ path: "/integrations/v1/people", method: "GET", handler: opsReadPeo
 http.route({ path: "/integrations/v1/clients", method: "GET", handler: opsReadClients });
 http.route({ path: "/integrations/v1/openings", method: "GET", handler: opsReadOpenings });
 http.route({ pathPrefix: "/integrations/v1/openings/", method: "GET", handler: opsReadOpening });
+http.route({ path: "/integrations/v1/placements", method: "GET", handler: opsReadPlacements });
+http.route({ path: "/integrations/v1/events", method: "GET", handler: opsReadEvents });
+http.route({ pathPrefix: "/integrations/v1/placements/", method: "GET", handler: opsReadPlacementOrCv });
+http.route({ pathPrefix: "/integrations/v1/applications/", method: "GET", handler: opsReadPreparedCv });
 
 // The Ops System's writes. Switched off until OPS_API_WRITES_ENABLED says
 // "on", attributed to the TA user in OPS_API_ACTOR_EMAIL, and repeat-safe on
@@ -60,6 +75,13 @@ http.route({ pathPrefix: "/integrations/v1/openings/", method: "GET", handler: o
 http.route({ path: "/integrations/v1/notify", method: "POST", handler: opsWriteNotify });
 http.route({ path: "/integrations/v1/openings", method: "POST", handler: opsWriteCreateOpening });
 http.route({ pathPrefix: "/integrations/v1/openings/", method: "POST", handler: opsWriteUnderOpening });
+http.route({ pathPrefix: "/integrations/v1/clients/", method: "POST", handler: opsWriteClient });
+http.route({ pathPrefix: "/integrations/v1/client-sets/", method: "POST", handler: opsWriteClientSet });
+http.route({ pathPrefix: "/integrations/v1/applications/", method: "POST", handler: opsWriteApplication });
+http.route({ path: "/integrations/v1/reference-requests", method: "POST", handler: opsWriteReferenceRequest });
+http.route({ path: "/integrations/v1/interviews", method: "POST", handler: opsWriteCreateInterview });
+http.route({ pathPrefix: "/integrations/v1/interviews/", method: "POST", handler: opsWriteInterview });
+http.route({ pathPrefix: "/integrations/v1/placements/", method: "POST", handler: opsWritePlacement });
 
 /**
  * Meta's webhook verification handshake.

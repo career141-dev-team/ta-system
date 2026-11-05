@@ -205,6 +205,61 @@ const openingStatusWrite = handler("status", openingStatusRef, (body, actor) => 
   return { actorId: actor, openingId, status, reason };
 });
 
+
+/* ── Reading the id out of the path ─────────────────────────────── */
+
+/** The segments after a prefix, each decoded; an undecodable one is dropped. */
+function pathAfter(url: string, prefix: string): string[] {
+  return new URL(url).pathname
+    .slice(prefix.length)
+    .split("/")
+    .filter(Boolean)
+    .map((part) => {
+      try {
+        return decodeURIComponent(part);
+      } catch {
+        return "";
+      }
+    });
+}
+
+function lastSegment(url: string, prefix: string): string {
+  const parts = pathAfter(url, prefix);
+  return parts.length === 1 ? parts[0] : "";
+}
+
+/**
+ * The id lives in the path and the handlers read it from the body, so it is
+ * put there once, here. The request is rebuilt rather than mutated, because a
+ * Request's body can only be read once.
+ */
+async function withBody(
+  ctx: Parameters<Door>[0],
+  request: Request,
+  extra: Record<string, unknown>,
+  door: Door,
+): Promise<Response> {
+  const original = await request.text();
+  let body: Record<string, unknown>;
+  try {
+    body = { ...(JSON.parse(original || "{}") as Record<string, unknown>), ...extra };
+  } catch {
+    return json(400, { error: "Send a JSON body" });
+  }
+  return door(ctx, new Request(request.url, { method: "POST", headers: request.headers, body: JSON.stringify(body) }));
+}
+
+const withId = (
+  ctx: Parameters<Door>[0],
+  request: Request,
+  id: string,
+  name: string,
+  door: Door,
+): Promise<Response> =>
+  looksLikeId(id)
+    ? withBody(ctx, request, { [name]: id }, door)
+    : Promise.resolve(json(400, { error: "Invalid id in the path" }));
+
 export const opsWriteNotify = httpAction(notifyWrite);
 export const opsWriteCreateOpening = httpAction(createOpeningWrite);
 
@@ -241,4 +296,204 @@ export const opsWriteUnderOpening = httpAction(async (ctx, request) => {
   if (what === "status") return openingStatusWrite(ctx, again);
   if (what === "working-stage") return workingStageWrite(ctx, again);
   return json(404, { error: "Unknown endpoint" });
+});
+
+/* ── The rest of the writes ─────────────────────────────────────── */
+
+const clientOwnerRef = mutation<Record<string, unknown>, unknown>("integrations/opsWrite:opsSetClientOwner");
+const clientSetSentRef = mutation<Record<string, unknown>, unknown>("integrations/opsWrite:opsClientSetSent");
+const clientDecisionRef = mutation<Record<string, unknown>, unknown>("integrations/opsWrite:opsClientDecision");
+const clientOwnedRef = mutation<Record<string, unknown>, unknown>("integrations/opsWrite:opsClientOwned");
+const teamRef = mutation<Record<string, unknown>, unknown>("integrations/opsWrite:opsSetTeam");
+const adChannelRef = mutation<Record<string, unknown>, unknown>("integrations/opsWrite:opsAdChannel");
+const createInterviewRef = mutation<Record<string, unknown>, unknown>("integrations/opsWrite:opsCreateInterview");
+const interviewOutcomeRef = mutation<Record<string, unknown>, unknown>("integrations/opsWrite:opsInterviewOutcome");
+const referenceRef = mutation<Record<string, unknown>, unknown>("integrations/opsWrite:opsReferenceRequest");
+const placementRef = mutation<Record<string, unknown>, unknown>("integrations/opsWrite:opsPlacementOutcome");
+
+const clientOwnerWrite = handler("clients", clientOwnerRef, (body) => {
+  const clientId = text(body.clientId, 64);
+  if (!looksLikeId(clientId)) return "Which client? (clientId)";
+  return {
+    clientId,
+    opsOwnerEmail: text(body.opsOwnerEmail, 200),
+    opsOwnerName: text(body.opsOwnerName, 120),
+  };
+}, false);
+
+const clientSetSentWrite = handler("client-sets-sent", clientSetSentRef, (body) => {
+  const roundId = text(body.roundId, 64);
+  if (!looksLikeId(roundId)) return "Which set? (roundId)";
+  const sentAt = typeof body.sentAt === "number" ? body.sentAt : 0;
+  if (!sentAt) return "When did it go? (sentAt, in milliseconds)";
+  const sentTo = Array.isArray(body.sentTo) ? body.sentTo.map((one) => String(one).slice(0, 200)).slice(0, 20) : [];
+  return {
+    roundId,
+    sentAt,
+    ...(typeof body.receivedAt === "number" ? { receivedAt: body.receivedAt } : {}),
+    ...(sentTo.length ? { sentTo } : {}),
+  };
+}, false);
+
+const clientDecisionWrite = handler("client-decision", clientDecisionRef, (body, actor) => {
+  const applicationId = text(body.applicationId, 64);
+  if (!looksLikeId(applicationId)) return "Which candidate? (applicationId)";
+  const said = text(body.decision, 30);
+  const decision = said === "shortlisted" || said === "selected" ? "shortlisted" : said === "hold" ? "hold" : said === "rejected" ? "rejected" : "";
+  if (!decision) return "The decision is shortlisted, rejected or hold.";
+  const reason = text(body.reason, 1000);
+  // The owner's standing rule: no reject is saved without a reason.
+  if (decision === "rejected" && reason.length < 3) return "A rejection needs the client's reason.";
+  return {
+    actorId: actor,
+    applicationId,
+    decision,
+    reason,
+    ...(text(body.reviewedByName, 120) ? { reviewedByName: text(body.reviewedByName, 120) } : {}),
+    ...(typeof body.decidedAt === "number" ? { decidedAt: body.decidedAt } : {}),
+  };
+});
+
+const clientOwnedWrite = handler("client-owned", clientOwnedRef, (body, actor) => {
+  const applicationId = text(body.applicationId, 64);
+  if (!looksLikeId(applicationId)) return "Which candidate? (applicationId)";
+  const claimedAt = typeof body.claimedAt === "number" ? body.claimedAt : Date.now();
+  return { actorId: actor, applicationId, claimedAt, ...(text(body.because, 500) ? { because: text(body.because, 500) } : {}) };
+});
+
+const teamWrite = handler("team", teamRef, (body, actor) => {
+  const openingId = text(body.openingId, 64);
+  if (!looksLikeId(openingId)) return "Which opening? (openingId)";
+  const primary = text(body.primaryRecruiterId, 64);
+  return {
+    actorId: actor,
+    openingId,
+    ...(looksLikeId(primary) ? { primaryRecruiterId: primary } : {}),
+    ...(text(body.hundredPercentDay, 40) ? { hundredPercentDay: text(body.hundredPercentDay, 40) } : {}),
+  };
+});
+
+const adChannelWrite = handler("ad-channel", adChannelRef, (body) => {
+  const openingId = text(body.openingId, 64);
+  if (!looksLikeId(openingId)) return "Which opening? (openingId)";
+  const channel = text(body.channel, 40);
+  if (!channel) return "Which channel? (linkedin, topjobs, email_campaign…)";
+  return {
+    openingId,
+    channel,
+    ...(text(body.state, 20) ? { state: text(body.state, 20) } : {}),
+    ...(text(body.url, 500) ? { url: text(body.url, 500) } : {}),
+    ...(text(body.applyAlias, 200) ? { applyAlias: text(body.applyAlias, 200) } : {}),
+    ...(typeof body.postedAt === "number" ? { postedAt: body.postedAt } : {}),
+    ...(typeof body.liveAt === "number" ? { liveAt: body.liveAt } : {}),
+    ...(typeof body.closedAt === "number" ? { closedAt: body.closedAt } : {}),
+    ...(typeof body.cost === "number" ? { cost: body.cost } : {}),
+  };
+}, false);
+
+const createInterviewWrite = handler("interviews", createInterviewRef, (body, actor) => {
+  const applicationId = text(body.applicationId, 64);
+  if (!looksLikeId(applicationId)) return "Which candidate? (applicationId)";
+  const scheduledAt = typeof body.scheduledAt === "number" ? body.scheduledAt : 0;
+  if (!scheduledAt) return "When is it? (scheduledAt, in milliseconds)";
+  const interviewers = Array.isArray(body.interviewers)
+    ? body.interviewers.map((one) => String(one).slice(0, 200)).slice(0, 10)
+    : [];
+  return {
+    actorId: actor,
+    applicationId,
+    scheduledAt,
+    ...(typeof body.round === "number" ? { round: body.round } : {}),
+    ...(text(body.interviewFormat, 20) ? { interviewFormat: text(body.interviewFormat, 20) } : {}),
+    ...(interviewers.length ? { interviewers } : {}),
+    ...(text(body.whereOrLink ?? body.teamsLink, 500) ? { whereOrLink: text(body.whereOrLink ?? body.teamsLink, 500) } : {}),
+  };
+});
+
+const interviewOutcomeWrite = handler("interview-outcome", interviewOutcomeRef, (body) => {
+  const interviewId = text(body.interviewId, 64);
+  if (!looksLikeId(interviewId)) return "Which interview? (interviewId)";
+  const what = text(body.what, 20);
+  if (!["attendance", "cancel", "client-decision"].includes(what)) {
+    return "What happened: attendance, cancel or client-decision.";
+  }
+  return {
+    interviewId,
+    what,
+    ...(text(body.outcome, 20) ? { outcome: text(body.outcome, 20) } : {}),
+    ...(text(body.decision, 20) ? { decision: text(body.decision, 20) } : {}),
+    ...(text(body.reason, 500) ? { reason: text(body.reason, 500) } : {}),
+    ...(typeof body.at === "number" ? { at: body.at } : {}),
+  };
+}, false);
+
+const referenceWrite = handler("reference-requests", referenceRef, (body) => {
+  const applicationId = text(body.applicationId, 64);
+  if (!looksLikeId(applicationId)) return "Which candidate? (applicationId)";
+  return {
+    applicationId,
+    ...(typeof body.requestedAt === "number" ? { requestedAt: body.requestedAt } : {}),
+  };
+}, false);
+
+const placementWrite = handler("placement-outcome", placementRef, (body) => {
+  const placementId = text(body.placementId, 64);
+  if (!looksLikeId(placementId)) return "Which placement? (placementId)";
+  const what = text(body.what, 20);
+  if (!["join-date", "no-show", "cancel", "left", "invoice-state"].includes(what)) {
+    return "What happened: join-date, no-show, cancel, left or invoice-state.";
+  }
+  if (what === "join-date" && typeof body.joinDateMs !== "number") return "A joining day needs joinDateMs.";
+  return {
+    placementId,
+    what,
+    ...(typeof body.joinDateMs === "number" ? { joinDateMs: body.joinDateMs } : {}),
+    ...(text(body.reason, 500) ? { reason: text(body.reason, 500) } : {}),
+    ...(typeof body.at === "number" ? { at: body.at } : {}),
+    ...(text(body.invoiceNumber, 60) ? { invoiceNumber: text(body.invoiceNumber, 60) } : {}),
+    ...(typeof body.amount === "number" ? { amount: body.amount } : {}),
+  };
+}, false);
+
+export const opsWriteClient = httpAction(async (ctx, request) => {
+  const id = lastSegment(request.url, "/integrations/v1/clients/");
+  return withId(ctx, request, id, "clientId", clientOwnerWrite);
+});
+
+export const opsWriteClientSet = httpAction(async (ctx, request) => {
+  // `/client-sets/{roundId}/sent` - the only thing under a set.
+  const rest = pathAfter(request.url, "/integrations/v1/client-sets/");
+  if (rest.length !== 2 || rest[1] !== "sent") return json(404, { error: "Unknown endpoint" });
+  return withId(ctx, request, rest[0], "roundId", clientSetSentWrite);
+});
+
+export const opsWriteApplication = httpAction(async (ctx, request) => {
+  const rest = pathAfter(request.url, "/integrations/v1/applications/");
+  if (rest.length !== 2) return json(404, { error: "Unknown endpoint" });
+  const [applicationId, what] = rest;
+  if (what === "client-decision") return withId(ctx, request, applicationId, "applicationId", clientDecisionWrite);
+  if (what === "client-owned") return withId(ctx, request, applicationId, "applicationId", clientOwnedWrite);
+  if (what === "reference-request") return withId(ctx, request, applicationId, "applicationId", referenceWrite);
+  return json(404, { error: "Unknown endpoint" });
+});
+
+export const opsWriteReferenceRequest = httpAction(referenceWrite);
+export const opsWriteCreateInterview = httpAction(createInterviewWrite);
+
+export const opsWriteInterview = httpAction(async (ctx, request) => {
+  const rest = pathAfter(request.url, "/integrations/v1/interviews/");
+  if (rest.length !== 2) return json(404, { error: "Unknown endpoint" });
+  const [interviewId, what] = rest;
+  if (!["attendance", "cancel", "client-decision"].includes(what)) return json(404, { error: "Unknown endpoint" });
+  return withBody(ctx, request, { interviewId, what }, interviewOutcomeWrite);
+});
+
+export const opsWritePlacement = httpAction(async (ctx, request) => {
+  const rest = pathAfter(request.url, "/integrations/v1/placements/");
+  if (rest.length !== 2) return json(404, { error: "Unknown endpoint" });
+  const [placementId, what] = rest;
+  if (!["join-date", "no-show", "cancel", "left", "invoice-state"].includes(what)) {
+    return json(404, { error: "Unknown endpoint" });
+  }
+  return withBody(ctx, request, { placementId, what }, placementWrite);
 });
