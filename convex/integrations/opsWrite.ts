@@ -161,14 +161,17 @@ export const opsSetWorkingStage = internalMutation({
     userId: v.optional(v.string()),
     mode: v.union(v.literal("100%"), v.literal("Follow-up"), v.literal("Add-on")),
   },
-  handler: async (ctx, args) => {
-    const done = await ctx.runMutation(internal.ta.openings.setWorkingStage, {
+  // Annotated (5 Nov): calling another mutation through `internal` made the
+  // type refer to itself once the deploy regenerated the api, and the
+  // release failed its typecheck.
+  handler: async (ctx, args): Promise<Record<string, unknown>> => {
+    const done: unknown = await ctx.runMutation(internal.ta.openings.setWorkingStage, {
       actorId: args.actorId,
       openingId: args.openingId,
       userId: args.userId,
       stage: args.mode,
     });
-    const answer = { ok: true, ...(done as Record<string, unknown>) };
+    const answer: Record<string, unknown> = { ok: true, ...(done as Record<string, unknown>) };
     await remember(ctx, args.idempotencyKey, "working-stage", answer);
     return answer;
   },
