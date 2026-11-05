@@ -1,4 +1,5 @@
 import { MutationCtx } from "../_generated/server";
+import { raiseOpsEvent } from "../lib/opsEvents";
 import { Doc, Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
 import { requireUser, requireJobAssignment } from "../lib/permissions";
@@ -222,6 +223,20 @@ export async function executeStageTransition(
 
   // 6. Statistics Adjustments
   await adjustJobStageStat(ctx, app.jobId, currentStage, targetStage);
+
+  // The Ops System is told in the same transaction and TA carries on: the
+  // client's side of the search turns on these moves (a shortlist deepening,
+  // a candidate rejected, a placement made). raiseOpsEvent never throws, so
+  // this cannot make a stage change fail (5 Nov, ops docs/15 Part E).
+  await raiseOpsEvent(ctx, "application.stage_changed", {
+    applicationId: applicationId as string,
+    openingId: app.jobId as string,
+    candidateId: app.candidateId as string,
+    from: currentStage,
+    to: targetStage,
+    reason: reason ?? null,
+    actor: String(actorDisplayId),
+  });
 
   // A placement that falls through comes off the day it was counted on —
   // it used to stay counted for good (2 Oct).

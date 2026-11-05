@@ -1371,6 +1371,8 @@ export default defineSchema({
     scoopReceivedAt: v.optional(v.number()),
     /** Cover for someone who declined, and the decline that started the search. */
     backupForApplicationId: v.optional(v.id("applications")),
+    /** The day the client said they already had this CV (5 Nov, Ops API). */
+    clientOwnedAt: v.optional(v.number()),
     offerDeclinedAt: v.optional(v.number()),
     offerDeclineReason: v.optional(v.string()),
     // Parked, carried so no migration is needed when they are defined.
@@ -2266,7 +2268,11 @@ export default defineSchema({
       // silently. Raised by ta/eodCopies.flagStuckSends, ta/eodReminders.ts and closeWorkday.
       v.literal("eod_stuck"), v.literal("eod_reminder"), v.literal("eod_lead_digest"), v.literal("workday_expired"),
       // A priority tier or a status was changed on an opening (2 Nov).
-      v.literal("opening_changed")
+      v.literal("opening_changed"),
+      // Something the Ops System wants a TA to know (5 Nov): a client's
+      // decision, a cancelled interview, an advert closed. News passed by
+      // hand is the oldest complaint on the board.
+      v.literal("from_ops")
     ),
     title: v.string(),
     body: v.string(),
@@ -2701,6 +2707,14 @@ export default defineSchema({
     binnedBy: v.optional(v.id("users")),
     /** The desk's notes on who the client is, for Research and Suggestions (28 Sep). */
     researchNotes: v.optional(v.string()),
+    /**
+     * Who looks after this client on the Ops side (5 Nov, Ops API).
+     *
+     * Written only by `POST /integrations/v1/clients/{id}`. A TA looking at a
+     * client could not see who to ask about them; now they can.
+     */
+    opsOwnerEmail: v.optional(v.string()),
+    opsOwnerName: v.optional(v.string()),
   })
     .index("by_nameKey", ["nameKey"])
     .index("by_status", ["status"])
@@ -2710,6 +2724,44 @@ export default defineSchema({
    * One advert. Many posts sit under one opening and share its candidate pool
    * — the distinction the old `jobs` table could not make.
    */
+  /**
+   * What TA has to tell the Ops System (ops docs/15 Part E, the events).
+   *
+   * TA never waits for Ops: it writes a row here in the same transaction as
+   * its own change and carries on. Ops reads the feed every minute with a
+   * cursor, so an Ops outage loses nothing - the rows wait.
+   *
+   * Raising one must never be able to break a TA write, so every raise is
+   * wrapped and a failure is swallowed with a log line. A bell nobody hears
+   * is bad; a Place that fails because Ops was told about it is worse.
+   */
+  opsEvents: defineTable({
+    /** "placement.created", "application.stage_changed", and the rest. */
+    type: v.string(),
+    at: v.number(),
+    /** The subject, so Ops can find its own row without parsing the data. */
+    openingId: v.optional(v.union(v.string(), v.null())),
+    applicationId: v.optional(v.union(v.string(), v.null())),
+    /** Everything else, as JSON: the shapes differ by type. */
+    data: v.string(),
+  }).index("by_at", ["at"]),
+
+  /**
+   * Every write the Ops System has already made (ops docs/15 Part E).
+   *
+   * Ops queues its writes and retries after an outage, so the same one will
+   * arrive twice. The key it sends is kept here with the answer we gave, and a
+   * repeat is answered from this row instead of being done again - which is
+   * what stops a retried hand-over making two openings.
+   */
+  opsApiWrites: defineTable({
+    idempotencyKey: v.string(),
+    path: v.string(),
+    /** The answer we gave the first time, as JSON. */
+    answer: v.string(),
+    createdAt: v.number(),
+  }).index("by_key", ["idempotencyKey"]),
+
   jobPosts: defineTable({
     openingId: v.id("jobs"),
     title: v.string(),
@@ -3138,6 +3190,14 @@ export default defineSchema({
     trackedAt: v.optional(v.union(v.string(), v.null())),
     subject: v.string(),
     dispatch: v.union(v.literal("held"), v.literal("sent")),
+    /**
+     * The day the client said they received it (5 Nov, Ops API).
+     *
+     * Every clock on the Ops side counts from this and not from the send:
+     * CV ownership, the feedback chase, the two weeks before a hold. It is
+     * written by `POST /integrations/v1/client-sets/{id}/sent`.
+     */
+    receivedAt: v.optional(v.union(v.number(), v.null())),
     status: v.union(
       v.literal("awaiting"), v.literal("partial"), v.literal("returned"),
     ),

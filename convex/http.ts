@@ -10,6 +10,28 @@ import {
   partnerReadTable,
   partnerReadTableIndex,
 } from "./integrations/partnerReadHttp";
+import {
+  opsReadClients,
+  opsReadOpening,
+  opsReadOpenings,
+  opsReadPeople,
+  opsReadPlacementOrCv,
+  opsReadPlacements,
+  opsReadPreparedCv,
+  opsReadEvents,
+} from "./integrations/opsReadHttp";
+import {
+  opsWriteApplication,
+  opsWriteClient,
+  opsWriteClientSet,
+  opsWriteCreateInterview,
+  opsWriteCreateOpening,
+  opsWriteInterview,
+  opsWriteNotify,
+  opsWritePlacement,
+  opsWriteReferenceRequest,
+  opsWriteUnderOpening,
+} from "./integrations/opsWriteHttp";
 import type { Id } from "./_generated/dataModel";
 import {
   isFreshVoiceAgentTimestamp,
@@ -29,6 +51,37 @@ http.route({ pathPrefix: "/integrations/v1/tables/", method: "GET", handler: par
 http.route({ path: "/integrations/v1/cv/uploads", method: "POST", handler: partnerCreateCvUpload });
 http.route({ path: "/integrations/v1/cv/uploads/complete", method: "POST", handler: partnerCompleteCvUpload });
 http.route({ pathPrefix: "/integrations/v1/cv/", method: "GET", handler: partnerReadCv });
+
+// The Ops System's own reads, behind their own key (OPS_API_TOKEN), so the
+// capacity planner's key can never read an opening's pipeline and either key
+// can be rotated without the other. Read-only: the writes and the events feed
+// are their own pull requests. The prefix route handles both
+// `/openings/{id}` and `/openings/{id}/pipeline`, since the router matches an
+// exact path or a prefix and nothing in between.
+http.route({ path: "/integrations/v1/people", method: "GET", handler: opsReadPeople });
+http.route({ path: "/integrations/v1/clients", method: "GET", handler: opsReadClients });
+http.route({ path: "/integrations/v1/openings", method: "GET", handler: opsReadOpenings });
+http.route({ pathPrefix: "/integrations/v1/openings/", method: "GET", handler: opsReadOpening });
+http.route({ path: "/integrations/v1/placements", method: "GET", handler: opsReadPlacements });
+http.route({ path: "/integrations/v1/events", method: "GET", handler: opsReadEvents });
+http.route({ pathPrefix: "/integrations/v1/placements/", method: "GET", handler: opsReadPlacementOrCv });
+http.route({ pathPrefix: "/integrations/v1/applications/", method: "GET", handler: opsReadPreparedCv });
+
+// The Ops System's writes. Switched off until OPS_API_WRITES_ENABLED says
+// "on", attributed to the TA user in OPS_API_ACTOR_EMAIL, and repeat-safe on
+// the idempotency key every one of them carries. They go through TA's own
+// mutations, so TA's rules, audit and bells happen exactly as they do when a
+// person clicks.
+http.route({ path: "/integrations/v1/notify", method: "POST", handler: opsWriteNotify });
+http.route({ path: "/integrations/v1/openings", method: "POST", handler: opsWriteCreateOpening });
+http.route({ pathPrefix: "/integrations/v1/openings/", method: "POST", handler: opsWriteUnderOpening });
+http.route({ pathPrefix: "/integrations/v1/clients/", method: "POST", handler: opsWriteClient });
+http.route({ pathPrefix: "/integrations/v1/client-sets/", method: "POST", handler: opsWriteClientSet });
+http.route({ pathPrefix: "/integrations/v1/applications/", method: "POST", handler: opsWriteApplication });
+http.route({ path: "/integrations/v1/reference-requests", method: "POST", handler: opsWriteReferenceRequest });
+http.route({ path: "/integrations/v1/interviews", method: "POST", handler: opsWriteCreateInterview });
+http.route({ pathPrefix: "/integrations/v1/interviews/", method: "POST", handler: opsWriteInterview });
+http.route({ pathPrefix: "/integrations/v1/placements/", method: "POST", handler: opsWritePlacement });
 
 /**
  * Meta's webhook verification handshake.
