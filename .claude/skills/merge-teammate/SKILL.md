@@ -5,9 +5,10 @@ description: Review and merge a teammate's branch or pull request into main for 
 
 # Merge a teammate's work
 
-The owner (Sanjeev) merges; the teammate (Binath, GitHub `HDBinath`) works on
-branches. Nothing here deploys: merging to `main` changes no server. Releasing
-is a separate, approved step (`docs/TEAM-WORKFLOW.md`).
+Sanjeev (`sanjeev200009`) and Binath (`HDBinath`) may **both** merge and release
+on their own (owner's decision, 4 Nov 2026). "The owner" below means whichever
+of the two is asking you to merge. Nothing here deploys: merging to `main`
+changes no server. Releasing is a separate step (`docs/TEAM-WORKFLOW.md`).
 
 ## 1. See what is new
 
@@ -87,7 +88,7 @@ git push origin HEAD:main
 Then clean up: `git worktree remove <scratch-dir>/merge-review`, and tell the
 teammate to start new work from the updated `main` (`git switch main && git
 pull && git switch -c <name>/<topic>`). Releasing to live is a separate step
-the owner approves: `git push origin main:production`.
+the person asking says yes to: `git push origin main:production`.
 
 ## Never
 

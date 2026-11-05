@@ -20,6 +20,8 @@ live database behind api.career141.com (78,000+ real candidates). Server layout:
    (`.github/workflows/deploy-production.yml`).
 2. **Work on a branch, merge through a pull request.** Never commit or push
    straight to `main` or `production`. Branch names: `<person>/<topic>`.
+   Sanjeev (`sanjeev200009`) and Binath (`HDBinath`) may each merge a pull
+   request and release (`git push origin main:production`) on their own.
 3. **No secrets anywhere tracked or shared.** No keys in code, commits, docs,
    chat or example files. `.env*` files stay local.
 4. **Real candidates are real.** Outbound WhatsApp/email/calls must go through

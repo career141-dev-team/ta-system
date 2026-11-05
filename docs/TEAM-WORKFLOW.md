@@ -6,8 +6,12 @@ AI coding tools is in [`AGENTS.md`](../AGENTS.md).
 
 | Who | Role |
 |---|---|
-| **Sanjeev** (`sanjeev200009`) | Owner. Reviews and merges into `main`. Approves every release to live. |
-| **Binath** (`HDBinath`) | Developer. Works on branches, opens pull requests, reviews Sanjeev's too. |
+| **Sanjeev** (`sanjeev200009`) | Owner. Works on branches, reviews, merges into `main` and releases to live. |
+| **Binath** (`HDBinath`) | Developer. Works on branches, reviews, merges into `main` and releases to live. |
+
+Since 4 November 2026 **either of you may merge and release on your own**, without
+waiting for the other (owner's decision). Both GitHub accounts are repository
+admins, so GitHub already allows it. The safety rules below still apply to both.
 
 ## Branches
 
@@ -26,12 +30,12 @@ merged. Everything new goes through short branches and pull requests.
 2. **Pull request** into `main` — CI runs the tests by itself.
 3. **Review** — the *other* person reads every file and runs it if it touches
    candidates, messages or the database.
-4. **Merge** — Sanjeev merges. `main` must always be releasable.
+4. **Merge** — Sanjeev or Binath merges. `main` must always be releasable.
 5. **Staging** — a copy of live that never messages anyone (being rebuilt; until
    then, test locally).
-6. **Release** — `git push origin main:production`, Sanjeev approves in GitHub
-   Actions, the pipeline backs up the database, deploys, and rolls back by
-   itself if the new version is not healthy.
+6. **Release** — Sanjeev or Binath runs `git push origin main:production`; the
+   pipeline deploys (backing up the database first when a migration runs) and
+   rolls back by itself if the new version is not healthy.
 
 ## Plan 1 — on your laptops
 
@@ -94,7 +98,7 @@ When `main` has moved on, bring it into your branch before asking for review
 - Anything that changes stored data needs a migration function with a dry run.
 - Anything that sends to candidates must respect `OUTREACH_LIVE` and the
   outbound guards (`convex/lib/outreachSafety.ts`, `convex/lib/outboundGuard.ts`).
-- Approve; Sanjeev merges.
+- Approve, then merge (either of you).
 
 ## Plan 2 — on the server
 
@@ -110,15 +114,16 @@ Details and addresses: [`deploy/production/README.md`](../deploy/production/READ
 | Voice | `ta-staging-livekit`, `ta-staging-voice-agent` | A release |
 | Staging | to be rebuilt on its own ports and database | Auto-deploy on merge to `main` once it exists |
 
-### Releasing (Sanjeev)
+### Releasing (Sanjeev or Binath)
 
 ```bash
 git switch main && git pull
 git push origin main:production
 ```
 
-Then GitHub → Actions → **Deploy Production** → **Approve**, and click through
-the pages that changed on the live site.
+Then watch GitHub → Actions → **Deploy Production** until it is green (about
+6 minutes), and click through the pages that changed on the live site. Tell the
+other person what you released.
 
 ### Urgent fix
 
@@ -139,15 +144,16 @@ git switch -c hotfix/short-name origin/production
   repository — its deploy would remove every `ta/*` backend function.
 - **Never** switch on real candidate messages (`OUTREACH_LIVE`) except on live,
   and only when Sanjeev decides.
-- **Always**: a pull request the other person has read; tests and both type
-  checks green; data changes as a migration with a dry run first.
+- **Always**: tests and both type checks green before you merge; data changes
+  as a migration with a dry run first. Ask the other person to read it first
+  when it touches candidates, messages or the database.
 
 ## One-time setup still to do
 
 1. Disable the deploy workflow in the old CV-Processing repo (Sanjeev).
 2. Merge Binath's `staging` (5ba3d06) after the score-display decision; retire the branch.
 3. Branch protection on `main` and `production`: pull request, 1 approval, CI passing (Sanjeev).
-4. Production release secrets and the `production` environment with Sanjeev as reviewer (list in `deploy/production/README.md`).
+4. Production release secrets and the `production` environment (list in `deploy/production/README.md`). No required reviewer: since 4 Nov 2026 either developer releases.
 5. Rebuild staging on its own ports with a nightly copy of live; turn its auto-deploy back on.
 6. Nightly database backups on the server.
 7. Safe local test data for Binath; both laptops set up as above.
