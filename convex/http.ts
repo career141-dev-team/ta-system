@@ -10,6 +10,12 @@ import {
   partnerReadTable,
   partnerReadTableIndex,
 } from "./integrations/partnerReadHttp";
+import {
+  opsReadClients,
+  opsReadOpening,
+  opsReadOpenings,
+  opsReadPeople,
+} from "./integrations/opsReadHttp";
 import type { Id } from "./_generated/dataModel";
 import {
   isFreshVoiceAgentTimestamp,
@@ -29,6 +35,17 @@ http.route({ pathPrefix: "/integrations/v1/tables/", method: "GET", handler: par
 http.route({ path: "/integrations/v1/cv/uploads", method: "POST", handler: partnerCreateCvUpload });
 http.route({ path: "/integrations/v1/cv/uploads/complete", method: "POST", handler: partnerCompleteCvUpload });
 http.route({ pathPrefix: "/integrations/v1/cv/", method: "GET", handler: partnerReadCv });
+
+// The Ops System's own reads, behind their own key (OPS_API_TOKEN), so the
+// capacity planner's key can never read an opening's pipeline and either key
+// can be rotated without the other. Read-only: the writes and the events feed
+// are their own pull requests. The prefix route handles both
+// `/openings/{id}` and `/openings/{id}/pipeline`, since the router matches an
+// exact path or a prefix and nothing in between.
+http.route({ path: "/integrations/v1/people", method: "GET", handler: opsReadPeople });
+http.route({ path: "/integrations/v1/clients", method: "GET", handler: opsReadClients });
+http.route({ path: "/integrations/v1/openings", method: "GET", handler: opsReadOpenings });
+http.route({ pathPrefix: "/integrations/v1/openings/", method: "GET", handler: opsReadOpening });
 
 /**
  * Meta's webhook verification handshake.
