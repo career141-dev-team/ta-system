@@ -154,7 +154,7 @@ export const findSetInThread = internalAction({
       note: `Set rebuilt from ${from}'s email in ${email.box}: ${best.roster.length} of ${files.length} CVs matched.`,
       openingId: best.jobId, sentBy: taId, sentAt: Date.parse(email.receivedDateTime ?? ""), subject: email.subject ?? args.subject,
       messageId: email.id, conversationId: email.conversationId ?? args.conversationId, sentTo,
-      roster: best.roster.map((r) => ({ applicationId: r.applicationId, name: r.name, stage: r.stage })), unmatched: best.unmatched,
+      roster: best.roster.map((r: any) => ({ applicationId: r.applicationId, name: r.name, stage: r.stage })), unmatched: best.unmatched,
     };
   },
 });

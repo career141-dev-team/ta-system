@@ -313,7 +313,7 @@ export const addToAssignedJob = internalMutation({
         sourceChannel: "job_transfer", stage: "new_cvs",
       });
       if (!id) throw new Error("Candidate not found.");
-      app = await ctx.db.get(id);
+      app = await ctx.db.get(id as Id<"applications">);
       if (!app) throw new Error("Could not create the application.");
     }
     if (!app.ownerTaId) {

@@ -358,13 +358,13 @@ async function planReply(ctx: ActionCtx, args: ReplyArgs, dryRun: boolean) {
           id: roundId, openingId: set.openingId, kind: fromClient ? "client" : "director", token: roundId, subject: set.subject ?? args.subject,
           status: "awaiting", sentAt: set.sentAt ?? args.receivedAt, sentBy: set.sentBy, conversationId: set.conversationId ?? null,
           internetMessageId: null, messageId: set.messageId, senderAuthorized: true,
-          openingTitle: "", clientName: "", roster: set.roster.map((r) => ({ ...r })),
+          openingTitle: "", clientName: "", roster: set.roster.map((r: any) => ({ ...r })),
         }];
       } else {
         roundId = await ctx.runMutation(internal.mailIntake.aiReader.createRoundFromThread, {
           openingId: set.openingId as Id<"jobs">, sentBy: set.sentBy as Id<"users">, sentAt: set.sentAt ?? args.receivedAt,
           subject: set.subject ?? args.subject, messageId: set.messageId, conversationId: set.conversationId,
-          applicationIds: set.roster.map((r) => r.applicationId as Id<"applications">),
+          applicationIds: set.roster.map((r: any) => r.applicationId as Id<"applications">),
           kind: fromClient ? "client" : "director", sentTo: set.sentTo,
         });
         contexts = await ctx.runQuery(internal.mailIntake.decisions.context, { fromAddress: args.fromAddress });
