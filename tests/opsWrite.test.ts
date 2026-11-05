@@ -136,9 +136,28 @@ assert.ok(
 // The feed reads forward from a cursor and never winds backwards on a quiet
 // hour, which would make Ops replay a day of events.
 assert.ok(reads.includes("opsEventsAfter"), "There is a feed");
-assert.ok(reads.includes('q.gt("at", after)'), "that reads strictly after the cursor");
+// The cursor is the id of the last event the Ops reader handled, not a
+// timestamp: its reader stops at the first event it could not handle and
+// keeps the one before it, so the cursor has to name a row exactly.
+assert.ok(reads.includes('ctx.db.get(after as Doc<"opsEvents">["_id"])'), "An event id is a cursor");
+assert.ok(reads.includes("findIndex"), "and the row it names is dropped, not read twice");
+assert.ok(reads.includes('q.gt("at", from)'), "a plain timestamp still reads strictly after it");
 const feed = readFileSync(path.resolve("convex/integrations/opsReadHttp.ts"), "utf8");
-assert.ok(feed.includes("events.length ? events[events.length - 1].at : after"), "and holds the cursor when empty");
+assert.ok(feed.includes("events.length ? events[events.length - 1].id : after"), "and holds the cursor when empty");
+// The shape is the Ops reader's own: it asks for nextCursor and keeps it as
+// a string. A feed that answers a different name is a feed nobody reads.
+assert.ok(feed.includes("nextCursor"), "and answers in the Ops reader's own shape");
+// A cursor we have never heard of is said so rather than starting again,
+// which would replay days of events into the Ops System.
+assert.ok(feed.includes("That cursor is not an event in this system"));
+// The idempotency key travels as a header from the Ops client; the body is
+// still read, because the plan said body.
+assert.ok(door.includes('request.headers.get("idempotency-key")'), "The key is read from the header");
+assert.ok(door.includes("body.idempotencyKey"), "and from the body");
+// Every path the Ops side writes to is dispatched, not only the first two.
+for (const what of ["status", "working-stage", "team", "ad-channel", "posts"]) {
+  assert.ok(door.includes('what === "' + what + '"'), "Nothing handles /openings/{id}/" + what);
+}
 assert.ok(http.includes('{ path: "/integrations/v1/events", method: "GET", handler: opsReadEvents }'));
 
 /* ── Every endpoint the Ops System actually calls ──────────────── */
@@ -155,4 +174,67 @@ for (const route of [
   assert.ok(http.includes(route), "Missing route: " + route);
 }
 
-console.log("  ok  ops writes and events: off by default, attributed, repeat-safe, and unable to break a TA write");
+/* ── Every path the Ops System really calls ────────────────────── */
+
+// Copied from the Ops repository's own write sites (ops-system: app/actions.ts
+// and src/data/desk.ts, read on 5 November). If one of these has no route it
+// sits in the Ops outbox for ever and nobody finds out until a client does.
+const OPS_CALLS = [
+  "POST /integrations/v1/notify",
+  "POST /integrations/v1/openings",
+  "POST /integrations/v1/openings/{id}/status",
+  "POST /integrations/v1/openings/{id}/working-stage",
+  "POST /integrations/v1/openings/{id}/team",
+  "POST /integrations/v1/openings/{id}/posts",
+  "POST /integrations/v1/openings/{id}/ad-channel",
+  "POST /integrations/v1/clients/{id}",
+  "POST /integrations/v1/client-sets/{id}/sent",
+  "POST /integrations/v1/applications/{id}/client-decision",
+  "POST /integrations/v1/applications/{id}/client-owned",
+  "POST /integrations/v1/reference-requests",
+  "POST /integrations/v1/interviews",
+  "POST /integrations/v1/interviews/{id}/attendance",
+  "POST /integrations/v1/interviews/{id}/cancel",
+  "POST /integrations/v1/interviews/{id}/client-decision",
+  "POST /integrations/v1/placements/{id}/no-show",
+  "POST /integrations/v1/placements/{id}/join-date",
+  "POST /integrations/v1/placements/{id}/cancel",
+  "POST /integrations/v1/placements/{id}/left",
+  "POST /integrations/v1/placements/{id}/invoice-state",
+  "GET /integrations/v1/people",
+  "GET /integrations/v1/clients",
+  "GET /integrations/v1/openings",
+  "GET /integrations/v1/openings/{id}",
+  "GET /integrations/v1/openings/{id}/pipeline",
+  "GET /integrations/v1/openings/{id}/client-sets",
+  "GET /integrations/v1/placements/{id}",
+  "GET /integrations/v1/applications/{id}/prepared-cv",
+  "GET /integrations/v1/events",
+];
+
+for (const call of OPS_CALLS) {
+  const [method, path] = call.split(" ");
+  const parts = path.split("/{id}");
+  const exact = 'path: "' + path + '", method: "' + method + '"';
+  const prefix = 'pathPrefix: "' + parts[0] + '/", method: "' + method + '"';
+  assert.ok(
+    http.includes(exact) || http.includes(prefix),
+    "The Ops System calls " + call + " and nothing here answers it",
+  );
+}
+
+// And the last mile: the segment after the id has to be handled, not just
+// routed. A prefix route that falls through to 404 is the same as no route.
+for (const tail of ["status", "working-stage", "team", "ad-channel", "posts"]) {
+  assert.ok(door.includes('what === "' + tail + '"'), "/openings/{id}/" + tail + " is routed but not handled");
+}
+for (const tail of ["client-decision", "client-owned", "reference-request"]) {
+  assert.ok(door.includes('what === "' + tail + '"'), "/applications/{id}/" + tail + " is routed but not handled");
+}
+assert.ok(door.includes('["attendance", "cancel", "client-decision"]'), "the three interview outcomes");
+assert.ok(
+  door.includes('["join-date", "no-show", "cancel", "left", "invoice-state"]'),
+  "the five placement outcomes",
+);
+
+console.log("  ok  ops writes and events: off by default, attributed, repeat-safe, every path the Ops side calls");

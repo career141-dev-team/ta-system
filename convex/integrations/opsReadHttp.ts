@@ -43,9 +43,10 @@ const placementsRef = ref<{ placementId?: string; openingId?: string }, OpsPlace
 const preparedCvRef = ref<{ applicationId: string }, { uploadId: string } | null>(
   "integrations/opsRead:opsPreparedCvId",
 );
-const eventsRef = ref<{ after?: number; limit?: number }, { id: string; type: string; at: number; data: Record<string, unknown> }[]>(
-  "integrations/opsRead:opsEventsAfter",
-);
+const eventsRef = ref<
+  { after?: string; limit?: number },
+  { id: string; type: string; at: number; data: Record<string, unknown> }[] | null
+>("integrations/opsRead:opsEventsAfter");
 const cvDownloadRef = makeFunctionReference<"action", { uploadId: string }, {
   url: string;
   fileName: string;
@@ -265,16 +266,21 @@ export const opsReadEvents = httpAction(async (ctx, request) => {
   const auth = await authenticate(request);
   if (auth !== "ok") return authError(auth);
   const url = new URL(request.url);
-  const afterSaid = url.searchParams.get("after");
+  const after = (url.searchParams.get("after") ?? "").trim();
   const limitSaid = url.searchParams.get("limit");
-  const after = afterSaid === null || afterSaid === "" ? 0 : Number(afterSaid);
   const limit = limitSaid === null ? 100 : Number(limitSaid);
-  if (!Number.isFinite(after) || after < 0) return json(400, { error: "after is a timestamp in milliseconds" });
+  if (after.length > 64) return json(400, { error: "That cursor is not one of ours" });
   if (!Number.isInteger(limit) || limit < 1 || limit > 200) return json(400, { error: "limit is 1 to 200" });
 
-  const events = await ctx.runQuery(eventsRef, { after, limit });
-  // The cursor to come back with. An empty batch hands back the one asked
-  // for, so a quiet hour cannot wind the reader backwards.
-  const cursor = events.length ? events[events.length - 1].at : after;
-  return json(200, { events, cursor });
+  const events = await ctx.runQuery(eventsRef, { ...(after ? { after } : {}), limit });
+  if (!events) {
+    // The cursor names an event we do not have. Saying so is better than
+    // starting from the beginning, which would replay days of events.
+    return json(400, { error: "That cursor is not an event in this system. Ask without one to start again." });
+  }
+  // The cursor to come back with is the last event's id, which is what the
+  // Ops reader keeps. An empty batch hands back the one it asked with, so a
+  // quiet hour cannot wind the reader backwards.
+  const nextCursor = events.length ? events[events.length - 1].id : after;
+  return json(200, { events, nextCursor });
 });

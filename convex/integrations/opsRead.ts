@@ -384,16 +384,40 @@ export const opsPreparedCvId = internalQuery({
  * cursor can never stick.
  */
 export const opsEventsAfter = internalQuery({
-  args: { after: v.optional(v.number()), limit: v.optional(v.number()) },
+  args: { after: v.optional(v.string()), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    const after = args.after ?? 0;
     const limit = Math.min(Math.max(args.limit ?? 100, 1), 200);
+    const after = (args.after ?? "").trim();
+
+    // The cursor is the id of the last event the Ops reader handled - not a
+    // timestamp. Its reader stops at the first event it could not handle and
+    // keeps the one before it, so the cursor has to name a row exactly. A
+    // plain number is still accepted, because the written contract said one
+    // and somebody will send it (5 Nov, wiring the two sides).
+    let from = 0;
+    let skipTo: string | null = null;
+    if (after) {
+      if (/^\d+$/.test(after)) {
+        from = Number(after);
+      } else {
+        const row = await ctx.db.get(after as Doc<"opsEvents">["_id"]).catch(() => null);
+        if (!row || !("type" in row)) return null;
+        from = row.at;
+        skipTo = after;
+      }
+    }
+
     const rows = await ctx.db
       .query("opsEvents")
-      .withIndex("by_at", (q) => q.gt("at", after))
+      .withIndex("by_at", (q) => (skipTo ? q.gte("at", from) : q.gt("at", from)))
       .order("asc")
-      .take(limit);
-    return rows.map((row) => ({
+      .take(limit + 50);
+
+    // Two events can share a millisecond, so the row the cursor names is
+    // dropped along with anything before it rather than being read twice.
+    const after_ = skipTo ? rows.slice(rows.findIndex((row) => (row._id as string) === skipTo) + 1) : rows;
+
+    return after_.slice(0, limit).map((row) => ({
       id: row._id as string,
       type: row.type,
       at: row.at,

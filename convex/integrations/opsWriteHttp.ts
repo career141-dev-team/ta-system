@@ -70,7 +70,11 @@ async function door(request: Request): Promise<{ ok: true; body: Record<string, 
   }
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   if (!body) return json(400, { error: "Send a JSON body" });
-  const key = typeof body.idempotencyKey === "string" ? body.idempotencyKey.trim() : "";
+  // The Ops client sends it as a header; the plan's Part E says the body.
+  // Both are read, because arguing about it would cost a day and a header is
+  // where an idempotency key belongs anyway (5 Nov, wiring the two sides).
+  const header = (request.headers.get("idempotency-key") ?? "").trim();
+  const key = header || (typeof body.idempotencyKey === "string" ? body.idempotencyKey.trim() : "");
   if (key.length < 8 || key.length > 200) {
     return json(400, { error: "Every write needs an idempotencyKey of 8 to 200 characters" });
   }
@@ -84,6 +88,21 @@ async function actorId(ctx: { runQuery: (ref: typeof actorRef, args: { email: st
   const actor = (await ctx.runQuery(actorRef, { email })) as { id: string } | null;
   return actor?.id ?? null;
 }
+
+/**
+ * When it happened, whatever the Ops side called it.
+ *
+ * markedAt, decidedAt, cancelledAt, leftAt and at are all the same thing from
+ * here: the moment a person said so. Reading one name and ignoring the rest
+ * is how a placement's fall-through ends up dated today.
+ */
+const whenOf = (body: Record<string, unknown>): number => {
+  for (const name of ["at", "markedAt", "decidedAt", "cancelledAt", "leftAt", "claimedAt"]) {
+    const value = body[name];
+    if (typeof value === "number" && value > 0) return value;
+  }
+  return 0;
+};
 
 const text = (value: unknown, max = 500) => (typeof value === "string" ? value.trim().slice(0, max) : "");
 const looksLikeId = (value: string) => /^[A-Za-z0-9_-]{10,64}$/.test(value);
@@ -142,7 +161,9 @@ const notifyWrite = handler(
   "notify",
   notifyRef,
   (body) => {
-    const userId = text(body.userId, 64);
+    // Some Ops calls say toUserId. Both are read rather than one side being
+    // made to change in a dozen places (5 Nov).
+    const userId = text(body.userId ?? body.toUserId, 64);
     if (!looksLikeId(userId)) return "Say which TA user to tell (userId).";
     const title = text(body.title, 200);
     if (!title) return "A bell with no title tells nobody anything.";
@@ -181,7 +202,7 @@ const createOpeningWrite = handler("openings", createOpeningRef, (body, actor) =
 const workingStageWrite = handler("working-stage", workingStageRef, (body, actor) => {
   const openingId = text(body.openingId, 64);
   if (!looksLikeId(openingId)) return "Which opening? (openingId)";
-  const said = text(body.mode, 20) || text(body.stage, 20);
+  const said = text(body.mode, 20) || text(body.stage, 20) || text(body.workingStage, 20);
   const mode = said === "100" || said === "100%" ? "100%" : said === "add_on" || said === "Add-on" ? "Add-on" : said === "follow_up" || said === "Follow-up" ? "Follow-up" : "";
   if (!mode) return "The mode is 100%, Follow-up or Add-on.";
   const userId = text(body.userId, 64);
@@ -295,6 +316,10 @@ export const opsWriteUnderOpening = httpAction(async (ctx, request) => {
 
   if (what === "status") return openingStatusWrite(ctx, again);
   if (what === "working-stage") return workingStageWrite(ctx, again);
+  if (what === "team") return teamWrite(ctx, again);
+  // An advert and a post are the same row from TA's side: the post is the
+  // advert's own record, and the channel says which.
+  if (what === "ad-channel" || what === "posts") return adChannelWrite(ctx, again);
   return json(404, { error: "Unknown endpoint" });
 });
 
@@ -423,7 +448,7 @@ const interviewOutcomeWrite = handler("interview-outcome", interviewOutcomeRef, 
     ...(text(body.outcome, 20) ? { outcome: text(body.outcome, 20) } : {}),
     ...(text(body.decision, 20) ? { decision: text(body.decision, 20) } : {}),
     ...(text(body.reason, 500) ? { reason: text(body.reason, 500) } : {}),
-    ...(typeof body.at === "number" ? { at: body.at } : {}),
+    ...(whenOf(body) ? { at: whenOf(body) } : {}),
   };
 }, false);
 
@@ -449,7 +474,7 @@ const placementWrite = handler("placement-outcome", placementRef, (body) => {
     what,
     ...(typeof body.joinDateMs === "number" ? { joinDateMs: body.joinDateMs } : {}),
     ...(text(body.reason, 500) ? { reason: text(body.reason, 500) } : {}),
-    ...(typeof body.at === "number" ? { at: body.at } : {}),
+    ...(whenOf(body) ? { at: whenOf(body) } : {}),
     ...(text(body.invoiceNumber, 60) ? { invoiceNumber: text(body.invoiceNumber, 60) } : {}),
     ...(typeof body.amount === "number" ? { amount: body.amount } : {}),
   };

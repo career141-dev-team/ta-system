@@ -43,7 +43,7 @@ Base URL: the TA Convex HTTP endpoint (production: `https://api.career141.com`).
 | `GET /integrations/v1/openings/{id}/client-sets` · `/client-sets/{n}` | — | the client rounds: `setNumber, applicationIds, applications[] (id, name, preparedCv), dispatch, status, sentAt, receivedAt`. By number it answers one set, not a list of one |
 | `GET /integrations/v1/placements?openingId=` · `/placements/{id}` | — | `placedSalary, currency, salaryBasis, package, offerLetterFileId, joinDateMs, joinConfirmedAt, fellThroughAt/Reason` |
 | `GET /integrations/v1/applications/{id}/prepared-cv` | — | the file itself, streamed, `no-store`. Ops fetches it once and keeps its own copy |
-| `GET /integrations/v1/events?after=&limit=` | — | `{ events: [{id, type, at, data}], cursor }` — see **The events** below |
+| `GET /integrations/v1/events?after=&limit=` | — | `{ events: [{id, type, at, data}], nextCursor }` — see **The events** below |
 
 **The body is the payload itself**, not an `{ok, data}` envelope: the Ops
 client reads `response.json()` as the value and uses the status code for
@@ -99,7 +99,9 @@ Off by default. Three things have to be true before a write does anything:
 | `POST /integrations/v1/interviews/{id}/attendance` · `/cancel` · `/client-decision` | `outcome · decision · reason` | the outcome on TA's own row |
 | `POST /integrations/v1/placements/{id}/join-date` · `/no-show` · `/cancel` · `/left` · `/invoice-state` | `joinDateMs · reason · invoiceNumber, amount` | keeps TA's placement row true, which is what its closing checklist reads |
 
-**Every write carries an `idempotencyKey`** of 8 to 200 characters. Ops queues
+**Every write carries an idempotency key** of 8 to 200 characters, as the
+`Idempotency-Key` header (where the Ops client puts it) or as
+`idempotencyKey` in the body (where the plan said). Both are read. Ops queues
 its writes and retries after an outage, so the same one will arrive twice: the
 answer we gave the first time is kept in `opsApiWrites` and handed back with
 `"repeated": true`, and nothing happens again. A retried hand-over cannot make
@@ -129,8 +131,13 @@ that is the only way this could hurt anybody. It is written down in
 | `opening.updated` · `opening.closed` | a status change made through this API |
 | `interview.booked` · `interview.outcome` | an interview booked or settled through this API |
 
-An empty batch hands back the cursor it was given, so a quiet hour cannot
-wind the reader backwards and make Ops replay a day.
+**The cursor is the id of the last event the reader handled**, not a
+timestamp: the Ops reader stops at the first event it could not handle and
+keeps the one before it, so the cursor has to name a row exactly. A plain
+millisecond number is accepted too, because the written contract said one. An
+empty batch hands back the cursor it was given, so a quiet hour cannot wind
+the reader backwards; a cursor naming an event we do not have is refused with
+a sentence rather than silently starting again, which would replay days.
 
 ## The one deliberate gap in the writes
 
