@@ -8,7 +8,9 @@ import { internal } from "../_generated/api";
 // Browser activity is restricted to TA Track's admin/TA lead report boundary.
 // Demo budget events are internal accounting, not partner recruitment data.
 // The Extras sales contact list is an admin-only campaign export of candidates' contact details.
-export const PARTNER_PRIVATE_TABLES = ["taTrackingDevices", "taTrackingRows", "demoTemplateSends", "salesContacts", "salesContactRuns", "automobileContacts", "automobileContactRuns"] as const;
+// "opsApiWrites" is private: the Ops System's idempotency keys are its own
+// integration's business, and the capacity planner has none in them (5 Nov).
+export const PARTNER_PRIVATE_TABLES = ["taTrackingDevices", "taTrackingRows", "demoTemplateSends", "salesContacts", "salesContactRuns", "automobileContacts", "automobileContactRuns", "opsApiWrites"] as const;
 export const PARTNER_READ_TABLES = [
   "dailyEmailPolicy", "dailyEmails", "dailyEmailAttachments",
   "users", "teams", "teamMembers", "jobAssignments", "openingAccessRequests", "roleAuditLog",

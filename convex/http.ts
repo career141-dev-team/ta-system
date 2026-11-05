@@ -16,6 +16,11 @@ import {
   opsReadOpenings,
   opsReadPeople,
 } from "./integrations/opsReadHttp";
+import {
+  opsWriteCreateOpening,
+  opsWriteNotify,
+  opsWriteUnderOpening,
+} from "./integrations/opsWriteHttp";
 import type { Id } from "./_generated/dataModel";
 import {
   isFreshVoiceAgentTimestamp,
@@ -46,6 +51,15 @@ http.route({ path: "/integrations/v1/people", method: "GET", handler: opsReadPeo
 http.route({ path: "/integrations/v1/clients", method: "GET", handler: opsReadClients });
 http.route({ path: "/integrations/v1/openings", method: "GET", handler: opsReadOpenings });
 http.route({ pathPrefix: "/integrations/v1/openings/", method: "GET", handler: opsReadOpening });
+
+// The Ops System's writes. Switched off until OPS_API_WRITES_ENABLED says
+// "on", attributed to the TA user in OPS_API_ACTOR_EMAIL, and repeat-safe on
+// the idempotency key every one of them carries. They go through TA's own
+// mutations, so TA's rules, audit and bells happen exactly as they do when a
+// person clicks.
+http.route({ path: "/integrations/v1/notify", method: "POST", handler: opsWriteNotify });
+http.route({ path: "/integrations/v1/openings", method: "POST", handler: opsWriteCreateOpening });
+http.route({ pathPrefix: "/integrations/v1/openings/", method: "POST", handler: opsWriteUnderOpening });
 
 /**
  * Meta's webhook verification handshake.

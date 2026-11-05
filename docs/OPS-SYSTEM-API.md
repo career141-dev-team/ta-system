@@ -66,9 +66,39 @@ An opening with no normalised `clientId` (a job made before the clients table
 existed) is returned with an empty `clientId` rather than hidden. A position
 Ops cannot match is a question for a person, not a silent gap.
 
+## The writes
+
+Off by default. Three things have to be true before a write does anything:
+
+1. `OPS_API_TOKEN` is set (the same key as the reads).
+2. `OPS_API_WRITES_ENABLED` says `on`. Anything else - including unset - and
+   every write answers 503 saying so, and the Ops System keeps it in its own
+   outbox. This is how the reads can go live weeks before the writes do.
+3. `OPS_API_ACTOR_EMAIL` names an **active TA user**. Every Ops-originated
+   change is recorded as that person. Unset or unknown, the writes refuse: an
+   unattributable change to a live opening is worse than no change.
+
+| Method and path | Body | What TA does |
+|---|---|---|
+| `POST /integrations/v1/notify` | `userId, type, title, body, jobId?` | a bell of type `from_ops`, with what Ops called it at the front of the body |
+| `POST /integrations/v1/openings` | `clientId, title, country?, brief?, assignedTaIds?, requestedTaLeadId?, priorityTier?` | `ta/openings:create` - the opening, its first post and its brief, exactly as the app makes them |
+| `POST /integrations/v1/openings/{id}/status` | `status` (`open · on_hold · filled · closed`), `reason` | `ta/openings:updateMasterSheet`, which refuses a change with no reason |
+| `POST /integrations/v1/openings/{id}/working-stage` | `mode` (`100% · Follow-up · Add-on`), `userId?` | `ta/openings:setWorkingStage`, the same mutation the lead's own menu uses |
+
+**Every write carries an `idempotencyKey`** of 8 to 200 characters. Ops queues
+its writes and retries after an outage, so the same one will arrive twice: the
+answer we gave the first time is kept in `opsApiWrites` and handed back with
+`"repeated": true`, and nothing happens again. A retried hand-over cannot make
+two openings.
+
+**They go through TA's own mutations, never around them**, so TA's rules, its
+audit and its bells happen exactly as they do when a person clicks. A refusal
+from TA comes back as **422** with TA's own sentence, which the Ops side shows
+to whoever pressed the button.
+
 ## What is not here yet
 
-The writes (`POST openings`, client decisions, interviews, placements,
-`POST notify` and the rest) and the events feed TA raises for Ops. Until they
-exist the Ops System runs those paths against a stand-in and says so on every
-screen. See `ops-system/docs/15-BUILD-PLAN.md`, Part E.
+The rest of the writes - client decisions, client-owned CVs, interviews,
+placements, ad channels, posts and client sets - and the events feed TA raises
+for Ops. Until they exist the Ops System runs those paths against a stand-in
+and says so on every screen. See `ops-system/docs/15-BUILD-PLAN.md`, Part E.

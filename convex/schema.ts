@@ -2266,7 +2266,11 @@ export default defineSchema({
       // silently. Raised by ta/eodCopies.flagStuckSends, ta/eodReminders.ts and closeWorkday.
       v.literal("eod_stuck"), v.literal("eod_reminder"), v.literal("eod_lead_digest"), v.literal("workday_expired"),
       // A priority tier or a status was changed on an opening (2 Nov).
-      v.literal("opening_changed")
+      v.literal("opening_changed"),
+      // Something the Ops System wants a TA to know (5 Nov): a client's
+      // decision, a cancelled interview, an advert closed. News passed by
+      // hand is the oldest complaint on the board.
+      v.literal("from_ops")
     ),
     title: v.string(),
     body: v.string(),
@@ -2710,6 +2714,22 @@ export default defineSchema({
    * One advert. Many posts sit under one opening and share its candidate pool
    * — the distinction the old `jobs` table could not make.
    */
+  /**
+   * Every write the Ops System has already made (ops docs/15 Part E).
+   *
+   * Ops queues its writes and retries after an outage, so the same one will
+   * arrive twice. The key it sends is kept here with the answer we gave, and a
+   * repeat is answered from this row instead of being done again - which is
+   * what stops a retried hand-over making two openings.
+   */
+  opsApiWrites: defineTable({
+    idempotencyKey: v.string(),
+    path: v.string(),
+    /** The answer we gave the first time, as JSON. */
+    answer: v.string(),
+    createdAt: v.number(),
+  }).index("by_key", ["idempotencyKey"]),
+
   jobPosts: defineTable({
     openingId: v.id("jobs"),
     title: v.string(),
