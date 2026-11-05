@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { getOpenAI, getNvidiaOpenAI, getModelForTask, OPENROUTER_PRIMARY_MODEL } from "./llm";
+import { getOpenAI, getNvidiaOpenAI, getModelForTask, OPENROUTER_PRIMARY_MODEL, anthropicOn } from "./llm";
 import { askClaudeFirst, claudeBudgetMs } from "./claudeFirst";
 import { employersInText } from "./employers";
 import type { SearchOccupation } from "./searchRoleEvidence";
@@ -214,7 +214,7 @@ async function readRequirements(prompt: string, userText: string, text: string, 
   // where its key exists.
   const candidateProviders = [
     { client: () => getOpenAI("jd_extraction"), model: OPENROUTER_PRIMARY_MODEL, isNvidia: false },
-    ...(process.env.NVIDIA_API_KEY
+    ...(process.env.NVIDIA_API_KEY && !anthropicOn()
       ? [{ client: () => getNvidiaOpenAI(), model: "meta/llama-3.1-70b-instruct", isNvidia: true }]
       : []),
   ];

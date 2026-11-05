@@ -65,6 +65,9 @@ export async function askClaudeFirst(
   timeoutMs: number,
   fetcher: typeof fetch = fetch,
 ): Promise<string | null> {
+  // Haiku-only: the Anthropic API answers through the callers' own model call (convex/lib/llm),
+  // so the subscription route is not asked. Same test as llm.ts anthropicOn().
+  if ((process.env.C141_LLM_PROVIDER ?? "").trim().toLowerCase() !== "openrouter" && (process.env.ANTHROPIC_API_KEY ?? "").trim().length > 10) return null;
   const local = (globalThis as Record<symbol, unknown>)[IN_PROCESS] as InProcessAsk | undefined;
   if (local) {
     try {

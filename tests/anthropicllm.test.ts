@@ -36,7 +36,7 @@ eq("C141_LLM_PROVIDER=openrouter switches it off", ai.viaAnthropic(), false);
 delete process.env.C141_LLM_PROVIDER;
 eq("an override naming another vendor's model is ignored", (process.env.C141_MODEL_PARSE = "deepseek/x", ai.anthropicModelFor("parse")), "claude-haiku-5-5");
 process.env.C141_MODEL_PARSE = "claude-sonnet-5-5";
-eq("a claude- override is used", ai.anthropicModelFor("parse"), "claude-sonnet-5-5");
+eq("Haiku only: even a claude- override is ignored", ai.anthropicModelFor("parse"), "claude-haiku-5-5");
 delete process.env.C141_MODEL_PARSE;
 
 // ── the request ──
@@ -48,7 +48,7 @@ eq("goes to the Anthropic Messages API", req.url, "https://api.anthropic.com/v1/
 eq("model is Haiku 5.5", req.body.model, "claude-haiku-5-5");
 eq("thinking is switched off", req.body.thinking, { type: "disabled" });
 eq("no temperature is sent", "temperature" in req.body, false);
-eq("system goes in the top-level field", req.body.system, "You are terse.");
+eq("system goes in the top-level field, marked cacheable", req.body.system, [{ type: "text", text: "You are terse.", cache_control: { type: "ephemeral" } }]);
 eq("max_tokens is the caller's", req.body.max_tokens, 300);
 eq("the key goes in x-api-key", req.headers["x-api-key"], process.env.ANTHROPIC_API_KEY);
 eq("usage comes back", r.ok && r.usage, { inputTokens: 100, outputTokens: 20, thinkingTokens: 0 });
@@ -96,7 +96,8 @@ const res: any = await getAnthropicClient().chat.completions.create({
 const creq = sent.at(-1)!;
 eq("adapter: a non-claude model name becomes Haiku 5.5", creq.body.model, "claude-haiku-5-5");
 eq("adapter: thinking off, no temperature, no reasoning field", [creq.body.thinking, "temperature" in creq.body, "reasoning" in creq.body], [{ type: "disabled" }, false, false]);
-eq("adapter: JSON mode adds the instruction to the system prompt", /only one valid JSON object/.test(creq.body.system) && creq.body.system.startsWith("Extract."), true);
+eq("adapter: JSON mode adds the instruction to the system prompt", /only one valid JSON object/.test(creq.body.system[0].text) && creq.body.system[0].text.startsWith("Extract."), true);
+eq("adapter: the system prompt carries the cache mark", creq.body.system[0].cache_control, { type: "ephemeral" });
 eq("adapter: messages carry only user/assistant turns", creq.body.messages, [{ role: "user", content: "CV TEXT" }]);
 eq("adapter: a code fence round the JSON is stripped", res.choices[0].message.content, '{"a":1}');
 eq("adapter: max_tokens becomes finish_reason length", res.choices[0].finish_reason, "length");
@@ -105,6 +106,40 @@ reply = () => new Response("overloaded", { status: 529 });
 let status = 0;
 try { await getAnthropicClient().chat.completions.create({ model: "x", messages: [{ role: "user", content: "hi" }] } as any); } catch (e: any) { status = e.status; }
 eq("adapter: an API error throws with its status", status, 529);
+
+// ── Haiku only: nothing else is asked ──
+const { hasToken, haikuOnly } = await import("@/lib/claudeSub");
+process.env.CLAUDE_CODE_OAUTH_TOKEN = "x".repeat(40);
+eq("the subscription route steps aside", [haikuOnly(), hasToken()], [true, false]);
+const { askBridge } = await import("@/lib/claudeBridge");
+eq("the CLI bridge refuses", (await askBridge({ task: "match_read", system: "s", prompt: "p" } as any)).ok, false);
+process.env.C141_APP_INTERNAL_URL = "http://app.invalid";
+process.env.C141_CLAUDE_BRIDGE_SECRET = "s".repeat(20);
+const { askClaudeFirst } = await import("../convex/lib/claudeFirst");
+const n0 = sent.length;
+eq("claude-first returns null without calling anything", [await askClaudeFirst("match_read", "s", "p", 1000), sent.length], [null, n0]);
+const { callHaikuVisionOCR, executeLLMWithNvidiaFallback } = await import("../convex/lib/llm");
+eq("the CLI vision bridge is not asked", [await callHaikuVisionOCR({ kind: "pdf", mime: "application/pdf", base64: "x" }), sent.length], ["", n0]);
+
+process.env.OPENROUTER_API_KEY = "or-key-0123456789";
+process.env.NVIDIA_API_KEY = "nv-key-0123456789";
+process.env.OPENAI_API_KEY = "oa-key-0123456789";
+const n1 = sent.length;
+reply = () => new Response("down", { status: 500 });
+let threw = false;
+try { await executeLLMWithNvidiaFallback({} as any, "cv_structuring", { messages: [{ role: "user", content: "cv" }], response_format: { type: "json_object" } }); } catch { threw = true; }
+const hosts = sent.slice(n1).map((x) => new URL(x.url).host);
+eq("a Haiku failure is an error, never another model's answer", threw, true);
+eq("only api.anthropic.com was called (no OpenRouter, NVIDIA or OpenAI)", [...new Set(hosts)], ["api.anthropic.com"]);
+reply = ok("fine");
+fs.writeFileSync(path.join(process.env.C141_DATA_DIR!, "spend.json"), JSON.stringify({ spent: 0, entries: [] })); // the cap test above filled it
+const n2 = sent.length;
+await ai.write("s", "p", 50, "jd"); await ai.gemini("rank", "p");
+await executeLLMWithNvidiaFallback({} as any, "search_ranking", { messages: [{ role: "user", content: "x" }] });
+eq("every task type runs on Haiku", sent.slice(n2).map((x) => x.body.model), ["claude-haiku-5-5", "claude-haiku-5-5", "claude-haiku-5-5"]);
+process.env.C141_LLM_PROVIDER = "openrouter";
+eq("the switch back restores the old route", [haikuOnly(), hasToken(), ai.viaAnthropic()], [false, true, false]);
+delete process.env.C141_LLM_PROVIDER;
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

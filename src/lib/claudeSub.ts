@@ -45,7 +45,19 @@ export function viaSubscription(task: Task): boolean {
   return wanted.includes(task);
 }
 
+/**
+ * Haiku-only mode (Nov 2026, at the owner's request): with ANTHROPIC_API_KEY set
+ * and C141_LLM_PROVIDER not "openrouter", every text answer comes from
+ * claude-haiku-5-5 on the API, so the subscription route (Sonnet 5.5 / Haiku 4.5
+ * through the CLI) steps aside. Kept as a local check so this file needs nothing from ai.ts.
+ */
+export function haikuOnly(): boolean {
+  if ((process.env.C141_LLM_PROVIDER ?? "").trim().toLowerCase() === "openrouter") return false;
+  return (process.env.ANTHROPIC_API_KEY ?? "").trim().length > 10;
+}
+
 export function hasToken(): boolean {
+  if (haikuOnly()) return false;
   return (process.env.CLAUDE_CODE_OAUTH_TOKEN ?? "").trim().length > 0;
 }
 
