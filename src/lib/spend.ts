@@ -26,6 +26,8 @@ const PRICES: Record<string, { in: number; out: number }> = {
   "google/gemini-2.5-flash-lite": { in: 0.1, out: 0.4 },
   "openai/gpt-4o-mini": { in: 0.15, out: 0.6 },
   "deepseek/deepseek-v4-flash": { in: 0.05, out: 0.1 },
+  // Anthropic API direct, list price up to 100K-token prompts.
+  "claude-haiku-5-5": { in: 0.1, out: 0.5 },
   "openai/text-embedding-3-small": { in: 0.02, out: 0 },
 };
 const DEAREST = { in: 5, out: 25 };

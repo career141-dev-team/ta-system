@@ -187,6 +187,11 @@ export function calculateLLMCost(model: string, promptTokens: number, completion
     return (promptTokens + completionTokens) * (0.07 / 1_000_000);
   }
 
+  // Claude Haiku 5.5 on the Anthropic API ($0.10 / $0.50 per million; cache reads are counted as input)
+  if (modelName.includes("haiku-5")) {
+    return (promptTokens * 0.10 + completionTokens * 0.50) / 1_000_000;
+  }
+
   // 3. DeepSeek Models (DeepSeek V4-Flash, DeepSeek V3, DeepSeek R1)
   if (modelName.includes("deepseek")) {
     if (modelName.includes("r1") || modelName.includes("pro")) {

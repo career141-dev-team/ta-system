@@ -34,7 +34,27 @@ export const IS_CV_EXTRACTION_TASK = (taskType: string): boolean => {
   );
 };
 
-export const OPENROUTER_CV_EXTRACTION_MODEL = "deepseek/deepseek-v4-flash";
+export const DEEPSEEK_MODEL = "deepseek/deepseek-v4-flash";
+export const ANTHROPIC_MODEL = "claude-haiku-5-5";
+
+/**
+ * Anthropic's own API as the main text model (Nov 2026, at the owner's request):
+ * ANTHROPIC_API_KEY set, and C141_LLM_PROVIDER not "openrouter" (the one-line
+ * rollback). Read at call time so a changed Convex env takes effect without a deploy.
+ */
+export function anthropicOn(): boolean {
+  if ((process.env.C141_LLM_PROVIDER ?? "").trim().toLowerCase() === "openrouter") return false;
+  return (process.env.ANTHROPIC_API_KEY ?? "").trim().length > 10;
+}
+
+function openRouterKeyPresent(): boolean {
+  return [process.env.OPENROUTER_API_KEY, process.env.OPENROUTER_API_KEY_1, process.env.OPENROUTER_API_KEYS]
+    .some((k) => (k ?? "").trim().length > 10);
+}
+
+// The names stay (many callers import them); the value is the model that is answering.
+// Fixed when the module loads, which is once per action run.
+export const OPENROUTER_CV_EXTRACTION_MODEL = anthropicOn() ? ANTHROPIC_MODEL : DEEPSEEK_MODEL;
 export const OPENROUTER_PRIMARY_MODEL = OPENROUTER_CV_EXTRACTION_MODEL;
 export const OPENROUTER_FALLBACK_MODELS = [OPENROUTER_CV_EXTRACTION_MODEL];
 export const OPENROUTER_CV_FALLBACK_MODELS = [OPENROUTER_CV_EXTRACTION_MODEL];
@@ -42,12 +62,102 @@ export const NVIDIA_PRIMARY_MODEL = "meta/llama-3.3-70b-instruct";
 export const NVIDIA_FALLBACK_MODEL = "meta/llama-3.3-70b-instruct";
 
 export function getModelForTask(_taskType: TaskType | string): string {
-  return OPENROUTER_CV_EXTRACTION_MODEL;
+  return anthropicOn() ? ANTHROPIC_MODEL : DEEPSEEK_MODEL;
+}
+
+/**
+ * An OpenAI-SDK-shaped client backed by the Anthropic Messages API, so the ~30
+ * callers (`client.chat.completions.create` -> `choices[0].message.content`)
+ * need no change. What it does differently from OpenRouter:
+ *  - thinking is switched off: Haiku 5.5 thinks by default and bills it as
+ *    output, which empties the 300-500 token answers (the DeepSeek reasoning
+ *    bug of 28 Oct, again);
+ *  - temperature/top_p are not sent (the model rejects them);
+ *  - there is no JSON mode, so json_object adds an instruction, and a code
+ *    fence around the answer is stripped;
+ *  - the model is always Claude Haiku 5.5 unless a caller names a claude- model.
+ * Pass `cache_control: {type:"ephemeral"}` to cache a large repeated prefix.
+ */
+export function getAnthropicClient(timeoutMs = 30000): OpenAI {
+  const create = async (params: any) => {
+    const key = (process.env.ANTHROPIC_API_KEY ?? "").trim();
+    if (!key) throw new Error("ANTHROPIC_API_KEY is not set");
+    const model = typeof params.model === "string" && params.model.startsWith("claude") ? params.model : ANTHROPIC_MODEL;
+    const wantsJson = params.response_format?.type === "json_object";
+
+    const system: string[] = [];
+    const messages: any[] = [];
+    for (const m of params.messages ?? []) {
+      if (m.role === "system") {
+        system.push(typeof m.content === "string" ? m.content : (m.content ?? []).map((p: any) => p.text ?? "").join("\n"));
+        continue;
+      }
+      messages.push({ role: m.role === "assistant" ? "assistant" : "user", content: toAnthropicContent(m.content) });
+    }
+    if (wantsJson) system.push("Reply with only one valid JSON object. No markdown, no code fences, no text before or after it.");
+
+    const body: Record<string, unknown> = {
+      model,
+      max_tokens: params.max_tokens ?? 4096,
+      messages,
+      thinking: { type: "disabled" },
+      ...(system.length ? { system: system.join("\n\n") } : {}),
+      ...(params.cache_control ? { cache_control: params.cache_control } : {}),
+    };
+
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) {
+      const detail = (await res.text().catch(() => "")).slice(0, 300);
+      const err: any = new Error(`Anthropic ${res.status}: ${detail}`);
+      err.status = res.status;
+      throw err;
+    }
+    const data: any = await res.json();
+    let text = (data.content ?? []).filter((b: any) => b?.type === "text").map((b: any) => b.text ?? "").join("").trim();
+    if (wantsJson) text = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+    const u = data.usage ?? {};
+    return {
+      choices: [{ message: { role: "assistant", content: text }, finish_reason: data.stop_reason === "max_tokens" ? "length" : "stop" }],
+      usage: {
+        prompt_tokens: (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0),
+        completion_tokens: u.output_tokens ?? 0,
+        cache_read_input_tokens: u.cache_read_input_tokens ?? 0,
+      },
+      model,
+    };
+  };
+  return { chat: { completions: { create } } } as unknown as OpenAI;
+}
+
+/** OpenAI-style content (string, or text / image_url / file parts) -> Anthropic blocks. */
+function toAnthropicContent(content: any): any {
+  if (typeof content === "string") return content;
+  return (content ?? []).map((p: any) => {
+    if (p?.type === "image_url") {
+      const m = /^data:([^;]+);base64,(.*)$/s.exec(p.image_url?.url ?? "");
+      return m ? { type: "image", source: { type: "base64", media_type: m[1], data: m[2] } } : { type: "text", text: "" };
+    }
+    if (p?.type === "file") {
+      const m = /^data:([^;]+);base64,(.*)$/s.exec(p.file?.file_data ?? "");
+      return m ? { type: "document", source: { type: "base64", media_type: m[1], data: m[2] } } : { type: "text", text: "" };
+    }
+    return { type: "text", text: p?.text ?? "" };
+  });
 }
 
 let openRouterKeyIndex = 0;
 
 export function getOpenAI(_taskType?: TaskType | string, timeoutMs = 30000): OpenAI {
+  if (anthropicOn()) return getAnthropicClient(timeoutMs);
+  return getOpenRouterClient(timeoutMs);
+}
+
+export function getOpenRouterClient(timeoutMs = 30000): OpenAI {
   // Collect all available OpenRouter API keys from environment variables for round-robin rotation
   const keysFromEnv = [
     process.env.OPENROUTER_API_KEY,
@@ -212,13 +322,31 @@ export async function callHaikuVisionOCR(file: { kind: "pdf" | "image"; mime: st
  * Opt-in: only with C141_PDF_OCR=on (it sends the whole PDF to OpenRouter); needs an OpenRouter key, else returns "".
  */
 export async function callOpenRouterPdfOCR(base64: string, fileName = "cv.pdf"): Promise<string> {
+  // With the Anthropic key the PDF goes to Claude as a document block (no flag: it replaces the NVIDIA step).
+  if (anthropicOn()) {
+    try {
+      const response = await getAnthropicClient(90_000).chat.completions.create({
+        model: ANTHROPIC_MODEL,
+        messages: [{
+          role: "user",
+          content: [
+            { type: "text", text: "Transcribe all text from the attached document verbatim, in reading order. Return only the document text, with no commentary." },
+            { type: "file", file: { filename: fileName, file_data: `data:application/pdf;base64,${base64}` } },
+          ] as any,
+        }],
+        max_tokens: 8000,
+      } as any);
+      return response.choices?.[0]?.message?.content?.trim() ?? "";
+    } catch (err: any) {
+      console.warn(`[callOpenRouterPdfOCR] Anthropic PDF read failed: ${err?.message || "error"}`);
+      return "";
+    }
+  }
   if ((process.env.C141_PDF_OCR ?? "").trim().toLowerCase() !== "on") return "";
-  const hasKey = [process.env.OPENROUTER_API_KEY, process.env.OPENROUTER_API_KEY_1, process.env.OPENROUTER_API_KEYS]
-    .some((k) => (k ?? "").trim().length > 10);
-  if (!hasKey) return "";
+  if (!openRouterKeyPresent()) return "";
   try {
-    const response = await getOpenAI("cv_pdf_ocr", 90_000).chat.completions.create({
-      model: OPENROUTER_CV_EXTRACTION_MODEL,
+    const response = await getOpenRouterClient(90_000).chat.completions.create({
+      model: DEEPSEEK_MODEL,
       messages: [{
         role: "user",
         content: [
@@ -263,7 +391,23 @@ export async function callNvidiaVisionOCR(
 
   let lastError = "";
 
-  // 1. Try NVIDIA NIM API first (Free & No OpenRouter Privacy Limits)
+  // 0. Claude Haiku reads the page images when the Anthropic key is set (replaces NVIDIA's weaker vision model).
+  if (anthropicOn()) {
+    try {
+      const response = await getAnthropicClient(60_000).chat.completions.create({
+        model: ANTHROPIC_MODEL,
+        messages: [{ role: "user", content: contentItems as any }],
+        max_tokens: 4096,
+      } as any);
+      const text = response.choices[0]?.message?.content?.trim() || "";
+      if (text.length > 10) return text;
+    } catch (err: any) {
+      lastError = err?.message || String(err);
+      console.warn(`[callNvidiaVisionOCR] Anthropic vision failed: ${lastError}`);
+    }
+  }
+
+  // 1. Try NVIDIA NIM API (free, no OpenRouter privacy limits)
   try {
     const nvidiaOpenAI = getNvidiaOpenAI();
     for (const model of NVIDIA_VISION_MODELS) {
@@ -337,12 +481,15 @@ export async function executeLLMWithNvidiaFallback(
   ctx: ActionCtx,
   taskType: TaskType | string,
   options: LLMCompletionOptions
-): Promise<{ content: string; provider: "openrouter" | "nvidia"; model: string; primaryError?: string }> {
-  if (IS_CV_EXTRACTION_TASK(taskType)) {
-    const candidateModels = [
-      OPENROUTER_CV_EXTRACTION_MODEL,
-      NVIDIA_PRIMARY_MODEL,
-    ];
+): Promise<{ content: string; provider: "openrouter" | "nvidia" | "anthropic"; model: string; primaryError?: string }> {
+  // Every task takes the full chain once the Anthropic key is set; before, only the CV tasks did
+  // and the rest went to NVIDIA alone.
+  if (IS_CV_EXTRACTION_TASK(taskType) || anthropicOn()) {
+    // Claude Haiku first when the Anthropic key is set; DeepSeek stays second while it is still
+    // configured (removed once Claude has run clean for a while), then NVIDIA.
+    const candidateModels = anthropicOn()
+      ? [ANTHROPIC_MODEL, ...(openRouterKeyPresent() ? [DEEPSEEK_MODEL] : []), NVIDIA_PRIMARY_MODEL]
+      : [DEEPSEEK_MODEL, NVIDIA_PRIMARY_MODEL];
 
     let lastError: any = null;
     // Why DeepSeek gave no answer, when the fallback is the one that answers.
@@ -360,7 +507,8 @@ export async function executeLLMWithNvidiaFallback(
           // limit both tries timed out, the fallback model answered with an
           // empty object, and 141 real CVs were rejected as "not a CV".
           // Two tries at 75s stay inside the extraction's 210s deadline.
-          const client = isNvidiaModel ? getNvidiaOpenAI() : getOpenAI(taskType, 75_000);
+          const isClaude = model.startsWith("claude");
+          const client = isNvidiaModel ? getNvidiaOpenAI() : isClaude ? getAnthropicClient(75_000) : getOpenRouterClient(75_000);
           const response = await client.chat.completions.create({
             model,
             messages: options.messages,
@@ -374,7 +522,7 @@ export async function executeLLMWithNvidiaFallback(
             // 75-second tries. Reading a CV into fields needs no reasoning —
             // the JD parser and Desk Copilot turned it off for the same
             // reason (17 Sep). OpenRouter-only field; NVIDIA does not get it.
-            ...(isNvidiaModel ? {} : ({ reasoning: { enabled: false } } as object)),
+            ...(isNvidiaModel || isClaude ? {} : ({ reasoning: { enabled: false } } as object)),
           });
 
           if (response.usage) {
@@ -387,7 +535,7 @@ export async function executeLLMWithNvidiaFallback(
               true,
               undefined,
               options.cvUploadId,
-              isNvidiaModel ? "nvidia" : "openrouter",
+              isNvidiaModel ? "nvidia" : isClaude ? "anthropic" : "openrouter",
               options.sourceChannel
             );
           }
@@ -403,7 +551,7 @@ export async function executeLLMWithNvidiaFallback(
             if (taskType === "cv_structuring" && !hasCvDetailsJson(content)) {
               throw new Error(`${model} found no candidate details`);
             }
-            return { content, provider: isNvidiaModel ? "nvidia" : "openrouter", model, ...(isNvidiaModel ? { primaryError } : {}) };
+            return { content, provider: isNvidiaModel ? "nvidia" : isClaude ? "anthropic" : "openrouter", model, ...(isNvidiaModel ? { primaryError } : {}) };
           }
           throw new Error(`${model} returned empty response`);
         } catch (err: any) {
@@ -423,13 +571,13 @@ export async function executeLLMWithNvidiaFallback(
     await logLLMUsage(
       ctx,
       taskType,
-      OPENROUTER_CV_EXTRACTION_MODEL,
+      candidateModels[0],
       0,
       0,
       false,
       `CV Extraction Failed across all fallback models: ${finalErrorMsg}`,
       options.cvUploadId,
-      "openrouter",
+      anthropicOn() ? "anthropic" : "openrouter",
       options.sourceChannel
     );
 

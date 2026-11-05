@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { getOpenAI, getModelForTask, executeLLMWithNvidiaFallback } from "../lib/llm";
+import { getOpenAI, getModelForTask, executeLLMWithNvidiaFallback, OPENROUTER_PRIMARY_MODEL } from "../lib/llm";
 import { askClaudeFirst, claudeBudgetMs, jsonIn } from "../lib/claudeFirst";
 import type { SearchRequirements } from "../lib/jdParser";
 import { jobLevelRank } from "../lib/roleLevel";
@@ -1557,7 +1557,7 @@ export async function scoreBatchWithLLM(
       console.warn("[scoreBatchWithLLM] Primary model call failed, trying OpenRouter fallback:", primaryErr?.message || primaryErr);
       const fallbackClient = getOpenAI("cv_structuring");
       const fallbackResponse = await fallbackClient.chat.completions.create({
-        model: "deepseek/deepseek-v4-flash",
+        model: OPENROUTER_PRIMARY_MODEL,
         temperature: 0.1,
         max_tokens: 4000,
         messages: [
@@ -1567,7 +1567,7 @@ export async function scoreBatchWithLLM(
         response_format: { type: "json_object" },
       });
       content = fallbackResponse.choices[0]?.message?.content ?? '{"evaluations":[]}';
-      usedModel = "deepseek/deepseek-v4-flash";
+      usedModel = OPENROUTER_PRIMARY_MODEL;
     }
 
     // Clean any markdown formatting and control characters if present

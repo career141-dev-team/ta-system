@@ -233,7 +233,11 @@ function engineArgs(query: string, criteria: SearchCriteria, limit: number, edit
 }
 
 const NO_ACTOR = { id: null as string | null };
-const MODEL = "deepseek/deepseek-v4-flash";
+// Priced as the model that answers: Claude Haiku when the Anthropic key is set (convex/lib/llm anthropicOn).
+const MODEL =
+  (process.env.ANTHROPIC_API_KEY ?? "").trim().length > 10 && (process.env.C141_LLM_PROVIDER ?? "").trim().toLowerCase() !== "openrouter"
+    ? "claude-haiku-5-5"
+    : "deepseek/deepseek-v4-flash";
 const FETCH_LIMIT = 100;
 const POOL_CAP = 200;
 

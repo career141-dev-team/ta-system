@@ -376,3 +376,7 @@ sources:
   tests/dbmatch.test.ts
   tests/searchEngineRoleRanking.test.ts
 -->
+
+## Model provider (5 Nov 2026)
+
+With `ANTHROPIC_API_KEY` set (and `C141_LLM_PROVIDER` not `openrouter`) the DeepSeek rows in the model table above are answered by Claude Haiku 5.5 on the Anthropic API instead: `convex/lib/llm.ts` `getAnthropicClient` for the Convex calls, `src/lib/ai.ts` `callAnthropicTask` for the app's (`write`, `gemini`, referenceCv). The subscription bridge still goes first where it did. Research runs Serper/SearXNG searches and Haiku answers from those results (`researchGrounded`); sources are only the results it cites. Embeddings stay on OpenAI / OpenRouter.

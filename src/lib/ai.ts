@@ -18,6 +18,7 @@
 
 import { askSubscription, viaSubscription } from "./claudeSub";
 import { capActive, maxModelCost, modelCost, reserve, SpendCapError } from "./spend";
+import { search, searchProvider } from "./serper";
 
 export type AiFailure =
   | "no_key"
@@ -323,6 +324,7 @@ export async function gemini(
   prompt: string,
   opts: { maxTokens?: number; temperature?: number } = {},
 ): Promise<AiResult & { usage?: Usage }> {
+  if (viaAnthropic()) return callAnthropicTask(task, prompt, { maxTokens: opts.maxTokens });
   if (viaOpenRouter()) return callOpenRouter(task, prompt, opts);
   if (capActive()) return { ok: false, reason: "spend_cap", detail: "The capped test only spends through OpenRouter, where every call is metered." };
   const key = googleKey();
@@ -413,7 +415,7 @@ export function aiStatus(): {
     // failure this feature cannot have.
     // Through OpenRouter, grounding rides on the request itself — there is no
     // separate switch to forget to turn on.
-    webSearch: viaOpenRouter() || (provider === "anthropic" && (process.env.C141_WEB_SEARCH ?? "off").toLowerCase() === "on"),
+    webSearch: viaOpenRouter() || (viaAnthropic() && searchProvider() !== null) || (provider === "anthropic" && (process.env.C141_WEB_SEARCH ?? "off").toLowerCase() === "on"),
     model: (process.env.C141_MODEL ?? "").trim() || DEFAULT_MODEL,
   };
 }
@@ -542,6 +544,179 @@ async function callAnthropic(opts: {
   return { ok: true, text, sources: unique, searches, provider: "anthropic" };
 }
 
+// ─── Anthropic as the main text model ────────────────────────────────────────
+
+export const HAIKU = "claude-haiku-5-5";
+
+/**
+ * Claude Haiku 5.5 on the Anthropic API answers every task (Nov 2026, at the
+ * owner's request) when ANTHROPIC_API_KEY is set. C141_LLM_PROVIDER=openrouter
+ * switches back to the old route without a deploy.
+ */
+export function viaAnthropic(): boolean {
+  if ((process.env.C141_LLM_PROVIDER ?? "").trim().toLowerCase() === "openrouter") return false;
+  return anthropicKey().length > 10;
+}
+
+/** The C141_MODEL_* overrides name OpenRouter models; only a claude- one applies here. */
+export function anthropicModelFor(task: Task): string {
+  const o = (process.env[TASK_ENV[task]] ?? "").trim();
+  return o.startsWith("claude") ? o : HAIKU;
+}
+
+/**
+ * One text answer from Claude. Differences from the OpenRouter route, all
+ * deliberate: thinking is off (Haiku 5.5 thinks by default and bills it as
+ * output, which empties the short answers — the DeepSeek failure of 17 Sep);
+ * no temperature (the model rejects it); and the spend cap is reserved and
+ * settled here, which the older `callAnthropic` never did. `cache` marks the
+ * request cacheable for a large prefix that repeats (put the stable part first).
+ */
+async function callAnthropicTask(
+  task: Task,
+  prompt: string,
+  opts: { system?: string; maxTokens?: number; cache?: boolean } = {},
+): Promise<AiResult & { usage?: Usage }> {
+  // The owner's subscription still answers first where it is switched on (lib/claudeSub).
+  if (viaSubscription(task)) {
+    const sub = await askSubscription(task, opts.system ? `${opts.system}\n\n${prompt}` : prompt);
+    if (sub.ok) return sub;
+    logAiFailure(task, "claude-subscription", sub);
+  }
+  const key = anthropicKey();
+  if (!key) return { ok: false, reason: "no_key" };
+  const model = anthropicModelFor(task);
+  const maxTokens = opts.maxTokens ?? 8000;
+  let settle: (usd: number) => void;
+  try {
+    settle = reserve(`${task} · ${model}`, maxModelCost(model, prompt.length + (opts.system?.length ?? 0), maxTokens));
+  } catch (e) {
+    if (e instanceof SpendCapError) return { ok: false, reason: "spend_cap", detail: e.message };
+    throw e;
+  }
+  let cost = Number.NaN; // a failed request keeps its full reservation
+  try {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      let res: Response;
+      try {
+        res = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": ANTHROPIC_VERSION },
+          body: JSON.stringify({
+            model,
+            max_tokens: maxTokens,
+            thinking: { type: "disabled" },
+            messages: [{ role: "user", content: prompt }],
+            ...(opts.system ? { system: opts.system } : {}),
+            ...(opts.cache ? { cache_control: { type: "ephemeral" } } : {}),
+          }),
+          signal: AbortSignal.timeout(120_000),
+        });
+      } catch (e) {
+        return { ok: false, reason: "network", detail: String(e) };
+      }
+      if (res.status === 429 || res.status === 529) {
+        if (attempt < 3) {
+          await new Promise((r) => setTimeout(r, 2 ** attempt * 1500));
+          continue;
+        }
+        return { ok: false, reason: "rate_limited" };
+      }
+      if (res.status >= 500) {
+        await new Promise((r) => setTimeout(r, 2 ** attempt * 500));
+        continue;
+      }
+      if (!res.ok) return { ok: false, reason: "bad_response", detail: `${res.status} ${(await res.text().catch(() => "")).slice(0, 300)}` };
+
+      const json = (await res.json().catch(() => null)) as {
+        content?: Block[];
+        stop_reason?: string;
+        usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number };
+      } | null;
+      const text = (json?.content ?? []).filter((b) => b.type === "text").map((b) => b.text ?? "").join("");
+      const u = json?.usage ?? {};
+      // Cached reads and writes are counted as input: the dearer reading, so the cap errs safe.
+      const inputTokens = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+      cost = modelCost(model, inputTokens, u.output_tokens ?? 0);
+      if (!text.trim()) return { ok: false, reason: "bad_response", detail: json?.stop_reason === "refusal" ? "refused" : "empty" };
+      return {
+        ok: true,
+        text,
+        sources: [],
+        searches: 0,
+        provider: model,
+        usage: { inputTokens, outputTokens: u.output_tokens ?? 0, thinkingTokens: 0 },
+      };
+    }
+    return { ok: false, reason: "network", detail: "gave up after retries" };
+  } finally {
+    settle(cost);
+  }
+}
+
+/**
+ * The search queries in a model's reply: the first JSON array of strings,
+ * tolerating a code fence or words around it. Pure, so it is tested.
+ */
+export function parseQueries(text: string, max: number): string[] {
+  const a = text.indexOf("[");
+  const b = text.lastIndexOf("]");
+  if (a < 0 || b <= a) return [];
+  try {
+    const v = JSON.parse(text.slice(a, b + 1));
+    return Array.isArray(v) ? v.filter((q): q is string => typeof q === "string" && q.trim().length > 2).map((q) => q.trim()).slice(0, max) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The search results an answer cites, by their [n] marker. Addresses come from
+ * the search, never from the model — an [n] that is not in the list is ignored.
+ * If it cites none, nothing is returned: an unsourced claim must show as unsourced.
+ */
+export function citedHits<T>(text: string, hits: T[]): T[] {
+  const out: T[] = [];
+  for (const m of text.matchAll(/\[(\d{1,3})\]/g)) {
+    const h = hits[Number(m[1]) - 1];
+    if (h && !out.includes(h)) out.push(h);
+  }
+  return out;
+}
+
+/**
+ * Research without OpenRouter's web plugin: Claude proposes the searches, the
+ * app's own search layer (Serper / SearXNG) runs them, and Claude answers from
+ * those results only. Sources are the results it cites — 28 Oct design: no
+ * model writes an address.
+ */
+async function researchGrounded(system: string, prompt: string, maxTokens: number, maxSearches: number): Promise<AiResult> {
+  if (!searchProvider()) return { ok: false, reason: "search_disabled", detail: "no search engine is set up (Serper or SearXNG)" };
+  const planned = await callAnthropicTask(
+    "plan",
+    `${prompt}\n\n---\nWhich web searches would let you answer the above with sources? Reply with only a JSON array of at most ${maxSearches} short search queries.`,
+    { system, maxTokens: 500 },
+  );
+  if (!planned.ok) return planned;
+  const queries = parseQueries(planned.text, maxSearches);
+  if (!queries.length) return { ok: false, reason: "bad_response", detail: "no search queries" };
+
+  const results = await Promise.all(queries.map((q) => search(q, 8)));
+  const seen = new Set<string>();
+  const hits = results.flatMap((r) => r.hits).filter((h) => (seen.has(h.url) ? false : (seen.add(h.url), true))).slice(0, 40);
+  if (!hits.length) return { ok: false, reason: "bad_response", detail: "the searches found nothing" };
+
+  const listing = hits.map((h, i) => `[${i + 1}] ${h.title} — ${h.url}\n${h.snippet}`).join("\n");
+  const r = await callAnthropicTask(
+    "research",
+    `${prompt}\n\nSEARCH RESULTS — the only sources you may use. Cite each claim with its [n]; say so where the results do not answer.\n${listing}`,
+    { system, maxTokens },
+  );
+  if (!r.ok) return r;
+  const sources: Source[] = citedHits(r.text, hits).map((h) => ({ url: h.url, title: h.title || h.url, quote: h.snippet.slice(0, 200) }));
+  return { ...r, sources, searches: queries.length };
+}
+
 // ─── OpenAI ──────────────────────────────────────────────────────────────────
 
 async function callOpenAI(opts: {
@@ -635,6 +810,7 @@ async function callOpenAIWebSearch(args: { system: string; prompt: string; maxTo
 
 /** Writing, from material the caller supplies. No claims about the world. */
 export async function write(system: string, prompt: string, maxTokens = 2000, task: Task = "jd"): Promise<AiResult> {
+  if (viaAnthropic()) return callAnthropicTask(task, prompt, { system, maxTokens });
   if (viaOpenRouter()) return callOpenRouter(task, `${system}\n\n${prompt}`, { maxTokens });
   if (capActive()) return { ok: false, reason: "spend_cap", detail: "The capped test only spends through OpenRouter, where every call is metered." };
   if (anthropicKey()) return callAnthropic({ system, prompt, maxTokens, search: false, maxSearches: 0 });
@@ -652,6 +828,7 @@ export async function research(system: string, prompt: string, maxTokens = 3000,
   // web search), "openrouter" or "anthropic". Unset, OpenRouter wins when its
   // key is present, as before.
   const chosen = (process.env.C141_RESEARCH_PROVIDER ?? "").trim().toLowerCase();
+  if (viaAnthropic() && chosen !== "openai" && chosen !== "openrouter") return researchGrounded(system, prompt, maxTokens, maxSearches);
   if (chosen === "openai" || (!chosen && !viaOpenRouter() && !anthropicKey() && openaiKey())) {
     if (capActive()) return { ok: false, reason: "spend_cap", detail: "The capped test only spends through OpenRouter, where every call is metered." };
     const r = await callOpenAIWebSearch({ system, prompt, maxTokens });

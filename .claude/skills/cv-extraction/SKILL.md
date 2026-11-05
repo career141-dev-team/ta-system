@@ -322,3 +322,7 @@ sources:
   tests/cvschema.test.ts
   tests/extractionqueue.test.ts
 -->
+
+## Model provider (5 Nov 2026)
+
+When `ANTHROPIC_API_KEY` is set on Convex and `C141_LLM_PROVIDER` is not `openrouter`, every `convex/lib/llm.ts` text call (CV structuring included) goes to Claude Haiku 5.5 on the Anthropic API through `getAnthropicClient`, an OpenAI-shaped adapter: thinking off, no temperature, JSON mode by instruction (fences stripped). Chain: Haiku (2 tries, 75 s) -> OpenRouter DeepSeek only if its key is still set -> NVIDIA. Scanned PDFs: the subscription bridge first, then Haiku reading the PDF as a document block (no `C141_PDF_OCR` flag), then NVIDIA vision. Unset or `C141_LLM_PROVIDER=openrouter` restores the DeepSeek route. Embeddings are unchanged (OpenAI / OpenRouter `text-embedding-3-small`@1024).
