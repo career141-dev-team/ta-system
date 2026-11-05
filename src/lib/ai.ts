@@ -558,10 +558,9 @@ export function viaAnthropic(): boolean {
   return anthropicKey().length > 10;
 }
 
-/** The C141_MODEL_* overrides name OpenRouter models; only a claude- one applies here. */
-export function anthropicModelFor(task: Task): string {
-  const o = (process.env[TASK_ENV[task]] ?? "").trim();
-  return o.startsWith("claude") ? o : HAIKU;
+/** Haiku 5.5 and nothing else (owner's rule, Nov 2026): no C141_MODEL_* override reaches the Anthropic route. */
+export function anthropicModelFor(_task: Task): string {
+  return HAIKU;
 }
 
 /**
@@ -569,20 +568,14 @@ export function anthropicModelFor(task: Task): string {
  * deliberate: thinking is off (Haiku 5.5 thinks by default and bills it as
  * output, which empties the short answers — the DeepSeek failure of 17 Sep);
  * no temperature (the model rejects it); and the spend cap is reserved and
- * settled here, which the older `callAnthropic` never did. `cache` marks the
- * request cacheable for a large prefix that repeats (put the stable part first).
+ * settled here, which the older `callAnthropic` never did. The system prompt
+ * carries a cache mark, so it is reused at a tenth of the input price.
  */
 async function callAnthropicTask(
   task: Task,
   prompt: string,
-  opts: { system?: string; maxTokens?: number; cache?: boolean } = {},
+  opts: { system?: string; maxTokens?: number } = {},
 ): Promise<AiResult & { usage?: Usage }> {
-  // The owner's subscription still answers first where it is switched on (lib/claudeSub).
-  if (viaSubscription(task)) {
-    const sub = await askSubscription(task, opts.system ? `${opts.system}\n\n${prompt}` : prompt);
-    if (sub.ok) return sub;
-    logAiFailure(task, "claude-subscription", sub);
-  }
   const key = anthropicKey();
   if (!key) return { ok: false, reason: "no_key" };
   const model = anthropicModelFor(task);
@@ -607,8 +600,10 @@ async function callAnthropicTask(
             max_tokens: maxTokens,
             thinking: { type: "disabled" },
             messages: [{ role: "user", content: prompt }],
-            ...(opts.system ? { system: opts.system } : {}),
-            ...(opts.cache ? { cache_control: { type: "ephemeral" } } : {}),
+            // The system prompt repeats call after call: marked cacheable, a repeat inside the cache
+            // window reads it at a tenth of the input price. Under the model's minimum size it is
+            // simply not cached (no charge, no error).
+            ...(opts.system ? { system: [{ type: "text", text: opts.system, cache_control: { type: "ephemeral" } }] } : {}),
           }),
           signal: AbortSignal.timeout(120_000),
         });
@@ -828,7 +823,7 @@ export async function research(system: string, prompt: string, maxTokens = 3000,
   // web search), "openrouter" or "anthropic". Unset, OpenRouter wins when its
   // key is present, as before.
   const chosen = (process.env.C141_RESEARCH_PROVIDER ?? "").trim().toLowerCase();
-  if (viaAnthropic() && chosen !== "openai" && chosen !== "openrouter") return researchGrounded(system, prompt, maxTokens, maxSearches);
+  if (viaAnthropic()) return researchGrounded(system, prompt, maxTokens, maxSearches); // Haiku-only: C141_RESEARCH_PROVIDER does not apply
   if (chosen === "openai" || (!chosen && !viaOpenRouter() && !anthropicKey() && openaiKey())) {
     if (capActive()) return { ok: false, reason: "spend_cap", detail: "The capped test only spends through OpenRouter, where every call is metered." };
     const r = await callOpenAIWebSearch({ system, prompt, maxTokens });

@@ -82,7 +82,8 @@ export function getAnthropicClient(timeoutMs = 30000): OpenAI {
   const create = async (params: any) => {
     const key = (process.env.ANTHROPIC_API_KEY ?? "").trim();
     if (!key) throw new Error("ANTHROPIC_API_KEY is not set");
-    const model = typeof params.model === "string" && params.model.startsWith("claude") ? params.model : ANTHROPIC_MODEL;
+    // Haiku 5.5 and nothing else (owner's rule, Nov 2026): the caller's model name is ignored.
+    const model = ANTHROPIC_MODEL;
     const wantsJson = params.response_format?.type === "json_object";
 
     const system: string[] = [];
@@ -101,8 +102,10 @@ export function getAnthropicClient(timeoutMs = 30000): OpenAI {
       max_tokens: params.max_tokens ?? 4096,
       messages,
       thinking: { type: "disabled" },
-      ...(system.length ? { system: system.join("\n\n") } : {}),
-      ...(params.cache_control ? { cache_control: params.cache_control } : {}),
+      // The system prompt is the part that repeats call after call, so it carries the cache mark:
+      // a repeat inside the cache window reads it at a tenth of the input price. A prompt under
+      // the model's minimum size is simply not cached (no charge, no error).
+      ...(system.length ? { system: [{ type: "text", text: system.join("\n\n"), cache_control: { type: "ephemeral" } }] } : {}),
     };
 
     const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -146,7 +149,8 @@ function toAnthropicContent(content: any): any {
       const m = /^data:([^;]+);base64,(.*)$/s.exec(p.file?.file_data ?? "");
       return m ? { type: "document", source: { type: "base64", media_type: m[1], data: m[2] } } : { type: "text", text: "" };
     }
-    return { type: "text", text: p?.text ?? "" };
+    // A part marked cache_control (a repeated job block ahead of a changing CV) keeps its mark.
+    return { type: "text", text: p?.text ?? "", ...(p?.cache_control ? { cache_control: p.cache_control } : {}) };
   });
 }
 
@@ -289,6 +293,8 @@ export const NVIDIA_VISION_MODELS = [
 
 // The subscription CLI is in the app container, reached through its authenticated bridge.
 export async function callHaikuVisionOCR(file: { kind: "pdf" | "image"; mime: string; base64: string }): Promise<string> {
+  // Haiku-only: the Anthropic API reads scans (callOpenRouterPdfOCR / callNvidiaVisionOCR), not the CLI.
+  if (anthropicOn()) return "";
   const base = (process.env.C141_APP_INTERNAL_URL ?? "").trim().replace(/\/+$/, "");
   const secret = (process.env.C141_CLAUDE_BRIDGE_SECRET ?? "").trim();
   if (!base || secret.length < 16) return "";
@@ -407,6 +413,9 @@ export async function callNvidiaVisionOCR(
     }
   }
 
+  // Haiku-only: no other vision model is tried.
+  if (anthropicOn()) throw new Error(`Vision OCR failed to extract text from candidate document: ${lastError || "no answer"}`);
+
   // 1. Try NVIDIA NIM API (free, no OpenRouter privacy limits)
   try {
     const nvidiaOpenAI = getNvidiaOpenAI();
@@ -485,11 +494,9 @@ export async function executeLLMWithNvidiaFallback(
   // Every task takes the full chain once the Anthropic key is set; before, only the CV tasks did
   // and the rest went to NVIDIA alone.
   if (IS_CV_EXTRACTION_TASK(taskType) || anthropicOn()) {
-    // Claude Haiku first when the Anthropic key is set; DeepSeek stays second while it is still
-    // configured (removed once Claude has run clean for a while), then NVIDIA.
-    const candidateModels = anthropicOn()
-      ? [ANTHROPIC_MODEL, ...(openRouterKeyPresent() ? [DEEPSEEK_MODEL] : []), NVIDIA_PRIMARY_MODEL]
-      : [DEEPSEEK_MODEL, NVIDIA_PRIMARY_MODEL];
+    // Claude Haiku 5.5 and nothing else when the Anthropic key is set: no DeepSeek or NVIDIA behind it,
+    // so a failure is a visible error, never a different model's answer. Unset, the old chain.
+    const candidateModels = anthropicOn() ? [ANTHROPIC_MODEL] : [DEEPSEEK_MODEL, NVIDIA_PRIMARY_MODEL];
 
     let lastError: any = null;
     // Why DeepSeek gave no answer, when the fallback is the one that answers.

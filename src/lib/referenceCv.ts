@@ -121,8 +121,9 @@ export async function extractBlueprintFromText(text: string): Promise<ReferenceC
     return cached.blueprint;
   }
 
-  const openrouterKey = (process.env.OPENROUTER_API_KEY ?? "").trim();
-  const openaiKey = (process.env.OPENAI_API_KEY ?? "").trim();
+  // Haiku-only: with the Anthropic key set, the OpenRouter and OpenAI fallbacks below are not used.
+  const openrouterKey = viaAnthropic() ? "" : (process.env.OPENROUTER_API_KEY ?? "").trim();
+  const openaiKey = viaAnthropic() ? "" : (process.env.OPENAI_API_KEY ?? "").trim();
 
   // If no API key is available, use heuristic extraction immediately
   if (!openrouterKey && !openaiKey && !viaAnthropic()) {

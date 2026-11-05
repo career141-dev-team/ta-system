@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { logSubscriptionUsage, readStream, runClaude } from "./claudeSub";
+import { haikuOnly, logSubscriptionUsage, readStream, runClaude } from "./claudeSub";
 import { claudeMatchOn } from "./claudeMatch";
 import { CLAUDE_ANSWER_MS, CLAUDE_QUEUE_MS } from "../../convex/lib/claudeFirst";
 
@@ -108,6 +108,7 @@ export function releaseSlot() {
 }
 
 export async function askBridge(r: BridgeRequest): Promise<{ ok: true; text: string } | { ok: false; reason: string }> {
+  if (haikuOnly()) return { ok: false, reason: "haiku-only: the Anthropic API answers" };
   const why = closed();
   if (why) return { ok: false, reason: why };
   if (!(await takeSlot(CLAUDE_QUEUE_MS[r.task]))) return { ok: false, reason: "busy" };
