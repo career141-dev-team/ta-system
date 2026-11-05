@@ -2,6 +2,7 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 import { extractRawText } from "./refereeExtractor";
+import { viaAnthropic, write } from "./ai";
 
 export interface ReferenceCvBlueprint {
   targetTitle: string;
@@ -124,7 +125,7 @@ export async function extractBlueprintFromText(text: string): Promise<ReferenceC
   const openaiKey = (process.env.OPENAI_API_KEY ?? "").trim();
 
   // If no API key is available, use heuristic extraction immediately
-  if (!openrouterKey && !openaiKey) {
+  if (!openrouterKey && !openaiKey && !viaAnthropic()) {
     const bp = heuristicBlueprint(trimmed);
     cache.set(hash, { at: Date.now(), blueprint: bp });
     return bp;
@@ -156,7 +157,12 @@ Do not include markdown fences, thoughts, or explanations. Only return valid JSO
 
   try {
     let resultJson = "";
-    if (openrouterKey) {
+    // Claude Haiku first when the Anthropic key is set; OpenRouter / OpenAI stay behind it.
+    if (viaAnthropic()) {
+      const r = await write(systemPrompt, `Here is the candidate CV:\n\n${truncatedText}`, 800, "parse");
+      if (r.ok) resultJson = r.text;
+    }
+    if (!resultJson && openrouterKey) {
       // Use DeepSeek V4 Flash via OpenRouter
       const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
