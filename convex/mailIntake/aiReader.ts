@@ -9,6 +9,7 @@ import { v } from "convex/values";
 import { internalAction, internalMutation, internalQuery } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
+import { raiseOpsEvent } from "../lib/opsEvents";
 import { getModelForTask, getOpenAI } from "../lib/llm";
 import { getGraphToken } from "../lib/graphClient";
 import { directorReplyPrompt, isCvFile, matchCvFiles, readAiAnswer, type AiReading } from "../lib/directorReplyAi";
@@ -171,11 +172,27 @@ export const createRoundFromThread = internalMutation({
     const token = `C141-THREAD-${a.messageId.slice(-40)}`;
     const existing = await ctx.db.query("reviewRounds").withIndex("by_token", (q) => q.eq("token", token)).first();
     if (existing) return existing._id;
-    return ctx.db.insert("reviewRounds", {
-      openingId: a.openingId, kind: a.kind ?? "director", token, applicationIds: a.applicationIds,
+    const kind = a.kind ?? "director";
+    const roundId = await ctx.db.insert("reviewRounds", {
+      openingId: a.openingId, kind, token, applicationIds: a.applicationIds,
       sentBy: a.sentBy, sentAt: a.sentAt, sentTo: a.sentTo || JOBORDERS, subject: a.subject,
       messageId: a.messageId, conversationId: a.conversationId ?? null,
       dispatch: "sent", status: "awaiting", decisions: [],
     });
+
+    // Tell Ops (6 Nov). A client round is the set of CVs the client is asked
+    // to look at, and Ops counts every one of its clocks from it - the CV
+    // ownership window, the feedback chase, the two weeks before a hold.
+    // Until today nothing raised this, so a set could be ready here and Ops
+    // never heard. raiseOpsEvent never throws; this cannot affect the round.
+    await raiseOpsEvent(ctx, kind === "client" ? "client_set.ready" : "director_round.sent", {
+      roundId: roundId as string,
+      openingId: a.openingId as string,
+      applicationIds: a.applicationIds as unknown as string[],
+      sentAt: a.sentAt,
+      sentTo: a.sentTo || JOBORDERS,
+      subject: a.subject,
+    });
+    return roundId;
   },
 });

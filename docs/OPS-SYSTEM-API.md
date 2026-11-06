@@ -122,15 +122,74 @@ hears is bad; a Place that fails because telling Ops failed is far worse, and
 that is the only way this could hurt anybody. It is written down in
 `convex/lib/opsEvents.ts` so nobody "fixes" it into throwing.
 
-| Event | Raised by |
-|---|---|
-| `application.stage_changed` | every stage move, beside TA's own `pipelineEvents` row — this is the one the client's side turns on |
-| `opening.created` | an opening made from an Ops hand-over: how Ops learns the real opening id, which it never invents |
-| `opening.updated` · `opening.closed` | a status change made through this API |
-| `interview.booked` · `interview.outcome` | an interview booked or settled through this API |
-
 An empty batch hands back the cursor it was given, so a quiet hour cannot
 wind the reader backwards and make Ops replay a day.
+
+### Every one of the twenty-five, and who raises it
+
+Counted on both sides on 6 November, because the two had drifted badly: Ops
+knew how to handle 25 types, this repository declared 15 and raised 5 — and
+four of those five were raised inside `opsWrite.ts`, so they only fired when
+**Ops itself** had just called us. They told Ops what Ops already knew.
+
+The worst of it was `client_set.ready`, never raised at all. It is the trigger
+for the whole Ops client-side flow: a set of CVs ready here, and every clock
+Ops runs counts from the day the client received it. Nothing raised it, so
+none of those clocks ever started.
+
+**Raised by TA's own work — 16.** These are the ones Ops has no other way to
+learn.
+
+| Event | Where |
+|---|---|
+| `application.stage_changed` | every stage move, beside TA's own `pipelineEvents` row |
+| `offer.made` | a candidate reaches `offer` |
+| `offer.accepted` | `offer` → `placed` |
+| `offer.declined` | `offer` → `rejected` or `unresponsive`. Both mean the offer did not hold; the stage travels in the event for anyone who needs to tell them apart |
+| `placement.created` | a candidate reaches `placed` |
+| `placement.fell_through` | a candidate leaves `placed` |
+| `client_set.ready` | a **client** review round created in `mailIntake/aiReader.ts` |
+| `director_round.sent` | the **director** form of the same round, and the accepted end-of-day email in `lib/dailyEmail.ts`. A revision is not a new round |
+| `director_round.decided` | a director round answered, in `mailIntake/decisions.ts`, carrying the decisions themselves |
+| `opening.created` · `updated` · `closed` | through this API |
+| `opening.jd_approved` | the JD approved, in `ta/commit.ts` |
+| `opening.working_stage_changed` | `setWorkingStage` — the TA lead's own menu lands there, and so does this API |
+| `interview.booked` · `interview.outcome` | through this API |
+
+**The offer and the placement come off the stage on purpose.** The
+`placements` and `offers` tables are never written anywhere in this repository
+outside this API, so there is no Place row to hang an event on. The stage *is*
+the event, and all five are raised in one file beside branches that already
+test the same two stages.
+
+**Written by Ops itself — 7.** Declared so Ops can name them, deliberately
+never raised here. Each is something Ops records through this API, so TA
+raising it would be TA telling Ops what Ops just told TA.
+
+`placement.joined` · `placement.no_show` · `interview.confirmed` ·
+`interview.candidate_out` · `interview.feedback` · `jobpost.live` ·
+`jobpost.closed`
+
+Two of those are worth spelling out, because they look like gaps and are not:
+the **`interviews` table is written only by this API** — nothing in TA creates
+or updates an interview, so there is no TA-side interview feedback to raise —
+and **`jobPosts.status` changes only through `/openings/{id}/posts`**. TA
+creates the first post with the opening; every state after that is Ops telling
+us.
+
+**Waiting on a feature that does not exist here — 2.** Not missing wiring.
+The thing that would raise them has not been built.
+
+| Event | Why not |
+|---|---|
+| `reference.reported` | this API rings a bell asking a TA to call the referee, and there is **no row anywhere** for what the referee said. Nothing to raise until there is somewhere to write it down |
+| `candidate.rejection_notice_sent` | `rejectionLoopEvents` is declared in the schema and **never written**, here or anywhere |
+
+Both stay declared, so Ops can name what it is waiting for and whoever builds
+the feature finds the event already named.
+
+`tests/opsEvents.test.ts` holds all three lists and prints the count, so the
+numbers cannot drift without somebody seeing it.
 
 ## The one deliberate gap in the writes
 

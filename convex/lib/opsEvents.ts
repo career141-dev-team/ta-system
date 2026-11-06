@@ -29,6 +29,20 @@ export const OPS_EVENT_TYPES = [
   "placement.joined",
   "placement.no_show",
   "reference.reported",
+  // Added 6 Nov. The Ops System already knows how to handle all of these; the
+  // list here declared fifteen while Ops handled twenty-five, so an event it
+  // was waiting for could not even be named. Declaring one costs nothing and
+  // raising it is one line beside the mutation that already happened.
+  "director_round.sent",
+  "director_round.decided",
+  "interview.confirmed",
+  "interview.feedback",
+  "interview.candidate_out",
+  "placement.fell_through",
+  "jobpost.live",
+  "jobpost.closed",
+  "opening.working_stage_changed",
+  "candidate.rejection_notice_sent",
 ] as const;
 
 export type OpsEventType = (typeof OPS_EVENT_TYPES)[number];
