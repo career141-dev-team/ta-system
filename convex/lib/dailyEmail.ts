@@ -3,6 +3,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import { workdayDate } from "../../src/lib/workday";
 import { EMAIL_RETENTION_MS, type DailyEmailSnapshot } from "../../src/lib/dailyEmail";
 import { autoCompleteWorkday } from "../ta/workdays";
+import { raiseOpsEvent } from "./opsEvents";
 
 export async function middayRequired(ctx: QueryCtx | MutationCtx, date: string) {
   const policy = await ctx.db.query("dailyEmailPolicy").withIndex("by_key", q => q.eq("key", "midday")).first();
@@ -38,6 +39,20 @@ export async function finalizeDailyEmail(ctx: MutationCtx, email: Doc<"dailyEmai
       dispatch: "sent", status: "awaiting", decisions: [],
     });
   }
+  // Tell Ops the Director has the set (6 Nov). Ops shows it on the position
+  // and starts nothing - the Director's own clock is TA's - but a position
+  // whose set went out yesterday reads differently from one that has sent
+  // nothing, and until today Ops could not tell the two apart.
+  if (roundId && !email.parentId) {
+    await raiseOpsEvent(ctx, "director_round.sent", {
+      roundId: roundId as string,
+      openingId: email.jobId as string,
+      applicationIds: email.applicationIds as unknown as string[],
+      sentAt: at,
+      submissionType: email.submissionType,
+    });
+  }
+
   await ctx.db.patch(email._id, { finalizedAt: at, expiresAt: at + EMAIL_RETENTION_MS, ...(roundId ? { roundId } : {}) });
   for (const attachment of snapshot.attachments ?? []) {
     const file = await ctx.db.get(attachment.id as Id<"dailyEmailAttachments">);

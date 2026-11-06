@@ -6,6 +6,7 @@ import { v } from "convex/values";
 import { internalAction, internalMutation, internalQuery, type ActionCtx, type MutationCtx, type QueryCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
+import { raiseOpsEvent } from "../lib/opsEvents";
 import { executeStageTransition, type PipelineStage } from "../pipeline/pipelineStateMachine";
 import {
   matchReplyRound, newestReplyText, parseShortlistReply, placement, SHORTLIST_STAGE,
@@ -256,6 +257,30 @@ async function apply(ctx: MutationCtx, review: Doc<"shortlistDecisionReviews">, 
     returnedAt: Date.now(),
     status: merged.filter((decision) => decision.outcome !== "hold").length >= round.applicationIds.length ? "returned" : "partial",
   });
+
+  // Tell Ops the Director round came back (6 Nov).
+  //
+  // Only the director round. A **client** round decided here moves each
+  // candidate through `executeStageTransition`, which already raises
+  // `application.stage_changed` per application - so Ops hears it candidate by
+  // candidate, which is the shape it wants. Raising a second round-shaped
+  // event for the same thing would have Ops acting on it twice.
+  //
+  // The decisions travel with it because Ops keeps the reviewer's own words,
+  // and an event saying only "it came back" would send it to re-read the
+  // thread it cannot see.
+  if (round.kind === "director") await raiseOpsEvent(ctx, "director_round.decided", {
+    roundId: round._id as string,
+    openingId: round.openingId as string,
+    kind: round.kind,
+    decidedAt: Date.now(),
+    from: review.fromAddress,
+    decisions: accepted.map((decision) => ({
+      applicationId: decision.applicationId as string,
+      outcome: decision.outcome,
+    })),
+  });
+
   return result;
 }
 
