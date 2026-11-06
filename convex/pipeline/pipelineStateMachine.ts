@@ -238,6 +238,37 @@ export async function executeStageTransition(
     actor: String(actorDisplayId),
   });
 
+  // The named moments inside that move (6 Nov).
+  //
+  // `application.stage_changed` above says a candidate went from one stage to
+  // another, and Ops can work out the rest - but working it out is guessing,
+  // and the offer and the placement are the two moments Ops has money and
+  // promises hanging off. So the move names itself.
+  //
+  // All of them are derived from the same two stages, in one place, rather
+  // than from a Place button that writes no row here: the `placements` and
+  // `offers` tables are never written anywhere in this repository outside the
+  // Ops API itself, so the stage **is** the event.
+  const named = { applicationId: applicationId as string, openingId: app.jobId as string,
+    candidateId: app.candidateId as string, from: currentStage, to: targetStage,
+    reason: reason ?? null, at: now };
+
+  if (targetStage === "offer") await raiseOpsEvent(ctx, "offer.made", named);
+  if (currentStage === "offer" && targetStage === "placed") {
+    await raiseOpsEvent(ctx, "offer.accepted", named);
+  }
+  if (currentStage === "offer" && (targetStage === "rejected" || targetStage === "unresponsive")) {
+    // Ops stops the search on an offer and reopens it on a decline, so the
+    // difference between "they said no" and "they went quiet" is not worth
+    // inventing here: both mean the offer did not hold, and the stage it
+    // moved to is in the event for anybody who needs to tell them apart.
+    await raiseOpsEvent(ctx, "offer.declined", named);
+  }
+  if (targetStage === "placed") await raiseOpsEvent(ctx, "placement.created", named);
+  if (currentStage === "placed" && targetStage !== "placed") {
+    await raiseOpsEvent(ctx, "placement.fell_through", named);
+  }
+
   // A placement that falls through comes off the day it was counted on —
   // it used to stay counted for good (2 Oct).
   if (currentStage === "placed") {

@@ -30,6 +30,7 @@ import { refreshWorkdayChecks } from "./workdays";
 import { invalidateJdReviews, recordJdReview } from "../lib/workdayChecks";
 import type { Doc, Id } from "../_generated/dataModel";
 import { validateWorkLocations, requireWorkLocation } from "../../src/lib/workLocations";
+import { raiseOpsEvent } from "../lib/opsEvents";
 
 const opValidator = v.object({
   table: v.string(),
@@ -230,7 +231,17 @@ export const apply = internalMutation({
             await invalidateJdReviews(ctx, jobId);
             await refreshWorkdayChecks(ctx, jobId, actorUser?._id);
           }
-          if (actorUser && job.jdStatus === "approved" && job.jobDescription.trim() && op.changed?.includes("jdApprovedAt") && job.jdApprovedBy === actorUser._id) await recordJdReview(ctx, actorUser._id, jobId, job.jobDescription);
+          if (actorUser && job.jdStatus === "approved" && job.jobDescription.trim() && op.changed?.includes("jdApprovedAt") && job.jdApprovedBy === actorUser._id) {
+            await recordJdReview(ctx, actorUser._id, jobId, job.jobDescription);
+            // Tell Ops (6 Nov). Approving the JD is what starts the scoring
+            // and lets the post go live, so it is the moment Ops can say the
+            // search has really begun rather than "handed over, waiting".
+            await raiseOpsEvent(ctx, "opening.jd_approved", {
+              openingId: jobId as string,
+              approvedBy: actorUser._id as string,
+              at: job.jdApprovedAt ?? Date.now(),
+            });
+          }
           await refreshWorkdayChecks(ctx, jobId, actorUser?._id);
         }
       }

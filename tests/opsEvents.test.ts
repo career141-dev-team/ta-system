@@ -27,6 +27,8 @@ const aiReader = read("convex/mailIntake/aiReader.ts");
 const dailyEmail = read("convex/lib/dailyEmail.ts");
 const decisions = read("convex/mailIntake/decisions.ts");
 const stateMachine = read("convex/pipeline/pipelineStateMachine.ts");
+const openings = read("convex/ta/openings.ts");
+const commit = read("convex/ta/commit.ts");
 
 /* ── Nothing here may ever break a TA write ────────────────────── */
 
@@ -115,4 +117,73 @@ for (const file of [aiReader, dailyEmail, decisions]) {
   assert.ok(raise.includes("openingId"), "every raise says which opening it is about");
 }
 
-console.log("ops events: " + OPS_HANDLES.length + " types declared, and the ones TA alone knows are raised");
+
+/* ── The offer and the placement, named rather than worked out ──── */
+
+/**
+ * The `placements` and `offers` tables are never written anywhere in this
+ * repository outside the Ops API itself, so there is no Place row to hang an
+ * event on: **the stage is the event**. All five come off the same two stages,
+ * in the one file every stage move already goes through.
+ */
+for (const [type, why] of [
+  ["offer.made", "Ops stops the search when an offer is given"],
+  ["offer.accepted", "offer -> placed"],
+  ["offer.declined", "offer -> rejected or unresponsive, and Ops reopens the search"],
+  ["placement.created", "the placement, the notice to accounts, and the joining-day clocks"],
+  ["placement.fell_through", "a placement coming off again"],
+] as const) {
+  assert.ok(
+    stateMachine.includes(`"${type}"`),
+    `${type} is not raised in the state machine, and there is nowhere else to raise it: ${why}`,
+  );
+}
+
+assert.ok(
+  openings.includes('raiseOpsEvent(ctx, "opening.working_stage_changed"'),
+  "the TA lead's own menu putting somebody on 100% is the only way Ops hears it from inside TA",
+);
+assert.ok(
+  commit.includes('raiseOpsEvent(ctx, "opening.jd_approved"'),
+  "approving the JD is when the search has really begun",
+);
+
+/* ── The ones that are not TA's to raise ────────────────────────── */
+
+/**
+ * Declared so Ops can name them, deliberately never raised here. Each one is
+ * something **Ops itself** writes through the API, so an event would be TA
+ * telling Ops what Ops just told TA - which is the fault this whole file was
+ * written to fix, and worth being explicit about so nobody "finishes the set"
+ * later by adding them.
+ */
+const OPS_WRITES_THESE = [
+  "placement.joined",
+  "placement.no_show",
+  "interview.confirmed",
+  "interview.candidate_out",
+];
+for (const type of OPS_WRITES_THESE) {
+  assert.ok(events.includes(`"${type}"`), type + " is still declared");
+  assert.equal(
+    stateMachine.includes(`"${type}"`), false,
+    type + " is recorded by Ops through the API, so TA raising it would be an echo",
+  );
+}
+
+/**
+ * Still genuinely missing, and listed here so the gap is a decision rather
+ * than an oversight: TA records these and Ops wants them, but there is no
+ * single place in this repository that owns the moment yet.
+ */
+const STILL_TO_FIND = ["interview.feedback", "reference.reported", "jobpost.live", "jobpost.closed", "candidate.rejection_notice_sent"];
+for (const type of STILL_TO_FIND) {
+  assert.ok(events.includes(`"${type}"`), type + " is declared, so Ops can at least name what it is waiting for");
+}
+
+console.log(
+  "ops events: " + OPS_HANDLES.length + " declared, " +
+  (OPS_HANDLES.length - OPS_WRITES_THESE.length - STILL_TO_FIND.length) + " raised by TA's own work, " +
+  OPS_WRITES_THESE.length + " written by Ops itself, " +
+  STILL_TO_FIND.length + " still to place",
+);

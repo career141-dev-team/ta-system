@@ -24,6 +24,7 @@ import { invalidateJdReviews, recordJdReview } from "../lib/workdayChecks";
 import { isGone } from "../../src/lib/bin";
 import { masterSheetStatusFields } from "../../src/lib/masterSheet";
 import { validateWorkLocations } from "../../src/lib/workLocations";
+import { raiseOpsEvent } from "../lib/opsEvents";
 
 
 export const list = internalQuery({
@@ -526,6 +527,15 @@ export const setWorkingStage = internalMutation({
       await ctx.db.patch(assignment._id, { workingStage: args.stage });
       await recordActiveMode(ctx, targetUserId, jobId, args.stage);
       await refreshWorkdayChecks(ctx, jobId, targetUserId);
+      // Tell Ops (6 Nov). The TA lead's own menu lands here, and so does the
+      // Ops API - Ops ignores the echo of its own write, and this is the only
+      // way it hears the lead putting somebody on 100% from inside TA.
+      await raiseOpsEvent(ctx, "opening.working_stage_changed", {
+        openingId: args.openingId,
+        userId: targetUserId as string,
+        stage: args.stage,
+        at: Date.now(),
+      });
       return { ok: true, stage: args.stage };
     }
 
