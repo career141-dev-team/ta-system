@@ -162,6 +162,16 @@ const OPS_WRITES_THESE = [
   "placement.no_show",
   "interview.confirmed",
   "interview.candidate_out",
+  // Traced 6 Nov: the `interviews` table is written **only** by
+  // integrations/opsWrite.ts. Nothing in TA creates or updates an interview,
+  // so there is no TA-side feedback to raise - Ops owns the interview end to
+  // end. If TA ever records its own, that is where this belongs.
+  "interview.feedback",
+  // Same: `jobPosts.status` is changed only through the Ops API's
+  // /openings/{id}/posts. TA creates the first post with the opening; every
+  // state after that is Ops telling us.
+  "jobpost.live",
+  "jobpost.closed",
 ];
 for (const type of OPS_WRITES_THESE) {
   assert.ok(events.includes(`"${type}"`), type + " is still declared");
@@ -172,18 +182,38 @@ for (const type of OPS_WRITES_THESE) {
 }
 
 /**
- * Still genuinely missing, and listed here so the gap is a decision rather
- * than an oversight: TA records these and Ops wants them, but there is no
- * single place in this repository that owns the moment yet.
+ * Not missing wiring - missing **features** (traced 6 Nov).
+ *
+ * Both were on the "still to place" list until the tables behind them were
+ * looked at. Neither is a raise somebody forgot: the thing that would raise
+ * them does not exist in TA yet.
+ *
+ *   `reference.reported` - the Ops API rings a bell asking a TA to call the
+ *   referee, and there is no row anywhere for what the referee said. Nothing
+ *   to raise until there is somewhere to write it down.
+ *
+ *   `candidate.rejection_notice_sent` - `rejectionLoopEvents` is declared in
+ *   the schema and **never written**, here or anywhere.
+ *
+ * They stay declared so Ops can name what it is waiting for, and so that
+ * whoever builds the feature finds the event already named.
  */
-const STILL_TO_FIND = ["interview.feedback", "reference.reported", "jobpost.live", "jobpost.closed", "candidate.rejection_notice_sent"];
-for (const type of STILL_TO_FIND) {
+const NOT_BUILT_IN_TA = ["reference.reported", "candidate.rejection_notice_sent"];
+for (const type of NOT_BUILT_IN_TA) {
   assert.ok(events.includes(`"${type}"`), type + " is declared, so Ops can at least name what it is waiting for");
+  assert.equal(
+    stateMachine.includes(`"${type}"`), false,
+    type + " has no feature behind it yet: raising it would be raising nothing",
+  );
 }
+assert.equal(
+  /insert\("rejectionLoopEvents"/.test(events + stateMachine + decisions), false,
+  "if somebody starts writing rejectionLoopEvents, this is the line that says to raise the event too",
+);
 
 console.log(
   "ops events: " + OPS_HANDLES.length + " declared, " +
-  (OPS_HANDLES.length - OPS_WRITES_THESE.length - STILL_TO_FIND.length) + " raised by TA's own work, " +
+  (OPS_HANDLES.length - OPS_WRITES_THESE.length - NOT_BUILT_IN_TA.length) + " raised by TA's own work, " +
   OPS_WRITES_THESE.length + " written by Ops itself, " +
-  STILL_TO_FIND.length + " still to place",
+  NOT_BUILT_IN_TA.length + " waiting on a feature that does not exist here yet",
 );
