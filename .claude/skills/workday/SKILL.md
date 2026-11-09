@@ -167,7 +167,7 @@ Applies only to `ta`/`ta_support`. Reads today's rows via `by_user_date`, not th
 | `Check` | same | row with status (Completed / Reason submitted / Waiting / To do), "Open task page" (`check.href`), history, forms: `markReviewed`, `carry`, `taskException` (submit/update/withdraw), `saveCheck jd`, `saveCheck emptySuggestions`, `ChatgptConfirmation` |
 | `EodJobChecks` | same, used by `EodComposer.tsx:~1178` | non-detail poll; lists `emailBlockers` above the composer and reports `blocked`, `excused`, saved link upward |
 | Exported forms | `ResearchConfirmation` (Research page), `EmptySuggestionsReason` (Suggestions page), `NoCandidateReason` (unused by pages today, unverified) | |
-| API route | `src/app/api/workday/route.ts` | 401 unauthenticated; 403 if `!canViewWorkday`; 503 "Could not load workday checks. Please retry." on any backend throw (logs `[api/workday] <step> role=... <query>` since 26 Oct); `Cache-Control: private, no-store`; with `detail=1` and `canWork` also fetches `sentEmails` |
+| API route | `src/app/api/workday/route.ts` | Primes the store only when nothing is held yet (`primed()`), so the 20 s poll never waits in the desk-wide reload queue (9 Nov; it did, and bulk CV work made the EOD panel read "Could not load workday checks"); 401 unauthenticated; 403 if `!canViewWorkday`; 503 "Could not load workday checks. Please retry." on any backend throw (logs `[api/workday] <step> role=... <query>` since 26 Oct); `Cache-Control: private, no-store`; with `detail=1` and `canWork` also fetches `sentEmails` |
 | Write action | `src/app/workday/actions.ts` `changeWorkday(FormData)` | builds args per `op`; unknown op -> "Unknown workday action."; mutation returning `ok:false` -> "Complete these steps first: ..."; errors via `workdayErrorMessage` (strips `Uncaught Error:` wrappers, 300 chars, else generic "Could not save. Try again..."); `revalidatePath("/workday")` (+ the Suggestions page on `saveCheck`) |
 Local-storage keys (UI memory only): `workday-date`, `workday-ta`, `workday-filter-job`, `workday-filter-status`, `workday-open:<dayId>:<jobId>`, `workday-job:<dayId|start>`. Notification deep links use `checkDay`, `checkJob`, `checkTask` to open/scroll the exact `Check`.
 
@@ -283,9 +283,9 @@ Repo hard rules that apply: never run `convex deploy/run/import/env set` against
 - 2026-11-02 an expired day bells its leads (`workday_expired`); 17:30/18:30 reminders about today's missing EODs (`convex/ta/eodReminders.ts`); a stuck send bells the admins and the job's lead (`eod_stuck`).
 
 <!-- skill-meta
-verified-commit: 1a5d31c5
-verified-hash: 789333b455d457e72ef0f93566c8683f3114d653
-verified-date: 2026-11-02
+verified-commit: c1afe1fc
+verified-hash: 7757b85e467e08e46b4db85d31745a31ecc6f69c
+verified-date: 2026-11-09
 sources:
   convex/ta/workdays.ts
   convex/lib/workdayChecks.ts

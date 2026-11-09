@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { primeStore } from "@/data/prime";
+import { primed, primeStore } from "@/data/prime";
 import { currentUser } from "@/lib/session";
 import { convexQuery } from "@/lib/convexServer";
 import type { WorkdayPayload } from "@/lib/workday";
@@ -10,7 +10,14 @@ export async function GET(request: Request) {
   // trace in the log (29 Oct).
   let user: Awaited<ReturnType<typeof currentUser>>;
   try {
-    await primeStore({});
+    // Only the users table is read here (currentUser), and it is already in
+    // memory once the desk has loaded. Waiting in the one prime queue meant a
+    // 20-second poll sat behind every other page's reload - 10 to 28 s during
+    // bulk CV work, and thrown away whenever a save overtook it - so the EOD
+    // panel read "Could not load workday checks" with nothing wrong on the
+    // backend (9 Nov). A person added today is still found: currentUser
+    // refreshes the roster on a miss.
+    if (!primed()) await primeStore({});
     user = await currentUser();
   } catch (err) {
     console.error("[api/workday] session", err instanceof Error ? err.message.slice(0, 300) : "");
