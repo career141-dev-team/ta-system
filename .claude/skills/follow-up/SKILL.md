@@ -329,10 +329,11 @@ Repo hard rules that apply: never run `convex deploy|run|import|env set` against
 - 2026-11-04 Questions answered from the JD's PRE-REQUISITES first (`lib/jdFacts.ts jdForQuestions`; the bot saw only the first 400 characters before), two sentences at most, then "One of our team members will reach out to you shortly." (`withHandover`), and the TA gets a bell to reach out. An expected salary above the opening's `salaryMax` bells the TA to call (`aboveBudget`); nothing is said about the budget.
 - 2026-11-05 `admin/addTaWhatsAppNumbers:run` replaces a row's `whatchimpPhoneId` when Meta's differs (it only noted it before) and sets the row not ready until Check with Meta. Sameera's account came back with new IDs (phone 1510787038773882, account 1432442428233216).
 - 2026-11-10 An applicant's first WhatsApp (`sourceChannel` not `headhunting`, `usesApplicationTemplate`) tries the Utility template `career141_application_connect` first: name, role, link, then `{{4}}` = `applicationDetails` (CV if missing + at most 3 open opening questions; salary and notice are fixed text in the template). If the number's account lacks it (132001) the same send falls back to `career141_initial_outreach` on that number before any number-level handling. Headhunted keep `initial_outreach`. `REQUIRED_TEMPLATES` (readiness) is still only the two old ones. Settings demo: a third button and an optional Send-from number (`demoSend:phoneIdForNumber`, last 9 digits on WhatsApp numbers) plus up to 3 questions. Rakshana's line (+94740110160, phone 745627948623113) added to `admin/addTaWhatsAppNumbers`.
+- 2026-11-10 `handleOnTaLine`: a follow-up whose opening's `outreachWhatsAppNumber` is this line counts as this line's, whoever owns the candidate (one opening sent from Rakshana's line). New migration `admin/setOpeningWhatsAppNumber:run {dryRun,title,number}` sets that field on exactly one active opening (no screen for it).
 
 <!-- skill-meta
-verified-commit: 4b4b057e
-verified-hash: 0dd33767b15093f2f57a5bcae02cc85a62bbb701
+verified-commit: 9bac3e8b
+verified-hash: a599cc45017f4bf54cbc348933484f2004bd1586
 verified-date: 2026-11-09
 sources:
   convex/lib/jdFacts.ts
