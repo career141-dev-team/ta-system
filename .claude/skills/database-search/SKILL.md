@@ -160,6 +160,15 @@ Triggers: (a) JD approval (`approveJd` in `actions.ts`: `markMatching`, then `af
 
 A `matched` unclaimed row is only a suggestion. On Database CVs the TA ticks rows and presses "Shortlist selected" (`confirmShortlist`, per row `can(opening.act)`), or per-row Shortlist (`claimCandidate`); both call `backend.shortlist` = `ta/applications:shortlist`: `assertJobAccess WORKS_THE_DESK`, `assertWorkdayScope`, refuses rejected/dropped-out ("Bring them back first"), then `claimForTa` in one transaction: if another TA owns it returns `{ok:false, ownerTaId}` ("X already claimed this candidate."); else sets owner, next set number, moves `new_cv`/`matched`/... into TA Follow-up. From the search results `addToOpening` (row "Add to opening", bulk `addManyToOpening`) does the same: creates the application if missing (stage `matched`, channel SCOOP), revives rejected/dropped-out via `reinstate`, then claims. Removing a `matched` application (`repo.removeApplication`) writes a `matchExclusions` row so it is never matched again; `ta/applications:excludeFromMatches` exists but no UI calls it (grep).
 
+### 14. Contact discovery for the Brevo clone (9 Nov)
+
+A different job from search: not the best few hundred, but **everyone** whose title fits, with an email, for an email campaign. The engine (flow 1) caps its pool at about 400 and Convex text search at about 1,024, so it is not used here. Instead, Extras' sales list, for any role:
+
+- `convex/lib/contactRule.ts` (pure): `ContactRule` (`titles`, `exclude`, `levels` on the `roleLevel.ts` ladder, `skills`, `includePastRoles`), `sanitizeRule` (every rule from the model or from Brevo goes through it), `ruleFromWords` (no-model fallback: request words dropped, the seniority word becomes levels, only the last word made singular), `RULE_PROMPT`, `matchCandidate` (whole-word phrase in the current title decides; level from `currentRoleRank` else `levelFromTitle`; an earlier title only when the current one is another job, kind `previous`), `usableEmail`.
+- `convex/extras/contactDiscovery.ts`: `read` (one model call through `getOpenAI("jd_extraction")`, else words) -> `contactSearches` row at `read`; `start` (refuses a second live run; stale after 10 min of no progress) -> `scan` action, 15 pages of 100 per run, then reschedules; then the meaning pass (`embedText` + `queryCandidateVectors`, cosine >= 0.6, limit 1000, kind `meaning`, still level- and exclude-checked); `finish`. Merged, duplicate-of and do-not-contact people and anyone without a usable email are never kept; one row per email (current > previous > meaning). `purge` deletes searches older than 7 days.
+- `convex/integrations/contactsHttp.ts`: five routes under `/integrations/v1/contacts/discover`, key `CONTACTS_API_TOKEN` (503 unset). `rows.csv` defuses formula cells but leaves phone numbers alone.
+- Tables `contactSearches`, `contactSearchRows` are in `PARTNER_PRIVATE_TABLES`. API contract: `docs/CONTACT-DISCOVERY-API.md`. Test: `tests/contactRule.test.ts`.
+
 ## UI surface
 
 | Place | Component / file | Triggers | Who |
@@ -230,6 +239,8 @@ Env flags and kill switches (names only): `C141_CLAUDE_MATCH` (on/off, default o
 - Seat gate on Database CVs: `requireSourcingSeat(id)`. Workday gate: `assertWorkdayScope` inside `ta/applications:shortlist`. `assertJobAccess(..., WORKS_THE_DESK)` in Convex.
 - "Hiding a control is a courtesy, not a permission check": every action re-checks; Convex functions are internal and the app is the only caller.
 - `deleteSearch` in Convex: owner, or role `admin`/`ta_manager`.
+- `ta/requirements` writes (Job details that feed matching) skip the per-opening check for desk-wide users (`isDeskWideUser`), matching the web's desk-wide `opening.manage` (docs/19 A1, 2 Nov).
+- Contact discovery (flow 14) has no user at all on the TA side: it is the `CONTACTS_API_TOKEN` holder, and each search records the `requestedBy` email Brevo sends.
 - Bridge route: secret only, no session.
 
 ## Invariants and safety
@@ -329,11 +340,18 @@ Repo hard rules that apply: never touch the live backend from a laptop (no `conv
 - 2026-10-28 the full "Searching" scene no longer replays on a chat reply, a profile, a page or a level tick (links keep the address; the boundary keys on the first message).
 - 2026-10-28 years band (a bare "2 years" no longer returns 5, 10, 23 years), a pasted JD read as one message, and keyword lists and names read as such (owner: TAs rarely paste a JD).
 - 2026-10-29 A failed keyword term is reported, not swallowed; an answer with a route down carries `incomplete`, is shown with a warning and never cached; "too many system operations" is no longer retried (`src/lib/convexResilience.ts`).
+- 2026-11-09 contact discovery for the Brevo clone (flow 14): a rule read once, every candidate checked against it with no model, a labelled meaning pass, its own key and routes.
+
+## Model provider (5 Nov 2026)
+
+With `ANTHROPIC_API_KEY` set (and `C141_LLM_PROVIDER` not `openrouter`) the DeepSeek rows in the model table above are answered by Claude Haiku 5.5 on the Anthropic API instead: `convex/lib/llm.ts` `getAnthropicClient` for the Convex calls, `src/lib/ai.ts` `callAnthropicTask` for the app's (`write`, `gemini`, referenceCv). The subscription bridge still goes first where it did. Research runs Serper/SearXNG searches and Haiku answers from those results (`researchGrounded`); sources are only the results it cites. Embeddings stay on OpenAI / OpenRouter.
+
+**Haiku only, and cached (5 Nov 2026, later):** with the key set, `askClaudeFirst`, `askBridge`, the CLI scoring (`claudeMatch`), CLI web search and the CV vision bridge all step aside (`hasToken()` is false, `haikuOnly()` in `src/lib/claudeSub.ts`), so every answer is `claude-haiku-5-5` on the API. `anthropicModelFor` ignores `C141_MODEL_*`; `C141_RESEARCH_PROVIDER` does not apply; the reference-CV parser drops its OpenRouter/OpenAI fallbacks; the jdParser drops NVIDIA. System prompts carry `cache_control` in both runtimes.
 
 <!-- skill-meta
-verified-commit: f8f4b53d
-verified-hash: 478bdec2ea9ac2132bb572ddd5261f668e8a438a
-verified-date: 2026-10-29
+verified-commit: 452ed542
+verified-hash: 840c7144ee4e72521128183db941b42b717765f6
+verified-date: 2026-11-09
 sources:
   src/lib/engineSearch.ts
   src/lib/dbMatch.ts
@@ -375,10 +393,9 @@ sources:
   docs/DATABASE-SEARCH-ROLE-EVIDENCE.md
   tests/dbmatch.test.ts
   tests/searchEngineRoleRanking.test.ts
+  convex/lib/contactRule.ts
+  convex/extras/contactDiscovery.ts
+  convex/integrations/contactsHttp.ts
+  docs/CONTACT-DISCOVERY-API.md
+  tests/contactRule.test.ts
 -->
-
-## Model provider (5 Nov 2026)
-
-With `ANTHROPIC_API_KEY` set (and `C141_LLM_PROVIDER` not `openrouter`) the DeepSeek rows in the model table above are answered by Claude Haiku 5.5 on the Anthropic API instead: `convex/lib/llm.ts` `getAnthropicClient` for the Convex calls, `src/lib/ai.ts` `callAnthropicTask` for the app's (`write`, `gemini`, referenceCv). The subscription bridge still goes first where it did. Research runs Serper/SearXNG searches and Haiku answers from those results (`researchGrounded`); sources are only the results it cites. Embeddings stay on OpenAI / OpenRouter.
-
-**Haiku only, and cached (5 Nov 2026, later):** with the key set, `askClaudeFirst`, `askBridge`, the CLI scoring (`claudeMatch`), CLI web search and the CV vision bridge all step aside (`hasToken()` is false, `haikuOnly()` in `src/lib/claudeSub.ts`), so every answer is `claude-haiku-5-5` on the API. `anthropicModelFor` ignores `C141_MODEL_*`; `C141_RESEARCH_PROVIDER` does not apply; the reference-CV parser drops its OpenRouter/OpenAI fallbacks; the jdParser drops NVIDIA. System prompts carry `cache_control` in both runtimes.

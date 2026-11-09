@@ -32,6 +32,7 @@ import {
   opsWriteReferenceRequest,
   opsWriteUnderOpening,
 } from "./integrations/opsWriteHttp";
+import { contactsDiscover, contactsDiscoverUnder } from "./integrations/contactsHttp";
 import type { Id } from "./_generated/dataModel";
 import {
   isFreshVoiceAgentTimestamp,
@@ -82,6 +83,12 @@ http.route({ path: "/integrations/v1/reference-requests", method: "POST", handle
 http.route({ path: "/integrations/v1/interviews", method: "POST", handler: opsWriteCreateInterview });
 http.route({ pathPrefix: "/integrations/v1/interviews/", method: "POST", handler: opsWriteInterview });
 http.route({ pathPrefix: "/integrations/v1/placements/", method: "POST", handler: opsWritePlacement });
+
+// Contact discovery for the Brevo clone (9 Nov), behind its own key
+// (CONTACTS_API_TOKEN). It reads candidates and sends nothing.
+http.route({ path: "/integrations/v1/contacts/discover", method: "POST", handler: contactsDiscover });
+http.route({ pathPrefix: "/integrations/v1/contacts/discover/", method: "POST", handler: contactsDiscoverUnder });
+http.route({ pathPrefix: "/integrations/v1/contacts/discover/", method: "GET", handler: contactsDiscoverUnder });
 
 /**
  * Meta's webhook verification handshake.
