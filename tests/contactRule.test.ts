@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { matchCandidate, ruleFromWords, sanitizeRule, usableEmail, type ContactRule } from "../convex/lib/contactRule";
+import { matchCandidate, ruleFromWords, sanitizeRule, stopPatch, usableEmail, type ContactRule } from "../convex/lib/contactRule";
 
 const rule = (r: Partial<ContactRule> & { titles: string[] }) => {
   const s = sanitizeRule(r);
@@ -67,6 +67,7 @@ const { parseDiscoverPath, csvCell } = await import("../convex/integrations/cont
 const id = "k57abcdefghij0123";
 assert.deepEqual(parseDiscoverPath(`/integrations/v1/contacts/discover/${id}`), { id, rest: "" });
 assert.deepEqual(parseDiscoverPath(`/integrations/v1/contacts/discover/${id}/run`), { id, rest: "run" });
+assert.deepEqual(parseDiscoverPath(`/integrations/v1/contacts/discover/${id}/stop`), { id, rest: "stop" });
 assert.deepEqual(parseDiscoverPath(`/integrations/v1/contacts/discover/${id}/rows.csv`), { id, rest: "rows.csv" });
 assert.equal(parseDiscoverPath(`/integrations/v1/contacts/discover/${id}/delete`), null);
 assert.equal(parseDiscoverPath(`/integrations/v1/contacts/discover/../tables`), null);
@@ -75,6 +76,21 @@ assert.equal(csvCell("+94 77 123 4567"), "+94 77 123 4567");
 assert.equal(csvCell("+cmd|' /C calc'!A0"), `'+cmd|' /C calc'!A0`);
 assert.equal(csvCell("Smith, Jane"), `"Smith, Jane"`);
 assert.equal(csvCell(undefined), "");
+
+// Stop (9 Nov): a running search ends "done" with what it found; a finished one is left alone; one never run is refused.
+{
+  const r = stopPatch({ status: "running", scanned: 31200 }, 1000);
+  assert.ok(r.ok && r.patch);
+  assert.equal(r.patch!.status, "done");
+  assert.equal(r.patch!.stoppedAt, 1000);
+  assert.equal(r.patch!.meaning, "Stopped by you after checking 31,200 people.");
+  const done = stopPatch({ status: "done", scanned: 92292 }, 1000);
+  assert.ok(done.ok && done.patch === null);
+  const failed = stopPatch({ status: "failed", scanned: 10 }, 1000);
+  assert.ok(failed.ok && failed.patch === null);
+  const notRun = stopPatch({ status: "read", scanned: 0 }, 1000);
+  assert.ok(!notRun.ok && notRun.status === 409);
+}
 
 // The new tables are private to their own token, like Extras.
 const { PARTNER_PRIVATE_TABLES } = await import("../convex/integrations/partnerRead");

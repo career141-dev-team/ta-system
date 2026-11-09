@@ -165,8 +165,8 @@ A `matched` unclaimed row is only a suggestion. On Database CVs the TA ticks row
 A different job from search: not the best few hundred, but **everyone** whose title fits, with an email, for an email campaign. The engine (flow 1) caps its pool at about 400 and Convex text search at about 1,024, so it is not used here. Instead, Extras' sales list, for any role:
 
 - `convex/lib/contactRule.ts` (pure): `ContactRule` (`titles`, `exclude`, `levels` on the `roleLevel.ts` ladder, `skills`, `includePastRoles`), `sanitizeRule` (every rule from the model or from Brevo goes through it), `ruleFromWords` (no-model fallback: request words dropped, the seniority word becomes levels, only the last word made singular), `RULE_PROMPT`, `matchCandidate` (whole-word phrase in the current title decides; level from `currentRoleRank` else `levelFromTitle`; an earlier title only when the current one is another job, kind `previous`), `usableEmail`.
-- `convex/extras/contactDiscovery.ts`: `read` (one model call through `getOpenAI("jd_extraction")`, else words) -> `contactSearches` row at `read`; `start` (refuses a second live run; stale after 10 min of no progress) -> `scan` action, 15 pages of 100 per run, then reschedules; then the meaning pass (`embedText` + `queryCandidateVectors`, cosine >= 0.6, limit 1000, kind `meaning`, still level- and exclude-checked); `finish`. Merged, duplicate-of and do-not-contact people and anyone without a usable email are never kept; one row per email (current > previous > meaning). `purge` deletes searches older than 7 days.
-- `convex/integrations/contactsHttp.ts`: five routes under `/integrations/v1/contacts/discover`, key `CONTACTS_API_TOKEN` (503 unset). `rows.csv` defuses formula cells but leaves phone numbers alone.
+- `convex/extras/contactDiscovery.ts`: `read` (one model call through `getOpenAI("jd_extraction")`, else words) -> `contactSearches` row at `read`; `start` (refuses a second live run; stale after 10 min of no progress) -> `scan` action, 15 pages of 100 per run, then reschedules; then the meaning pass (`embedText` + `queryCandidateVectors`, cosine >= 0.6, limit 1000, kind `meaning`, still level- and exclude-checked); `finish`. `stop` (9 Nov, `stopPatch` in `convex/lib/contactRule.ts`): a running search becomes `done` with `stoppedAt` and what it found so far; `scanPage` then sees it is not running and the scan ends, freeing the slot; a finished search is left alone, a never-run one is refused 409. Merged, duplicate-of and do-not-contact people and anyone without a usable email are never kept; one row per email (current > previous > meaning). `purge` deletes searches older than 7 days.
+- `convex/integrations/contactsHttp.ts`: six routes under `/integrations/v1/contacts/discover` (`POST {id}/stop` added 9 Nov), key `CONTACTS_API_TOKEN` (503 unset). Status carries `stopped`. `rows.csv` defuses formula cells but leaves phone numbers alone.
 - Tables `contactSearches`, `contactSearchRows` are in `PARTNER_PRIVATE_TABLES`. API contract: `docs/CONTACT-DISCOVERY-API.md`. Test: `tests/contactRule.test.ts`.
 
 ## UI surface
@@ -349,8 +349,8 @@ With `ANTHROPIC_API_KEY` set (and `C141_LLM_PROVIDER` not `openrouter`) the Deep
 **Haiku only, and cached (5 Nov 2026, later):** with the key set, `askClaudeFirst`, `askBridge`, the CLI scoring (`claudeMatch`), CLI web search and the CV vision bridge all step aside (`hasToken()` is false, `haikuOnly()` in `src/lib/claudeSub.ts`), so every answer is `claude-haiku-5-5` on the API. `anthropicModelFor` ignores `C141_MODEL_*`; `C141_RESEARCH_PROVIDER` does not apply; the reference-CV parser drops its OpenRouter/OpenAI fallbacks; the jdParser drops NVIDIA. System prompts carry `cache_control` in both runtimes.
 
 <!-- skill-meta
-verified-commit: 452ed542
-verified-hash: 840c7144ee4e72521128183db941b42b717765f6
+verified-commit: 4b1847a4
+verified-hash: 6c348dba5a719f57fdda4188bf76b7d33a0cbe3a
 verified-date: 2026-11-09
 sources:
   src/lib/engineSearch.ts
