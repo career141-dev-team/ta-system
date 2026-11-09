@@ -119,6 +119,25 @@ export function initialOutreachText(name: string, jobTitle: string, link: string
   ].join("\n\n");
 }
 
+/**
+ * Whether career141_application_connect may still go on this account (10 Nov,
+ * the owner: "if Meta marks it Marketing, the automatic messages stop"). Meta
+ * can re-label an approved template at any time; Marketing costs about 35
+ * times as much, so anything but an approved Utility template holds the send.
+ * `templates` is Meta's message_templates answer filtered by that name.
+ */
+export function applicationTemplateHold(
+  templates: { name?: string; category?: string; status?: string }[] | null,
+): string | null {
+  if (!templates) return "Meta could not be asked whether the application template is still Utility.";
+  const t = templates.find((x) => x.name === TEMPLATE_NAME.application);
+  if (!t) return `${TEMPLATE_NAME.application} is not on this number's WhatsApp account.`;
+  if ((t.status ?? "").toUpperCase() !== "APPROVED") return `${TEMPLATE_NAME.application} is ${String(t.status).toLowerCase()} on this number's WhatsApp account.`;
+  if ((t.category ?? "").toUpperCase() !== "UTILITY")
+    return `Meta changed ${TEMPLATE_NAME.application} to ${String(t.category).toLowerCase()} on this number's WhatsApp account.`;
+  return null;
+}
+
 /** The text of career141_application_connect as approved, filled in. */
 export function applicationConnectText(name: string, jobTitle: string, link: string, details: string): string {
   return [
