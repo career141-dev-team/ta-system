@@ -25,7 +25,7 @@ import { levelFromTitle, LEVEL_LABEL } from "../lib/roleLevel";
 import { queryCandidateVectors } from "../lib/qdrant";
 import { embedText } from "../matching/agent2";
 import {
-  matchCandidate, norm, RULE_PROMPT, ruleFromWords, sanitizeRule, usableEmail,
+  matchCandidate, norm, RULE_PROMPT, ruleFromWords, sanitizeRule, stopPatch, usableEmail,
   type ContactMatch, type ContactRule,
 } from "../lib/contactRule";
 
@@ -109,6 +109,20 @@ export const start = internalMutation({
     const now = Date.now();
     await ctx.db.patch(search._id, { rule: checked, status: "running", cursor: null, startedAt: now, progressAt: now });
     await ctx.scheduler.runAfter(0, ref.scan, { id });
+    return { ok: true };
+  },
+});
+
+/** Stop: keep what was found so far and end the scan (stopPatch in convex/lib/contactRule.ts says how). */
+export const stop = internalMutation({
+  args: { id: v.string() },
+  handler: async (ctx, { id }): Promise<{ ok: true } | { ok: false; status: number; error: string }> => {
+    const sid = ctx.db.normalizeId("contactSearches", id);
+    const search = sid ? await ctx.db.get(sid) : null;
+    if (!search) return { ok: false, status: 404, error: "No such search." };
+    const r = stopPatch(search, Date.now());
+    if (!r.ok) return r;
+    if (r.patch) await ctx.db.patch(search._id, r.patch);
     return { ok: true };
   },
 });
@@ -257,7 +271,7 @@ export const status = internalQuery({
       id, query: s.query, requestedBy: s.requestedBy, rule: s.rule, readBy: s.readBy,
       status: stalled ? "failed" : s.status,
       error: stalled ? "The search stopped moving. Start a new one." : s.error ?? null,
-      scanned: s.scanned, found: s.found, meaning: s.meaning ?? null,
+      scanned: s.scanned, found: s.found, meaning: s.meaning ?? null, stopped: Boolean(s.stoppedAt),
       createdAt: s.createdAt, startedAt: s.startedAt ?? null, finishedAt: s.finishedAt ?? null,
     };
   },

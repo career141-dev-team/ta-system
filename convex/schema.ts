@@ -3648,6 +3648,7 @@ export default defineSchema({
     startedAt: v.optional(v.number()),
     progressAt: v.optional(v.number()),
     finishedAt: v.optional(v.number()),
+    stoppedAt: v.optional(v.number()), // a person pressed Stop: "done" with what was found so far
     exports: v.optional(v.number()),
   }).index("by_status", ["status"]).index("by_createdAt", ["createdAt"]),
 

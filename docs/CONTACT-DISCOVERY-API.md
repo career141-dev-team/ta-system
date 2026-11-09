@@ -87,16 +87,29 @@ is checked the same way (at least one title, levels 0 to 9). `202
 { "id", "status": "running" }`. `409` if this search already ran or another
 one is running; `400` for a bad rule; `404` for an unknown id.
 
+### `POST /integrations/v1/contacts/discover/{id}/stop`
+
+Added 9 Nov at the owner's request: a person who has enough people stops the
+search where it is. The search becomes `done` with everyone found so far,
+`stopped: true`, and `meaning` saying how many people were checked, so its rows,
+its CSV and Brevo's Save as list all work on that list. The scan ends on its next
+page, which frees the one-search-at-a-time slot at once. The meaning pass does
+not run on a stopped search. `200 { "id", "status": "done" }`. Stopping a
+finished search changes nothing and answers 200; `409` for a search that was
+never run; `404` for an unknown id.
+
 ### `GET /integrations/v1/contacts/discover/{id}`
 
 ```json
-{ "id": "k57…", "status": "running", "scanned": 31200, "found": 412, "meaning": null,
+{ "id": "k57…", "status": "running", "scanned": 31200, "found": 412, "meaning": null, "stopped": false,
   "query": "…", "requestedBy": "…", "rule": { … }, "readBy": "model", "error": null,
   "createdAt": 0, "startedAt": 0, "finishedAt": null }
 ```
 
 `status` is `read` (not run yet), `running`, `done` or `failed`. Poll every
-few seconds while running. A full scan of ~78,000 people takes a few minutes.
+few seconds while running. A full scan of ~92,000 people takes about four
+minutes (measured 9 Nov: 92,292 checked, 1,085 junior developers found).
+`stopped` is true when a person pressed Stop.
 
 ### `GET /integrations/v1/contacts/discover/{id}/rows?cursor=&limit=500`
 
