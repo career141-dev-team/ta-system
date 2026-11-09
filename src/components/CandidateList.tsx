@@ -387,7 +387,7 @@ export function CandidateList({
                   label="Remove from this job"
                   noun={["candidate", "candidates"]}
                   warning={canManage
-                    ? "They move to Dropped out and can be brought back from there."
+                    ? "They move to Dropped out and can be brought back from there. Anyone already in Dropped out is deleted from this job for good (the candidate and CV stay in the database)."
                     : "They are removed from this job. The CV stays in the database."}
                 />
               )}
