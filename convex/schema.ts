@@ -3630,6 +3630,47 @@ export default defineSchema({
     dryRun: v.boolean(),
   }).index("by_runId", ["runId"]),
 
+  // Contact discovery for the Brevo clone (9 Nov): one row per request, which is
+  // also its audit line (who asked, what, when, how many, how often exported).
+  // Private to the CONTACTS_API_TOKEN routes; rows go after seven days.
+  contactSearches: defineTable({
+    query: v.string(),
+    requestedBy: v.string(),
+    rule: v.any(),
+    readBy: v.union(v.literal("model"), v.literal("words")),
+    status: v.union(v.literal("read"), v.literal("running"), v.literal("done"), v.literal("failed")),
+    cursor: v.optional(v.union(v.string(), v.null())),
+    scanned: v.number(),
+    found: v.number(),
+    meaning: v.optional(v.string()),
+    error: v.optional(v.string()),
+    createdAt: v.number(),
+    startedAt: v.optional(v.number()),
+    progressAt: v.optional(v.number()),
+    finishedAt: v.optional(v.number()),
+    exports: v.optional(v.number()),
+  }).index("by_status", ["status"]).index("by_createdAt", ["createdAt"]),
+
+  // The people one contact search kept, one per email.
+  contactSearchRows: defineTable({
+    searchId: v.id("contactSearches"),
+    candidateId: v.id("candidates"),
+    email: v.string(),
+    name: v.string(),
+    phone: v.optional(v.string()),
+    title: v.string(),
+    level: v.string(),
+    employer: v.optional(v.string()),
+    linkedinUrl: v.optional(v.string()),
+    experienceYears: v.optional(v.number()),
+    skills: v.optional(v.string()),
+    previousRole: v.optional(v.string()),
+    sector: v.optional(v.string()),
+    location: v.optional(v.string()),
+    kind: v.union(v.literal("current"), v.literal("previous"), v.literal("meaning")),
+    matchedBy: v.string(),
+  }).index("by_search", ["searchId"]).index("by_search_email", ["searchId", "email"]),
+
 }, { schemaValidation: false });
 
 
