@@ -2777,6 +2777,9 @@ export default defineSchema({
     routingEmailAlias: v.string(),
     assignedTaId: v.optional(v.union(v.id("users"), v.null())),
     externalUrl: v.optional(v.union(v.string(), v.null())),
+    /** The job's public page (linkedin.com/jobs/view/N) that a candidate can
+     *  open - externalUrl is usually the Recruiter link, which they cannot. */
+    publicUrl: v.optional(v.union(v.string(), v.null())),
     postedAt: v.optional(v.union(v.number(), v.null())),
     status: v.union(
       v.literal("draft"), v.literal("live"),

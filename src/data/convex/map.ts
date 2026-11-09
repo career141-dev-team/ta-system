@@ -372,6 +372,7 @@ export interface BackendJobPost {
   routingEmailAlias?: string;
   assignedTaId?: string | null;
   externalUrl?: string | null;
+  publicUrl?: string | null;
   postedAt?: number | null;
   status?: string;
   cvCountToday?: number;
@@ -393,6 +394,7 @@ export function mapJobPost(p: BackendJobPost, openingId: Id): JobPost {
     routingEmailAlias: p.routingEmailAlias ?? "",
     assignedTaId: p.assignedTaId ?? null,
     externalUrl: p.externalUrl ?? null,
+    publicUrl: p.publicUrl ?? null,
     postedAt: p.postedAt ?? null,
     status: (p.status as JobPost["status"]) ?? "draft",
     cvCountToday: p.cvCountToday ?? 0,

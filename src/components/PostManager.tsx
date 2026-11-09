@@ -180,9 +180,19 @@ export function PostManager({
                         {ta.routingEmail}
                       </code>
                     )}
+                    {p.channel === "linkedin" &&
+                      (p.publicUrl ? (
+                        <a href={p.publicUrl} target="_blank" rel="noreferrer" className="text-brand hover:underline">
+                          Public job link
+                        </a>
+                      ) : (
+                        <span className="rounded-md bg-warn-soft px-2 py-[3px] text-[11.5px] font-medium text-warn">
+                          No public job link — candidates get no link to the role on WhatsApp
+                        </span>
+                      ))}
                     {p.externalUrl ? (
                       <a href={p.externalUrl} target="_blank" rel="noreferrer" className="text-brand hover:underline">
-                        LinkedIn link
+                        Recruiter link
                       </a>
                     ) : (
                       p.channel === "linkedin" && (
@@ -346,20 +356,44 @@ export function PostManager({
                     <input name="title" required defaultValue={p.title} className={inputClass} />
                   </label>
 
-                  <label className="sm:col-span-2">
-                    <span className="mb-2 block text-[12.5px] font-medium">
-                      LinkedIn link
-                      <span className="ml-2 font-normal text-[11.5px] text-ink-faint">
-                        the surest match — the job's LinkedIn Recruiter link (talent/hire/…), from the job's page in Recruiter
+                  {/* Two links, two jobs (10 Nov): the Recruiter link files
+                      applications to this post and only a recruiter can open it;
+                      the public link is what a candidate is sent on WhatsApp. */}
+                  <fieldset className="grid gap-3 sm:col-span-2">
+                    <legend className="mb-1 text-[13px] font-semibold">LinkedIn links</legend>
+                    <label className="block rounded-xl border border-rule bg-surface p-4">
+                      <span className="flex items-center gap-2 text-[13.5px] font-semibold">
+                        <span className="rounded-full bg-brand-soft px-2 py-0.5 text-[11px] font-medium text-brand">1</span>
+                        Recruiter link
+                        <span className="font-normal text-[12px] text-ink-faint">for matching applicants · only recruiters can open it</span>
                       </span>
-                    </span>
-                    <input
-                      name="externalUrl"
-                      defaultValue={p.externalUrl ?? ""}
-                      placeholder="https://www.linkedin.com/talent/hire/1528413625/overview"
-                      className={inputClass}
-                    />
-                  </label>
+                      <span className="mt-1 block text-[12px] text-ink-soft">
+                        From the job&rsquo;s page in LinkedIn Recruiter. Every application email carries its number, so CVs land on this post.
+                      </span>
+                      <input
+                        name="externalUrl"
+                        defaultValue={p.externalUrl ?? ""}
+                        placeholder="https://www.linkedin.com/talent/hire/1528413625/overview"
+                        className={`${inputClass} mt-3 py-3 font-mono text-[14px]`}
+                      />
+                    </label>
+                    <label className="block rounded-xl border border-rule bg-surface p-4">
+                      <span className="flex items-center gap-2 text-[13.5px] font-semibold">
+                        <span className="rounded-full bg-brand-soft px-2 py-0.5 text-[11px] font-medium text-brand">2</span>
+                        Public job link
+                        <span className="font-normal text-[12px] text-ink-faint">for candidates · anyone can open it</span>
+                      </span>
+                      <span className="mt-1 block text-[12px] text-ink-soft">
+                        The job&rsquo;s own page (linkedin.com/jobs/view/&hellip;). Sent to candidates in the WhatsApp message so they can read the role.
+                      </span>
+                      <input
+                        name="publicUrl"
+                        defaultValue={p.publicUrl ?? ""}
+                        placeholder="https://www.linkedin.com/jobs/view/4123456789"
+                        className={`${inputClass} mt-3 py-3 font-mono text-[14px]`}
+                      />
+                    </label>
+                  </fieldset>
 
                   <div className="sm:col-span-2">
                     <span className="mb-2 block text-[12.5px] font-medium">

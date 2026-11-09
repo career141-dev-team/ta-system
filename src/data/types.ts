@@ -210,6 +210,8 @@ export interface JobPost {
   routingEmailAlias: string;
   assignedTaId: Id | null;
   externalUrl: string | null;
+  /** The job's public LinkedIn page, for candidates (10 Nov). */
+  publicUrl?: string | null;
   postedAt: number | null;
   status: "draft" | "live" | "paused" | "closed";
   cvCountToday: number;

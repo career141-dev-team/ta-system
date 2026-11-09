@@ -82,15 +82,17 @@ export const NO_ROLE_LINK = "Our team will share the role details with you short
  * candidate sent it would see a sign-in wall.
  */
 export function roleLink(
-  posts: { channel?: string; status: string; externalUrl?: string | null }[],
+  posts: { channel?: string; status: string; externalUrl?: string | null; publicUrl?: string | null }[],
   shortApplyLink?: string | null,
 ): string {
   const rank = (s: string) => (s === "live" ? 0 : s === "draft" ? 1 : 2);
   const linkedin = posts
     .filter((p) => p.channel === "linkedin" && rank(p.status) < 2)
     .sort((a, b) => rank(a.status) - rank(b.status));
+  // The public job link a TA saved for candidates first (10 Nov), then a job
+  // number in the routing link itself.
   for (const p of linkedin) {
-    const id = linkedinJobId(p.externalUrl);
+    const id = linkedinJobId(p.publicUrl) ?? linkedinJobId(p.externalUrl);
     if (id) return `https://www.linkedin.com/jobs/view/${id}`;
   }
   const short = (shortApplyLink ?? "").trim();

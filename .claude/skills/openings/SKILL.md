@@ -239,11 +239,12 @@ Capabilities from `src/lib/auth.ts` (`can`); seat from `seatFor` (`src/lib/visib
 - 2026-10-09 `39618c9` TA Support seat. 2026-10-13/14 `23e6794`, `f036a64`, `e7c017b` workday checks (JD review) tie into approve/save JD.
 - 2026-10-16 `3a25d55` separate Placed from Closed / Lost buckets (client feedback). 2026-10-19 `b027ae3`, `a4827c9`, `08c7207` Master Sheet generated from activity, editable, split by recruiter. 2026-10-20 `61207fe` TA access requests; 2026-10-21 `ec3d6f0` request moved into a header dialog; `4dd30a8` work locations with per-location L-sheets and daily emails.
 - 2026-10-22 `cb821c3`, `7865d66`, `e959bb2` mobile openings, admin actions and New opening, sharing `src/lib/openings/*` with the web. 2026-10-23 `9d664d7` TA job performance in the Master Sheet.
+- 2026-11-10 A LinkedIn post's edit form shows two link boxes: 1 Recruiter link (`externalUrl`, routing) and 2 Public job link (`publicUrl`, sent to candidates on WhatsApp). The card shows both and warns when the public one is missing.
 
 <!-- skill-meta
-verified-commit: e8f0532a
-verified-hash: c6b4e3099526a2a5e7c149c6534cd0fb2757eff0
-verified-date: 2026-11-02
+verified-commit: afba39bc
+verified-hash: c9f1e6d050c1bca1a853f2b11683529269f72ed8
+verified-date: 2026-11-09
 sources:
   convex/ta/openings.ts
   convex/ta/openingAccess.ts

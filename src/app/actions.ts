@@ -45,6 +45,7 @@ import { ASSIGNMENT_LABEL, STAGE_LABEL } from "@/data/types";
 import { BACK_TO_TABLES_REASON, movedBackToTables, awaitingShortlist } from "@/lib/pipeline";
 import { BULK_STAGES } from "@/lib/bulkStages";
 import { linkedinPostUrl } from "@/lib/workdayRequirements";
+import { linkedinJobId } from "../../convex/lib/postRouting";
 import { extractFromText, EMPTY_EXTRACT } from "@/lib/intake";
 import { redirect as nextRedirect, unstable_rethrow } from "next/navigation";
 import { invalidateCandidate, markTablesStale, resetStore, withRealIds } from "@/data/primeState";
@@ -1287,6 +1288,15 @@ export async function updatePost(formData: FormData) {
       );
     }
     patch.externalUrl = url || null;
+  }
+  // The job's public page, which is what a candidate is sent (10 Nov). Only a
+  // jobs/view link with its number: the Recruiter link opens for no candidate.
+  if (formData.has("publicUrl")) {
+    const url = String(formData.get("publicUrl") ?? "").trim();
+    if (url && !(/linkedin\.com\/(?:comm\/)?jobs\/view\//i.test(url) && linkedinJobId(url))) {
+      await fail("The public job link must be the job's own page, like https://www.linkedin.com/jobs/view/4123456789 (not a Recruiter link).");
+    }
+    patch.publicUrl = url || null;
   }
   const r = repo.updatePost(postId, patch);
   // A refusal is shown, not swallowed.
