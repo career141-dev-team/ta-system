@@ -67,6 +67,24 @@ const cleanList = (raw: unknown, max: number) =>
     .map((x) => norm(x).trim())
     .filter((x) => x.length >= 2 && x.length <= 60))].slice(0, max);
 
+/**
+ * Stop (9 Nov, owner): a person who has enough people stops the scan where it is. The search becomes "done"
+ * with what it found so far, so its rows, its CSV and Brevo's Save all work on that list, and the scan sees a
+ * search that is no longer running on its next page and ends - freeing the one-search-at-a-time slot at once.
+ * Stopping a finished search changes nothing; a search that never ran has nothing to stop.
+ */
+export function stopPatch(
+  s: { status: string; scanned: number },
+  now: number,
+): { ok: true; patch: { status: "done"; stoppedAt: number; finishedAt: number; meaning: string } | null } | { ok: false; status: number; error: string } {
+  if (s.status === "read") return { ok: false, status: 409, error: "This search has not started, so there is nothing to stop." };
+  if (s.status !== "running") return { ok: true, patch: null };
+  return {
+    ok: true,
+    patch: { status: "done", stoppedAt: now, finishedAt: now, meaning: `Stopped by you after checking ${s.scanned.toLocaleString("en-US")} people.` },
+  };
+}
+
 /** A rule as it comes from the model or from Brevo's edit: checked, trimmed, never trusted. */
 export function sanitizeRule(raw: unknown): ContactRule | { error: string } {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;

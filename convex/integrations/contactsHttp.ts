@@ -8,6 +8,7 @@
  *
  *   POST /integrations/v1/contacts/discover            { query, requestedBy } -> { id, rule, readBy }
  *   POST /integrations/v1/contacts/discover/{id}/run   { rule? }              -> { id, status }
+ *   POST /integrations/v1/contacts/discover/{id}/stop                         -> { id, status: "done" }
  *   GET  /integrations/v1/contacts/discover/{id}                              -> status and counts
  *   GET  /integrations/v1/contacts/discover/{id}/rows?cursor=&limit=          -> { rows, nextCursor }
  *   GET  /integrations/v1/contacts/discover/{id}/rows.csv                     -> every row, for Excel
@@ -20,6 +21,7 @@ import { usableEmail } from "../lib/contactRule";
 const ref = {
   read: makeFunctionReference<"action">("extras/contactDiscovery:read"),
   start: makeFunctionReference<"mutation">("extras/contactDiscovery:start"),
+  stop: makeFunctionReference<"mutation">("extras/contactDiscovery:stop"),
   status: makeFunctionReference<"query">("extras/contactDiscovery:status"),
   rows: makeFunctionReference<"query">("extras/contactDiscovery:rows"),
   markExport: makeFunctionReference<"mutation">("extras/contactDiscovery:markExport"),
@@ -46,7 +48,7 @@ async function body(request: Request): Promise<Record<string, unknown> | null> {
 
 /** "/integrations/v1/contacts/discover/<id>[/<rest>]" -> id and rest, or null. */
 export function parseDiscoverPath(pathname: string): { id: string; rest: string } | null {
-  const m = /^\/integrations\/v1\/contacts\/discover\/([A-Za-z0-9_-]{10,64})(?:\/(run|rows|rows\.csv))?\/?$/.exec(pathname);
+  const m = /^\/integrations\/v1\/contacts\/discover\/([A-Za-z0-9_-]{10,64})(?:\/(run|stop|rows|rows\.csv))?\/?$/.exec(pathname);
   return m ? { id: m[1], rest: m[2] ?? "" } : null;
 }
 
@@ -83,12 +85,19 @@ export const contactsDiscoverUnder = httpAction(async (ctx, request) => {
   const p = parseDiscoverPath(url.pathname);
   if (!p) return json(404, { error: "Not found" });
 
+  if (request.method === "POST" && p.rest === "stop") {
+    const r = await ctx.runMutation(ref.stop, { id: p.id });
+    return r.ok ? json(200, { id: p.id, status: "done" }) : json(r.status, { error: r.error });
+  }
+
   if (request.method === "POST") {
     if (p.rest !== "run") return json(404, { error: "Not found" });
     const b = (await body(request)) ?? {};
     const r = await ctx.runMutation(ref.start, { id: p.id, ...(b.rule !== undefined ? { rule: b.rule } : {}) });
     return r.ok ? json(202, { id: p.id, status: "running" }) : json(r.status, { error: r.error });
   }
+
+  if (p.rest === "stop") return json(405, { error: "Use POST to stop a search." });
 
   if (p.rest === "") {
     const s = await ctx.runQuery(ref.status, { id: p.id });
