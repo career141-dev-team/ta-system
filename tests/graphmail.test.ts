@@ -1,4 +1,4 @@
-import { addressList, followUpCancelledReason, GRAPH_BASE, sendFollowUpMail, sendMailPayload } from "../convex/lib/graphMail";
+import { addressList, findSentMessage, followUpCancelledReason, GRAPH_BASE, sendFollowUpMail, sendMailPayload } from "../convex/lib/graphMail";
 import { eodEmailHtml, eodRecipients, EOD_CC_DEFAULTS, EOD_TO, parseAddressList } from "../src/lib/eod-format";
 
 let pass = 0, fail = 0;
@@ -236,6 +236,17 @@ async function main() {
   eq("add-ons are a figure, not a blank", followUpDay.includes(">1<"), true);
   // SETS carries the day's total beside the set: the day's CVs, each once (28 Sep).
   eq("the SETS cell carries the set and the day's total", body.includes(">2 · 4 CVs<"), true);
+
+  // ── Was an uncertain send delivered? Ask the sender's Sent Items (9 Nov) ──
+  const sentItems = (value: { subject: string }[], status = 200) => ({
+    calls: [] as string[],
+    fetchImpl: async (url: string) => ({ ok: status === 200, status, text: async () => JSON.stringify({ value }) }),
+  });
+  eq("in Sent Items -> found", await findSentMessage(["ta@career141.com"], "EOD 1", 0, token, sentItems([{ subject: " EOD 1 " }]).fetchImpl), "found");
+  eq("not in Sent Items -> absent", await findSentMessage(["ta@career141.com", "job@career141.com"], "EOD 1", 0, token, sentItems([{ subject: "other" }]).fetchImpl), "absent");
+  eq("Graph refuses -> unknown, never absent", await findSentMessage(["ta@career141.com"], "EOD 1", 0, token, sentItems([], 403).fetchImpl), "unknown");
+  eq("a full page without a match -> unknown", await findSentMessage(["ta@career141.com"], "EOD 1", 0, token, sentItems(Array.from({ length: 100 }, () => ({ subject: "x" }))).fetchImpl), "unknown");
+  eq("no token -> unknown", await findSentMessage(["ta@career141.com"], "EOD 1", 0, async () => null, sentItems([]).fetchImpl), "unknown");
 
   // ── A queued message that should no longer go ─────────────────────────────
   eq("pending, in Follow-up → send", followUpCancelledReason({ deliveryStatus: "pending" }, { currentStage: "follow_up" }), null);

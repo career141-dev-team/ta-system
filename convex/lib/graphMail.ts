@@ -173,6 +173,40 @@ async function sendDraftWithAttachments(
   return { ok: true };
 }
 
+/**
+ * Whether a message with this subject reached the Sent Items of any of these mailboxes since `since`.
+ * "unknown" when Graph could not answer for every mailbox: the caller must then leave the send alone.
+ * Used to settle an end of day whose result never came back (Sameera, 9 Nov) without a person opening the mailbox.
+ * shortcut: reads one page of 100; a full page without a match is "unknown", never "absent" (upgrade to paging if that happens).
+ */
+export async function findSentMessage(
+  mailboxes: string[],
+  subject: string,
+  since: number,
+  getToken: () => Promise<string | null>,
+  fetchImpl: FetchLike = graphFetch,
+): Promise<"found" | "absent" | "unknown"> {
+  let token: string | null;
+  try { token = await getToken(); } catch { return "unknown"; }
+  if (!token) return "unknown";
+  const wanted = subject.trim();
+  let answered = 0;
+  for (const mailbox of addressList(mailboxes)) {
+    try {
+      const url = `${GRAPH_BASE}/users/${encodeURIComponent(mailbox)}/mailFolders/sentitems/messages?$filter=${encodeURIComponent(`sentDateTime ge ${new Date(since).toISOString()}`)}&$select=subject&$top=100`;
+      const res = await fetchImpl(url, { method: "GET", headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) continue;
+      const value = (JSON.parse(await res.text()).value ?? []) as { subject?: string }[];
+      if (value.some((m) => (m.subject ?? "").trim() === wanted)) return "found";
+      if (value.length >= 100) continue;
+      answered++;
+    } catch {
+      // This mailbox did not answer; it counts as unknown below.
+    }
+  }
+  return answered > 0 && answered === addressList(mailboxes).length ? "absent" : "unknown";
+}
+
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const isEmail = (s: string | null | undefined) => EMAIL.test((s ?? "").trim());
 

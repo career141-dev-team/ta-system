@@ -283,6 +283,38 @@ export const reconcile = internalMutation({
   },
 });
 
+/** Uncertain sends the checker (ta/eodMail:checkUncertain) may look up in the sender's Sent Items. */
+export const uncertainToCheck = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    // Past the 10 minutes a Convex action can run, so a send still in flight is never called "not sent".
+    const rows = await ctx.db.query("dailyEmails").withIndex("by_status", q => q.eq("status", "uncertain").lt("startedAt", Date.now() - 11 * 60000)).take(10);
+    return rows
+      .filter(e => !e.finalizedAt && !e.reconciledBy && !e.roundId && e.startedAt && e.snapshot?.subject && e.snapshot?.from)
+      .map(e => ({ id: e._id, from: String(e.snapshot.from), subject: String(e.snapshot.subject), since: e.startedAt! - 60000 }));
+  },
+});
+
+/**
+ * The checker found out from Microsoft Graph whether an uncertain send reached Sent Items (9 Nov): sent -> accepted and
+ * finalized like a reconcile, not sent -> failed so the TA can send again. No person, no Graph send: it never resends.
+ */
+export const autoReconcile = internalMutation({
+  args: { id: v.id("dailyEmails"), sent: v.boolean() },
+  handler: async (ctx, args) => {
+    const email = await ctx.db.get(args.id);
+    if (!email || email.status !== "uncertain" || email.finalizedAt || email.reconciledBy) return { ok: false };
+    const reason = args.sent ? "Checked automatically: the message is in the sending mailbox's Sent Items." : "Checked automatically: the message is not in the sending mailbox's Sent Items, so it was never sent.";
+    const patch = { status: args.sent ? "accepted" as const : "failed" as const,
+      ...(args.sent ? { acceptedAt: email.acceptedAt ?? Date.now() } : { sendError: reason }), reconciliationReason: reason };
+    await ctx.db.patch(email._id, patch);
+    if (email.receiptId) await ctx.db.patch(email.receiptId, { status: patch.status, reconciledAt: Date.now(), reconciliationReason: reason });
+    if (args.sent) await finalizeDailyEmail(ctx, { ...email, ...patch });
+    await refreshWorkdayChecks(ctx, email.jobId, email.userId);
+    return { ok: true };
+  },
+});
+
 export const result = internalMutation({
   args: { id: v.id("dailyEmails"), status: v.union(v.literal("accepted"), v.literal("failed"), v.literal("uncertain")),
     delivered: v.optional(v.object({ from: v.string(), to: v.array(v.string()), cc: v.array(v.string()) })),
