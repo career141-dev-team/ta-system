@@ -14,12 +14,35 @@ import { linkedinJobId } from "./postRouting";
 export const TEMPLATE_NAME = {
   initial_outreach: "career141_initial_outreach",
   reengagement: "career141_followup_reminder",
+  // Utility, approved 9 Nov (madam's wording, "profile" -> "application"):
+  // the first message to someone who APPLIED. Headhunted people keep the
+  // Marketing initial_outreach - sending this to them would get it re-labelled.
+  application: "career141_application_connect",
 } as const;
+
+/** The two every TA number must have before it sends (lib/senderRouting). The
+ *  application template is optional: an account without it falls back. */
+export const REQUIRED_TEMPLATES = [TEMPLATE_NAME.initial_outreach, TEMPLATE_NAME.reengagement];
 
 export type TemplateType = keyof typeof TEMPLATE_NAME;
 
 /** The parameter count each template was approved with — Meta refuses any other. */
-export const TEMPLATE_PARAMS: Record<TemplateType, number> = { initial_outreach: 4, reengagement: 2 };
+export const TEMPLATE_PARAMS: Record<TemplateType, number> = { initial_outreach: 4, reengagement: 2, application: 4 };
+
+/** Applied candidates get the Utility template; a headhunted one keeps the Marketing one. */
+export const usesApplicationTemplate = (sourceChannel?: string | null) => sourceChannel !== "headhunting";
+
+/**
+ * `{{4}}` of career141_application_connect. Salary and notice are fixed text in
+ * the template, so this carries only the CV (when missing) and at most three of
+ * the opening's own questions: Meta caps the whole message near 1,024
+ * characters, and the template already uses about 640 (owner, 9 Nov: "only the
+ * 3 very important questions"). Never empty - Meta refuses an empty parameter.
+ */
+export function applicationDetails(cvMissing: boolean, openQuestions: string[]): string {
+  const items = [...(cvMissing ? ["CV / Resume"] : []), ...openQuestions.filter((q) => q.trim()).slice(0, 3)];
+  return items.length ? items.map((m) => `• ${m}`).join(" ") : "• Any updates to your CV";
+}
 
 /** Meta Error 132018: no newlines, tabs or long runs of spaces in a parameter. */
 export function templateParam(s: string): string {
@@ -33,8 +56,10 @@ export const STANDARD_ASKS = ["CV / Resume", "Current Salary", "Expected Salary"
  * The parameters for the Settings demo: a made-up candidate and role, in the
  * order each template was approved with.
  */
-export function demoTemplateParams(type: TemplateType, o: { candidateName: string; jobTitle: string }): string[] {
+export function demoTemplateParams(type: TemplateType, o: { candidateName: string; jobTitle: string; questions?: string[] }): string[] {
   if (type === "reengagement") return [o.candidateName, o.jobTitle];
+  if (type === "application")
+    return [o.candidateName, o.jobTitle, "https://www.linkedin.com/jobs/view/4300000000", applicationDetails(true, o.questions ?? [])];
   return [
     o.candidateName,
     o.jobTitle,
@@ -92,6 +117,22 @@ export function initialOutreachText(name: string, jobTitle: string, link: string
   ].join("\n\n");
 }
 
+/** The text of career141_application_connect as approved, filled in. */
+export function applicationConnectText(name: string, jobTitle: string, link: string, details: string): string {
+  return [
+    `Hi ${name},`,
+    `Having reviewed your application, we would like to connect with you regarding the ${jobTitle} role within Career141.`,
+    "Our team will reach out to you shortly to discuss your application in more detail and share further information about the role.",
+    "In the meantime, kindly review the role requirements using the LinkedIn job post link below:",
+    link,
+    "To proceed with your application, we would appreciate it if you could share the following details:",
+    details,
+    "- Current Salary\n- Expected Salary\n- Notice Period",
+    "We would appreciate if you could reply directly to this chat with the requested details.",
+    "Thank you, and we look forward to connecting with you!",
+  ].join("\n\n");
+}
+
 /** The Cloud API `messages` request body for a template. */
 export function templatePayload(type: TemplateType, to: string, params: string[], langCode: string) {
   return {
@@ -99,7 +140,7 @@ export function templatePayload(type: TemplateType, to: string, params: string[]
     to,
     type: "template",
     template: {
-      name: TEMPLATE_NAME[type],
+      name: TEMPLATE_NAME[type] as string,
       language: { code: langCode },
       components: [{ type: "body", parameters: params.map((text) => ({ type: "text", text: templateParam(text) })) }],
     },

@@ -9,7 +9,7 @@
 // number is only used once it is `ready`; until then, and whenever it fails,
 // the main Career141 line sends, so a candidate is never left unmessaged.
 
-import { TEMPLATE_NAME } from "./whatsappTemplates";
+import { REQUIRED_TEMPLATES } from "./whatsappTemplates";
 
 export interface SenderNumber {
   phone: string;
@@ -92,7 +92,7 @@ export function numberReadiness(rowPhone: string, m: MetaNumberState): { ready: 
   }
   if (typeof m.templates === "string") problems.push(`templates could not be read (${m.templates})`);
   else
-    for (const name of Object.values(TEMPLATE_NAME)) {
+    for (const name of REQUIRED_TEMPLATES) {
       const t = m.templates.find((x) => x.name === name);
       if (t?.status !== "APPROVED") problems.push(`${name} is ${t ? t.status.toLowerCase() : "missing"}`);
     }

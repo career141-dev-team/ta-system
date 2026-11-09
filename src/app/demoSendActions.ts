@@ -15,7 +15,7 @@ import type { ActionResult } from "@/lib/inlineResult";
  * (convex/communications/demoSend.ts). Admins only, like the rest of Settings.
  */
 
-const WHATSAPP = { initial: "initial_outreach", reminder: "reengagement" } as const;
+const WHATSAPP = { initial: "initial_outreach", reminder: "reengagement", application: "application" } as const;
 
 const answer = (r: { ok: boolean; message: string }): ActionResult => ({
   ok: r.ok,
@@ -34,7 +34,8 @@ export async function sendFollowUpDemo(_: ActionResult | null, formData: FormDat
 
   // "whatsapp:initial", "whatsapp:reminder", "email:initial", "email:reminder" — the button pressed.
   const [channel, kind] = String(formData.get("send") ?? "").split(":");
-  if (kind !== "initial" && kind !== "reminder") return answer({ ok: false, message: "Choose which message to send." });
+  if (kind !== "initial" && kind !== "reminder" && !(channel === "whatsapp" && kind === "application"))
+    return answer({ ok: false, message: "Choose which message to send." });
   const candidateName = String(formData.get("candidateName") ?? "").trim().slice(0, 80);
   const jobTitle = String(formData.get("jobTitle") ?? "").trim().slice(0, 120);
 
@@ -45,9 +46,15 @@ export async function sendFollowUpDemo(_: ActionResult | null, formData: FormDat
       return answer(
         await convexAction<{ ok: boolean; message: string }>("communications/demoSend:sendDemoWhatsApp", {
           to,
-          template: WHATSAPP[kind],
+          template: WHATSAPP[kind as keyof typeof WHATSAPP],
           candidateName,
           jobTitle,
+          from: String(formData.get("from") ?? "").trim() || undefined,
+          questions: String(formData.get("questions") ?? "")
+            .split("\n")
+            .map((q) => q.trim())
+            .filter(Boolean)
+            .slice(0, 3),
         }),
       );
     }
@@ -57,7 +64,7 @@ export async function sendFollowUpDemo(_: ActionResult | null, formData: FormDat
       return answer(
         await convexAction<{ ok: boolean; message: string }>("communications/demoSend:sendDemoEmail", {
           to,
-          kind,
+          kind: kind as "initial" | "reminder",
           candidateName,
           jobTitle,
         }),
