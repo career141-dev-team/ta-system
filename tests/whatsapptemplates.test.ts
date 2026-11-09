@@ -104,3 +104,14 @@ test("an applicant gets career141_application_connect: CV plus at most three que
   assert.match(text, /- Current Salary\n- Expected Salary\n- Notice Period/);
   assert.equal(templatePayload("application", "94771234567", demo, "en").template.name, "career141_application_connect");
 });
+
+test("the candidate's link is the public job page a TA saved, ahead of the Recruiter link", () => {
+  const recruiter = "https://www.linkedin.com/talent/hire/1528413625/overview";
+  // A Recruiter link alone gives no job page, so the short apply link is used.
+  assert.equal(roleLink([{ channel: "linkedin", status: "live", externalUrl: recruiter }], "c141.lk/a1"), "https://c141.lk/a1");
+  // The public link saved beside it is what the candidate gets.
+  assert.equal(
+    roleLink([{ channel: "linkedin", status: "live", externalUrl: recruiter, publicUrl: "https://www.linkedin.com/jobs/view/4123456789/?trk=x" }], "c141.lk/a1"),
+    "https://www.linkedin.com/jobs/view/4123456789",
+  );
+});

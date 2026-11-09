@@ -447,7 +447,7 @@ export const getOpeningLinks = internalQuery({
       .withIndex("by_jobId", (q) => q.eq("jobId", args.jobId))
       .first();
     return {
-      posts: posts.map((p) => ({ channel: p.channel, status: p.status, externalUrl: p.externalUrl })),
+      posts: posts.map((p) => ({ channel: p.channel, status: p.status, externalUrl: p.externalUrl, publicUrl: p.publicUrl })),
       shortApplyLink: assets?.shortApplyLink ?? null,
     };
   },
