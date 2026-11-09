@@ -188,10 +188,18 @@ export const handleOnTaLine = internalQuery({
       ? await ctx.db.query("applications").withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidate._id)).collect()
       : [];
     const followUps = [];
+    const last9 = (s?: string | null) => String(s ?? "").replace(/[^0-9]/g, "").slice(-9);
     for (const a of apps as any[]) {
       if (!isFollowUpStage(a.currentStage)) continue;
-      const job: any = a.ownerTaId ? null : await ctx.db.get(a.jobId);
-      followUps.push({ stage: a.currentStage, lineUserId: a.ownerTaId ?? job?.assignedTaIds?.[0] ?? null });
+      const job: any = await ctx.db.get(a.jobId);
+      // An opening set to send from this very number (outreachWhatsAppNumber,
+      // 10 Nov: one opening on Rakshana's line) is this line's, whoever owns
+      // the candidate - otherwise the replies to its own messages are ignored.
+      const openingOnThisLine = !!last9(job?.outreachWhatsAppNumber) && last9(job?.outreachWhatsAppNumber) === last9(row.phone);
+      followUps.push({
+        stage: a.currentStage,
+        lineUserId: openingOnThisLine ? row.userId : a.ownerTaId ?? job?.assignedTaIds?.[0] ?? null,
+      });
     }
     return handleOnLine(true, row.userId, followUps, isFollowUpStage);
   },
