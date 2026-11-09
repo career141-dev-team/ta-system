@@ -21,13 +21,17 @@ import { makeFunctionReference } from "convex/server";
 import { internalAction, internalMutation, internalQuery, type MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { getModelForTask, getOpenAI } from "../lib/llm";
-import { levelFromTitle, LEVEL_LABEL } from "../lib/roleLevel";
+import { LEVEL_LABEL } from "../lib/roleLevel";
 import { queryCandidateVectors } from "../lib/qdrant";
 import { embedText } from "../matching/agent2";
 import {
-  matchCandidate, norm, RULE_PROMPT, ruleFromWords, sanitizeRule, stopPatch, usableEmail,
-  type ContactMatch, type ContactRule,
+  currentLevel, isMiss, matchCandidate, norm, RULE_PROMPT, ruleFromWords, sanitizeRule, stopPatch, usableEmail,
+  type ContactRule,
 } from "../lib/contactRule";
+
+/** The reasons a candidate is not on the list. Every scanned person lands in exactly one, or on the list. */
+type LeftOut = "not_contactable" | "other_job" | "level" | "skills" | "no_email" | "same_email";
+const NONE_LEFT: Record<LeftOut, number> = { not_contactable: 0, other_job: 0, level: 0, skills: 0, no_email: 0, same_email: 0 };
 
 const PAGE = 100; // candidates carry big fields; a small page keeps each read well under the limit
 const PAGES_PER_RUN = 15;
@@ -167,16 +171,21 @@ export const scanPage = internalMutation({
     const rule = search.rule as ContactRule;
     const res = await ctx.db.query("candidates").paginate({ numItems: PAGE, cursor: search.cursor ?? null });
     let added = 0;
+    // Why the others were left out, so a short list explains itself (10 Nov).
+    const left: Record<LeftOut, number> = { ...NONE_LEFT, ...(search.leftOut ?? {}) };
     for (const c of res.page) {
-      if (!reachable(c)) continue;
+      if (!reachable(c)) { left.not_contactable++; continue; }
+      const m = matchCandidate(c as any, rule);
+      if (isMiss(m)) { left[m.miss]++; continue; }
       const email = usableEmail(c.email);
-      if (!email) continue;
-      const m: ContactMatch | null = matchCandidate(c as any, rule);
-      if (!m) continue;
-      added += await keep(ctx, id, c, email, { ...m, matchedBy: `${m.kind === "current" ? "current title" : "previous title"}: ${m.matchedBy}` });
+      if (!email) { left.no_email++; continue; }
+      const kept = await keep(ctx, id, c, email, { ...m, matchedBy: `${m.kind === "current" ? "current title" : "previous title"}: ${m.matchedBy}` });
+      if (!kept) left.same_email++;
+      added += kept;
     }
     await ctx.db.patch(id, {
       cursor: res.continueCursor, scanned: search.scanned + res.page.length, found: search.found + added, progressAt: Date.now(),
+      leftOut: left,
     });
     return { isDone: res.isDone, stopped: false };
   },
@@ -199,10 +208,11 @@ export const addMeaning = internalMutation({
       if (!email || !title) continue;
       const t = norm(title);
       if (rule.exclude.some((w) => t.includes(` ${w} `))) continue;
-      const level = c.currentRoleRank ?? levelFromTitle(title, c.totalExperienceYears);
-      if (rule.levels.length && (level == null || !rule.levels.includes(level))) continue;
+      // The same level rule as the title scan; an unknown level is let through and says so.
+      const level = currentLevel(c as any, title);
+      if (rule.levels.length && level != null && !rule.levels.includes(level)) continue;
       added += await keep(ctx, id, c, email, {
-        kind: "meaning", title, levelLabel: LEVEL_LABEL[level ?? -1] ?? "", matchedBy: `found by meaning (${h.score.toFixed(2)}), check`,
+        kind: "meaning", title, levelLabel: level == null ? "Not known" : LEVEL_LABEL[level] ?? "Not known", matchedBy: `found by meaning (${h.score.toFixed(2)}), check`,
       });
     }
     await ctx.db.patch(id, { found: search.found + added, progressAt: Date.now() });
@@ -272,6 +282,8 @@ export const status = internalQuery({
       status: stalled ? "failed" : s.status,
       error: stalled ? "The search stopped moving. Start a new one." : s.error ?? null,
       scanned: s.scanned, found: s.found, meaning: s.meaning ?? null, stopped: Boolean(s.stoppedAt),
+      // Searches run before 10 Nov have no counts; null says "not counted", never zero.
+      leftOut: s.leftOut ?? null,
       createdAt: s.createdAt, startedAt: s.startedAt ?? null, finishedAt: s.finishedAt ?? null,
     };
   },
