@@ -124,4 +124,8 @@ test("the application template goes only while Meta still has it as an approved 
   assert.match(applicationTemplateHold([]) ?? "", /not on this number/);
   // Meta could not be asked: held rather than risk a Marketing price.
   assert.match(applicationTemplateHold(null) ?? "", /could not be asked/);
+  // The reminder is checked the same way (10 Nov).
+  const rem = TEMPLATE_NAME.reengagement;
+  assert.equal(applicationTemplateHold([{ name: rem, category: "UTILITY", status: "APPROVED" }], rem), null);
+  assert.match(applicationTemplateHold([{ name: rem, category: "MARKETING", status: "APPROVED" }], rem) ?? "", /career141_followup_reminder to marketing/);
 });
