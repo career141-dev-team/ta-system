@@ -237,6 +237,7 @@ Pre-merge checklist:
 6. Branch `<person>/<topic>`, PR to main, no secrets, owner informed of any change to what users see or what candidates are sent. Anything touching live needs the owner's explicit go-ahead.
 
 ## History
+- 9 Nov 2026 (desk-warm-cache PR): the in-memory working set is kept warm in the background - `primeStore` resolves at once when the rows a page needs are held and younger than 30 s, waits only when they were never loaded or a direct backend write marked them stale, and a reload is never discarded (this process's own saves are laid over what was fetched, `src/data/warm.ts`). `pipelineEvents` is read per opening (`ta/tables:eventsFor`; `repo.events`/`openingEvents` throw a loud error for an unprimed opening). Every application is read in parallel creation-time ranges (`ta/applications:listRange`). A save copies and diffs only the tables it touched. The HH/Scoop status poll calls `invalidateOpening(openingId)`, not `resetStore()`. Tests: `tests/warmcache.test.ts`, `tests/primewrites.test.ts`.
 
 - 14 Sep 2026 `7470f4f` Initial platform: collision lock, local store `shortlist`, `applyReviewDecisions` (13 Sep audit rules: merge decisions, skip repeats, no moves for people who moved on).
 - 15 Sep `1f7473f` Convex TA function layer (`ta/applications.ts` shortlist/moveStage, owner in same transaction).

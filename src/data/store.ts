@@ -98,8 +98,8 @@ import { acceptAnswer, applyPlan, CALL_CONSENT_TEXT, modeState, writePolicy } fr
 import { dataDir } from "./dataDir";
 import { isConvex } from "./mode";
 import { isDeskWide, isTa } from "@/lib/auth";
-import { bumpPrimed, getCommitter, realId, recordAliases, hasCandidate, missingCandidateMessage, primed, primedVersion, primedVocabulary, resetStore } from "./primeState";
-import { describeCommitError, diffTables, renameIds, restoreTables, snapshotTables } from "./unitOfWork";
+import { bumpPrimed, getCommitter, realId, recordAliases, recordWrites, hasCandidate, hasEvents, missingCandidateMessage, missingEventsMessage, primed, primedVersion, primedVocabulary, resetStore } from "./primeState";
+import { describeCommitError, diffTables, recordingTables, renameIds, restoreTables, type Tables } from "./unitOfWork";
 import { WORKING_STAGES, workingStageKey } from "@/lib/workingStage";
 import { SET_SIZE, nextSetFor, setClosed } from "../../convex/lib/sets";
 import { backupPrimary } from "../../convex/lib/backup";
@@ -263,6 +263,10 @@ function load(): Database {
   // src/data/prime.ts for why they are not fetched here. Everything below this
   // line is the JSON file's path and is untouched.
   if (isConvex()) {
+    // Inside a write, every read of the tables goes through the recorder, so a
+    // nested write or a rule that reaches for `load()` itself is still copied
+    // before it changes anything (see commitToConvex).
+    if (recording) return recording;
     const working = primed();
     if (!working) {
       throw new Error(
@@ -470,28 +474,37 @@ function mutate(fn: (db: Database) => void) {
  * Until this, a write here changed the copy and then threw it away: the page
  * said "saved" and the next page showed the old data.
  */
+let recording: Database | null = null;
+
 function commitToConvex(fn: (db: Database) => void) {
   const commit = getCommitter();
   if (!commit) {
     throw new Error("Saving is not available: the store was not loaded from Convex. Call primeStore() first.");
   }
   const db = load();
-  const before = snapshotTables(db);
+  // Only the tables the write touches are copied and compared (9 Nov). Copying
+  // and diffing every table held - all applications, every candidate on the
+  // desk - on every save blocked the one server process for the whole of it.
+  const before: Tables = {};
+  const recorder = recordingTables(db, before);
   lockDepth++;
+  recording = recorder;
   try {
-    fn(db);
+    fn(recorder);
   } catch (e) {
     restoreTables(db, before);
     throw e;
   } finally {
     lockDepth--;
+    recording = null;
   }
   const ops = diffTables(before, db);
   if (ops.length === 0) return;
   try {
     const { ids } = commit(ops);
-    renameIds(db, ids);
+    renameIds(db, ids, Object.keys(before));
     recordAliases(ids);
+    recordWrites(ops);
   } catch (e) {
     restoreTables(db, before);
     dataVersion++;
@@ -1217,15 +1230,20 @@ const rawRepo = {
   },
 
   events(applicationId: Id): PipelineEvent[] {
-    return load()
-      .pipelineEvents.filter((e) => e.applicationId === applicationId)
-      .sort((a, b) => b.at - a.at);
+    const db = load();
+    // Pipeline events are primed per opening, never whole (9 Nov); a page that
+    // did not prime the opening gets the same loud error a missing candidate does.
+    const app = indexes().applicationById.get(applicationId);
+    if (app && isConvex() && primed() && !hasEvents(app.openingId)) throw new Error(missingEventsMessage(app.openingId));
+    return db.pipelineEvents.filter((e) => e.applicationId === applicationId).sort((a, b) => b.at - a.at);
   },
 
   /** Anything that has happened on an opening, newest first. */
   openingEvents(openingId: Id, limit = 50): PipelineEvent[] {
-    return load()
-      .pipelineEvents.filter((e) => e.openingId === openingId)
+    const db = load();
+    if (isConvex() && primed() && !hasEvents(openingId)) throw new Error(missingEventsMessage(openingId));
+    return db.pipelineEvents
+      .filter((e) => e.openingId === openingId)
       .sort((a, b) => b.at - a.at)
       .slice(0, limit);
   },

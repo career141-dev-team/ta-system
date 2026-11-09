@@ -22,7 +22,8 @@ import "server-only";
 
 import { convexAction, convexMutation, convexQuery } from "@/lib/convexServer";
 import { mapProfile, type CandidateProfile, type RawProfile } from "@/lib/candidateProfile";
-import type { Application, BinItem, Candidate, Client, Id, JobPost, Opening, User } from "@/data/types";
+import type { Application, BinItem, Candidate, Client, Id, JobPost, Opening, PipelineEvent, User } from "@/data/types";
+import { splitRanges } from "@/data/warm";
 import {
   mapApplication,
   mapCandidateDoc,
@@ -189,25 +190,59 @@ export async function applications(
 }
 
 /**
- * Every application, paged.
+ * Every application, in parallel ranges.
  *
- * Convex caps a single query's array at 8,192 and the desk is past that, so
- * the cap is handled here rather than surfacing as a truncated list that looks
- * complete. `pages` is returned so a caller can see what it cost.
+ * Convex caps a single query's array at 8,192 and the desk is past that. One
+ * cursor chain of 2000-row pages read them one page after another, each a
+ * round trip; now the table's creation-time span is cut into ranges that are
+ * read at the same time, each range still paging on its own cursor if it is
+ * heavier than one page (9 Nov). `pages` is returned so a caller can see what
+ * it cost.
  */
+const APPLICATION_RANGES = 6;
+
 export async function allApplications(actor: Actor): Promise<{ applications: Application[]; pages: number }> {
-  const out: Application[] = [];
+  const bounds = await convexQuery<{ min: number; max: number } | null>("ta/applications:creationBounds", {
+    actorId: actor.id ?? undefined,
+  });
+  if (!bounds) return { applications: [], pages: 1 };
+  let pages = 1;
+  const ranges = splitRanges(bounds.min, bounds.max, APPLICATION_RANGES);
+  const parts = await Promise.all(
+    ranges.map(async ([from, to]) => {
+      const out: Application[] = [];
+      let cursor: string | null = null;
+      for (let n = 0; n < 50; n++) {
+        const res: { applications: BackendApplication[]; isDone: boolean; continueCursor: string | null } =
+          await convexQuery("ta/applications:listRange", { actorId: actor.id ?? undefined, from, to, cursor });
+        out.push(...res.applications.map(mapApplication));
+        pages++;
+        if (res.isDone || !res.continueCursor) break;
+        cursor = res.continueCursor;
+      }
+      return out;
+    }),
+  );
+  return { applications: parts.flat(), pages };
+}
+
+/**
+ * One opening's pipeline events, oldest first as stored. Read per opening
+ * since 9 Nov: the whole table is every stage move since the platform began.
+ */
+export async function eventsFor(actor: Actor, openingId: Id): Promise<PipelineEvent[]> {
+  const out: PipelineEvent[] = [];
   let cursor: string | null = null;
-  let pages = 0;
-  for (;;) {
-    const res: { applications: BackendApplication[]; isDone: boolean; continueCursor: string | null } =
-      await convexQuery("ta/applications:listAll", { actorId: actor.id ?? undefined, cursor });
-    out.push(...res.applications.map(mapApplication));
-    pages++;
-    if (res.isDone || !res.continueCursor || pages > 50) break;
-    cursor = res.continueCursor;
+  for (let n = 0; n < 200; n++) {
+    const page: { rows: PipelineEvent[]; isDone: boolean; continueCursor: string | null } = await convexQuery(
+      "ta/tables:eventsFor",
+      { actorId: actor.id ?? undefined, openingId, cursor, numItems: 1000 },
+    );
+    out.push(...page.rows);
+    if (page.isDone || !page.continueCursor) break;
+    cursor = page.continueCursor;
   }
-  return { applications: out, pages };
+  return out;
 }
 
 export interface ApplicationDetail extends Application {

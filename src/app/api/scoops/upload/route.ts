@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { revalidatePath } from "next/cache";
-import { primeStore, resetStore } from "@/data/prime";
+import { invalidateOpening, primeStore, resetStore } from "@/data/prime";
 import { isConvex } from "@/data/mode";
 import { repo } from "@/data/store";
 import { currentUser } from "@/lib/session";
@@ -102,7 +102,9 @@ export async function GET(req: NextRequest) {
   const files = await convexQuery<{ id: string; state: string }[]>("ta/scoopUpload:status", { actorId: user.id, cvUploadIds: ids });
   // A scoop was just flagged: the next render has to read it.
   if (files.some((f) => f.state === "done" || f.state === "held")) {
-    resetStore();
+    // This opening's rows only (9 Nov): resetting the whole desk here made
+    // every other person's next page reload all of it.
+    invalidateOpening(openingId);
     revalidatePath(`/openings/${openingId}`, "layout");
   }
   return answer({ ok: true, files });

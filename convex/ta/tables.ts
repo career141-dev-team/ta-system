@@ -15,7 +15,7 @@ import { TABLES } from "./model/tables";
 
 /** Tables the store loads whole. The large shared ones have their own scoped reads. */
 const WHOLE = new Set([
-  "briefs", "jobPosts", "assignments", "pipelineEvents", "reviewRounds", "linkVault", "refereeCalls", "alerts",
+  "briefs", "jobPosts", "assignments", "reviewRounds", "linkVault", "refereeCalls", "alerts",
   "savedSearches", "savedReports", "researchReports", "benchmarks", "suggestions", "chat", "jdChat", "intake",
   "outreach", "offers", "placements", "esaRecords", "aiCalls", "settings", "matchRuns",
   "matchExclusions", "callFeedback", "interviews", "eodEmailCopies", "strategies", "strategyAssignments", "feedbacks",
@@ -40,6 +40,37 @@ export const page = internalQuery({
     const live = args.table === "assignments" ? docs.filter((d) => d.isActive !== false) : docs;
     return {
       rows: live.map((d) => model.fromDoc(d as never)),
+      isDone: res.isDone,
+      continueCursor: res.continueCursor,
+    };
+  },
+});
+
+/**
+ * One opening's pipeline events, a page at a time, oldest first.
+ *
+ * The table is every stage move since the platform began and was loaded whole
+ * on every reload of the desk, though the app reads it only for one
+ * application's or one opening's history (9 Nov). Index by_job_time.
+ */
+export const eventsFor = internalQuery({
+  args: {
+    actorId: v.optional(v.string()),
+    openingId: v.string(),
+    cursor: v.optional(v.union(v.string(), v.null())),
+    numItems: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await optionalActor(ctx, args.actorId);
+    const jobId = ctx.db.normalizeId("jobs", args.openingId);
+    if (!jobId) return { rows: [], isDone: true, continueCursor: null };
+    const res = await ctx.db
+      .query("pipelineEvents")
+      .withIndex("by_job_time", (q) => q.eq("jobId", jobId))
+      .paginate({ cursor: args.cursor ?? null, numItems: Math.min(args.numItems ?? 500, 1000) });
+    const model = TABLES.pipelineEvents;
+    return {
+      rows: (res.page as Record<string, unknown>[]).map((d) => model.fromDoc(d as never)),
       isDone: res.isDone,
       continueCursor: res.continueCursor,
     };

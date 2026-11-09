@@ -23,26 +23,60 @@ export interface CommitOp {
 }
 
 type Row = Record<string, unknown>;
-type Tables = Record<string, Row[]>;
+export type Tables = Record<string, Row[]>;
 
 /** How each table's rows are identified. Everything else is keyed by `id`. */
 const KEYS: Record<string, (row: Row) => string> = {
   settings: (r) => String(r.key),
   matchExclusions: (r) => `${r.openingId}:${r.candidateId}`,
 };
-const keyOf = (table: string, row: Row) => (KEYS[table] ? KEYS[table](row) : String(row.id));
+export const keyOf = (table: string, row: Row) => (KEYS[table] ? KEYS[table](row) : String(row.id));
 
 /** Tables that exist only in the JSON store and are never saved to Convex. */
 const LOCAL_ONLY = new Set(["liveMirror"]);
 
-/** A deep copy of the tables, to compare against after the write. */
-export function snapshotTables(db: Database): Tables {
+/**
+ * A deep copy of the tables, to compare against after the write.
+ *
+ * `only` names the tables to copy. The store passes the ones the write
+ * actually touched (9 Nov): copying every table held - all applications,
+ * every candidate on the desk - and comparing every row of each on every save
+ * blocked the one server process for the whole of it, for a write of one row.
+ */
+export function snapshotTables(db: Database, only?: Iterable<string>): Tables {
   const out: Tables = {};
+  const wanted = only ? new Set(only) : null;
   for (const [table, rows] of Object.entries(db)) {
     if (LOCAL_ONLY.has(table) || !Array.isArray(rows)) continue;
+    if (wanted && !wanted.has(table)) continue;
     out[table] = structuredClone(rows) as Row[];
   }
   return out;
+}
+
+/**
+ * The working set behind a recorder: the first time a table is read or
+ * replaced during a write, its copy is taken. Reads record too, because a
+ * rule that reads a table may push onto the array it was handed; the copy is
+ * taken before anything can change.
+ */
+export function recordingTables(db: Database, before: Tables): Database {
+  return new Proxy(db, {
+    get(target, prop, receiver) {
+      if (typeof prop === "string" && !(prop in before) && !LOCAL_ONLY.has(prop)) {
+        const rows = (target as unknown as Tables)[prop];
+        if (Array.isArray(rows)) before[prop] = structuredClone(rows) as Row[];
+      }
+      return Reflect.get(target, prop, receiver);
+    },
+    set(target, prop, value, receiver) {
+      if (typeof prop === "string" && !(prop in before) && !LOCAL_ONLY.has(prop)) {
+        const rows = (target as unknown as Tables)[prop];
+        if (Array.isArray(rows)) before[prop] = structuredClone(rows) as Row[];
+      }
+      return Reflect.set(target, prop, value, receiver);
+    },
+  });
 }
 
 /** Put the tables back as they were — a refused save must not leave its edits in memory. */
@@ -97,8 +131,11 @@ export function diffTables(before: Tables, db: Database): CommitOp[] {
  * Replace temporary ids with the ones the database assigned, everywhere they
  * appear — the new row's own id and any reference to it in another row.
  */
-export function renameIds(db: Database, ids: Record<string, string>): void {
+export function renameIds(db: Database, ids: Record<string, string>, tables?: Iterable<string>): void {
   if (Object.keys(ids).length === 0) return;
+  // A reference to a row made in this write can only sit in a row this write
+  // touched, so only the touched tables are walked (9 Nov).
+  const only = tables ? new Set(tables) : null;
   const swap = (value: unknown): unknown => {
     if (typeof value === "string") return ids[value] ?? value;
     if (Array.isArray(value)) {
@@ -114,6 +151,7 @@ export function renameIds(db: Database, ids: Record<string, string>): void {
   };
   for (const [table, rows] of Object.entries(db)) {
     if (LOCAL_ONLY.has(table) || !Array.isArray(rows)) continue;
+    if (only && !only.has(table)) continue;
     for (const row of rows) swap(row);
   }
 }

@@ -20,7 +20,7 @@
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
 import { assertWorkdayScope } from "../lib/workdayScope";
-import { internalMutation, internalQuery, type MutationCtx } from "../_generated/server";
+import { internalMutation, internalQuery, type MutationCtx, type QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { projectApplication } from "./model/projections";
 import { requireActor, assertJobAccess, assertNotAnotherTasCandidate, isTaOnOwnDesk, WORKS_THE_DESK, optionalActor} from "./guard";
@@ -90,6 +90,55 @@ export const listAll = internalQuery({
     const binned = new Set(
       (await ctx.db.query("jobs").withIndex("by_binnedAt", (q) => q.gt("binnedAt", 0)).collect()).map((j) => j._id as string),
     );
+    return {
+      applications: page.page.filter((a) => !binned.has(a.jobId as string)).map(projectApplication),
+      isDone: page.isDone,
+      continueCursor: page.continueCursor,
+    };
+  },
+});
+
+/** Ids of openings in the Bin; their applications stay out of the dashboards until restored. */
+async function binnedJobIds(ctx: QueryCtx): Promise<Set<string>> {
+  return new Set(
+    (await ctx.db.query("jobs").withIndex("by_binnedAt", (q) => q.gt("binnedAt", 0)).collect()).map((j) => j._id as string),
+  );
+}
+
+/**
+ * The first and last creation times in the table, so the app can read every
+ * application in parallel ranges (listRange) rather than one cursor chain of
+ * 2000-row pages (9 Nov). Null when the table is empty.
+ */
+export const creationBounds = internalQuery({
+  args: { actorId: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    await optionalActor(ctx, args.actorId);
+    const [first, last] = await Promise.all([
+      ctx.db.query("applications").withIndex("by_creation_time").order("asc").first(),
+      ctx.db.query("applications").withIndex("by_creation_time").order("desc").first(),
+    ]);
+    if (!first || !last) return null;
+    return { min: first._creationTime, max: last._creationTime };
+  },
+});
+
+/** Applications created in [from, to), paged — one range of `allApplications`. */
+export const listRange = internalQuery({
+  args: {
+    actorId: v.optional(v.string()),
+    from: v.number(),
+    to: v.number(),
+    cursor: v.optional(v.union(v.string(), v.null())),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await optionalActor(ctx, args.actorId);
+    const page = await ctx.db
+      .query("applications")
+      .withIndex("by_creation_time", (q) => q.gte("_creationTime", args.from).lt("_creationTime", args.to))
+      .paginate({ numItems: Math.min(args.limit ?? 2000, 2000), cursor: args.cursor ?? null });
+    const binned = await binnedJobIds(ctx);
     return {
       applications: page.page.filter((a) => !binned.has(a.jobId as string)).map(projectApplication),
       isDone: page.isDone,
