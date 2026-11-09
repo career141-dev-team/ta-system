@@ -2242,6 +2242,18 @@ async function dropApplication(formData: FormData) {
   // Removing is a move to Dropped out with the reason "Removed", not a delete:
   // it took the application's history, calls and interviews with it and could
   // not be undone (plan 3.2, 21 Sep). "Bring back" reverses it.
+  // Already in Dropped out, "remove" is a real delete (9 Nov): it used to drop them again, so they could not
+  // leave, and their owner kept the lock against every other TA.
+  if (isConvex() && repo.application(appId)?.stage === "dropped_out") {
+    try {
+      await convexMutation("ta/applicationDelete:deleteDropped", { actorId: user.id, applicationId: appId });
+    } catch (e) {
+      await fail(backendMessage(e, "They could not be deleted."));
+    }
+    await afterBackendWrite(openingId);
+    revalidatePath(`/openings/${openingId}/hh/links`);
+    await done("Deleted from this job. The candidate and their CV stay in the database.");
+  }
   if (isConvex()) {
     try {
       await backend.moveStage({ id: user.id }, appId, "dropped_out", "Removed from the opening");
@@ -2314,7 +2326,7 @@ export async function removeApplications(formData: FormData) {
   if (ids.length === 0) await fail("Tick at least one candidate.");
   const r = await eachInline(ids, (appId) => removeApplication(one(formData, { appId })));
   await (r.ok ? (r.notOk ? note : done) : fail)(
-    bulkSummary(r, "removed from the opening — they are under Dropped out"),
+    bulkSummary(r, "removed from the opening — new ones are under Dropped out, anyone already there is deleted from the job"),
   );
 }
 
