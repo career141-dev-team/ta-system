@@ -10,7 +10,7 @@
  *
  * Pure, with no database or network, so the backend and the tests share it.
  */
-import { LEVEL_LABEL, levelFromTitle } from "./roleLevel";
+import { jobLevelRank, LEVEL_LABEL, levelFromTitle } from "./roleLevel";
 
 export type ContactRule = {
   /** What the list is called, e.g. "Junior developers". */
@@ -37,11 +37,17 @@ export type ContactMatch = {
   matchedBy: string;
 };
 
+/** Why a person was left out, counted on every search so a short list explains itself (10 Nov). */
+export type ContactMiss = { miss: "other_job" | "level" | "skills" };
+
 export type ContactCandidate = {
   currentJobTitle?: string | null;
   currentTitle?: string | null;
   currentRoleRank?: number | null;
+  /** The CV reader's own level: years and title (candidates/derivations deriveSeniorityLevel). */
+  seniorityLevel?: string | null;
   totalExperienceYears?: number | null;
+  yearsOfExperience?: number | null;
   jobHistory?: { title?: string | null; startDate?: string | null }[] | null;
   pastJobTitles?: string[] | null;
   skills?: string[] | null;
@@ -118,7 +124,8 @@ Never invent requirements the request does not state.`;
 
 /** The titles to read, newest first: current, then dated history, then older ones. */
 function titlesOf(c: ContactCandidate): { current: string; past: string[] } {
-  const current = (c.currentJobTitle ?? c.currentTitle ?? "").trim();
+  // The CV reader writes currentTitle and copies it to currentJobTitle; read it first, as candidates.ts does.
+  const current = (c.currentTitle || c.currentJobTitle || "").trim();
   const key = (d?: string | null) => {
     const m = /(\d{4})(?:[-/](\d{1,2}))?/.exec(d ?? "");
     return m ? Number(m[1]) * 100 + Number(m[2] ?? 0) : 0;
@@ -133,42 +140,105 @@ function titlesOf(c: ContactCandidate): { current: string; past: string[] } {
   return { current, past };
 }
 
+/**
+ * A phrase matches when every one of its words is in the title as a whole
+ * word, in any order (10 Nov). The first version wanted the words in order,
+ * so "software engineer" missed "Engineer - Software" and "Software
+ * Development Engineer"; every search then hung on the model listing each
+ * wording. Exclude words still win.
+ */
 const phraseIn = (title: string, rule: ContactRule): string | null => {
   const t = norm(title);
   if (rule.exclude.some((w) => t.includes(` ${w} `))) return null;
-  return rule.titles.find((p) => t.includes(` ${p} `)) ?? null;
+  return rule.titles.find((p) => p.split(" ").every((w) => t.includes(` ${w} `))) ?? null;
 };
 
-/**
- * Does this person fit the rule, and why. The current title decides when it
- * matches the job: a Senior Developer is not on a junior list because they
- * were junior once. Only when the current title is some other job does an
- * earlier title count, and then the row says "previous role".
- */
-export function matchCandidate(c: ContactCandidate, rule: ContactRule): ContactMatch | null {
-  if (rule.skills.length) {
-    const hay = norm([...(c.skills ?? []), c.summary ?? ""].join(" "));
-    if (!rule.skills.every((s) => hay.includes(` ${s} `))) return null;
-  }
-  const levelOk = (lv: number | null) => rule.levels.length === 0 || (lv != null && rule.levels.includes(lv));
-  const { current, past } = titlesOf(c);
-  const hit = current ? phraseIn(current, rule) : null;
-  if (hit) {
-    const level = c.currentRoleRank ?? levelFromTitle(current, c.totalExperienceYears);
-    return levelOk(level) ? { kind: "current", title: current, level, levelLabel: LEVEL_LABEL[level ?? -1] ?? "", matchedBy: hit } : null;
-  }
-  if (!rule.includePastRoles) return null;
-  for (const title of past) {
-    const p = phraseIn(title, rule);
-    if (!p) continue;
-    const level = levelFromTitle(title);
-    if (levelOk(level)) return { kind: "previous", title, level, levelLabel: LEVEL_LABEL[level ?? -1] ?? "", matchedBy: p };
-  }
+/** The CV reader's stored level ("Junior", "Mid", "Senior", "Lead/Principal", or the model's own words) on the ladder. */
+export function storedLevel(s: string | null | undefined): number | null {
+  const v = (s ?? "").toLowerCase();
+  if (!v.trim()) return null;
+  // The ladder's own names first, so "Senior Manager" is 6 and not "senior".
+  const exact = jobLevelRank(v);
+  if (exact != null) return exact;
+  if (/intern|trainee|apprentice/.test(v)) return 0;
+  if (/junior|entry|graduate|fresher/.test(v)) return 1;
+  if (/\bmid|intermediate/.test(v)) return 2;
+  if (/senior/.test(v)) return 3;
+  if (/lead|principal/.test(v)) return 4;
   return null;
 }
 
-/** A plausible address, so a CV's "N/A" never becomes a contact. */
+/** Years on the same bands the CV reader uses (candidates/derivations deriveSeniorityLevel). */
+export function levelFromYears(years: number | null | undefined): number | null {
+  if (years == null || !(years > 0)) return null;
+  return years <= 2 ? 1 : years <= 5 ? 2 : years <= 9 ? 3 : 4;
+}
+
+/**
+ * A level word in the title ("Senior", "Manager", "Head", "Intern") decides.
+ * Without one, levelFromTitle answers 2 for every bare title, so an
+ * "Accountant" with twelve years read as mid-level and fell off every senior
+ * list - the 10 Nov finding behind "815 senior developers out of 92,000".
+ * Asking it twice tells the two apart: a level word gives the same answer
+ * whatever the years; no word gives 2 without years and 1 with one year.
+ */
+const titleSaysLevel = (title: string) => levelFromTitle(title) === levelFromTitle(title, 1);
+
+/**
+ * The current role's level: the title's own word, then the CV reader's
+ * stored level (years and title), then the years, then the role classifier.
+ * Null means nobody knows, and an unknown level is let through and says so,
+ * as the Database search does with unknown years.
+ */
+export function currentLevel(c: ContactCandidate, title: string): number | null {
+  if (titleSaysLevel(title)) return levelFromTitle(title);
+  return storedLevel(c.seniorityLevel)
+    ?? levelFromYears(c.totalExperienceYears ?? c.yearsOfExperience)
+    ?? c.currentRoleRank
+    ?? null;
+}
+
+const labelOf = (level: number | null) => (level == null ? "Not known" : LEVEL_LABEL[level] ?? "Not known");
+
+/**
+ * Does this person fit the rule, and if not, why. The current title decides
+ * when it matches the job: a Senior Developer is not on a junior list because
+ * they were junior once. Only when the current title is some other job does an
+ * earlier title count, and then the row says "previous role" - its level is
+ * the old title's own word, because today's years say nothing about it.
+ */
+export function matchCandidate(c: ContactCandidate, rule: ContactRule): ContactMatch | ContactMiss {
+  if (rule.skills.length) {
+    const hay = norm([...(c.skills ?? []), c.summary ?? ""].join(" "));
+    if (!rule.skills.every((s) => hay.includes(` ${s} `))) return { miss: "skills" };
+  }
+  const levelOk = (lv: number | null) => rule.levels.length === 0 || lv == null || rule.levels.includes(lv);
+  const { current, past } = titlesOf(c);
+  const hit = current ? phraseIn(current, rule) : null;
+  if (hit) {
+    const level = currentLevel(c, current);
+    return levelOk(level) ? { kind: "current", title: current, level, levelLabel: labelOf(level), matchedBy: hit } : { miss: "level" };
+  }
+  let wrongLevel = false;
+  if (rule.includePastRoles) {
+    for (const title of past) {
+      const p = phraseIn(title, rule);
+      if (!p) continue;
+      const level = titleSaysLevel(title) ? levelFromTitle(title) : null;
+      if (levelOk(level)) return { kind: "previous", title, level, levelLabel: labelOf(level), matchedBy: p };
+      wrongLevel = true;
+    }
+  }
+  return { miss: wrongLevel ? "level" : "other_job" };
+}
+
+export const isMiss = (r: ContactMatch | ContactMiss): r is ContactMiss => "miss" in r;
+
+/**
+ * The first plausible address in the field, so a CV's "N/A" never becomes a
+ * contact and "a@x.com / b@y.com" is not lost whole (10 Nov: it was).
+ */
 export const usableEmail = (e: string | null | undefined): string | null => {
-  const v = (e ?? "").trim().toLowerCase();
-  return /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/.test(v) ? v : null;
+  const m = /[^\s@<>()[\]:;,/"']+@[^\s@<>()[\]:;,/"']+\.[a-z]{2,}/i.exec(e ?? "");
+  return m ? m[0].toLowerCase().replace(/^mailto:/, "") : null;
 };

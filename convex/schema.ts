@@ -3643,6 +3643,9 @@ export default defineSchema({
     scanned: v.number(),
     found: v.number(),
     meaning: v.optional(v.string()),
+    // Why everyone else was left out, by reason (10 Nov): not_contactable,
+    // other_job, level, skills, no_email, same_email.
+    leftOut: v.optional(v.any()),
     error: v.optional(v.string()),
     createdAt: v.number(),
     startedAt: v.optional(v.number()),

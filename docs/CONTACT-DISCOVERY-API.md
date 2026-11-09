@@ -23,6 +23,17 @@ matcher), `convex/extras/contactDiscovery.ts` (the job),
    title** can match instead and the row says "Previous role". No model is
    used per person: it costs nothing, gives the same answer every run, and
    each row says which phrase matched.
+   - **A title matches** when every word of one of the rule's phrases is in
+     it as a whole word, in any order ("software engineer" finds "Engineer -
+     Software" and "Software Development Engineer"). Exclude words win.
+   - **The level** is the title's own level word when it has one ("Senior",
+     "Manager", "Head", "Intern"). Otherwise it is the level the CV reader
+     stored (from years and title), then the years themselves (up to 2
+     Junior, 3 to 5 Mid, 6 to 9 Senior, 10 and up Lead), then the role
+     classifier. A level nobody knows is let through and the row says "Not
+     known". An earlier title's level is that title's own word only.
+   - 10 Nov fix: before this, a title with no level word always counted as
+     Mid-level, so "Senior Developers" found about 815 of ~92,000 people.
 4. **Meaning pass.** After the scan, Qdrant's nearest people to the rule
    (cosine 0.6 and up, at most 1,000) are added when the rule's levels and
    exclude words allow. They are labelled "Found by meaning, check" and never
@@ -30,8 +41,12 @@ matcher), `convex/extras/contactDiscovery.ts` (the job),
    and `meaning` says why.
 
 Always left out: merged duplicates, do-not-contact people, and anyone without
-a usable email. One row per email: a current-role match beats a previous-role
-one, and either beats a meaning match.
+a usable email (the first real address in the field is used, so "a@x.com /
+b@y.com" keeps a@x.com). One row per email: a current-role match beats a
+previous-role one, and either beats a meaning match.
+
+Every scanned person is either on the list or counted once in `leftOut`, by
+reason, so a short list explains itself.
 
 ## Safety
 
@@ -92,8 +107,17 @@ one is running; `400` for a bad rule; `404` for an unknown id.
 ```json
 { "id": "k57…", "status": "running", "scanned": 31200, "found": 412, "meaning": null,
   "query": "…", "requestedBy": "…", "rule": { … }, "readBy": "model", "error": null,
-  "createdAt": 0, "startedAt": 0, "finishedAt": null }
+  "createdAt": 0, "startedAt": 0, "finishedAt": null,
+  "leftOut": { "not_contactable": 120, "other_job": 27100, "level": 3400,
+               "skills": 0, "no_email": 610, "same_email": 45 } }
 ```
+
+`leftOut` counts, during the title scan, why each other person is not on the
+list: `not_contactable` (merged, duplicate or do-not-contact), `other_job` (no
+title matches), `level` (the job matches but not the level asked), `skills` (a
+required skill is missing), `no_email` (fits, but no usable email) and
+`same_email` (fits, but another record with the same email is already on the
+list). It is `null` for a search run before 10 Nov.
 
 `status` is `read` (not run yet), `running`, `done` or `failed`. Poll every
 few seconds while running. A full scan of ~78,000 people takes a few minutes.
