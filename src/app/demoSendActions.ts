@@ -15,7 +15,8 @@ import type { ActionResult } from "@/lib/inlineResult";
  * (convex/communications/demoSend.ts). Admins only, like the rest of Settings.
  */
 
-const WHATSAPP = { initial: "initial_outreach", reminder: "reengagement", application: "application" } as const;
+// The demo's first message is the one candidates get: career141_application_connect (10 Nov).
+const WHATSAPP = { initial: "application", reminder: "reengagement", application: "application" } as const;
 
 const answer = (r: { ok: boolean; message: string }): ActionResult => ({
   ok: r.ok,

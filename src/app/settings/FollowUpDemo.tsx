@@ -33,7 +33,7 @@ export function FollowUpDemo() {
           <input name="from" type="tel" placeholder="e.g. 0740110160" className={inputClass} />
         </label>
         <label className="mt-2 block text-[12px] text-ink-soft">
-          Questions for the application template (one per line, the first 3 are sent)
+          Questions for the first message (one per line, the first 3 are sent)
           <textarea name="questions" rows={3} className={inputClass} />
         </label>
         <div className="mt-3 flex flex-wrap gap-2">
@@ -43,9 +43,7 @@ export function FollowUpDemo() {
           <SubmitButton name="send" value="whatsapp:reminder" formNoValidate busy={demo.pending} locked={demo.pending} className={BTN}>
             Send follow-up reminder template
           </SubmitButton>
-          <SubmitButton name="send" value="whatsapp:application" formNoValidate busy={demo.pending} locked={demo.pending} className={BTN}>
-            Send application template
-          </SubmitButton>
+
         </div>
       </div>
 

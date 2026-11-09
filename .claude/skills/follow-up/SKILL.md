@@ -332,10 +332,11 @@ Repo hard rules that apply: never run `convex deploy|run|import|env set` against
 - 2026-11-10 `handleOnTaLine`: a follow-up whose opening's `outreachWhatsAppNumber` is this line counts as this line's, whoever owns the candidate (one opening sent from Rakshana's line). New migration `admin/setOpeningWhatsAppNumber:run {dryRun,title,number}` sets that field on exactly one active opening (no screen for it).
 - 2026-11-10 `jobPosts.publicUrl` (the job's public linkedin.com/jobs/view page, edited on the post as "Public job link", validated in `updatePost`): `roleLink` takes its job number first, then `externalUrl`'s (usually the Recruiter link, which carries none). The post card warns when a LinkedIn post has no public link.
 - 2026-11-10 Marketing cutoff (owner): before sending `career141_application_connect`, `sendMetaTemplate` asks Meta (`GET {wabaId}/message_templates?name=...`, wabaId from `wabaForPhone`, else `META_WABA_ID`, else the main account) and `applicationTemplateHold` holds the send unless it is APPROVED + UTILITY (also when Meta cannot be asked): logged failed, `retryTemplateTomorrow`, admins belled once a day (`tellAdminsTemplateHeld`, appSettings key `application_template_held`). The Marketing fallback for applicants is removed: an applicant never gets `career141_initial_outreach`.
+- 2026-11-10 Two main templates for everyone (owner): the first WhatsApp to ANY candidate, applied or headhunted, is `career141_application_connect`; the reminder is `career141_followup_reminder`. `career141_initial_outreach` (Marketing) is sent to nobody. `REQUIRED_TEMPLATES` (Check with Meta / Ready) is now those two. The Settings demo's first button sends the application template (third button removed).
 
 <!-- skill-meta
-verified-commit: fdcbe6d7
-verified-hash: 50eee93f01267fbf5883864a2e3616643743aa0a
+verified-commit: e3258b21
+verified-hash: 8c73caab24f580906e11092a089c64b9cc754e85
 verified-date: 2026-11-09
 sources:
   convex/lib/jdFacts.ts

@@ -20,17 +20,17 @@ export const TEMPLATE_NAME = {
   application: "career141_application_connect",
 } as const;
 
-/** The two every TA number must have before it sends (lib/senderRouting). The
- *  application template is optional: an account without it falls back. */
-export const REQUIRED_TEMPLATES = [TEMPLATE_NAME.initial_outreach, TEMPLATE_NAME.reengagement];
+/** The two every number sends and must have approved before it is Ready
+ *  (lib/senderRouting): the first message and the reminder (owner, 10 Nov:
+ *  "two main templates", both Utility). The Marketing initial_outreach is no
+ *  longer sent to anyone. */
+export const REQUIRED_TEMPLATES = [TEMPLATE_NAME.application, TEMPLATE_NAME.reengagement];
 
 export type TemplateType = keyof typeof TEMPLATE_NAME;
 
 /** The parameter count each template was approved with — Meta refuses any other. */
 export const TEMPLATE_PARAMS: Record<TemplateType, number> = { initial_outreach: 4, reengagement: 2, application: 4 };
 
-/** Applied candidates get the Utility template; a headhunted one keeps the Marketing one. */
-export const usesApplicationTemplate = (sourceChannel?: string | null) => sourceChannel !== "headhunting";
 
 /**
  * `{{4}}` of career141_application_connect. Salary and notice are fixed text in

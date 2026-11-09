@@ -14,7 +14,6 @@ import {
   initialOutreachText,
   roleLink,
   templatePayload,
-  usesApplicationTemplate,
   type TemplateType,
 } from "../lib/whatsappTemplates";
 import { isNumberLevelError } from "../lib/senderRouting";
@@ -249,10 +248,10 @@ export const sendMetaTemplate = internalAction({
 
       loggedBody = initialOutreachText(candidateName, jobTitle, link, missingFormatted);
 
-      // An applicant gets the Utility career141_application_connect first (9 Nov);
-      // the Marketing one above stays as its fallback and as the headhunted
-      // candidate's message.
-      if (usesApplicationTemplate(app?.sourceChannel)) {
+      // Every candidate's first message is the Utility career141_application_connect,
+      // applied or headhunted (owner, 10 Nov: "two main templates"). The
+      // Marketing initial_outreach is no longer sent to anyone.
+      {
         const details = sanitizeParam(
           applicationDetails(!hasCV, customQuestions.filter((q: string) => !customAnswers[q])),
         );
@@ -273,9 +272,8 @@ export const sendMetaTemplate = internalAction({
       loggedBody = `Hi ${candidateName}, we're still looking forward to progressing your application for the *${jobTitle}* role at Career141.\n\nWe just need a few details from you to move things forward. Could you please reply to this message at your earliest convenience?\n\nWe'd love to keep you in the process! 😊`;
     }
 
-    // An applicant never gets the Marketing template (owner, 10 Nov): no
-    // fallback behind the application template any more. Everyone else gets
-    // the template the send asked for.
+    // Nobody gets the Marketing template (owner, 10 Nov): there is no fallback
+    // behind the application template; a reminder sends the reminder.
     if (!plans.length) plans.push({ type: args.templateType, params: parameters.map((p) => p.text), body: loggedBody });
 
     // The cutoff: ask Meta that the application template is still an approved
