@@ -17,8 +17,28 @@ import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
 import { getGraphToken } from "../lib/graphClient";
-import { sendFollowUpMail, type MailResult } from "../lib/graphMail";
+import { findSentMessage, sendFollowUpMail, type MailResult } from "../lib/graphMail";
 import { makeFunctionReference } from "convex/server";
+
+/**
+ * Settles uncertain sends by asking Graph, so a dropped connection no longer needs a TA Lead to open the mailbox
+ * (Sameera, 9 Nov). Runs from a cron. Never sends: it only reads Sent Items and records what it found.
+ */
+export const checkUncertain = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    const list = await ctx.runQuery(makeFunctionReference<"query">("ta/dailyEmails:uncertainToCheck"), {}) as { id: Id<"dailyEmails">; from: string; subject: string; since: number }[];
+    const systemInbox = process.env.MS_SENDER_EMAIL || process.env.OUTBOUND_EMAIL_SENDER || "job@career141.com";
+    let settled = 0;
+    for (const e of list) {
+      const found = await findSentMessage([e.from, systemInbox], e.subject, e.since, getGraphToken);
+      if (found === "unknown") continue;
+      await ctx.runMutation(makeFunctionReference<"mutation">("ta/dailyEmails:autoReconcile"), { id: e.id, sent: found === "found" });
+      settled++;
+    }
+    return { checked: list.length, settled };
+  },
+});
 
 export const send = internalAction({
   args: {

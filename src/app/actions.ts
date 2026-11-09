@@ -5226,6 +5226,9 @@ async function emailEod(input: {
       dailyEmailId,
     });
   } catch (e) {
+    // The page shows only a generic line for a technical error; keep the real one on the row for the Lead (9 Nov).
+    // A no-op unless the email is still sending/uncertain, so it never overrides an answer the backend recorded.
+    if (dailyEmailId) await convexMutation("ta/dailyEmails:result", { id: dailyEmailId, status: "uncertain", error: `Web request failed: ${(e instanceof Error ? e.message : String(e))}` }).catch(() => undefined);
     return { ok: false, error: backendMessage(e, "The email could not be sent.") };
   }
   if (!result.ok) return { ok: false, error: result.error };

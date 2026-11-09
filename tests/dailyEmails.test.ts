@@ -224,6 +224,20 @@ try {
   assert.equal((await db.get("day"))!.finishedAt, now, "Final location closes the single attendance clock");
   assert.equal((await db.get(mEod.id))!.workLocationName, "Mumbai");
   assert.equal(rows("reviewRounds").find(r => r.workLocationId === "mumbai" && r.submissionType === "eod")!.applicationIds.join(), "m-eod");
+  // Uncertain sends are settled by looking in Sent Items (9 Nov), never by a resend: not sent -> failed, sent -> accepted.
+  const gone = put("dailyEmails", { _id: "auto-gone", jobId: "job", userId: "ta", date: workdayDate(now), submissionType: "midday", status: "uncertain", applicationIds: [], number: 9, revision: 1, createdAt: now, startedAt: now - 20 * 60000, snapshot: snapshot([], "MIDDAY 9 - GONE") });
+  const delivered = put("dailyEmails", { _id: "auto-delivered", jobId: "job", userId: "ta", date: workdayDate(now), submissionType: "midday", status: "uncertain", applicationIds: [], number: 10, revision: 1, createdAt: now, startedAt: now - 20 * 60000, snapshot: snapshot([], "MIDDAY 10 - DELIVERED") });
+  put("dailyEmails", { _id: "auto-fresh", jobId: "job", userId: "ta", date: workdayDate(now), submissionType: "midday", status: "uncertain", applicationIds: [], number: 11, revision: 1, createdAt: now, startedAt: now - 5 * 60000, snapshot: snapshot([], "MIDDAY 11 - FRESH") });
+  assert.deepEqual(((await (mail.uncertainToCheck as any)._handler(ctx, {})) as any[]).map(e => e.id).sort(), ["auto-delivered", "auto-gone"], "Only sends older than a Convex action can run are checked");
+  await (mail.autoReconcile as any)._handler(ctx, { id: gone, sent: false });
+  await (mail.autoReconcile as any)._handler(ctx, { id: delivered, sent: true });
+  assert.equal((await db.get(gone))!.status, "failed", "Not in Sent Items -> failed, so the TA can send again");
+  assert.match((await db.get(gone))!.sendError, /never sent/);
+  assert.equal((await db.get(delivered))!.status, "accepted", "In Sent Items -> accepted");
+  assert.ok((await db.get(delivered))!.finalizedAt, "and finalized like a reconcile");
+  await (mail.autoReconcile as any)._handler(ctx, { id: gone, sent: true });
+  assert.equal((await db.get(gone))!.status, "failed", "A settled email is not touched again");
+  for (const id of ["auto-gone", "auto-delivered", "auto-fresh"]) await db.delete(id);
   await assert.rejects(() => begin(["m-eod"], undefined, { parentId: mEod.id, workLocationId: "delhi" }), /original work location/);
   const revisedMumbai = await begin(["m-eod"], undefined, { parentId: mEod.id, workLocationId: "mumbai" });
   await run("result", { id: revisedMumbai.id, status: "accepted" });
