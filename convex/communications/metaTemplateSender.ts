@@ -8,6 +8,7 @@ import { followUpCancelledReason } from "../lib/graphMail";
 import { dailyTemplateCap, startOfUtcDay, withinTemplateBudget } from "../lib/templateBudget";
 import {
   TEMPLATE_NAME,
+  applicationTemplateHold,
   applicationConnectText,
   applicationDetails,
   initialOutreachText,
@@ -272,7 +273,47 @@ export const sendMetaTemplate = internalAction({
       loggedBody = `Hi ${candidateName}, we're still looking forward to progressing your application for the *${jobTitle}* role at Career141.\n\nWe just need a few details from you to move things forward. Could you please reply to this message at your earliest convenience?\n\nWe'd love to keep you in the process! 😊`;
     }
 
-    plans.push({ type: args.templateType, params: parameters.map((p) => p.text), body: loggedBody });
+    // An applicant never gets the Marketing template (owner, 10 Nov): no
+    // fallback behind the application template any more. Everyone else gets
+    // the template the send asked for.
+    if (!plans.length) plans.push({ type: args.templateType, params: parameters.map((p) => p.text), body: loggedBody });
+
+    // The cutoff: ask Meta that the application template is still an approved
+    // Utility one on this number's account before sending it. If not, nothing
+    // goes; the send waits for tomorrow and the admins hear once a day.
+    if (plans[0].type === "application") {
+      const wabaId =
+        (await ctx.runQuery(internal.communications.metaTemplateSender.wabaForPhone, { phoneId })) ||
+        process.env.META_WABA_ID ||
+        MAIN_WABA_ID;
+      let found: { name?: string; category?: string; status?: string }[] | null = null;
+      try {
+        const res = await fetch(
+          `https://graph.facebook.com/v19.0/${wabaId}/message_templates?name=${TEMPLATE_NAME.application}&fields=name,category,status`,
+          { headers: { Authorization: `Bearer ${metaAccessToken}` } },
+        );
+        if (res.ok) found = ((await res.json()) as { data?: typeof found }).data ?? [];
+      } catch (e) {
+        console.warn(`[Meta Template Sender] Could not check the template category: ${(e as Error).message}`);
+      }
+      const hold = applicationTemplateHold(found);
+      if (hold) {
+        const reason = `Not sent - ${hold} Automatic WhatsApp to applicants is stopped; it is tried again tomorrow.`;
+        console.warn(`[Meta Template Sender] ${reason}`);
+        await ctx.runMutation(internal.communications.metaTemplateSender.logTemplateCommunication, {
+          communicationId: args.communicationId,
+          applicationId: app?._id,
+          candidateId: resolvedCandidateId,
+          jobId: resolvedJobId || job?._id,
+          body: `[application template held back] ${reason}`,
+          status: "failed",
+          error: reason,
+        });
+        if (app?._id) await ctx.runMutation(internal.communications.metaTemplateSender.retryTemplateTomorrow, { applicationId: app._id });
+        await ctx.runMutation(internal.communications.metaTemplateSender.tellAdminsTemplateHeld, { reason: hold });
+        return;
+      }
+    }
 
     // 4. Send request to Meta Cloud API with fallback for language locale (en_US / en)
     // `en` first: both approved templates on this account are in `en`, and
@@ -508,6 +549,41 @@ export const logDemoTemplateSent = internalMutation({
  * refused would never be chased again — the cap would quietly drop people
  * instead of delaying them.
  */
+/** The main Career141 WhatsApp account, when a number's row does not name its own. */
+const MAIN_WABA_ID = "900377459288998";
+
+/** The WhatsApp account a sending number belongs to, from Settings > WhatsApp numbers. */
+export const wabaForPhone = internalQuery({
+  args: { phoneId: v.string() },
+  handler: async (ctx, args) =>
+    (await ctx.db.query("whatsappNumbers").collect()).find((n) => n.whatchimpPhoneId === args.phoneId)?.wabaId ?? null,
+});
+
+/** A bell to every admin when the application template is held - once a day, not once per candidate. */
+export const tellAdminsTemplateHeld = internalMutation({
+  args: { reason: v.string() },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const row = await ctx.db.query("appSettings").withIndex("by_key", (q) => q.eq("key", "application_template_held")).first();
+    if (row?.cvQueueReportedAt && now - row.cvQueueReportedAt < 24 * 60 * 60 * 1000) return;
+    if (row) await ctx.db.patch(row._id, { cvQueueReportedAt: now });
+    else await ctx.db.insert("appSettings", { key: "application_template_held", cvQueueReportedAt: now });
+    const admins = (await ctx.db.query("users").withIndex("by_active", (q) => q.eq("isActive", true)).collect()).filter(
+      (u) => u.taRole === "admin" || u.role === "admin",
+    );
+    for (const person of admins) {
+      await ctx.db.insert("notifications", {
+        userId: person._id,
+        type: "mailbox_stalled",
+        title: "Automatic WhatsApp to applicants stopped",
+        body: `${args.reason} No message was sent. Check the template in WhatsApp Manager; sends try again tomorrow.`,
+        read: false,
+        createdAt: new Date(now).toISOString(),
+      });
+    }
+  },
+});
+
 export const retryTemplateTomorrow = internalMutation({
   args: { applicationId: v.id("applications") },
   handler: async (ctx, args) => {

@@ -115,3 +115,15 @@ test("the candidate's link is the public job page a TA saved, ahead of the Recru
     "https://www.linkedin.com/jobs/view/4123456789",
   );
 });
+
+test("the application template goes only while Meta still has it as an approved Utility template", async () => {
+  const { applicationTemplateHold } = await import("../convex/lib/whatsappTemplates");
+  const name = TEMPLATE_NAME.application;
+  assert.equal(applicationTemplateHold([{ name, category: "UTILITY", status: "APPROVED" }]), null);
+  // Re-labelled Marketing by Meta: held, nothing sent.
+  assert.match(applicationTemplateHold([{ name, category: "MARKETING", status: "APPROVED" }]) ?? "", /changed .* to marketing/);
+  assert.match(applicationTemplateHold([{ name, category: "UTILITY", status: "PAUSED" }]) ?? "", /paused/);
+  assert.match(applicationTemplateHold([]) ?? "", /not on this number/);
+  // Meta could not be asked: held rather than risk a Marketing price.
+  assert.match(applicationTemplateHold(null) ?? "", /could not be asked/);
+});

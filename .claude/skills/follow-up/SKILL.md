@@ -331,10 +331,11 @@ Repo hard rules that apply: never run `convex deploy|run|import|env set` against
 - 2026-11-10 An applicant's first WhatsApp (`sourceChannel` not `headhunting`, `usesApplicationTemplate`) tries the Utility template `career141_application_connect` first: name, role, link, then `{{4}}` = `applicationDetails` (CV if missing + at most 3 open opening questions; salary and notice are fixed text in the template). If the number's account lacks it (132001) the same send falls back to `career141_initial_outreach` on that number before any number-level handling. Headhunted keep `initial_outreach`. `REQUIRED_TEMPLATES` (readiness) is still only the two old ones. Settings demo: a third button and an optional Send-from number (`demoSend:phoneIdForNumber`, last 9 digits on WhatsApp numbers) plus up to 3 questions. Rakshana's line (+94740110160, phone 745627948623113) added to `admin/addTaWhatsAppNumbers`.
 - 2026-11-10 `handleOnTaLine`: a follow-up whose opening's `outreachWhatsAppNumber` is this line counts as this line's, whoever owns the candidate (one opening sent from Rakshana's line). New migration `admin/setOpeningWhatsAppNumber:run {dryRun,title,number}` sets that field on exactly one active opening (no screen for it).
 - 2026-11-10 `jobPosts.publicUrl` (the job's public linkedin.com/jobs/view page, edited on the post as "Public job link", validated in `updatePost`): `roleLink` takes its job number first, then `externalUrl`'s (usually the Recruiter link, which carries none). The post card warns when a LinkedIn post has no public link.
+- 2026-11-10 Marketing cutoff (owner): before sending `career141_application_connect`, `sendMetaTemplate` asks Meta (`GET {wabaId}/message_templates?name=...`, wabaId from `wabaForPhone`, else `META_WABA_ID`, else the main account) and `applicationTemplateHold` holds the send unless it is APPROVED + UTILITY (also when Meta cannot be asked): logged failed, `retryTemplateTomorrow`, admins belled once a day (`tellAdminsTemplateHeld`, appSettings key `application_template_held`). The Marketing fallback for applicants is removed: an applicant never gets `career141_initial_outreach`.
 
 <!-- skill-meta
-verified-commit: afba39bc
-verified-hash: 9212b1c723dd057ac75cc7700cace217be8e5837
+verified-commit: fdcbe6d7
+verified-hash: 50eee93f01267fbf5883864a2e3616643743aa0a
 verified-date: 2026-11-09
 sources:
   convex/lib/jdFacts.ts
