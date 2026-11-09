@@ -39,7 +39,7 @@ test("only errors about the number or its account switch a TA number off", () =>
 });
 
 const approved = [
-  { name: "career141_initial_outreach", status: "APPROVED" },
+  { name: "career141_application_connect", status: "APPROVED" },
   { name: "career141_followup_reminder", status: "APPROVED" },
 ];
 
@@ -53,12 +53,12 @@ test("ready only when connected on the Cloud API, both templates approved and re
 
   const linkedOnly = numberReadiness("+94779077728", {
     phone: { status: "CONNECTED", platform_type: "NOT_APPLICABLE", display_phone_number: "+94 77 907 7728" },
-    templates: [{ name: "career141_initial_outreach", status: "PENDING" }],
+    templates: [{ name: "career141_application_connect", status: "PENDING" }],
     subscribedApps: [],
   });
   assert.equal(linkedOnly.ready, false);
   assert.match(linkedOnly.note, /not connected to the Cloud API/);
-  assert.match(linkedOnly.note, /career141_initial_outreach is pending/);
+  assert.match(linkedOnly.note, /career141_application_connect is pending/);
   assert.match(linkedOnly.note, /career141_followup_reminder is missing/);
   assert.match(linkedOnly.note, /no app subscribed/);
 
