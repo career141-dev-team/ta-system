@@ -128,13 +128,14 @@ export function initialOutreachText(name: string, jobTitle: string, link: string
  */
 export function applicationTemplateHold(
   templates: { name?: string; category?: string; status?: string }[] | null,
+  name: string = TEMPLATE_NAME.application,
 ): string | null {
-  if (!templates) return "Meta could not be asked whether the application template is still Utility.";
-  const t = templates.find((x) => x.name === TEMPLATE_NAME.application);
-  if (!t) return `${TEMPLATE_NAME.application} is not on this number's WhatsApp account.`;
-  if ((t.status ?? "").toUpperCase() !== "APPROVED") return `${TEMPLATE_NAME.application} is ${String(t.status).toLowerCase()} on this number's WhatsApp account.`;
+  if (!templates) return `Meta could not be asked whether ${name} is still Utility.`;
+  const t = templates.find((x) => x.name === name);
+  if (!t) return `${name} is not on this number's WhatsApp account.`;
+  if ((t.status ?? "").toUpperCase() !== "APPROVED") return `${name} is ${String(t.status).toLowerCase()} on this number's WhatsApp account.`;
   if ((t.category ?? "").toUpperCase() !== "UTILITY")
-    return `Meta changed ${TEMPLATE_NAME.application} to ${String(t.category).toLowerCase()} on this number's WhatsApp account.`;
+    return `Meta changed ${name} to ${String(t.category).toLowerCase()} on this number's WhatsApp account.`;
   return null;
 }
 

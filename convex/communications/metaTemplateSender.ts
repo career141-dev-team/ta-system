@@ -279,7 +279,9 @@ export const sendMetaTemplate = internalAction({
     // The cutoff: ask Meta that the application template is still an approved
     // Utility one on this number's account before sending it. If not, nothing
     // goes; the send waits for tomorrow and the admins hear once a day.
-    if (plans[0].type === "application") {
+    // The reminder too (owner, 10 Nov): both main templates are checked.
+    if (plans[0].type === "application" || plans[0].type === "reengagement") {
+      const checkName = TEMPLATE_NAME[plans[0].type];
       const wabaId =
         (await ctx.runQuery(internal.communications.metaTemplateSender.wabaForPhone, { phoneId })) ||
         process.env.META_WABA_ID ||
@@ -287,23 +289,23 @@ export const sendMetaTemplate = internalAction({
       let found: { name?: string; category?: string; status?: string }[] | null = null;
       try {
         const res = await fetch(
-          `https://graph.facebook.com/v19.0/${wabaId}/message_templates?name=${TEMPLATE_NAME.application}&fields=name,category,status`,
+          `https://graph.facebook.com/v19.0/${wabaId}/message_templates?name=${checkName}&fields=name,category,status`,
           { headers: { Authorization: `Bearer ${metaAccessToken}` } },
         );
         if (res.ok) found = ((await res.json()) as { data?: typeof found }).data ?? [];
       } catch (e) {
         console.warn(`[Meta Template Sender] Could not check the template category: ${(e as Error).message}`);
       }
-      const hold = applicationTemplateHold(found);
+      const hold = applicationTemplateHold(found, checkName);
       if (hold) {
-        const reason = `Not sent - ${hold} Automatic WhatsApp to applicants is stopped; it is tried again tomorrow.`;
+        const reason = `Not sent - ${hold} Automatic WhatsApp to candidates is stopped; it is tried again tomorrow.`;
         console.warn(`[Meta Template Sender] ${reason}`);
         await ctx.runMutation(internal.communications.metaTemplateSender.logTemplateCommunication, {
           communicationId: args.communicationId,
           applicationId: app?._id,
           candidateId: resolvedCandidateId,
           jobId: resolvedJobId || job?._id,
-          body: `[application template held back] ${reason}`,
+          body: `[${checkName} held back] ${reason}`,
           status: "failed",
           error: reason,
         });
@@ -573,7 +575,7 @@ export const tellAdminsTemplateHeld = internalMutation({
       await ctx.db.insert("notifications", {
         userId: person._id,
         type: "mailbox_stalled",
-        title: "Automatic WhatsApp to applicants stopped",
+        title: "Automatic WhatsApp to candidates stopped",
         body: `${args.reason} No message was sent. Check the template in WhatsApp Manager; sends try again tomorrow.`,
         read: false,
         createdAt: new Date(now).toISOString(),
