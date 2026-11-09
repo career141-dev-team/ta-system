@@ -82,3 +82,25 @@ test("{{3}} with neither link is the owner's sentence, and the stored text match
   assert.match(text, /using the link below:\n\nOur team will share the role details with you shortly\.\n\nTo proceed/);
   assert.match(text, /following details:\n\n• CV \/ Resume\n\nWe would appreciate/);
 });
+
+test("an applicant gets career141_application_connect: CV plus at most three questions, never empty", async () => {
+  const { applicationDetails, usesApplicationTemplate, applicationConnectText } = await import("../convex/lib/whatsappTemplates");
+  assert.equal(TEMPLATE_NAME.application, "career141_application_connect");
+  assert.equal(TEMPLATE_PARAMS.application, 4);
+  // Headhunted people keep the Marketing template; everyone else applied.
+  assert.equal(usesApplicationTemplate("headhunting"), false);
+  assert.equal(usesApplicationTemplate("linkedin"), true);
+  assert.equal(usesApplicationTemplate(undefined), true);
+  assert.equal(applicationDetails(true, ["Degree?", "6 months onsite?", "Start 13 Nov?", "Python 1-10?"]),
+    "• CV / Resume • Degree? • 6 months onsite? • Start 13 Nov?");
+  assert.equal(applicationDetails(false, []), "• Any updates to your CV");
+  // Salary and notice are fixed in the template, so they are never repeated in {{4}}.
+  assert.doesNotMatch(applicationDetails(true, []), /Salary|Notice/);
+  const demo = demoTemplateParams("application", { candidateName: "Kamal", jobTitle: "Intern", questions: ["Degree?"] });
+  assert.equal(demo.length, 4);
+  assert.equal(demo[3], "• CV / Resume • Degree?");
+  const text = applicationConnectText("Kamal", "Intern", "https://x", "• CV / Resume");
+  assert.match(text, /Having reviewed your application/);
+  assert.match(text, /- Current Salary\n- Expected Salary\n- Notice Period/);
+  assert.equal(templatePayload("application", "94771234567", demo, "en").template.name, "career141_application_connect");
+});

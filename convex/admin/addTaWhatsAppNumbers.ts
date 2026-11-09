@@ -20,7 +20,7 @@ import { v } from "convex/values";
 import { internalMutation } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
 
-// From WhatsApp Manager, 29 Oct – 5 Nov.
+// From WhatsApp Manager, 29 Oct – 9 Nov.
 const NUMBERS: { firstName: string | null; label: string; phone: string; wabaId: string; phoneId: string | null }[] = [
   { firstName: null, label: "TA lead", phone: "+94742932084", wabaId: "2715214465539258", phoneId: "1287046157815437" },
   { firstName: "Sanduni", label: "Sanduni", phone: "+94764263120", wabaId: "1811583086509201", phoneId: "1425366410654591" },
@@ -28,6 +28,7 @@ const NUMBERS: { firstName: string | null; label: string; phone: string; wabaId:
   { firstName: "Thushini", label: "Thushini", phone: "+94779077728", wabaId: "2352137355594113", phoneId: "1147756625098092" },
   { firstName: "Hassan", label: "Hassan", phone: "+94740110140", wabaId: "1005624849012436", phoneId: "1276466655555760" },
   { firstName: "Uzmaan", label: "Uzmaan", phone: "+94753778899", wabaId: "150536594816720", phoneId: "151216248081257" },
+  { firstName: "Rakshana", label: "Rakshana", phone: "+94740110160", wabaId: "1248700900599620", phoneId: "745627948623113" },
   { firstName: "Sameera", label: "Sameera", phone: "+94740110120", wabaId: "1432442428233216", phoneId: "1510787038773882" },
 ];
 

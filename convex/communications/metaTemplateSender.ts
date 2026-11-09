@@ -6,7 +6,16 @@ import { resolveRecipient } from "../lib/outreachSafety";
 import { refuseIfDoNotContact } from "../lib/doNotContact";
 import { followUpCancelledReason } from "../lib/graphMail";
 import { dailyTemplateCap, startOfUtcDay, withinTemplateBudget } from "../lib/templateBudget";
-import { TEMPLATE_NAME, initialOutreachText, roleLink, templatePayload } from "../lib/whatsappTemplates";
+import {
+  TEMPLATE_NAME,
+  applicationConnectText,
+  applicationDetails,
+  initialOutreachText,
+  roleLink,
+  templatePayload,
+  usesApplicationTemplate,
+  type TemplateType,
+} from "../lib/whatsappTemplates";
 import { isNumberLevelError } from "../lib/senderRouting";
 
 // The access token is a live credential and is read from the deployment's
@@ -183,6 +192,10 @@ export const sendMetaTemplate = internalAction({
     let templateName = "";
     let parameters: any[] = [];
     let loggedBody = "";
+    // What to try, in order: an applicant's Utility template first, then the
+    // template this send was asked for. A later plan is tried only when Meta
+    // says the earlier template is not in that number's account (132001).
+    const plans: { type: TemplateType; params: string[]; body: string }[] = [];
 
     // Helper to sanitize template parameter text (Meta Error 132018: no newlines, tabs, or >4 spaces)
     const sanitizeParam = (str: string): string => {
@@ -234,6 +247,20 @@ export const sendMetaTemplate = internalAction({
       ];
 
       loggedBody = initialOutreachText(candidateName, jobTitle, link, missingFormatted);
+
+      // An applicant gets the Utility career141_application_connect first (9 Nov);
+      // the Marketing one above stays as its fallback and as the headhunted
+      // candidate's message.
+      if (usesApplicationTemplate(app?.sourceChannel)) {
+        const details = sanitizeParam(
+          applicationDetails(!hasCV, customQuestions.filter((q: string) => !customAnswers[q])),
+        );
+        plans.unshift({
+          type: "application",
+          params: [candidateName, jobTitle, link, details],
+          body: applicationConnectText(candidateName, jobTitle, link, details),
+        });
+      }
     } else {
       templateName = TEMPLATE_NAME.reengagement;
 
@@ -244,6 +271,8 @@ export const sendMetaTemplate = internalAction({
 
       loggedBody = `Hi ${candidateName}, we're still looking forward to progressing your application for the *${jobTitle}* role at Career141.\n\nWe just need a few details from you to move things forward. Could you please reply to this message at your earliest convenience?\n\nWe'd love to keep you in the process! 😊`;
     }
+
+    plans.push({ type: args.templateType, params: parameters.map((p) => p.text), body: loggedBody });
 
     // 4. Send request to Meta Cloud API with fallback for language locale (en_US / en)
     // `en` first: both approved templates on this account are in `en`, and
@@ -265,15 +294,21 @@ export const sendMetaTemplate = internalAction({
         });
         phoneId = mainPhoneId;
       }
+      for (const plan of plans) {
+      if (sentSuccess) break;
+      // Only a missing template moves on to the next plan; anything else is
+      // the number's or the candidate's problem and is handled below as before.
+      if (plan !== plans[0] && !errorMessage.includes("132001")) break;
+      if (plan !== plans[0]) console.warn(`[Meta Template Sender] ${TEMPLATE_NAME[plan.type]} next: the earlier template is not approved in this number's account.`);
       for (const langCode of languagesToTry) {
-        const payload = templatePayload(args.templateType, cleanRecipientPhone, parameters.map((p) => p.text), langCode);
+        const payload = templatePayload(plan.type, cleanRecipientPhone, plan.params, langCode);
 
         if (!phoneAllowed(cleanRecipientPhone)) {
           throw new Error(suppressed("WhatsApp template", cleanRecipientPhone));
         }
 
         try {
-          console.log(`[Meta Template Sender] Dispatching template "${templateName}" (${langCode}) to target phone +${cleanRecipientPhone} using phone_number_id ${phoneId}`);
+          console.log(`[Meta Template Sender] Dispatching template "${TEMPLATE_NAME[plan.type]}" (${langCode}) to target phone +${cleanRecipientPhone} using phone_number_id ${phoneId}`);
           const metaUrl = `https://graph.facebook.com/v19.0/${phoneId}/messages`;
 
           const response = await fetch(metaUrl, {
@@ -290,6 +325,8 @@ export const sendMetaTemplate = internalAction({
             const responseData = JSON.parse(responseText);
             if (responseData.messages && responseData.messages.length > 0) {
               sentSuccess = true;
+              loggedBody = plan.body;
+              errorMessage = "";
               console.log(`[Meta Template Sender] Successfully sent template message with language ${langCode}. Meta Msg ID: ${responseData.messages[0].id}`);
               break;
             } else {
@@ -308,6 +345,7 @@ export const sendMetaTemplate = internalAction({
           console.error(`[Meta Template Sender] HTTP request exception for phoneId ${phoneId}: ${errorMessage}`);
           break;
         }
+      }
       }
     }
 

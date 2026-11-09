@@ -10,10 +10,12 @@
 // off a demo goes to the test number or mailbox, and the answer says so.
 //
 // WhatsApp goes from the main Career141 number (META_PHONE_NUMBER_ID, +94 74
-// 219 7476), the account the two templates are approved on.
+// 219 7476), the account the two templates are approved on - or, when the admin
+// types one, from a number on Settings > WhatsApp numbers (9 Nov: the
+// application template is approved on the TA accounts, not the main one).
 
 import { v } from "convex/values";
-import { internalAction } from "../_generated/server";
+import { internalAction, internalQuery } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { refuseIfDoNotContact } from "../lib/doNotContact";
 import { phoneAllowed, suppressed } from "../lib/outboundGuard";
@@ -32,10 +34,22 @@ const sample = (o: { candidateName?: string; jobTitle?: string }) => ({
   jobTitle: o.jobTitle?.trim() || "Accountant",
 });
 
+/** The phone_number_id of a number on Settings > WhatsApp numbers, by its last nine digits. */
+export const phoneIdForNumber = internalQuery({
+  args: { phone: v.string() },
+  handler: async (ctx, args) => {
+    const last9 = (s: string) => s.replace(/\D/g, "").slice(-9);
+    const row = (await ctx.db.query("whatsappNumbers").collect()).find((n) => last9(n.phone) === last9(args.phone));
+    return row?.whatchimpPhoneId ?? null;
+  },
+});
+
 export const sendDemoWhatsApp = internalAction({
   args: {
     to: v.string(),
-    template: v.union(v.literal("initial_outreach"), v.literal("reengagement")),
+    template: v.union(v.literal("initial_outreach"), v.literal("reengagement"), v.literal("application")),
+    from: v.optional(v.string()),
+    questions: v.optional(v.array(v.string())),
     candidateName: v.optional(v.string()),
     jobTitle: v.optional(v.string()),
   },
@@ -59,8 +73,13 @@ export const sendDemoWhatsApp = internalAction({
       }
     }
 
-    const phoneId = process.env.META_PHONE_NUMBER_ID || DEFAULT_META_PHONE_ID;
-    const params = demoTemplateParams(args.template, sample(args));
+    let phoneId = process.env.META_PHONE_NUMBER_ID || DEFAULT_META_PHONE_ID;
+    if (args.from?.replace(/\D/g, "")) {
+      const found = await ctx.runQuery(internal.communications.demoSend.phoneIdForNumber, { phone: args.from });
+      if (!found) return { ok: false, message: `Not sent — ${args.from} is not on Settings > WhatsApp numbers.` };
+      phoneId = found;
+    }
+    const params = demoTemplateParams(args.template, { ...sample(args), questions: args.questions });
     let error = "";
     // `en` first, as the real sender does: both templates are approved in `en`.
     for (const lang of ["en", "en_US"]) {

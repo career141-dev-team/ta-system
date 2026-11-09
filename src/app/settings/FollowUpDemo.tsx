@@ -23,10 +23,18 @@ export function FollowUpDemo() {
       </div>
 
       <div className="border-t border-rule pt-4">
-        <h3 className="text-[13.5px] font-semibold">WhatsApp — from +94 74 219 7476</h3>
+        <h3 className="text-[13.5px] font-semibold">WhatsApp</h3>
         <label className="mt-2 block text-[12px] text-ink-soft">
           Receiver’s WhatsApp number
           <input name="phone" type="tel" placeholder="e.g. 0771234567" className={inputClass} />
+        </label>
+        <label className="mt-2 block text-[12px] text-ink-soft">
+          Send from (a number on WhatsApp numbers; empty = +94 74 219 7476)
+          <input name="from" type="tel" placeholder="e.g. 0740110160" className={inputClass} />
+        </label>
+        <label className="mt-2 block text-[12px] text-ink-soft">
+          Questions for the application template (one per line, the first 3 are sent)
+          <textarea name="questions" rows={3} className={inputClass} />
         </label>
         <div className="mt-3 flex flex-wrap gap-2">
           <SubmitButton name="send" value="whatsapp:initial" formNoValidate busy={demo.pending} locked={demo.pending} className={BTN}>
@@ -34,6 +42,9 @@ export function FollowUpDemo() {
           </SubmitButton>
           <SubmitButton name="send" value="whatsapp:reminder" formNoValidate busy={demo.pending} locked={demo.pending} className={BTN}>
             Send follow-up reminder template
+          </SubmitButton>
+          <SubmitButton name="send" value="whatsapp:application" formNoValidate busy={demo.pending} locked={demo.pending} className={BTN}>
+            Send application template
           </SubmitButton>
         </div>
       </div>
