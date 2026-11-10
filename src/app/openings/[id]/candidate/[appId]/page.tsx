@@ -267,11 +267,18 @@ export default async function CandidateDrawer({
 
   const presentCompany = (c.currentEmployer ?? "").trim();
   const targetCompany = presentCompany || (c.workHistory?.[0]?.employer ?? "").trim();
-  let companyColleagues = targetCompany
+  // Only on the Company Reference tab (10 Nov). The backend lookup reads up
+  // to 400 candidate rows with their CV text, 400 referees and then one
+  // application query per person - the live log showed it at 15.9 s, "too
+  // many system operations" - and it ran on EVERY render of this page: every
+  // tab click, every prev/next, every inline save. The tab now shows its
+  // count once it is open.
+  const wantColleagues = tab === "company_refs";
+  let companyColleagues = wantColleagues && targetCompany
     ? repo.peopleAtCompany(targetCompany, c.id)
     : [];
 
-  if (isConvex() && targetCompany) {
+  if (wantColleagues && isConvex() && targetCompany) {
     try {
       const { convexQuery } = await import("@/lib/convexServer");
       const backendResults = await convexQuery<{
@@ -335,7 +342,7 @@ export default async function CandidateDrawer({
     call: calls.length + repo.outreach(app.id).filter((m) => m.channel === "ai_call").length,
     chat: repo.outreach(app.id).filter((m) => m.channel !== "ai_call").length,
     reference: referees.length,
-    company_refs: companyColleagues.length,
+    company_refs: wantColleagues ? companyColleagues.length : null,
   };
 
   // The candidate's own CV file, looked up only when the tab shows it.

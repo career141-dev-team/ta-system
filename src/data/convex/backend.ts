@@ -506,12 +506,26 @@ export async function candidate(actor: Actor, candidateId: Id): Promise<Candidat
  * list of fifty — is the shape that made the old system slow. Callers should
  * gather their ids first and ask once.
  */
-export async function candidatesByIds(actor: Actor, ids: Id[]): Promise<Map<Id, Candidate>> {
+export async function candidatesByIds(
+  actor: Actor,
+  ids: Id[],
+  opts: {
+    /**
+     * Whose CV file names are worth a lookup. A list shows the name; the
+     * alert badge's follow-up set never does, and looking them up for 740
+     * people on every refresh was fifteen 1-2.6 s queries (10 Nov). Left
+     * out, every id is looked up.
+     */
+    cvNamesFor?: Set<Id>;
+  } = {},
+): Promise<Map<Id, Candidate>> {
   const out = new Map<Id, Candidate>();
   const docs = await candidateDocsByIds(actor, ids);
 
   // One call per 50 rows, not one per row: see candidates/candidates:cvFileNames.
-  const missingCvIds = docs.filter((d) => !d.cvFileName).map((d) => d._id);
+  const missingCvIds = docs
+    .filter((d) => !d.cvFileName && (!opts.cvNamesFor || opts.cvNamesFor.has(d._id)))
+    .map((d) => d._id);
   const cvNameMap = new Map<string, string>();
   for (let i = 0; i < missingCvIds.length; i += 50) {
     try {

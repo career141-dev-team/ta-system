@@ -54,14 +54,19 @@ export async function findCvUpload(ctx: QueryCtx, cvUploadId: string) {
 export async function cvFileNamesFor(ctx: QueryCtx, ids: string[]) {
   if (ids.length > 50) throw new Error("Ask for at most 50 CV file names at a time.");
   const names: Record<string, string> = {};
-  for (const id of ids) {
-    const { upload } = await findCvUpload(ctx, id);
-    if (!upload) continue;
-    // The same order getCvUploadUrl tests: an R2 key, else a stored file.
-    const stored = (upload.storageProvider === "r2" || !upload.storageProvider) && upload.s3Key
-      ? true
-      : upload.storageId ? !!(await ctx.db.system.get(upload.storageId)) : false;
-    if (stored) names[id] = upload.fileName || "CV.pdf";
-  }
+  // Together, not one after another: fifty rows meant up to 150 reads in a
+  // row and the query ran 1-2.6 s on the live log (10 Nov), against a 1 s budget.
+  const found = await Promise.all(
+    ids.map(async (id) => {
+      const { upload } = await findCvUpload(ctx, id);
+      if (!upload) return null;
+      // The same order getCvUploadUrl tests: an R2 key, else a stored file.
+      const stored = (upload.storageProvider === "r2" || !upload.storageProvider) && upload.s3Key
+        ? true
+        : upload.storageId ? !!(await ctx.db.system.get(upload.storageId)) : false;
+      return stored ? ([id, upload.fileName || "CV.pdf"] as const) : null;
+    }),
+  );
+  for (const hit of found) if (hit) names[hit[0]] = hit[1];
   return names;
 }

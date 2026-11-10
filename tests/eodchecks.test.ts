@@ -50,6 +50,9 @@ eq("sourcing runs are bounded", required.includes(".order(\"desc\").take(SOURCIN
 eq("a carried position's checks skip the evidence it would drop", required.includes("const full = !opts.lean;") && jobView.includes("requiredChecks(ctx, day, entry, { lean: !full })"), true);
 eq("the write paths still read everything", !workdays.slice(workdays.indexOf("export const saveCheck")).includes("{ lean:"), true);
 
+const candidatePage = read("src/app/openings/[id]/candidate/[appId]/page.tsx");
+eq("the candidate page reads colleagues only on the Company Reference tab", candidatePage.includes('const wantColleagues = tab === "company_refs";') && candidatePage.includes("if (wantColleagues && isConvex() && targetCompany) {"), true);
+
 const schema = read("convex/schema.ts");
 eq("the indexes exist", schema.includes('.index("by_opening_round", ["openingId", "round"])') && schema.includes('.index("by_job_record", ["jobId", "recordId"])'), true);
 

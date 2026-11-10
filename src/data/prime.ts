@@ -396,6 +396,9 @@ async function refresh(scope: PrimeScope): Promise<boolean> {
 
   // ── Applications, and the people on them ──────────────────────────────────
   const wanted = new Set<Id>(scope.candidateIds ?? []);
+  // Whose CV file names a page will show: the named people and an opening's
+  // people. The follow-up set below is read for the alert badge only.
+  const namesFor = new Set<Id>(scope.candidateIds ?? []);
 
   if ((scope.allApplications || scope.followUps) && now - state.allAt > ttl) {
     const fetchStart = Date.now();
@@ -462,7 +465,10 @@ async function refresh(scope: PrimeScope): Promise<boolean> {
    */
   if (scope.openingId) {
     for (const a of db.applications) {
-      if (a.openingId === scope.openingId) wanted.add(a.candidateId);
+      if (a.openingId === scope.openingId) {
+        wanted.add(a.candidateId);
+        namesFor.add(a.candidateId);
+      }
     }
   }
   /*
@@ -485,7 +491,7 @@ async function refresh(scope: PrimeScope): Promise<boolean> {
   const stale = [...wanted].filter((id) => now - (state.candidates.get(id) ?? 0) > CANDIDATE_TTL_MS);
   if (stale.length > 0) {
     const fetchStart = Date.now();
-    const people = await backend.candidatesByIds(actor, stale);
+    const people = await backend.candidatesByIds(actor, stale, { cvNamesFor: namesFor });
     const asked = new Set(stale);
     const fresh: Candidate[] = [];
     for (const id of stale) {
