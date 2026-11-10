@@ -4422,6 +4422,16 @@ const rawRepo = {
     });
   },
 
+  /** Local mode only; with Convex the switch is `ta/website:setListed`. */
+  setOpeningOnWebsite(openingId: Id, listed: boolean) {
+    mutate((db) => {
+      const o = db.openings.find((x) => x.id === openingId);
+      if (!o) return;
+      o.websiteListedAt = listed ? (o.websiteListedAt ?? Date.now()) : null;
+      o.updatedAt = Date.now();
+    });
+  },
+
   setOpeningQuestions(openingId: Id, questions: { id: Id; label: string }[]) {
     mutate((db) => {
       const o = db.openings.find((x) => x.id === openingId);

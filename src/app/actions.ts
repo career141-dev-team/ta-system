@@ -7,6 +7,7 @@ import { allows, can, isDeskWide, isReadOnly, isTa, seesEveryTaRow, type Capabil
 import { otherHolders, rowCountsFor } from "@/lib/sharedLinks";
 import { readWorkCountry } from "@/lib/countries";
 import { BIN_DAYS, BIN_MS, purgeDateLabel } from "@/lib/bin";
+import { WEBSITE_POSTERS_KEY, canPostToWebsite, parseWebsitePosters, websiteRefusal } from "@/lib/websiteJobs";
 import {
   binOpeningNamed as binOpeningShared,
   binOpenings,
@@ -4089,6 +4090,50 @@ export async function setOpeningAutoFollowUp(formData: FormData) {
       ? "Automatic follow-up is on. Reminders go out every 24 hours after the first message you send."
       : "Automatic follow-up is off. Follow-ups go out only when you press Send.",
   );
+}
+
+/**
+ * The opening's "On website" switch (10 Nov): on, career141.com lists the job;
+ * off, it is gone. An admin always; a TA lead or ops person when the admin has
+ * ticked them on the People page (src/lib/websiteJobs.ts). Called from the
+ * switch itself, so it answers rather than redirecting.
+ */
+export async function setOpeningOnWebsite(formData: FormData) {
+  const openingId = String(formData.get("openingId"));
+  await primeStore({ openingId });
+  const user = await authorize(formData, "opening.read", { opening: "openingId" });
+  if (!canPostToWebsite(user.role, websitePosters())) {
+    return { ok: false as const, message: "Only an admin, or someone the admin has allowed, can put jobs on the website." };
+  }
+  const listed = String(formData.get("listed")) === "on";
+  const opening = repo.opening(openingId);
+  if (!opening) return { ok: false as const, message: "That opening no longer exists." };
+  const refusal = listed ? websiteRefusal(opening) : null;
+  if (refusal) return { ok: false as const, message: refusal };
+  if (isConvex()) {
+    try {
+      await backend.setOnWebsite({ id: user.id }, openingId, listed);
+    } catch (e) {
+      return { ok: false as const, message: backendMessage(e, "The website switch could not be changed.") };
+    }
+    await afterBackendWrite(openingId);
+  } else {
+    repo.setOpeningOnWebsite(openingId, listed);
+  }
+  revalidatePath("/openings", "layout");
+  return { ok: true as const };
+}
+
+const websitePosters = () => parseWebsitePosters(repo.setting(WEBSITE_POSTERS_KEY, ""));
+
+/** Who besides an admin may press "On website" (People page, admin only). */
+export async function setWebsitePosters(formData: FormData) {
+  await primeStore({ allApplications: true });
+  await authorize(formData, "user.manage");
+  const posters = { taLead: formData.get("taLead") === "on", ops: formData.get("ops") === "on" };
+  repo.setSetting(WEBSITE_POSTERS_KEY, JSON.stringify(posters));
+  revalidatePath("/", "layout");
+  await back("Saved who can put jobs on the website.");
 }
 
 /** The opening's own follow-up questions, one per line. */

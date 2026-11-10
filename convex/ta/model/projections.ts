@@ -63,6 +63,7 @@ export function projectOpening(job: Doc<"jobs">) {
     requirementsEditedAt: job.requirementsEditedAt ?? null,
     followUpQuestions: job.followUpQuestions ?? [],
     autoFollowUp: followUpOn(job),
+    websiteListedAt: job.websiteListedAt ?? null,
     taLeadId: (job.taLeadId ?? null) as string | null,
     directorId: (job.directorId ?? null) as string | null,
     assignedTaIds: (job.assignedTaIds ?? []) as string[],

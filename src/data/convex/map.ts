@@ -108,6 +108,7 @@ export function mapOpening(o: BackendOpening): MappedOpening {
     jdMarkdown: o.jdMarkdown ?? "",
     followUpQuestions: o.followUpQuestions ?? [],
     autoFollowUp: o.autoFollowUp === true,
+    websiteListedAt: numOrNull(o.websiteListedAt),
     jdStatus: (o.jdStatus as Opening["jdStatus"]) ?? "draft",
     jdApprovedBy: typeof o.jdApprovedBy === "string" ? o.jdApprovedBy : null,
     jdApprovedAt: o.jdApprovedAt ?? null,

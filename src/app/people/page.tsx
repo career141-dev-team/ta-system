@@ -2,7 +2,8 @@ import { repo } from "@/data/store";
 import { getCurrentUser } from "@/lib/session";
 import { PeopleAdmin } from "./PeopleAdmin";
 import { allows } from "@/lib/auth";
-import { setFollowUpStandard, setAutoShortlistScore } from "@/app/actions";
+import { setFollowUpStandard, setAutoShortlistScore, setWebsitePosters } from "@/app/actions";
+import { WEBSITE_POSTERS_KEY, parseWebsitePosters } from "@/lib/websiteJobs";
 import { EOD_CC_DEFAULTS, EOD_TO } from "@/lib/eod-format";
 import { inputClass } from "@/components/form";
 import { primeStore } from "@/data/prime";
@@ -26,6 +27,7 @@ export default async function PeoplePage({
   // The same test the server makes on every change here.
   const canEdit = allows(user, "user.manage");
   const questions = repo.followUpStandard();
+  const posters = parseWebsitePosters(repo.setting(WEBSITE_POSTERS_KEY, ""));
   // The header search, on this page, searches the people on the desk.
   const matching = repo
     .users()
@@ -77,6 +79,24 @@ export default async function PeoplePage({
           {canEdit && (
             <SubmitButton pendingLabel="Saving…">Save</SubmitButton>
           )}
+        </form>
+      </section>
+
+      {/* Who may press "On website" on a job (10 Nov). */}
+      <section className="mt-8 rounded-2xl border border-rule bg-surface px-6 py-5">
+        <h2 className="text-[15px] font-semibold">Jobs on the website</h2>
+        <p className="mt-1 max-w-[70ch] text-[12.5px] leading-relaxed text-ink-soft">
+          The Website switch on a job lists it on career141.com, or takes it down. An admin can always use it.
+          Tick who else can.
+        </p>
+        <form action={setWebsitePosters} className="mt-3 flex flex-wrap items-center gap-5 text-[13px]">
+          <label className="flex items-center gap-2">
+            <input type="checkbox" name="ops" defaultChecked={posters.ops} disabled={!canEdit} /> Ops
+          </label>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" name="taLead" defaultChecked={posters.taLead} disabled={!canEdit} /> TA leads
+          </label>
+          {canEdit && <SubmitButton pendingLabel="Saving…">Save</SubmitButton>}
         </form>
       </section>
 

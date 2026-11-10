@@ -119,6 +119,7 @@ import type * as integrations_opsWriteHttp from "../integrations/opsWriteHttp.js
 import type * as integrations_partnerRead from "../integrations/partnerRead.js";
 import type * as integrations_partnerReadHttp from "../integrations/partnerReadHttp.js";
 import type * as integrations_partnerUpload from "../integrations/partnerUpload.js";
+import type * as integrations_websiteHttp from "../integrations/websiteHttp.js";
 import type * as integrations_workable from "../integrations/workable.js";
 import type * as integrations_workableActions from "../integrations/workableActions.js";
 import type * as integrations_zipMutations from "../integrations/zipMutations.js";
@@ -290,6 +291,7 @@ import type * as ta_unmatched from "../ta/unmatched.js";
 import type * as ta_users from "../ta/users.js";
 import type * as ta_voice from "../ta/voice.js";
 import type * as ta_voiceExtract from "../ta/voiceExtract.js";
+import type * as ta_website from "../ta/website.js";
 import type * as ta_workLocations from "../ta/workLocations.js";
 import type * as ta_workdays from "../ta/workdays.js";
 import type * as templates_messageTemplates from "../templates/messageTemplates.js";
@@ -413,6 +415,7 @@ declare const fullApi: ApiFromModules<{
   "integrations/partnerRead": typeof integrations_partnerRead;
   "integrations/partnerReadHttp": typeof integrations_partnerReadHttp;
   "integrations/partnerUpload": typeof integrations_partnerUpload;
+  "integrations/websiteHttp": typeof integrations_websiteHttp;
   "integrations/workable": typeof integrations_workable;
   "integrations/workableActions": typeof integrations_workableActions;
   "integrations/zipMutations": typeof integrations_zipMutations;
@@ -584,6 +587,7 @@ declare const fullApi: ApiFromModules<{
   "ta/users": typeof ta_users;
   "ta/voice": typeof ta_voice;
   "ta/voiceExtract": typeof ta_voiceExtract;
+  "ta/website": typeof ta_website;
   "ta/workLocations": typeof ta_workLocations;
   "ta/workdays": typeof ta_workdays;
   "templates/messageTemplates": typeof templates_messageTemplates;
@@ -651,6 +655,7 @@ declare const fullApi: ApiFromModules<{
   "integrations/partnerRead": typeof integrations_partnerRead;
   "integrations/partnerReadHttp": typeof integrations_partnerReadHttp;
   "integrations/partnerUpload": typeof integrations_partnerUpload;
+  "integrations/websiteHttp": typeof integrations_websiteHttp;
   "integrations/workable": typeof integrations_workable;
   "integrations/workableActions": typeof integrations_workableActions;
   "integrations/zipMutations": typeof integrations_zipMutations;
@@ -813,6 +818,7 @@ declare const fullApi: ApiFromModules<{
   "ta/users": typeof ta_users;
   "ta/voice": typeof ta_voice;
   "ta/voiceExtract": typeof ta_voiceExtract;
+  "ta/website": typeof ta_website;
   "ta/workLocations": typeof ta_workLocations;
   "ta/workdays": typeof ta_workdays;
   "templates/messageTemplates": typeof templates_messageTemplates;
