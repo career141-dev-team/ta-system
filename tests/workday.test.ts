@@ -763,7 +763,8 @@ try {
     assert.equal(rows("jobAssignments").find(a => a.jobId === entry.jobId && a.userId === "ta2")?.workingStage, "100%");
   }
   assert.equal(rows("taWorkdayRequests").filter(r => r.workdayId === multiDay.id).length, 0);
-  // Carryover includes every pending assigned job and does not use the ten manual slots.
+  // 10 Nov: Start adds only the picked position. Carrying every older Follow-up job forward made a sixteen-job day
+  // that the Today's Checks poll could not read inside the backend's one-second limit.
   user("carryTa", "ta");
   const pastJobs = [];
   for (let i = 0; i < 12; i++) {
@@ -775,26 +776,13 @@ try {
   put("jobs", { _id: "newPrimary", title: "New primary", status: "active", taLeadId: "lead", assignedTaIds: ["carryTa"] });
   // 29 Oct: the 100% preview is built for the one position picked, on request.
   assert.ok((await run("startPreview", { actorId: "carryTa", jobId: "newPrimary" })).checks.length > 0);
-  const scheduled: Row[] = [];
-  ctx.scheduler.runAfter = async (_ms: number, _fn: unknown, args: Row) => { scheduled.push(args); return null; };
   const carryDay = await run("start", { actorId: "carryTa", jobId: "newPrimary", workType: "Follow-up" });
   const carried = await db.get(carryDay.id);
-  assert.equal(carried?.jobs.length, 13);
-  // Start evaluates only the picked position; the carried ones follow in the
-  // background, one per run, so a long carry list cannot fail attendance.
-  const carriedEvents = (jobId: string) => rows("taWorkdayTaskEvents").filter(e => e.workdayId === carryDay.id && e.jobId === jobId);
-  assert.equal(scheduled.filter(a => a.jobIds).length, 1);
-  assert.equal(scheduled.find(a => a.jobIds)?.jobIds.length, 12);
-  assert.ok(carriedEvents("newPrimary").length > 0);
-  assert.equal(carriedEvents("carry:0").length, 0, "Carried checks are not evaluated inside Start");
-  await run("refreshCarried", { workdayId: carryDay.id, jobIds: ["carry:0", "carry:1"] });
-  assert.ok(carriedEvents("carry:0").length > 0);
-  assert.equal(carriedEvents("carry:1").length, 0);
-  assert.deepEqual(scheduled.at(-1)?.jobIds, ["carry:1"], "The rest follow one per run");
-  ctx.scheduler.runAfter = async () => null;
+  assert.equal(carried?.jobs.length, 1, "Start creates a one-job day; older Follow-up jobs are added by hand");
+  assert.ok(rows("taWorkdayTaskEvents").some(e => e.workdayId === carryDay.id && e.jobId === "newPrimary"));
+  assert.ok((await run("dashboard", { actorId: "carryTa", detail: true })).options.every((o: Row) => o.carry === undefined), "The picker no longer reads the whole workday history to mark carried jobs");
   assert.deepEqual(await run("start", { actorId: "carryTa", jobId: "newPrimary", workType: "Follow-up" }), carryDay, "A second Start returns the same day");
   assert.equal(carried?.jobs[0].workType, "Follow-up", "A historical job entered today can start directly in Follow-up");
-  assert.equal(carried?.jobs.filter((j: Row) => j.carried && j.workType === "Follow-up").length, 12);
   for (let i = 0; i < 9; i++) {
     const jobId = `manual:${i}`;
     put("jobs", { _id: jobId, title: jobId, taLeadId: "lead", assignedTaIds: ["carryTa"] });

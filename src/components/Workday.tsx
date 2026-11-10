@@ -236,7 +236,6 @@ function JobPicker({ data, day }: { data: WorkdayPayload; day?: WorkdayView }) {
           New positions start at 100%. Choose Follow-up or Add-on for historical or returning work.
         </p>
       )}
-      {!day && data.options.some(o => o.carry) && <p className="text-xs text-ink-soft">Follow-up jobs carried forward: {data.options.filter(o => o.carry && o.id !== chosen?.id).map(o => o.title).join(", ")}</p>}
       {!day && (mode ?? chosen?.workType) === "100%" && preview && preview.jobId === chosen?.id && <ul className="text-xs text-ink-soft">{preview.checks.map(c => <li key={c.key} className="py-1">{c.status === "complete" ? "✓" : "○"} {c.label}: {c.progress}</li>)}</ul>}
       <button className={buttonClass}>
         {!day

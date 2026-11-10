@@ -153,39 +153,6 @@ async function suggestedMode(_ctx: Ctx, _userId: Id<"users">, _jobId: Id<"jobs">
   return requested;
 }
 
-async function pendingJobs(ctx: Ctx, user: Doc<"users">) {
-  const days = await ctx.db.query("taWorkdays").withIndex("by_user", q => q.eq("userId", user._id)).collect();
-  // An earlier day still open counts as worked too: Start no longer closes it
-  // first (10 Nov), so its positions must still carry forward.
-  const today = workdayDate(Date.now());
-  const ids = new Set(days.filter(d => d.finishedAt !== undefined || d.date < today).flatMap(d => d.jobs.map(j => j.jobId)));
-  const jobs: Doc<"jobs">[] = [];
-  for (const id of ids) {
-    const job = await ctx.db.get(id);
-    if (!job || isGone(job) || ["closed", "filled", "cancelled"].includes(job.status)) continue;
-    try { await assignedJob(ctx, user, id); } catch { continue; }
-    const apps = await ctx.db.query("applications").withIndex("by_workday_owner", q => q.eq("jobId", id).eq("ownerTaId", user._id)).collect();
-    if (apps.some(a => ["follow_up", "ta_shortlist", "ai_call", "second_shortlist"].includes(a.currentStage))) jobs.push(job);
-    else {
-      const carries = await ctx.db.query("taWorkdayCarry").withIndex("by_user_job", q => q.eq("userId", user._id).eq("jobId", id)).collect();
-      let pending = false;
-      for (const carry of carries.filter(c => c.key.startsWith("profile:"))) {
-        const linkId = ctx.db.normalizeId("linkVault", carry.key.slice(8));
-        const link = linkId ? await ctx.db.get(linkId) : null;
-        const app = link?.candidateId ? apps.find(a => a.candidateId === link.candidateId) : null;
-        if (link?.addedBy === user._id && link.openingId === id && link.outcome !== "declined" && (!app || !["rejected", "unresponsive", "placed"].includes(app.currentStage))) pending = true;
-      }
-      if (!pending) {
-        const posts = await ctx.db.query("jobPosts").withIndex("by_opening", q => q.eq("openingId", id)).collect();
-        const incoming = await ctx.db.query("applications").withIndex("by_job_stage_reviewed", q => q.eq("jobId", id).eq("currentStage", "new_cvs").eq("workdayReviewedAt", undefined)).collect();
-        pending = incoming.some(a => !!a.jobPostId && posts.some(p => p._id === a.jobPostId && p.assignedTaId === user._id));
-      }
-      if (pending) jobs.push(job);
-    }
-  }
-  return jobs;
-}
-
 async function notify(
   ctx: MutationCtx,
   leadId: Id<"users"> | undefined,
@@ -1148,7 +1115,8 @@ export const refreshDueChecks = internalMutation({
 });
 
 /**
- * Start's carried positions, one per run (29 Oct). Refreshing all of them
+ * The carried positions of days started before 10 Nov, one per run (29 Oct). Start no longer carries
+ * positions forward: a day of sixteen jobs made the Today's Checks poll run past the one-second limit. Refreshing all of them
  * inside Start made attendance wait on, and fail with, every carried job's
  * evidence: fifteen carried positions meant fifteen checklists in one
  * mutation. The drawer works checks out live, so only the task history waits.
@@ -1318,14 +1286,11 @@ export const dashboard = internalQuery({
             id: j._id,
             title: j.title,
             workType: assignmentModes.get(j._id) ?? (workedJobs.has(j._id) ? "Follow-up" as const : "100%" as const),
-            carry: false,
           }))
       : [];
-    const carryIds = !active && worker ? new Set((await pendingJobs(ctx, user)).map(j => j._id)) : new Set<string>();
     // The checklist preview is fetched for the one position picked
     // (startPreview); building one for every assigned option on every poll
     // made the drawer itself slow before Start (29 Oct).
-    if (!active) for (const option of options) option.carry = carryIds.has(option.id);
     // The last two days come with every load; earlier ones only when the TA
     // presses "Load earlier workdays". Fifteen days were read on every
     // 20-second poll whether or not anyone opened them (28 Oct).
@@ -1729,7 +1694,6 @@ export const start = internalMutation({
     const job = await assignedJob(ctx, user, args.jobId);
     const mode = await suggestedMode(ctx, user._id, args.jobId, args.workType);
     const now = Date.now();
-    const carry = (await pendingJobs(ctx, user)).filter(j => j._id !== args.jobId);
     const id = await ctx.db.insert("taWorkdays", {
       userId: user._id,
       date: workdayDate(now),
@@ -1743,7 +1707,6 @@ export const start = internalMutation({
           workLocationIds: activeWorkLocationIds(job),
           modeHistory: [{ at: now, workType: mode }],
         },
-        ...carry.map(j => ({ jobId: j._id, workType: "Follow-up" as const, addedAt: now, leadId: j.taLeadId, workLocationIds: activeWorkLocationIds(j), carried: true, modeHistory: [{ at: now, workType: "Follow-up" }] })),
       ],
     });
     await setMode(ctx, user._id, args.jobId, mode);
@@ -1756,10 +1719,7 @@ export const start = internalMutation({
       "workday_started",
       "Started workday",
     );
-    for (const j of carry) { await setMode(ctx, user._id, j._id, "Follow-up"); await attachLead(ctx, id, j.taLeadId); }
     await refreshWorkdayChecks(ctx, args.jobId);
-    // Scheduled inside this mutation, so it commits or rolls back with the day.
-    if (carry.length) await ctx.scheduler.runAfter(0, makeFunctionReference<"mutation">("ta/workdays:refreshCarried"), { workdayId: id, jobIds: carry.map(j => j._id) });
     if (stale) await ctx.scheduler.runAfter(0, makeFunctionReference<"mutation">("ta/workdays:recoverStaleFor"), { userId: user._id });
     return { id };
   },
