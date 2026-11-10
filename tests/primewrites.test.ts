@@ -22,6 +22,7 @@ recordWrites([{ table: "applications", kind: "update", key: "a", after: { id: "a
 eq("and what it wrote is remembered for a reload in flight", state.recentWrites.map((w) => [w.table, w.kind, w.key, w.at]), [["applications", "update", "a", 5_000]]);
 
 state.tablesAt = 10;
+state.slowAt = 10;
 state.allAt = 10;
 state.openings.set("o1", 10);
 state.events.set("o1", 10);
@@ -29,7 +30,7 @@ state.candidates.set("c1", 10);
 const beforeReset = Date.now();
 resetStore();
 eq("a backend write (resetStore) counts as a save", state.writes, w0 + 2);
-eq("and leaves every table due for a fresh read", [state.tablesAt, state.allAt, state.openings.size, state.events.size, state.candidates.size], [0, 0, 0, 0, 0]);
+eq("and leaves every table due for a fresh read, the slow ones too", [state.tablesAt, state.slowAt, state.allAt, state.openings.size, state.events.size, state.candidates.size], [0, 0, 0, 0, 0, 0]);
 eq("and marks when, so a fetch that began earlier is not trusted as fresh", state.staleAt >= beforeReset, true);
 
 state.openings.set("o2", 10);
@@ -39,8 +40,9 @@ invalidateOpening("o2");
 eq("invalidating one opening forgets its applications and its history only", [state.openings.has("o2"), state.events.has("o2"), state.openings.has("o3")], [false, false, true]);
 
 state.tablesAt = 10;
+state.slowAt = 10;
 markTablesStale();
-eq("a direct write to the tables marks them stale, with the time", [state.tablesAt, state.staleAt >= beforeReset], [0, true]);
+eq("a direct write to the tables marks them stale, with the time", [state.tablesAt, state.slowAt, state.staleAt >= beforeReset], [0, 0, true]);
 
 const w1 = state.writes;
 state.version++; // what a finished load does

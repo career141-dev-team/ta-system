@@ -270,6 +270,7 @@ Repo hard rules that apply: never run `convex deploy/run/import/env set` against
 
 ## History
 - 10 Nov 2026 (workday-start-save PR): `start` no longer runs old-day recovery inside its own transaction; it schedules `recoverStaleFor` (one stale day per run) after the day is saved, and `pendingJobs` treats an open day dated before today as worked. Why: a TA with yesterday's 16-position day still open (her EOD had failed) got "Could not save. Try again" on every Start. Tests: `tests/workday.test.ts` (stale and recovered days now run `recoverStaleFor` explicitly).
+- 10 Nov 2026 (desk-load-shape PR): `requiredChecks(ctx, day, entry, { lean })` - `jobView` passes `lean: true` for a Follow-up/Add-on entry, which skips the post, link, suggestion and sourcing-run reads (their checks are dropped by `checksForWorkType` anyway); `saveCheck` and `emailPreflight` still read everything. Why: the dashboard query still timed out at 4.5-4.9 s on the live log at 16:50 for a day of carried positions. Also the app's desk reload now reads whole tables four at a time and the heavy text tables every five minutes (src/data/prime.ts).
 - 10 Nov 2026 (eod-checks-bounded PR): the EOD composer's `EodJobChecks` polls one position (`?job=`), a failed poll with nothing held no longer greys Send (`unknown`; the server re-checks on send via `emailPreflight` and the send), the box shows the route's own sentence; `jobView` skips the candidate queues for Follow-up/Add-on entries and shares the secondary-upload scan per day view; `requiredChecks` reads bounded (indexes `profileSuggestions.by_opening_round`, `taWorkdayEvidence.by_job_record`). Why: "Could not load workday checks" greyed Send daily at EOD time - every poll rebuilt every position with unbounded collects inside one 1 s query. Tests: `tests/eodchecks.test.ts`, `tests/workday.test.ts`.
 
 - 2026-10-13 `23e6794` first workday system (/workday page, Start/Finish buttons, tables `taWorkdayCheckNotes`, `taSourcingRuns`, `taWorkdayEvidence`, `taWorkdayTaskEvents`, lead history, notifications, plan doc); `e6342fe` profile handoffs enforced and assigned positions preserved.
@@ -288,8 +289,8 @@ Repo hard rules that apply: never run `convex deploy/run/import/env set` against
 - 2026-11-02 an expired day bells its leads (`workday_expired`); 17:30/18:30 reminders about today's missing EODs (`convex/ta/eodReminders.ts`); a stuck send bells the admins and the job's lead (`eod_stuck`).
 
 <!-- skill-meta
-verified-commit: 8799cf8
-verified-hash: ffe31f9a71c46e970b9b3f49c145120d117c3123
+verified-commit: 2b195d6a
+verified-hash: 09b398228344aa4763d8d3c83fdc7d6ff95000f1
 verified-date: 2026-11-10
 sources:
   convex/ta/workdays.ts

@@ -45,6 +45,16 @@ export function blank(): Database {
  * request is exactly the "not primed" failure the loud error exists to catch.
  */
 export const TABLES_TTL_MS = 30_000;
+/*
+ * The heavy text tables - research reports, chats, suggestions, benchmarks,
+ * saved reports - are written only through this app's own commits, which the
+ * working set already holds, so they are re-read every five minutes rather
+ * than every thirty seconds (10 Nov: reloading them with everything else every
+ * 30 s was a steady load on the backend that other queries then waited on).
+ * A write made outside the store (resetStore / markTablesStale) still forces
+ * them to reload with the rest.
+ */
+export const SLOW_TABLES_TTL_MS = 5 * 60_000;
 export const CANDIDATE_TTL_MS = 60_000;
 /** Candidate rows nobody has asked for in this long are let go, so the set does
  *  not grow with every search the desk ever ran. No request lasts this long. */
@@ -54,6 +64,8 @@ export const state = {
   snapshot: null as Database | null,
   /** When the small tables (users, openings, clients) were last read. */
   tablesAt: 0,
+  /** When the heavy text tables were last read (SLOW_TABLES_TTL_MS). */
+  slowAt: 0,
   /** Candidate id -> when its row was fetched (kept for misses too). */
   candidates: new Map<Id, number>(),
   /** Opening id -> when its applications were fetched. */
@@ -168,6 +180,7 @@ export function missingCandidateMessage(id: Id): string {
  */
 export function resetStore(): void {
   state.tablesAt = 0;
+  state.slowAt = 0;
   state.candidates = new Map();
   state.openings = new Map();
   state.events = new Map();
@@ -274,6 +287,7 @@ export function invalidateOpening(id: Id): void {
  */
 export function markTablesStale(): void {
   state.tablesAt = 0;
+  state.slowAt = 0;
   state.allAt = 0;
   state.staleAt = Date.now();
   state.version++;
