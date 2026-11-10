@@ -32,7 +32,7 @@ All dates are Asia/Colombo: `workdayDate(ms)` in `src/lib/workday.ts` (`toLocale
 
 ### Flow 1 - Start (`ta/workdays:start`, op `start`)
 Trigger: TA picks a position and work type in the drawer (JobPicker, no active day) -> `changeWorkday` (`src/app/workday/actions.ts`) -> `convexMutation("ta/workdays:start", {actorId, jobId, workType})`.
-1. `requireWorker`; if today's day already exists it is returned at once (double click, retry after a lost answer: never a second row, no recovery work); otherwise `recoverStaleDays(userId)` (see Flow 8).
+1. `requireWorker`; if today's day already exists it is returned at once (double click, retry after a lost answer: never a second row, no recovery work); otherwise, since 10 Nov, old open days are only *noted* here and closed after the day is saved by the scheduled `ta/workdays:recoverStaleFor({userId})` (see Flow 8); `start` itself does no recovery work.
 2. If an active day exists, returns `{id}` unchanged (idempotent).
 3. If the latest row is dated today (finished and not active) -> "Today's workday is already finished. Ask the lead to review its record."
 4. `assignedJob`: `assertJobAccess(..., ["primary_recruiter","supporting_recruiter"])`, job not `isGone` ("That job is no longer available."), and `job.taLeadId` must exist ("Ask the lead to assign a TA Lead to this job before starting work.").
@@ -138,7 +138,8 @@ Two send paths create a `taWorkdayMail` receipt in status `sending` before any p
 Midday, revised (`revised`/`parentId`), failed, uncertain and reopened sends never complete or retime the day. After the clock stops, Follow-up/Add-on and further 100% positions (up to 5 100% a day, `MAX_100_PER_DAY`) can still be added and sent; the clock stays at the first 100% EOD. Also called from `recordActiveMode` and `reconcileMail`.
 
 ### Flow 8 - Stale days and recovery
-- `recoverStaleDays(ctx, userId)` (called by `start`): every unfinished day with `date < today` is first passed to `autoCompleteWorkday`; if still open it is closed `expired` at `Date.parse(date + "T00:00:00+05:30") + 86400000` (next Colombo midnight). Since 2 Nov `closeWorkday` then bells each distinct `entry.leadId` once (`notify` type `workday_expired`, "Workday <date> expired without an end-of-day email", `workdayId` set so the bell opens that day in Today's Checks); before this an expired day closed with nobody told and the lead found the missing EOD by opening the panel. An expired day is "Incomplete (expired)" in the UI and never counts as success.
+- `ta/workdays:recoverStaleFor({userId})` (internalMutation, scheduled by `start` when the TA has an unfinished day dated before today; 10 Nov): closes ONE stale day per run, oldest first, each run scheduling the next, through `recoverStaleDay`. Why: closing a day builds its full completion snapshot (every position); a TA whose EOD had failed the evening before, with sixteen positions on that open day, had Start fail with "Could not save" every time because recovery, the carry scan, the new day and its checks ran in one transaction. A failed recovery run leaves the old day open for `recoverOpenWorkdays` and never blocks Start. `pendingJobs` counts an open day dated before today as worked, so its positions still carry forward before it is closed.
+- `recoverStaleDays(ctx, userId)` (used by `recoverOpenWorkdays`): every unfinished day with `date < today` is first passed to `autoCompleteWorkday`; if still open it is closed `expired` at `Date.parse(date + "T00:00:00+05:30") + 86400000` (next Colombo midnight). Since 2 Nov `closeWorkday` then bells each distinct `entry.leadId` once (`notify` type `workday_expired`, "Workday <date> expired without an end-of-day email", `workdayId` set so the bell opens that day in Today's Checks); before this an expired day closed with nobody told and the lead found the missing EOD by opening the panel. An expired day is "Incomplete (expired)" in the UI and never counts as success.
 - A missed end of day for a past day (`ta/dailyEmails:begin` with `forDate`, see /eod-email Flow F, 30 Oct) is sent outside the workday: no receipt, no checks, no `autoCompleteWorkday`; the expired day stays expired.
 - The 17:30 / 18:30 Colombo reminders about today's missing EODs live in `convex/ta/eodReminders.ts` (crons `ta-eod-reminder`, `ta-eod-lead-digest`; bells `eod_reminder` to the TA, `eod_lead_digest` to the lead); they read today's open days through `by_finished_date` and count 100% entries only (see /eod-email Flow D).
 - `ta/workdays:recoverOpenWorkdays({dryRun})` (internalMutation, pipeline `run_function` only): lists all unfinished days dated before today (`by_finished` index), returns `{dryRun, affected}`, applies `recoverStaleDays` per user when `dryRun:false`. Idempotent.
@@ -268,6 +269,7 @@ Pre-merge checklist:
 Repo hard rules that apply: never run `convex deploy/run/import/env set` against live from a laptop; live changes only via the release pipeline; outbound only through `convex/lib/outreachSafety.ts` and `convex/lib/outboundGuard.ts`; data changes are `dryRun` internal functions run by the pipeline; branch `<person>/<topic>` + PR, never push to `main`/`production`; no secrets in code or docs.
 
 ## History
+- 10 Nov 2026 (workday-start-save PR): `start` no longer runs old-day recovery inside its own transaction; it schedules `recoverStaleFor` (one stale day per run) after the day is saved, and `pendingJobs` treats an open day dated before today as worked. Why: a TA with yesterday's 16-position day still open (her EOD had failed) got "Could not save. Try again" on every Start. Tests: `tests/workday.test.ts` (stale and recovered days now run `recoverStaleFor` explicitly).
 - 10 Nov 2026 (eod-checks-bounded PR): the EOD composer's `EodJobChecks` polls one position (`?job=`), a failed poll with nothing held no longer greys Send (`unknown`; the server re-checks on send via `emailPreflight` and the send), the box shows the route's own sentence; `jobView` skips the candidate queues for Follow-up/Add-on entries and shares the secondary-upload scan per day view; `requiredChecks` reads bounded (indexes `profileSuggestions.by_opening_round`, `taWorkdayEvidence.by_job_record`). Why: "Could not load workday checks" greyed Send daily at EOD time - every poll rebuilt every position with unbounded collects inside one 1 s query. Tests: `tests/eodchecks.test.ts`, `tests/workday.test.ts`.
 
 - 2026-10-13 `23e6794` first workday system (/workday page, Start/Finish buttons, tables `taWorkdayCheckNotes`, `taSourcingRuns`, `taWorkdayEvidence`, `taWorkdayTaskEvents`, lead history, notifications, plan doc); `e6342fe` profile handoffs enforced and assigned positions preserved.
@@ -286,8 +288,8 @@ Repo hard rules that apply: never run `convex deploy/run/import/env set` against
 - 2026-11-02 an expired day bells its leads (`workday_expired`); 17:30/18:30 reminders about today's missing EODs (`convex/ta/eodReminders.ts`); a stuck send bells the admins and the job's lead (`eod_stuck`).
 
 <!-- skill-meta
-verified-commit: 25fe4939
-verified-hash: 4b56b6d46418f4ca4f277a3d24a512f86382d411
+verified-commit: 1fe2ec36
+verified-hash: 76731ac36f1b5ba1ee0008ff5fd122e53d6181c6
 verified-date: 2026-11-10
 sources:
   convex/ta/workdays.ts

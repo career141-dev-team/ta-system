@@ -155,7 +155,10 @@ async function suggestedMode(_ctx: Ctx, _userId: Id<"users">, _jobId: Id<"jobs">
 
 async function pendingJobs(ctx: Ctx, user: Doc<"users">) {
   const days = await ctx.db.query("taWorkdays").withIndex("by_user", q => q.eq("userId", user._id)).collect();
-  const ids = new Set(days.filter(d => d.finishedAt !== undefined).flatMap(d => d.jobs.map(j => j.jobId)));
+  // An earlier day still open counts as worked too: Start no longer closes it
+  // first (10 Nov), so its positions must still carry forward.
+  const today = workdayDate(Date.now());
+  const ids = new Set(days.filter(d => d.finishedAt !== undefined || d.date < today).flatMap(d => d.jobs.map(j => j.jobId)));
   const jobs: Doc<"jobs">[] = [];
   for (const id of ids) {
     const job = await ctx.db.get(id);
@@ -990,16 +993,42 @@ async function closeWorkday(ctx: MutationCtx, day: Doc<"taWorkdays">, at: number
   }
 }
 
-async function recoverStaleDays(ctx: MutationCtx, userId: Id<"users">) {
+async function staleDaysOf(ctx: MutationCtx, userId: Id<"users">) {
   const days = await ctx.db.query("taWorkdays").withIndex("by_user_finished", q => q.eq("userId", userId).eq("finishedAt", undefined)).collect();
-  for (const day of days.filter(d => d.date < workdayDate(Date.now()))) {
-    await autoCompleteWorkday(ctx, day._id);
-    if ((await ctx.db.get(day._id))?.finishedAt === undefined) {
-      const midnight = Date.parse(`${day.date}T00:00:00+05:30`) + 86400000;
-      await closeWorkday(ctx, day, midnight, "expired");
-    }
+  return days.filter(d => d.date < workdayDate(Date.now())).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+async function recoverStaleDay(ctx: MutationCtx, day: Doc<"taWorkdays">) {
+  await autoCompleteWorkday(ctx, day._id);
+  if ((await ctx.db.get(day._id))?.finishedAt === undefined) {
+    const midnight = Date.parse(`${day.date}T00:00:00+05:30`) + 86400000;
+    await closeWorkday(ctx, day, midnight, "expired");
   }
 }
+
+async function recoverStaleDays(ctx: MutationCtx, userId: Id<"users">) {
+  for (const day of await staleDaysOf(ctx, userId)) await recoverStaleDay(ctx, day);
+}
+
+/**
+ * Yesterday's open day, closed after today's Start rather than inside it
+ * (10 Nov). Closing a day reads every position on it to write its completion
+ * snapshot; a TA whose EOD had failed the evening before, with sixteen
+ * positions on that day, pressed Start and the one transaction - recovery,
+ * the carry scan, the new day and its checks - went over what a mutation may
+ * read, so Start answered "Could not save" every time. One day per run, the
+ * oldest first, each scheduling the next; a failure here leaves the old day
+ * open for the pipeline's recoverOpenWorkdays and never blocks today.
+ */
+export const recoverStaleFor = internalMutation({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const [day, ...rest] = await staleDaysOf(ctx, args.userId);
+    if (!day) return;
+    await recoverStaleDay(ctx, day);
+    if (rest.length) await ctx.scheduler.runAfter(0, makeFunctionReference<"mutation">("ta/workdays:recoverStaleFor"), { userId: args.userId });
+  },
+});
 
 /** Pipeline only: never turns missing mail into a successful completed day. */
 export const recoverOpenWorkdays = internalMutation({
@@ -1686,7 +1715,8 @@ export const start = internalMutation({
     // or pay for old-day recovery again (29 Oct).
     const active = await activeFor(ctx, user._id);
     if (active) return { id: active._id };
-    await recoverStaleDays(ctx, user._id);
+    // Old open days are closed AFTER today's day is saved - see recoverStaleFor.
+    const stale = (await staleDaysOf(ctx, user._id)).length > 0;
     const prior = await ctx.db
       .query("taWorkdays")
       .withIndex("by_user", (q) => q.eq("userId", user._id))
@@ -1730,6 +1760,7 @@ export const start = internalMutation({
     await refreshWorkdayChecks(ctx, args.jobId);
     // Scheduled inside this mutation, so it commits or rolls back with the day.
     if (carry.length) await ctx.scheduler.runAfter(0, makeFunctionReference<"mutation">("ta/workdays:refreshCarried"), { workdayId: id, jobIds: carry.map(j => j._id) });
+    if (stale) await ctx.scheduler.runAfter(0, makeFunctionReference<"mutation">("ta/workdays:recoverStaleFor"), { userId: user._id });
     return { id };
   },
 });
