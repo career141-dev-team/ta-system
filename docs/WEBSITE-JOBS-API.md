@@ -41,7 +41,7 @@ Each job:
 }
 ```
 
-The client's name, the salary and the people working the job are never in it.
+The client's name, the salary and the people working the job are never in it. The JD is cleaned first: its Client and Package line, any Package, Salary or Benefits section, and the client's name wherever else it appears ("our client").
 
 ## For the website
 
