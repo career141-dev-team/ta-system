@@ -306,7 +306,8 @@ export const autoReconcile = internalMutation({
     if (!email || email.status !== "uncertain" || email.finalizedAt || email.reconciledBy) return { ok: false };
     const reason = args.sent ? "Checked automatically: the message is in the sending mailbox's Sent Items." : "Checked automatically: the message is not in the sending mailbox's Sent Items, so it was never sent.";
     const patch = { status: args.sent ? "accepted" as const : "failed" as const,
-      ...(args.sent ? { acceptedAt: email.acceptedAt ?? Date.now() } : { sendError: reason }), reconciliationReason: reason };
+      // Keep the error the send itself recorded: on 10 Nov every failed row showed only this line and the real cause was gone.
+      ...(args.sent ? { acceptedAt: email.acceptedAt ?? Date.now() } : { sendError: email.sendError ? `${email.sendError} | ${reason}`.slice(0, 500) : reason }), reconciliationReason: reason };
     await ctx.db.patch(email._id, patch);
     if (email.receiptId) await ctx.db.patch(email.receiptId, { status: patch.status, reconciledAt: Date.now(), reconciliationReason: reason });
     if (args.sent) await finalizeDailyEmail(ctx, { ...email, ...patch });

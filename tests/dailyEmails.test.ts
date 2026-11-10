@@ -233,6 +233,9 @@ try {
   await (mail.autoReconcile as any)._handler(ctx, { id: delivered, sent: true });
   assert.equal((await db.get(gone))!.status, "failed", "Not in Sent Items -> failed, so the TA can send again");
   assert.match((await db.get(gone))!.sendError, /never sent/);
+  await db.patch("auto-gone", { status: "uncertain", sendError: "Web request failed: boom", reconciliationReason: undefined });
+  await (mail.autoReconcile as any)._handler(ctx, { id: "auto-gone", sent: false });
+  assert.match((await db.get("auto-gone"))!.sendError, /^Web request failed: boom \| .*never sent/, "The send's own error survives the auto-check");
   assert.equal((await db.get(delivered))!.status, "accepted", "In Sent Items -> accepted");
   assert.ok((await db.get(delivered))!.finalizedAt, "and finalized like a reconcile");
   await (mail.autoReconcile as any)._handler(ctx, { id: gone, sent: true });
