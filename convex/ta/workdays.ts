@@ -226,13 +226,54 @@ async function attachLead(
   }
 }
 
+/**
+ * Mailbox uploads routed to a second advert, today. One upload can be routed
+ * to several jobs, so each job's checks must see it before an application row
+ * exists. Read once per day view and shared by every position on it (10 Nov):
+ * it is eight status scans of today's uploads, and it was run again for every
+ * position on every poll.
+ */
+async function secondaryUploadsSince(ctx: Ctx, since: number): Promise<Doc<"cvUploads">[]> {
+  const queues = await Promise.all(
+    [
+      "uploaded",
+      "queued",
+      "pending",
+      "processing",
+      "pending_retry",
+      "failed",
+      "needs_review",
+      "healing",
+    ].map((status) =>
+      ctx.db
+        .query("cvUploads")
+        .withIndex("by_status", (q) =>
+          q.eq("status", status).gte("_creationTime", since),
+        )
+        .filter((q) => q.neq(q.field("alsoAssignTo"), undefined))
+        .take(LIMIT + 1),
+    ),
+  );
+  return queues.flat();
+}
+
 async function jobView(
   ctx: Ctx,
   day: Doc<"taWorkdays">,
   entry: Doc<"taWorkdays">["jobs"][number],
   now: number,
+  shared: { secondaryUploads?: Doc<"cvUploads">[] } = {},
 ): Promise<WorkdayJobView> {
   const job = await ctx.db.get(entry.jobId);
+  /*
+   * A Follow-up or Add-on position shows only director_cv, chatgpt,
+   * daily_email and mail (checksForWorkType), so the candidate queues below -
+   * every CV since the day began, the unreviewed ones, the reapplied ones, the
+   * uploads - would be read and then dropped. They are skipped; what stays
+   * feeds the shortlist and activity lines the drawer still shows (10 Nov).
+   */
+  const full = entry.workType === "100%";
+  const none = <T,>(): Promise<T[]> => Promise.resolve([]);
   const base = `/openings/${entry.jobId}`;
   const checks: WorkdayCheck[] = [];
   const add = (
@@ -257,7 +298,7 @@ async function jobView(
     });
   const since = colomboDayStart(day.startedAt);
   const appQueues = await Promise.all([
-    ctx.db
+    full ? ctx.db
       .query("applications")
       .withIndex("by_job_stage_reviewed", (q) =>
         q
@@ -265,13 +306,13 @@ async function jobView(
           .eq("currentStage", "new_cvs")
           .eq("workdayReviewedAt", undefined),
       )
-      .take(LIMIT + 1),
-    ctx.db
+      .take(LIMIT + 1) : none<Doc<"applications">>(),
+    full ? ctx.db
       .query("applications")
       .withIndex("by_jobId", (q) =>
         q.eq("jobId", entry.jobId).gte("_creationTime", since),
       )
-      .take(LIMIT + 1),
+      .take(LIMIT + 1) : none<Doc<"applications">>(),
     ctx.db
       .query("applications")
       .withIndex("by_workday_owner", (q) =>
@@ -300,12 +341,12 @@ async function jobView(
         q.eq("jobId", entry.jobId).gte("workdayReviewedAt", day.startedAt),
       )
       .take(LIMIT + 1),
-    ctx.db
+    full ? ctx.db
       .query("applications")
       .withIndex("by_workday_reapply", (q) =>
         q.eq("jobId", entry.jobId).gte("reappliedAt", since),
       )
-      .take(LIMIT + 1),
+      .take(LIMIT + 1) : none<Doc<"applications">>(),
   ]);
   const apps = [...new Map(appQueues.flat().map((a) => [a._id, a])).values()];
   const linkQueues = await Promise.all([
@@ -350,26 +391,7 @@ async function jobView(
   const links = [...new Map(linkQueues.flat().map((l) => [l._id, l])).values()];
   // One mailbox upload can be routed to several adverts. Its secondary jobs
   // must see pending extraction too, before application rows exist.
-  const secondaryQueues = await Promise.all(
-    [
-      "uploaded",
-      "queued",
-      "pending",
-      "processing",
-      "pending_retry",
-      "failed",
-      "needs_review",
-      "healing",
-    ].map((status) =>
-      ctx.db
-        .query("cvUploads")
-        .withIndex("by_status", (q) =>
-          q.eq("status", status).gte("_creationTime", since),
-        )
-        .filter((q) => q.neq(q.field("alsoAssignTo"), undefined))
-        .take(LIMIT + 1),
-    ),
-  );
+  const secondaryQueues = [full ? (shared.secondaryUploads ?? (await secondaryUploadsSince(ctx, since))) : []];
   const [
     rounds,
     research,
@@ -402,10 +424,10 @@ async function jobView(
         q.eq("userId", day.userId).eq("jobId", entry.jobId),
       )
       .take(LIMIT + 1),
-    ctx.db
+    full ? ctx.db
       .query("cvUploads")
       .withIndex("by_assignToJob", (q) => q.eq("assignToJob", entry.jobId))
-      .take(LIMIT + 1),
+      .take(LIMIT + 1) : none<Doc<"cvUploads">>(),
     ctx.db
       .query("taWorkdayMail")
       .withIndex("by_workday_job", (q) =>
@@ -423,7 +445,8 @@ async function jobView(
   if (
     [
       ...appQueues,
-      ...secondaryQueues,
+      // The shared scan is eight queues of up to LIMIT + 1 each.
+      ...(secondaryQueues[0].length > 8 * LIMIT ? [secondaryQueues[0]] : []),
       ...linkQueues,
       rounds,
       benchmarks,
@@ -826,6 +849,7 @@ async function view(
   day: Doc<"taWorkdays">,
   now: number,
   live = false,
+  onlyJobId?: string,
 ): Promise<WorkdayView> {
   if (day.finishedAt !== undefined && day.completion && !live)
     return withoutReturningTasks(day.completion as WorkdayView);
@@ -834,7 +858,13 @@ async function view(
     .query("taWorkdayRequests")
     .withIndex("by_workday", (q) => q.eq("workdayId", day._id))
     .collect();
-  const entries = live ? await availableWorkdayEntries(ctx, day.jobs) : day.jobs;
+  const all = live ? await availableWorkdayEntries(ctx, day.jobs) : day.jobs;
+  // The EOD composer asks for the one position it is sending (10 Nov); the
+  // drawer still asks for the day.
+  const entries = onlyJobId ? all.filter((j) => j.jobId === onlyJobId) : all;
+  const shared = entries.some((j) => j.workType === "100%")
+    ? { secondaryUploads: await secondaryUploadsSince(ctx, colomboDayStart(day.startedAt)) }
+    : {};
   const requests = live
     ? await availableWorkdayRequests(ctx, storedRequests)
     : storedRequests;
@@ -846,7 +876,7 @@ async function view(
     startedAt: day.startedAt,
     finishedAt: day.finishedAt ?? null,
     closureReason: day.closureReason,
-    jobs: await Promise.all(entries.map((j) => jobView(ctx, day, j, now))),
+    jobs: await Promise.all(entries.map((j) => jobView(ctx, day, j, now, shared))),
     requests: await Promise.all(
       requests.map(async (r) => ({
         id: r._id,
@@ -1180,7 +1210,9 @@ export const emailPreflight = internalMutation({
 });
 
 export const dashboard = internalQuery({
-  args: { actorId: v.string(), detail: v.optional(v.boolean()), cursor: v.optional(v.string()), date: v.optional(v.string()), focusWorkday: v.optional(v.string()), taId: v.optional(v.string()), allHistory: v.optional(v.boolean()) },
+  args: { actorId: v.string(), detail: v.optional(v.boolean()), cursor: v.optional(v.string()), date: v.optional(v.string()), focusWorkday: v.optional(v.string()), taId: v.optional(v.string()), allHistory: v.optional(v.boolean()),
+    /** Build the active day's checks for this one position only (the EOD composer, 10 Nov). */
+    jobId: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const user = await requireActor(ctx, args.actorId);
     const role = roleOf(user);
@@ -1211,7 +1243,7 @@ export const dashboard = internalQuery({
         role,
         lastFinishedAt,
         lastFinishedDate,
-        active: active ? await view(ctx, active, now, true) : null,
+        active: active ? await view(ctx, active, now, true, args.jobId) : null,
         history: [],
         team: [],
         options: [],

@@ -203,6 +203,11 @@ try {
   });
   assert.equal(addedSecond.pending, false);
   assert.equal(rows("taWorkdays")[0].jobs.length, 2);
+  // The EOD composer asks for the one position it is sending (10 Nov).
+  const onlyJob2 = await run("dashboard", { actorId: "ta", jobId: "job2" });
+  assert.deepEqual(onlyJob2.active.jobs.map((j: Row) => j.jobId), ["job2"], "The composer's poll builds the one position it asked for");
+  assert.ok(onlyJob2.active.jobs[0].checks.every((c: Row) => ["director_cv", "chatgpt", "daily_email", "mail"].includes(c.key.split(":")[0])), "An Add-on position carries only the returning checks");
+  assert.equal((await run("dashboard", { actorId: "ta" })).active.jobs.length, 2, "The drawer still gets the whole day");
   await assertWorkdayScope(ctx, rows("users")[0] as any, "job2" as any);
   const support = await run("start", {
     actorId: "support",
