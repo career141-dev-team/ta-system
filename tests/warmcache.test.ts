@@ -99,7 +99,12 @@ eq("the opening's events are read with the opening", prime.includes("backend.eve
 eq("a request renders from held rows and refreshes behind", prime.includes('if (need === "refresh") refreshInBackground(scope);'), true);
 eq("a stale mark still makes the next request wait", prime.includes('if (need === "wait") return queue(scope);'), true);
 eq("the version bumps only when rows changed", prime.includes("if (changed) state.version++;"), true);
-eq("the whole tables load together, not three at a time", prime.includes("Promise.all(WHOLE_TABLES.map("), true);
+eq("the whole tables load through a small pool, not all at once", prime.includes("const WHOLE_TABLE_CONCURRENCY = 4;") && prime.includes("Array.from({ length: Math.min(WHOLE_TABLE_CONCURRENCY, queue.length) }, worker)"), true);
+eq("the heavy text tables sit on the slow clock", /SLOW_TABLES = \[[^\]]*"researchReports"[^\]]*"chat"/.test(prime) && prime.includes("now - state.slowAt > SLOW_TABLES_TTL_MS"), true);
+eq("the backend-written tables stay on the fast clock", /FAST_TABLES = \[[^\]]*"reviewRounds"[^\]]*"intake"[^\]]*"eodEmailCopies"/.test(prime), true);
+eq("the follow-up set skips the CV file-name lookup", prime.includes("backend.candidatesByIds(actor, stale, { cvNamesFor: namesFor })") && read("src/data/convex/backend.ts").includes("(!opts.cvNamesFor || opts.cvNamesFor.has(d._id))"), true);
+eq("CV file names are looked up together, not one after another", /const found = await Promise\.all\(\s*ids\.map\(async \(id\) => \{/.test(read("convex/lib/cvUploadLookup.ts")), true);
+eq("pipelineEvents is on neither clock", /FAST_TABLES = \[[^\]]*pipelineEvents/.test(prime) || /SLOW_TABLES = \[[^\]]*pipelineEvents/.test(prime), false);
 
 const tables = read("convex/ta/tables.ts");
 const whole = tables.slice(tables.indexOf("const WHOLE"), tables.indexOf("]);", tables.indexOf("const WHOLE")));

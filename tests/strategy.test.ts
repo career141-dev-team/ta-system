@@ -341,7 +341,9 @@ console.log("\nThe tables are in every list the Convex store needs");
 {
   const read = (p: string) => fs.readFileSync(path.join(import.meta.dirname ?? ".", "..", p), "utf8");
   const list = (src: string, re: RegExp) => [...(src.match(re)?.[1] ?? "").matchAll(/"([A-Za-z]+)"/g)].map((m) => m[1]).sort();
-  const whole = list(read("src/data/prime.ts"), /WHOLE_TABLES = \[([\s\S]*?)\] as const/);
+  // Since 10 Nov the whole tables sit on two clocks (FAST_TABLES, SLOW_TABLES); together they are the list.
+  const prime = read("src/data/prime.ts");
+  const whole = [...list(prime, /FAST_TABLES = \[([\s\S]*?)\] as const/), ...list(prime, /SLOW_TABLES = \[([\s\S]*?)\] as const/)].sort();
   const wholeBackend = list(read("convex/ta/tables.ts"), /new Set\(\[([\s\S]*?)\]\)/);
   eq("the app's whole-table list and the backend's agree", whole, wholeBackend);
   for (const t of ["strategies", "strategyAssignments"]) {

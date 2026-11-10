@@ -47,6 +47,11 @@ eq("suggestions are read newest-first and bounded", required.includes('withIndex
 eq("no suggestion table is collected whole", /profileSuggestions"\)[^\n]*\.collect\(\)/.test(required), false);
 eq("evidence is read per record", required.includes('withIndex("by_job_record"') && !/taWorkdayEvidence"\)\.withIndex\("by_job"/.test(required), true);
 eq("sourcing runs are bounded", required.includes(".order(\"desc\").take(SOURCING_RUNS)"), true);
+eq("a carried position's checks skip the evidence it would drop", required.includes("const full = !opts.lean;") && jobView.includes("requiredChecks(ctx, day, entry, { lean: !full })"), true);
+eq("the write paths still read everything", !workdays.slice(workdays.indexOf("export const saveCheck")).includes("{ lean:"), true);
+
+const candidatePage = read("src/app/openings/[id]/candidate/[appId]/page.tsx");
+eq("the candidate page reads colleagues only on the Company Reference tab", candidatePage.includes('const wantColleagues = tab === "company_refs";') && candidatePage.includes("if (wantColleagues && isConvex() && targetCompany) {"), true);
 
 const schema = read("convex/schema.ts");
 eq("the indexes exist", schema.includes('.index("by_opening_round", ["openingId", "round"])') && schema.includes('.index("by_job_record", ["jobId", "recordId"])'), true);

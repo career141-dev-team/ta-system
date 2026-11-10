@@ -18,15 +18,26 @@ import { jobEodComplete, workdayLocationIds } from "./workLocationEmails";
 const SUGGESTION_ROWS = 200;
 const SOURCING_RUNS = 25;
 
-export async function requiredChecks(ctx: QueryCtx | MutationCtx, day: Doc<"taWorkdays">, entry: Doc<"taWorkdays">["jobs"][number]) {
+export async function requiredChecks(ctx: QueryCtx | MutationCtx, day: Doc<"taWorkdays">, entry: Doc<"taWorkdays">["jobs"][number], opts: { lean?: boolean } = {}) {
+  /*
+   * `lean` (jobView, for a Follow-up or Add-on position): only director_cv,
+   * chatgpt, daily_email and mail survive checksForWorkType, so the JD, post,
+   * suggestion and profile evidence below would be read and then dropped. A
+   * day with fifteen carried positions read them fifteen times on every poll;
+   * the drawer's query ran to 4.9 s against a 1 s budget (10 Nov). The write
+   * paths (saveCheck, emailPreflight) read everything, whatever the mode.
+   */
+  const full = !opts.lean;
+  const none = <T,>(): Promise<T[]> => Promise.resolve([]);
   const [notes, research, posts, links, newestSuggestions, runs, apps, receipts, rounds, job] = await Promise.all([
     ctx.db.query("taWorkdayCheckNotes").withIndex("by_user_job", q => q.eq("userId", day.userId).eq("jobId", entry.jobId)).first(),
+    // Research stays for every mode: saveCheck kind "research" reads it.
     ctx.db.query("researchReports").withIndex("by_opening", q => q.eq("openingId", entry.jobId)).first(),
-    ctx.db.query("jobPosts").withIndex("by_opening", q => q.eq("openingId", entry.jobId)).collect(),
-    ctx.db.query("linkVault").withIndex("by_workday_added", q => q.eq("openingId", entry.jobId).eq("addedBy", day.userId)).collect(),
+    full ? ctx.db.query("jobPosts").withIndex("by_opening", q => q.eq("openingId", entry.jobId)).collect() : none<Doc<"jobPosts">>(),
+    full ? ctx.db.query("linkVault").withIndex("by_workday_added", q => q.eq("openingId", entry.jobId).eq("addedBy", day.userId)).collect() : none<Doc<"linkVault">>(),
     // Newest rounds first; bounded (see SUGGESTION_ROWS).
-    ctx.db.query("profileSuggestions").withIndex("by_opening_round", q => q.eq("openingId", entry.jobId)).order("desc").take(SUGGESTION_ROWS),
-    ctx.db.query("taSourcingRuns").withIndex("by_job", q => q.eq("jobId", entry.jobId)).order("desc").take(SOURCING_RUNS),
+    full ? ctx.db.query("profileSuggestions").withIndex("by_opening_round", q => q.eq("openingId", entry.jobId)).order("desc").take(SUGGESTION_ROWS) : none<Doc<"profileSuggestions">>(),
+    full ? ctx.db.query("taSourcingRuns").withIndex("by_job", q => q.eq("jobId", entry.jobId)).order("desc").take(SOURCING_RUNS) : none<Doc<"taSourcingRuns">>(),
     ctx.db.query("applications").withIndex("by_workday_owner", q => q.eq("jobId", entry.jobId).eq("ownerTaId", day.userId)).collect(),
     ctx.db.normalizeId("taWorkdays", day._id) ? ctx.db.query("taWorkdayMail").withIndex("by_workday_job", q => q.eq("workdayId", day._id).eq("jobId", entry.jobId)).collect() : Promise.resolve([]),
     ctx.db.query("reviewRounds").withIndex("by_opening", q => q.eq("openingId", entry.jobId)).collect(),

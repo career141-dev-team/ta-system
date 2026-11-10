@@ -57,7 +57,7 @@ import type { Application, Candidate, Database, Id } from "@/data/types";
 import { isConvex } from "@/data/mode";
 import { assertSafeBackend } from "@/lib/safety";
 import * as backend from "@/data/convex/backend";
-import { blank, CANDIDATE_EVICT_MS, CANDIDATE_TTL_MS, primedVocabulary, realId, setCommitter, state, TABLES_TTL_MS } from "@/data/primeState";
+import { blank, CANDIDATE_EVICT_MS, CANDIDATE_TTL_MS, primedVocabulary, realId, setCommitter, SLOW_TABLES_TTL_MS, state, TABLES_TTL_MS } from "@/data/primeState";
 import { convexMutationSync } from "@/data/convex/syncCall";
 import { convexQuery } from "@/lib/convexServer";
 import { mustWait, overlayWrites } from "@/data/warm";
@@ -354,12 +354,16 @@ async function refresh(scope: PrimeScope): Promise<boolean> {
   const ttl = scope.alwaysFresh ? -1 : scope.fresh ? FRESH_MS : TABLES_TTL_MS;
   if (!state.snapshot || now - state.tablesAt > ttl) {
     const fetchStart = Date.now();
+    // The heavy text tables ride along only when their own clock says so, or
+    // when nothing is held yet, or when a write outside the store marked the
+    // tables stale (slowAt is 0 in both of those cases).
+    const slowDue = now - state.slowAt > SLOW_TABLES_TTL_MS;
     try {
       const [users, openings, clients, whole] = await Promise.all([
         backend.users(actor),
         backend.openings(actor),
         backend.clients(actor),
-        loadWholeTables(),
+        loadWholeTables(slowDue ? [...FAST_TABLES, ...SLOW_TABLES] : FAST_TABLES),
       ]);
       // A backend that is still starting can answer with nothing rather than an
       // error. Nobody can sign in to a desk with no users, so that is a failed
@@ -380,6 +384,7 @@ async function refresh(scope: PrimeScope): Promise<boolean> {
       }
       state.snapshot = db;
       state.tablesAt = settledAt(fetchStart, now);
+      if (slowDue) state.slowAt = state.tablesAt;
       changed = true;
     } catch (e) {
       if (!state.snapshot) throw e;
@@ -391,6 +396,9 @@ async function refresh(scope: PrimeScope): Promise<boolean> {
 
   // ── Applications, and the people on them ──────────────────────────────────
   const wanted = new Set<Id>(scope.candidateIds ?? []);
+  // Whose CV file names a page will show: the named people and an opening's
+  // people. The follow-up set below is read for the alert badge only.
+  const namesFor = new Set<Id>(scope.candidateIds ?? []);
 
   if ((scope.allApplications || scope.followUps) && now - state.allAt > ttl) {
     const fetchStart = Date.now();
@@ -457,7 +465,10 @@ async function refresh(scope: PrimeScope): Promise<boolean> {
    */
   if (scope.openingId) {
     for (const a of db.applications) {
-      if (a.openingId === scope.openingId) wanted.add(a.candidateId);
+      if (a.openingId === scope.openingId) {
+        wanted.add(a.candidateId);
+        namesFor.add(a.candidateId);
+      }
     }
   }
   /*
@@ -480,7 +491,7 @@ async function refresh(scope: PrimeScope): Promise<boolean> {
   const stale = [...wanted].filter((id) => now - (state.candidates.get(id) ?? 0) > CANDIDATE_TTL_MS);
   if (stale.length > 0) {
     const fetchStart = Date.now();
-    const people = await backend.candidatesByIds(actor, stale);
+    const people = await backend.candidatesByIds(actor, stale, { cvNamesFor: namesFor });
     const asked = new Set(stale);
     const fresh: Candidate[] = [];
     for (const id of stale) {
@@ -524,15 +535,35 @@ async function refresh(scope: PrimeScope): Promise<boolean> {
 /**
  * Tables loaded whole, through ta/tables:page — the TA System's own records.
  * Not here: candidates and pipelineEvents, which are read per scope.
+ *
+ * FAST tables are small or written by the backend too (mail intake, the
+ * Director's rounds, sent EOD copies, Ops API rows), so they are re-read every
+ * TABLES_TTL_MS. SLOW tables are the heavy text ones that only this app's own
+ * commits change (already in memory through the overlay); they are re-read
+ * every SLOW_TABLES_TTL_MS, or at once after a stale mark (10 Nov).
+ * strategies and feedbacks have backend mutations of their own
+ * (convex/ta/strategies.ts, feedbacks.ts), so they stay FAST.
  */
-const WHOLE_TABLES = [
-  "briefs", "jobPosts", "assignments", "reviewRounds", "linkVault", "refereeCalls", "alerts",
-  "savedSearches", "savedReports", "researchReports", "benchmarks", "suggestions", "chat", "jdChat", "intake",
-  "outreach", "offers", "placements", "esaRecords", "aiCalls", "settings", "matchRuns",
-  "matchExclusions", "callFeedback", "interviews", "eodEmailCopies", "strategies", "strategyAssignments", "feedbacks",
+const FAST_TABLES = [
+  "briefs", "jobPosts", "assignments", "reviewRounds", "linkVault", "refereeCalls", "alerts", "intake",
+  "outreach", "offers", "placements", "esaRecords", "aiCalls", "settings", "matchExclusions", "callFeedback",
+  "interviews", "eodEmailCopies", "strategies", "strategyAssignments", "feedbacks",
 ] as const;
+const SLOW_TABLES = [
+  "savedSearches", "savedReports", "researchReports", "benchmarks", "suggestions", "chat", "jdChat", "matchRuns",
+] as const;
+type WholeTable = (typeof FAST_TABLES)[number] | (typeof SLOW_TABLES)[number];
 
-async function loadWholeTable(table: (typeof WHOLE_TABLES)[number]): Promise<readonly [string, unknown[]]> {
+/*
+ * How many whole tables are read at once. Reading all 29 together (9 Nov)
+ * made every reload a burst of parallel page reads that other queries - a
+ * TA's own click - then waited behind on a busy backend (candidate pages ran
+ * to 2.5 s on 10 Nov). Four keeps a reload to a few seconds without taking the
+ * backend's whole capacity; the process-wide gate still caps everything at 16.
+ */
+const WHOLE_TABLE_CONCURRENCY = 4;
+
+async function loadWholeTable(table: WholeTable): Promise<readonly [string, unknown[]]> {
   const rows: unknown[] = [];
   let cursor: string | null = null;
   // A page that runs past the backend's one-second query limit is asked
@@ -568,13 +599,14 @@ async function loadWholeTable(table: (typeof WHOLE_TABLES)[number]): Promise<rea
   return [table, rows] as const;
 }
 
-/**
- * All of them at once. They used to go three at a time, ten rounds in a row,
- * each round as slow as its slowest table; the process-wide gate in
- * convexServer already caps what is in flight.
- */
-async function loadWholeTables(): Promise<Partial<Database>> {
-  const entries = await Promise.all(WHOLE_TABLES.map((table) => loadWholeTable(table)));
+/** The named tables, WHOLE_TABLE_CONCURRENCY at a time, each table paging on its own. */
+async function loadWholeTables(tables: readonly WholeTable[]): Promise<Partial<Database>> {
+  const queue = [...tables];
+  const entries: (readonly [string, unknown[]])[] = [];
+  const worker = async () => {
+    for (let table = queue.shift(); table; table = queue.shift()) entries.push(await loadWholeTable(table));
+  };
+  await Promise.all(Array.from({ length: Math.min(WHOLE_TABLE_CONCURRENCY, queue.length) }, worker));
   return Object.fromEntries(entries) as Partial<Database>;
 }
 

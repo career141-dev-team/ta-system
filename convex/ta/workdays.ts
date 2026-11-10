@@ -738,7 +738,7 @@ async function jobView(
         base,
       );
   }
-  const required = await requiredChecks(ctx, day, entry);
+  const required = await requiredChecks(ctx, day, entry, { lean: !full });
   checks.push(...required.checks);
   for (const app of apps.filter(a => a.ownerTaId === day.userId && a.currentStage === "second_shortlist" && sentIds.has(a._id))) {
     add(`director_wait:${app._id}`, "Waiting for the Director's reply: record the next follow-up", "follow_up", `${base}/eod`, true, app.lastStageChangedAt);
