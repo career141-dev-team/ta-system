@@ -40,10 +40,11 @@ function useWorkday(detail: boolean, enabled = true, query = "") {
         cache: "no-store",
         signal: current.signal,
       });
-      if (!response.ok)
-        throw new Error(
-          "Could not load workday checks. Please retry.",
-        );
+      if (!response.ok) {
+        // The route says which step failed (10 Nov); an older build's answer has no body to read.
+        const body = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error || "Could not load workday checks. Please retry.");
+      }
       const next: WorkdayPayload = await response.json();
       if (current.signal.aborted || request.current !== current) return true;
       setData(next);
@@ -399,18 +400,27 @@ export function EmptySuggestionsReason({ jobId }: { jobId: string }) {
 }
 
 export function EodJobChecks({ jobId, locationScoped = false, linkConfirmed, revised, onBlocked, onResearchSaved, onResearchExcused, extraReasons = [] }: { jobId: string; locationScoped?: boolean; linkConfirmed: boolean; revised: boolean; onBlocked: (blocked: boolean) => void; onResearchSaved?: (link: string) => void; onResearchExcused?: (excused: boolean) => void; extraReasons?: { key: string; message: string }[] }) {
-  const { data, error } = useWorkday(false);
+  // This one position only: the whole day's checks were rebuilt on every 20 s
+  // poll from the composer, carried positions included (10 Nov).
+  const { data, error } = useWorkday(false, true, `&job=${encodeURIComponent(jobId)}`);
   const job = data?.active?.jobs.find(j => j.jobId === jobId);
   const savedLink = confirmedResearchLink(job?.eodChecks ?? job?.checks ?? []);
   const excused = !!job?.eodChecks?.find(c => c.key.startsWith("chatgpt:"))?.exception;
   useEffect(() => { onResearchExcused?.(!error && excused); }, [error, excused, onResearchExcused]);
   useEffect(() => { if (savedLink) onResearchSaved?.(savedLink); }, [savedLink, onResearchSaved]);
   const blockers = job ? emailBlockers([job]).filter(c => !(linkConfirmed && c.key.startsWith("chatgpt:")) && !(locationScoped && ["director_cv", "midday_email", "mail"].includes(c.key.split(":")[0]))) : [];
-  const blocked = !!error || !data || (data.canWork && (!job || blockers.length > 0));
+  // A poll that failed with nothing held is not a failed check: the server
+  // re-checks every requirement when Send is pressed (emailPreflight and the
+  // send itself), so the button stays live and the box says what happened.
+  // A failed poll with an earlier answer held keeps showing that answer.
+  // Before this, every failed poll greyed Send, and at the end of the day -
+  // when the day's data is largest and every TA is sending - it failed daily (10 Nov).
+  const unknown = !!error && !job;
+  const blocked = !unknown && (!data || (data.canWork && (!job || blockers.length > 0)));
   const additionalReasons = extraReasons.filter(reason => !blockers.some(c => c.key.split(":")[0] === reason.key));
   useEffect(() => { onBlocked(blocked); }, [blocked, onBlocked]);
   if (data && !data.canWork) return null;
-  return <section aria-live="polite" className="rounded-lg border border-rule p-4 text-sm"><h3 className="font-medium">{blocked || extraReasons.length ? "Complete these steps to send EOD" : "Ready to send"}</h3>{error ? <p>{error}</p> : !data ? <p>Loading checks…</p> : !job ? <p>Start work on this opening in the sidebar before sending.</p> : <>
+  return <section aria-live="polite" className="rounded-lg border border-rule p-4 text-sm"><h3 className="font-medium">{unknown ? "Checks could not be loaded" : blocked || extraReasons.length ? "Complete these steps to send EOD" : "Ready to send"}</h3>{unknown ? <p>{error} Send still checks every requirement before anything goes out.</p> : !data ? <p>Loading checks…</p> : !job ? <p>Start work on this opening in the sidebar before sending.</p> : <>
     {(blockers.length > 0 || extraReasons.length > 0) && <ul className="mt-2 space-y-1">{blockers.map(c => <li key={c.key}><Link href={c.href} className="text-brand underline">{c.label}</Link>: {extraReasons.find(reason => reason.key === c.key.split(":")[0])?.message ?? c.progress ?? "needs action"}</li>)}{additionalReasons.map(reason => <li key={reason.key}>{reason.message}</li>)}</ul>}
     {!blocked && !extraReasons.length && <p className="text-green-700 dark:text-green-400">Required tasks are completed or excused. CVs will be checked and prepared when you send.</p>}
   </>}</section>;

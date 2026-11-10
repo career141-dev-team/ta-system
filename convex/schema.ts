@@ -153,7 +153,9 @@ export default defineSchema({
   taWorkdayEvidence: defineTable({
     jobId: v.id("jobs"), recordId: v.string(), table: v.string(),
     at: v.number(), by: v.optional(v.id("users")), version: v.string(),
-  }).index("by_job", ["jobId"]),
+  }).index("by_job", ["jobId"])
+    // The checks read one record's evidence, never a job's whole history (10 Nov).
+    .index("by_job_record", ["jobId", "recordId"]),
   // ■■ USERS ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
   users: defineTable({
     tokenIdentifier: v.string(),
@@ -3027,7 +3029,9 @@ export default defineSchema({
     learnedFrom: v.optional(v.union(v.number(), v.null())),
   })
     .index("by_opening", ["openingId"])
-    .index("by_opening_status", ["openingId", "status"]),
+    .index("by_opening_status", ["openingId", "status"])
+    // The checks read the newest rounds only, not every suggestion ever made (10 Nov).
+    .index("by_opening_round", ["openingId", "round"]),
 
   /** The sourcing assistant conversation on an opening. `refine` re-reads what
    *  was already found and is free; `search` spends a round and credits. */

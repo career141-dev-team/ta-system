@@ -8,29 +8,47 @@ import { middayRequired, dailyEmailsFor } from "./dailyEmail";
 import { isEodCandidateEligible } from "../../src/lib/eodEligibility";
 import { jobEodComplete, workdayLocationIds } from "./workLocationEmails";
 
+/*
+ * How many of the newest suggestion rows are read to find the latest round a
+ * TA may see. A Suggestions run writes about twenty rows, so this covers the
+ * last ten or so rounds; every row of every run ever made used to be read on
+ * every poll of every position (10 Nov). ponytail: a TA whose own latest
+ * round sits more than ten rounds back reads as "no suggestions yet".
+ */
+const SUGGESTION_ROWS = 200;
+const SOURCING_RUNS = 25;
+
 export async function requiredChecks(ctx: QueryCtx | MutationCtx, day: Doc<"taWorkdays">, entry: Doc<"taWorkdays">["jobs"][number]) {
-  const [notes, research, posts, links, suggestions, runs, apps, receipts, rounds, provenance, job] = await Promise.all([
+  const [notes, research, posts, links, newestSuggestions, runs, apps, receipts, rounds, job] = await Promise.all([
     ctx.db.query("taWorkdayCheckNotes").withIndex("by_user_job", q => q.eq("userId", day.userId).eq("jobId", entry.jobId)).first(),
     ctx.db.query("researchReports").withIndex("by_opening", q => q.eq("openingId", entry.jobId)).first(),
     ctx.db.query("jobPosts").withIndex("by_opening", q => q.eq("openingId", entry.jobId)).collect(),
     ctx.db.query("linkVault").withIndex("by_workday_added", q => q.eq("openingId", entry.jobId).eq("addedBy", day.userId)).collect(),
-    ctx.db.query("profileSuggestions").withIndex("by_opening", q => q.eq("openingId", entry.jobId)).collect(),
-    ctx.db.query("taSourcingRuns").withIndex("by_job", q => q.eq("jobId", entry.jobId)).collect(),
+    // Newest rounds first; bounded (see SUGGESTION_ROWS).
+    ctx.db.query("profileSuggestions").withIndex("by_opening_round", q => q.eq("openingId", entry.jobId)).order("desc").take(SUGGESTION_ROWS),
+    ctx.db.query("taSourcingRuns").withIndex("by_job", q => q.eq("jobId", entry.jobId)).order("desc").take(SOURCING_RUNS),
     ctx.db.query("applications").withIndex("by_workday_owner", q => q.eq("jobId", entry.jobId).eq("ownerTaId", day.userId)).collect(),
     ctx.db.normalizeId("taWorkdays", day._id) ? ctx.db.query("taWorkdayMail").withIndex("by_workday_job", q => q.eq("workdayId", day._id).eq("jobId", entry.jobId)).collect() : Promise.resolve([]),
     ctx.db.query("reviewRounds").withIndex("by_opening", q => q.eq("openingId", entry.jobId)).collect(),
-    ctx.db.query("taWorkdayEvidence").withIndex("by_job", q => q.eq("jobId", entry.jobId)).collect(),
     ctx.db.get(entry.jobId),
   ]);
-  const applicable = suggestions.filter(s => !s.generatedFor || s.generatedFor === day.userId);
+  const applicable = newestSuggestions.filter(s => !s.generatedFor || s.generatedFor === day.userId);
   const latestRun = runs.filter(r => !r.userId || r.userId === day.userId).sort((a,b) => b.at - a.at)[0];
   const round = Math.max(latestRun?.round ?? 0, ...applicable.map(s => s.round));
   const latest = applicable.filter(s => s.round === round);
   const suggestionVersion = JSON.stringify([round, latestRun?.at ?? null, latest.map(s => [s._id, s.generatedAt])]);
   const goodPosts = posts.filter(p => linkedinPostUrl(p.externalUrl));
   const post = goodPosts.sort((a,b) => (a.postedAt ?? a.createdAt) - (b.postedAt ?? b.createdAt))[0];
-  const postEvidence = post ? provenance.filter(p => p.table === "jobPosts" && p.recordId === post._id && p.version === post.externalUrl).sort((a,b) => b.at-a.at)[0] : undefined;
-  const suggestionEvidence = provenance.filter(p => p.table === "profileSuggestions" && latest.some(s => s._id === p.recordId && s.status === p.version)).sort((a,b) => b.at-a.at)[0];
+  // Evidence for the records in hand only - the post and the latest round's
+  // suggestions - not every evidence row the job has ever collected (10 Nov).
+  const evidenceFor = (recordId: string) =>
+    ctx.db.query("taWorkdayEvidence").withIndex("by_job_record", q => q.eq("jobId", entry.jobId).eq("recordId", recordId)).collect();
+  const [postRows, suggestionRows] = await Promise.all([
+    post ? evidenceFor(post._id) : Promise.resolve([]),
+    Promise.all(latest.map(s => evidenceFor(s._id))).then(lists => lists.flat()),
+  ]);
+  const postEvidence = post ? postRows.filter(p => p.table === "jobPosts" && p.version === post.externalUrl).sort((a,b) => b.at-a.at)[0] : undefined;
+  const suggestionEvidence = suggestionRows.filter(p => p.table === "profileSuggestions" && latest.some(s => s._id === p.recordId && s.status === p.version)).sort((a,b) => b.at-a.at)[0];
   const unique = [...new Map(links.filter(l => !!linkKey(l.linkedinUrl)).sort((a,b) => b.createdAt-a.createdAt)
     .map(l => [linkKey(l.linkedinUrl) ?? l.linkedinUrl, l])).values()].sort((a,b) => a.createdAt-b.createdAt);
   const sentIds = new Set(rounds.filter(r => r.kind === "director" && !r.recoveryReopenedAt).flatMap(r => r.applicationIds as string[]));

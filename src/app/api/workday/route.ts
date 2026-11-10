@@ -21,8 +21,9 @@ export async function GET(request: Request) {
     user = await currentUser();
   } catch (err) {
     console.error("[api/workday] session", err instanceof Error ? err.message.slice(0, 300) : "");
+    // The sentence names the step, so the next report says the cause (10 Nov).
     return NextResponse.json(
-      { error: "Could not load workday checks. Please retry." },
+      { error: "Could not load workday checks: the desk is still loading. Please retry." },
       { status: 503, headers: { "Cache-Control": "no-store" } },
     );
   }
@@ -47,6 +48,7 @@ export async function GET(request: Request) {
     const payload = await convexQuery<WorkdayPayload>("ta/workdays:dashboard", {
       actorId: user.id,
       detail: new URL(request.url).searchParams.get("detail") === "1",
+      jobId: new URL(request.url).searchParams.get("job") || undefined,
       cursor: new URL(request.url).searchParams.get("cursor") || undefined,
       taId: new URL(request.url).searchParams.get("ta") || undefined,
       date: new URL(request.url).searchParams.get("date") || undefined,
@@ -65,8 +67,9 @@ export async function GET(request: Request) {
     // 503 on every 20-second poll and the cause was nowhere (26 Oct). The
     // query string carries only the view asked for: date, page, TA and day ids.
     console.error("[api/workday]", step, `role=${user.role}`, new URL(request.url).search, err);
+    const budget = err instanceof Error && /timed out|Too many|limit/i.test(err.message);
     return NextResponse.json(
-      { error: "Could not load workday checks. Please retry." },
+      { error: budget ? "Could not load workday checks: the checks took too long to read. Please retry." : "Could not load workday checks. Please retry." },
       { status: 503, headers: { "Cache-Control": "no-store" } },
     );
   }
