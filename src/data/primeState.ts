@@ -12,6 +12,7 @@
 
 import type { Database, Id } from "@/data/types";
 import type { Vocabulary } from "@/lib/query";
+import { rememberWrites, type RecentWrite } from "./warm";
 
 /** The empty shape, so a table nobody has migrated yet reads as absent rather
  *  than as undefined — the same rule the JSON store's backfill follows. */
@@ -59,6 +60,20 @@ export const state = {
   openings: new Map<Id, number>(),
   /** When every application was last fetched; 0 when never. */
   allAt: 0,
+  /** Opening id -> when its pipeline events were fetched (they are read per opening, never whole - 9 Nov). */
+  events: new Map<Id, number>(),
+  /*
+   * This process's own commits, newest last, for two minutes. A reload that
+   * was in flight while one landed installs what it fetched and lays these on
+   * top, instead of throwing the fetch away (see src/data/warm.ts, 9 Nov).
+   */
+  recentWrites: [] as RecentWrite[],
+  /** When a write made OUTSIDE the store last marked the tables stale (resetStore). */
+  staleAt: 0,
+  /** When a request last asked for the working set; the warm loop stops when the desk is idle. */
+  lastRequestAt: 0,
+  /** What pages have asked for so far, so the warm loop refreshes only that. */
+  asked: { allApplications: false, followUps: false },
   /*
    * Bumped whenever the working set's rows change.
    *
@@ -155,7 +170,9 @@ export function resetStore(): void {
   state.tablesAt = 0;
   state.candidates = new Map();
   state.openings = new Map();
+  state.events = new Map();
   state.allAt = 0;
+  state.staleAt = Date.now();
   state.version++;
   state.writes++;
 }
@@ -183,6 +200,24 @@ export function getCommitter(): typeof committer {
 export function bumpPrimed(): void {
   state.version++;
   state.writes++;
+}
+
+/** Remember what a commit wrote, so a reload in flight can keep it (warm.ts). */
+export function recordWrites(ops: CommitOp[], at = Date.now()): void {
+  state.recentWrites = rememberWrites(state.recentWrites, ops, at);
+}
+
+/** True once an opening's pipeline events have been fetched. */
+export function hasEvents(openingId: Id): boolean {
+  return state.events.has(openingId);
+}
+
+/** The message a missed opening's history raises - kept next to the thing that fixes it. */
+export function missingEventsMessage(openingId: Id): string {
+  return (
+    `The history of opening ${openingId} was not primed. Pipeline events are read per opening, ` +
+    `so a page that shows them has to say which: await primeStore({ openingId }). See src/data/prime.ts.`
+  );
 }
 
 // ─── Temporary ids ───────────────────────────────────────────────────────────
@@ -227,6 +262,7 @@ export function invalidateCandidate(id: Id): void {
 
 export function invalidateOpening(id: Id): void {
   state.openings.delete(id);
+  state.events.delete(id);
   state.version++;
 }
 
@@ -239,6 +275,7 @@ export function invalidateOpening(id: Id): void {
 export function markTablesStale(): void {
   state.tablesAt = 0;
   state.allAt = 0;
+  state.staleAt = Date.now();
   state.version++;
 }
 

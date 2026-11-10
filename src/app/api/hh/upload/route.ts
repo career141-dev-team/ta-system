@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { revalidatePath } from "next/cache";
-import { primeStore, resetStore } from "@/data/prime";
+import { invalidateOpening, primeStore, resetStore } from "@/data/prime";
 import { isConvex } from "@/data/mode";
 import { currentUser } from "@/lib/session";
 import { convexMutation, convexQuery, internalUploadUrl } from "@/lib/convexServer";
@@ -70,7 +70,9 @@ export async function GET(req: NextRequest) {
   const files = await convexQuery<{ id: string; state: string }[]>("ta/hhUpload:status", { actorId: user.id, cvUploadIds: ids });
   // Someone just landed in TA Follow-up: the next render has to read them.
   if (files.some((f) => f.state === "done" || f.state === "held")) {
-    resetStore();
+    // This opening's rows only (9 Nov): resetting the whole desk here made
+    // every other person's next page reload all of it.
+    invalidateOpening(openingId);
     revalidatePath(`/openings/${openingId}`, "layout");
   }
   return answer({ ok: true, files });

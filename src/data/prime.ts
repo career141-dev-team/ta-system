@@ -20,14 +20,33 @@ import "server-only";
  *
  * ── What gets loaded ────────────────────────────────────────────────────────
  *
- * Everything except candidates is small: 32 users, ~20 clients, 95 openings,
- * 8,313 applications. Those are fetched whole.
+ * Everything except candidates and pipeline events is small: 32 users, ~20
+ * clients, 95 openings, ~10,000 applications. Those are fetched whole.
  *
  * Candidates are not — there are about 77,000. But no page needs 77,000: it
  * needs the people on one opening, or the people a search returned. So
  * candidates are fetched by id from a scope the caller names, and a page that
  * asks for somebody it did not prime gets a loud error naming this function
- * rather than a blank row.
+ * rather than a blank row. Pipeline events — one row per stage move since the
+ * platform began — are read the same way, per opening (9 Nov).
+ *
+ * ── When a request waits ────────────────────────────────────────────────────
+ *
+ * A request never waits for a reload of rows it already holds (9 Nov). On the
+ * live server a reload took 10-28 s, every request queued behind it, and a
+ * save landing during the fetch made the loader discard the fetch and leave
+ * the tables marked stale — so on a busy desk no reload ever settled. Now:
+ *
+ *   - rows older than their lifetime are refreshed in the BACKGROUND, and the
+ *     request renders from what is held (at most the lifetime old — the same
+ *     contract as before);
+ *   - a request waits only when nothing is held, when the rows it needs were
+ *     never loaded, or when a write made outside the store marked them stale
+ *     (`resetStore`) — so a person still reads their own write;
+ *   - a reload is never thrown away: it installs what it fetched and lays this
+ *     process's own commits from during the fetch on top (`warm.ts`);
+ *   - a warm loop refreshes, while the desk is in use, whatever pages have
+ *     asked for, so the stale wait is rare.
  *
  * The state itself lives in `primeState.ts`, which does no I/O — `store.ts`
  * reads that and never imports this module, so the Convex client and the admin
@@ -41,6 +60,7 @@ import * as backend from "@/data/convex/backend";
 import { blank, CANDIDATE_EVICT_MS, CANDIDATE_TTL_MS, primedVocabulary, realId, setCommitter, state, TABLES_TTL_MS } from "@/data/primeState";
 import { convexMutationSync } from "@/data/convex/syncCall";
 import { convexQuery } from "@/lib/convexServer";
+import { mustWait, overlayWrites } from "@/data/warm";
 
 /*
  * How the store saves: one Convex transaction per write (convex/ta/commit.ts).
@@ -49,11 +69,11 @@ import { convexQuery } from "@/lib/convexServer";
  */
 setCommitter((ops) => convexMutationSync<{ ids: Record<string, string> }>("ta/commit:apply", { ops }));
 
-export { primed, primedVocabulary, hasCandidate, missingCandidateMessage, resetStore } from "@/data/primeState";
+export { primed, primedVocabulary, hasCandidate, missingCandidateMessage, resetStore, invalidateOpening, markTablesStale } from "@/data/primeState";
 
 /** What a page needs on top of the small tables. */
 export interface PrimeScope {
-  /** An opening: brings its applications and everybody on them. */
+  /** An opening: brings its applications, its pipeline events and everybody on them. */
   openingId?: Id | null;
   /** Named people — search results, a candidate page, an intake match. */
   candidateIds?: Id[];
@@ -75,7 +95,7 @@ export interface PrimeScope {
    * the alert badge, which counts them, needs this.
    *
    * Bounded by the stage, not by the desk: 742 of 8,378 applications, fetched
-   * in two parallel batches. Implies `allApplications`, since the stage cannot
+   * in parallel batches. Implies `allApplications`, since the stage cannot
    * be known before the applications are.
    */
   followUps?: boolean;
@@ -103,17 +123,7 @@ export async function refreshUsers(): Promise<void> {
   state.snapshot.users = await backend.users({ id: null });
 }
 
-/**
- * Load the working set.
- *
- * Additive and idempotent: calling it again with a different scope adds to
- * what is held rather than replacing it, so a page can prime an opening and
- * then prime a search's results without losing the first.
- *
- * A no-op when the store is the JSON file, which is what keeps the tests — and
- * the offline build — running unchanged.
- */
-/**
+/*
  * One load at a time.
  *
  * A layout and the page inside it render CONCURRENTLY, and both prime. Without
@@ -127,28 +137,131 @@ export async function refreshUsers(): Promise<void> {
  *
  * Serialising is the whole fix and costs nothing: the work is additive and
  * idempotent, so the second caller finds its scope already held and returns
- * without asking the backend for anything.
+ * without asking the backend for anything. A background refresh joins the same
+ * queue; only callers that must wait (below) actually await it.
  */
-/** A read that a save overtook; its rows are dropped, not installed. */
-class StaleRead extends Error {}
-
 let loading: Promise<void> = Promise.resolve();
+let background: Promise<void> | null = null;
 
-export function primeStore(scope: PrimeScope = {}): Promise<void> {
-  if (!isConvex()) return Promise.resolve();
-  // A scope may name a row by the id it had before it was saved.
-  scope = { ...scope, openingId: realId(scope.openingId ?? null), candidateIds: scope.candidateIds?.map((id) => realId(id)) };
+function queue(scope: PrimeScope): Promise<void> {
   // Refuses a backend that could message real people or poll live mailboxes — see lib/safety.ts.
   const safe = assertSafeBackend();
-  // Queue behind whatever is in flight — including a failed one, whose
-  // rejection must not cancel this caller's turn.
   // The load in flight is captured now: read inside the callback, `loading`
   // would already be this call's own promise, and it would wait on itself.
+  // Queue behind whatever is in flight — including a failed one, whose
+  // rejection must not cancel this caller's turn.
   const before = loading;
   const queued = performance.now();
   const mine = safe.then(() => before.catch(() => {})).then(() => loadInto(scope, queued));
   loading = mine.catch(() => {});
   return mine;
+}
+
+/**
+ * Load the working set.
+ *
+ * Additive and idempotent: calling it again with a different scope adds to
+ * what is held rather than replacing it, so a page can prime an opening and
+ * then prime a search's results without losing the first.
+ *
+ * Resolves at once when everything the scope names is held and younger than
+ * its lifetime (a background refresh may be started); waits otherwise.
+ *
+ * A no-op when the store is the JSON file, which is what keeps the tests — and
+ * the offline build — running unchanged.
+ */
+export function primeStore(scope: PrimeScope = {}): Promise<void> {
+  if (!isConvex()) return Promise.resolve();
+  // A scope may name a row by the id it had before it was saved.
+  scope = { ...scope, openingId: realId(scope.openingId ?? null), candidateIds: scope.candidateIds?.map((id) => realId(id)) };
+  const now = Date.now();
+  state.lastRequestAt = now;
+  if (scope.allApplications) state.asked.allApplications = true;
+  if (scope.followUps) state.asked.followUps = true;
+  ensureWarmLoop();
+  const need = whatIsNeeded(scope, now);
+  if (need === "wait") return queue(scope);
+  if (need === "refresh") refreshInBackground(scope);
+  return Promise.resolve();
+}
+
+type Need = "wait" | "refresh" | "fresh";
+
+/** Whether this caller must wait for rows, or may render from what is held. */
+function whatIsNeeded(scope: PrimeScope, now: number): Need {
+  // The desk assistant and the reports ask for the database as it is now.
+  if (scope.alwaysFresh || scope.fresh) return "wait";
+  let worst: Need = "fresh";
+  const worse = (n: Need) => {
+    if (n === "wait") worst = "wait";
+    else if (n === "refresh" && worst === "fresh") worst = "refresh";
+  };
+  const db = state.snapshot;
+  worse(db ? mustWait(state.tablesAt, TABLES_TTL_MS, now) : "wait");
+  if (!db) return "wait";
+  const held = (id: Id) => (state.candidates.has(id) ? "fresh" : "wait");
+  if (scope.allApplications || scope.followUps) {
+    worse(mustWait(state.allAt, TABLES_TTL_MS, now));
+    // The alert badge names the people on the alert stages: a stage move from
+    // this process may have put somebody there whose record was never fetched.
+    if (scope.followUps && state.allAt) {
+      for (const a of db.applications) if (ALERT_STAGES.has(a.stage)) worse(held(a.candidateId));
+    }
+  } else if (scope.openingId) {
+    worse(mustWait(state.openings.get(scope.openingId), TABLES_TTL_MS, now));
+    worse(mustWait(state.events.get(scope.openingId), TABLES_TTL_MS, now));
+    if (state.openings.get(scope.openingId)) {
+      for (const a of db.applications) if (a.openingId === scope.openingId) worse(held(a.candidateId));
+    }
+  }
+  for (const id of scope.candidateIds ?? []) worse(mustWait(state.candidates.get(id), CANDIDATE_TTL_MS, now));
+  return worst;
+}
+
+/** One background refresh at a time; a second request while it runs just renders. */
+function refreshInBackground(scope: PrimeScope): void {
+  if (background) return;
+  background = queue(scope)
+    .catch((e) => console.warn("[prime] background refresh failed; keeping the rows held:", e instanceof Error ? e.message : e))
+    .finally(() => {
+      background = null;
+    });
+}
+
+/*
+ * The warm loop: while the desk is in use, refresh what pages have asked for
+ * shortly before it ages out, so a request finds fresh rows instead of
+ * starting the refresh itself. Idle for five minutes and it stops asking the
+ * backend for anything. One timer per process (globalThis survives a dev
+ * reload of this module), unref'd so it never keeps the process alive.
+ */
+const WARM_EVERY_MS = 10_000;
+const WARM_IDLE_MS = 5 * 60_000;
+const WARM_AHEAD = 0.8;
+declare global {
+  // eslint-disable-next-line no-var
+  var __c141Warm: ReturnType<typeof setInterval> | undefined;
+}
+
+let warmStarted = false;
+
+function ensureWarmLoop(): void {
+  if (warmStarted) return;
+  warmStarted = true;
+  // A dev reload gives this module fresh state; the old timer would keep
+  // warming the old one.
+  if (globalThis.__c141Warm) clearInterval(globalThis.__c141Warm);
+  const timer = setInterval(() => {
+    const now = Date.now();
+    if (!state.snapshot || now - state.lastRequestAt > WARM_IDLE_MS) return;
+    const scope: PrimeScope = { allApplications: state.asked.allApplications, followUps: state.asked.followUps };
+    const due =
+      now - state.tablesAt > TABLES_TTL_MS * WARM_AHEAD ||
+      ((scope.allApplications || scope.followUps) && now - state.allAt > TABLES_TTL_MS * WARM_AHEAD);
+    if (due) refreshInBackground(scope);
+  }, WARM_EVERY_MS);
+  timer.unref?.();
+  globalThis.__c141Warm = timer;
 }
 
 /*
@@ -161,8 +274,9 @@ const SLOW_PRIME_MS = 2_000;
 
 async function loadInto(scope: PrimeScope, queued: number): Promise<void> {
   const started = performance.now();
+  let changed = false;
   try {
-    await refresh(scope);
+    changed = await refresh(scope);
   } finally {
     const done = performance.now();
     if (done - queued > SLOW_PRIME_MS) {
@@ -174,15 +288,25 @@ async function loadInto(scope: PrimeScope, queued: number): Promise<void> {
       ].filter(Boolean).join(" ") || "tables";
       console.warn(`[prime] slow: ${Math.round(done - queued)}ms (waited ${Math.round(started - queued)}ms in queue) ${what}`);
     }
-    // Whatever changed, derived indexes must rebuild. Cheap to over-bump: an
-    // index is rebuilt on the next read, not here.
-    state.version++;
+    // Derived indexes rebuild only when rows changed (9 Nov): bumping on every
+    // load made the store rebuild its maps, and the alert memo recompute, on
+    // every request.
+    if (changed) state.version++;
   }
 }
 
-async function refresh(scope: PrimeScope): Promise<void> {
+/** Fetched rows, with this process's commits since the fetch began laid on top. */
+function overlay<T>(table: string, rows: T[], since: number, within?: (row: Record<string, unknown>) => boolean): T[] {
+  return overlayWrites(table, rows, state.recentWrites, since, within);
+}
+
+/** A fetch is settled unless a write outside the store marked the tables stale while it ran. */
+const settledAt = (fetchStart: number, now: number) => (state.staleAt > fetchStart ? 0 : now);
+
+async function refresh(scope: PrimeScope): Promise<boolean> {
   const now = Date.now();
   const actor = { id: null as string | null };
+  let changed = false;
 
   /*
    * The vocabulary, from the database rather than from the working set.
@@ -229,7 +353,7 @@ async function refresh(scope: PrimeScope): Promise<void> {
    */
   const ttl = scope.alwaysFresh ? -1 : scope.fresh ? FRESH_MS : TABLES_TTL_MS;
   if (!state.snapshot || now - state.tablesAt > ttl) {
-    const w = state.writes;
+    const fetchStart = Date.now();
     try {
       const [users, openings, clients, whole] = await Promise.all([
         backend.users(actor),
@@ -241,28 +365,26 @@ async function refresh(scope: PrimeScope): Promise<void> {
       // error. Nobody can sign in to a desk with no users, so that is a failed
       // read, not an answer.
       if (users.length === 0) throw new Error("The backend returned no users — it may still be starting.");
-      if (state.snapshot && state.writes !== w) throw new StaleRead();
       const db = state.snapshot ?? blank();
-      db.users = users;
-      db.openings = openings;
+      db.users = overlay("users", users, fetchStart);
+      db.openings = overlay("openings", openings, fetchStart);
       // The clients table only. Clients used to be derived from the openings'
       // free-text names when the table was empty — ids that exist nowhere, so a
       // change to one could never be saved.
-      db.clients = clients;
+      db.clients = overlay("clients", clients, fetchStart);
       // Every other table the desk keeps: interviews, offers, placements,
       // review rounds, the link vault, intake, follow-up records, settings…
       // Before, these were never loaded, and read as empty.
-      Object.assign(db, whole);
+      for (const [table, rows] of Object.entries(whole)) {
+        (db as unknown as Record<string, unknown[]>)[table] = overlay(table, rows as unknown[], fetchStart);
+      }
       state.snapshot = db;
-      state.tablesAt = now;
+      state.tablesAt = settledAt(fetchStart, now);
+      changed = true;
     } catch (e) {
       if (!state.snapshot) throw e;
-      // A read a save overtook: what is held already has the save, and the
-      // next page reads again. Anything else is said, not swallowed — rows
-      // that stop updating have a reason in the log.
-      if (!(e instanceof StaleRead)) {
-        console.warn("[prime] small tables refresh failed; keeping the rows held:", e instanceof Error ? e.message : e);
-      }
+      // Said, not swallowed — rows that stop updating have a reason in the log.
+      console.warn("[prime] small tables refresh failed; keeping the rows held:", e instanceof Error ? e.message : e);
     }
   }
   const db = state.snapshot!;
@@ -271,50 +393,57 @@ async function refresh(scope: PrimeScope): Promise<void> {
   const wanted = new Set<Id>(scope.candidateIds ?? []);
 
   if ((scope.allApplications || scope.followUps) && now - state.allAt > ttl) {
-    const w = state.writes;
+    const fetchStart = Date.now();
     try {
       const { applications } = await backend.allApplications(actor);
-      // Overtaken by a save: installed only if nothing is held yet (a page
-      // cannot render without it), and never marked fresh.
-      const settled = state.writes === w;
-      if (settled || state.allAt === 0) {
-        // Replaced, not merged: an application that moved stage or was removed
-        // must not survive as its old self.
-        db.applications = applications;
-      }
-      if (settled) {
-        state.allAt = now;
-        for (const o of db.openings) state.openings.set(o.id, now);
-      }
+      // Replaced, not merged: an application that moved stage or was removed
+      // must not survive as its old self. This process's own saves since the
+      // fetch began are kept by the overlay.
+      db.applications = overlay("applications", applications, fetchStart);
+      state.allAt = settledAt(fetchStart, now);
+      if (state.allAt) for (const o of db.openings) state.openings.set(o.id, now);
+      changed = true;
     } catch (e) {
-      if (state.allAt === 0) throw e;
+      if (state.allAt === 0 && db.applications.length === 0) throw e;
+      console.warn("[prime] applications refresh failed; keeping the rows held:", e instanceof Error ? e.message : e);
     }
   } else if (scope.openingId && now - (state.openings.get(scope.openingId) ?? 0) > TABLES_TTL_MS) {
     const openingId = scope.openingId;
-    const w = state.writes;
+    const fetchStart = Date.now();
+    const mine = (r: Record<string, unknown>) => r.openingId === openingId;
     const [apps, detail] = await Promise.all([
       backend.applications(actor, openingId),
       backend.opening(actor, openingId),
     ]);
-    // Overtaken by a save: what is held has it, so keep that and leave the
-    // opening due for the next page — unless this is its first read.
-    const settled = state.writes === w;
-    if (settled) state.openings.set(openingId, now);
-    if (settled || !db.applications.some((a) => a.openingId === openingId)) {
-      db.applications = [...db.applications.filter((a) => a.openingId !== openingId), ...apps];
-      // Posts and assignments come with the whole tables above, with their real
-      // ids. But the opening itself must be here even when that list is not:
-      // a refresh of the small tables that fails keeps the older list, and a
-      // just-created opening was then missing from it — Save job went straight
-      // to a 404 for an opening that had been saved (testing, 21 Sep). The
-      // opening was fetched on its own anyway; it is now kept.
-      if (detail) {
-        db.openings = [detail.opening, ...db.openings.filter((o) => o.id !== detail.opening.id)];
-        const known = new Set(db.jobPosts.map((p) => p.id));
-        db.jobPosts = [...db.jobPosts, ...detail.posts.filter((p) => !known.has(p.id))];
-        state.version++;
-      }
+    db.applications = [...db.applications.filter((a) => a.openingId !== openingId), ...overlay("applications", apps, fetchStart, mine)];
+    state.openings.set(openingId, settledAt(fetchStart, now));
+    // Posts and assignments come with the whole tables above, with their real
+    // ids. But the opening itself must be here even when that list is not:
+    // a refresh of the small tables that fails keeps the older list, and a
+    // just-created opening was then missing from it — Save job went straight
+    // to a 404 for an opening that had been saved (testing, 21 Sep). The
+    // opening was fetched on its own anyway; it is now kept.
+    if (detail) {
+      db.openings = [detail.opening, ...db.openings.filter((o) => o.id !== detail.opening.id)];
+      const known = new Set(db.jobPosts.map((p) => p.id));
+      db.jobPosts = [...db.jobPosts, ...detail.posts.filter((p) => !known.has(p.id))];
     }
+    changed = true;
+  }
+
+  /*
+   * The opening's history. Pipeline events were loaded whole — every stage
+   * move since the platform began, on every reload — and the app reads them
+   * only for one application or one opening (9 Nov).
+   */
+  if (scope.openingId && now - (state.events.get(scope.openingId) ?? 0) > TABLES_TTL_MS) {
+    const openingId = scope.openingId;
+    const fetchStart = Date.now();
+    const mine = (r: Record<string, unknown>) => r.openingId === openingId;
+    const events = await backend.eventsFor(actor, openingId);
+    db.pipelineEvents = [...db.pipelineEvents.filter((e) => e.openingId !== openingId), ...overlay("pipelineEvents", events, fetchStart, mine)];
+    state.events.set(openingId, settledAt(fetchStart, now));
+    changed = true;
   }
 
   /*
@@ -349,31 +478,34 @@ async function refresh(scope: PrimeScope): Promise<void> {
     }
   }
   const stale = [...wanted].filter((id) => now - (state.candidates.get(id) ?? 0) > CANDIDATE_TTL_MS);
-  const wc = state.writes;
   if (stale.length > 0) {
+    const fetchStart = Date.now();
     const people = await backend.candidatesByIds(actor, stale);
-    // Candidates a page needs are installed even after a save (a page cannot
-    // render without them), but not marked fresh, so the next page reads them
-    // again rather than trusting rows that may predate the save.
-    const settled = state.writes === wc;
+    const asked = new Set(stale);
     const fresh: Candidate[] = [];
     for (const id of stale) {
-      // Remembered even when absent, so a deleted row is not chased forever
-      // and a genuine miss can still be told from a page that never asked.
-      state.candidates.set(id, settled ? now : 1);
       const c = people.get(id);
       if (c) fresh.push(c);
     }
-    const gone = new Set(stale.filter((id) => !people.has(id)));
+    // A record this process changed while the fetch ran keeps its change.
+    const installed = overlay("candidates", fresh, fetchStart, (r) => asked.has(r.id as Id));
+    const have = new Set(installed.map((c) => c.id));
+    // Remembered even when absent, so a deleted row is not chased forever
+    // and a genuine miss can still be told from a page that never asked.
+    // Fetched during a stale mark: installed (a page cannot render without
+    // them) but not marked fresh, so the next page reads them again.
+    const at = settledAt(fetchStart, now) || 1;
+    for (const id of stale) state.candidates.set(id, at);
+    const gone = new Set(stale.filter((id) => !have.has(id)));
     db.candidates = merge(
       db.candidates.filter((c) => !gone.has(c.id)),
-      fresh,
+      installed,
       (c) => c.id,
     );
     // Their referees, which the reference page and follow-up read by candidate.
     const refs = await convexQuery<Database["referees"]>("ta/tables:refereesFor", { candidateIds: stale });
-    const refreshed = new Set(stale);
-    db.referees = [...db.referees.filter((r) => !refreshed.has(r.fromCandidateId)), ...refs];
+    db.referees = [...db.referees.filter((r) => !asked.has(r.fromCandidateId)), ...refs];
+    changed = true;
   }
 
   // Let go of people nobody has asked for in ten minutes.
@@ -382,64 +514,67 @@ async function refresh(scope: PrimeScope): Promise<void> {
     const out = new Set(evict.map(([id]) => id));
     for (const id of out) state.candidates.delete(id);
     db.candidates = db.candidates.filter((c) => !out.has(c.id));
+    changed = true;
   }
-  state.version++;
+  return changed;
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
-/** Tables loaded whole, through ta/tables:page — the TA System's own records. */
+/**
+ * Tables loaded whole, through ta/tables:page — the TA System's own records.
+ * Not here: candidates and pipelineEvents, which are read per scope.
+ */
 const WHOLE_TABLES = [
-  "briefs", "jobPosts", "assignments", "pipelineEvents", "reviewRounds", "linkVault", "refereeCalls", "alerts",
+  "briefs", "jobPosts", "assignments", "reviewRounds", "linkVault", "refereeCalls", "alerts",
   "savedSearches", "savedReports", "researchReports", "benchmarks", "suggestions", "chat", "jdChat", "intake",
   "outreach", "offers", "placements", "esaRecords", "aiCalls", "settings", "matchRuns",
   "matchExclusions", "callFeedback", "interviews", "eodEmailCopies", "strategies", "strategyAssignments", "feedbacks",
 ] as const;
 
-async function loadWholeTables(): Promise<Partial<Database>> {
-  const chunkSize = 3;
-  const entries: (readonly [string, unknown[]])[] = [];
-  for (let i = 0; i < WHOLE_TABLES.length; i += chunkSize) {
-    const chunk = WHOLE_TABLES.slice(i, i + chunkSize);
-    const chunkEntries = await Promise.all(
-      chunk.map(async (table) => {
-        const rows: unknown[] = [];
-        let cursor: string | null = null;
-        // A page that runs past the backend's one-second query limit is asked
-        // for again at half the size, rather than failing the whole page load.
-        let numItems = 1000;
-        for (let pages = 0; pages < 400; pages++) {
-          let page: { rows: unknown[]; isDone: boolean; continueCursor: string | null };
+async function loadWholeTable(table: (typeof WHOLE_TABLES)[number]): Promise<readonly [string, unknown[]]> {
+  const rows: unknown[] = [];
+  let cursor: string | null = null;
+  // A page that runs past the backend's one-second query limit is asked
+  // for again at half the size, rather than failing the whole page load.
+  let numItems = 1000;
+  for (let pages = 0; pages < 400; pages++) {
+    let page: { rows: unknown[]; isDone: boolean; continueCursor: string | null };
+    try {
+      page = await convexQuery("ta/tables:page", { table, cursor, numItems });
+    } catch (e) {
+      const msg = (e as Error)?.message || "";
+      if (/is not loaded whole|not loaded whole/i.test(msg)) {
+        if (table === "feedbacks") {
           try {
-            page = await convexQuery("ta/tables:page", { table, cursor, numItems });
-          } catch (e) {
-            const msg = (e as Error)?.message || "";
-            if (/is not loaded whole|not loaded whole/i.test(msg)) {
-              if (table === "feedbacks") {
-                try {
-                  const fbRows = await convexQuery<unknown[]>("ta/feedbacks:listFeedbacks", {});
-                  return [table, (fbRows ?? []) as unknown[]] as const;
-                } catch {
-                  return [table, [] as unknown[]] as const;
-                }
-              }
-              console.warn(`[prime] the backend does not serve "${table}" yet; read as empty until its functions are deployed.`);
-              return [table, [] as unknown[]] as const;
-            }
-            if (numItems <= 50 || !/timed out|Server Error|fetch failed/i.test(msg)) throw e;
-            numItems = Math.floor(numItems / 2);
-            pages--;
-            continue;
+            const fbRows = await convexQuery<unknown[]>("ta/feedbacks:listFeedbacks", {});
+            return [table, (fbRows ?? []) as unknown[]] as const;
+          } catch {
+            return [table, [] as unknown[]] as const;
           }
-          rows.push(...page.rows);
-          if (page.isDone || !page.continueCursor) break;
-          cursor = page.continueCursor;
         }
-        return [table, rows] as const;
-      }),
-    );
-    entries.push(...chunkEntries);
+        console.warn(`[prime] the backend does not serve "${table}" yet; read as empty until its functions are deployed.`);
+        return [table, [] as unknown[]] as const;
+      }
+      if (numItems <= 50 || !/timed out|Server Error|fetch failed/i.test(msg)) throw e;
+      numItems = Math.floor(numItems / 2);
+      pages--;
+      continue;
+    }
+    rows.push(...page.rows);
+    if (page.isDone || !page.continueCursor) break;
+    cursor = page.continueCursor;
   }
+  return [table, rows] as const;
+}
+
+/**
+ * All of them at once. They used to go three at a time, ten rounds in a row,
+ * each round as slow as its slowest table; the process-wide gate in
+ * convexServer already caps what is in flight.
+ */
+async function loadWholeTables(): Promise<Partial<Database>> {
+  const entries = await Promise.all(WHOLE_TABLES.map((table) => loadWholeTable(table)));
   return Object.fromEntries(entries) as Partial<Database>;
 }
 
@@ -461,4 +596,3 @@ function merge<T>(have: T[], incoming: T[], key: (x: T) => string): T[] {
   for (const x of incoming) byKey.set(key(x), x);
   return [...byKey.values()];
 }
-
