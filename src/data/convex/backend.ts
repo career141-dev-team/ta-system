@@ -534,21 +534,28 @@ export async function candidateDocsByIds(actor: Actor, ids: Id[], shape?: "searc
   // send the pages together — they do not depend on each other, so waiting for
   // one before asking for the next only adds up the latencies.
   //
-  // Pages of 200, four at a time: a page of 500 reads 1,000 documents (each
+  // Pages of 100, four at a time: a page of 500 reads 1,000 documents (each
   // candidate and their résumé) and can run past the backend's one-second
   // limit, and several such pages at once make each other slower.
+  // A page that still runs past the one-second limit (2.5 s on 10 Nov, 200 candidates under load) is
+  // split in two and asked again, down to 25, instead of failing the whole screen.
+  const fetchPage = async (page: Id[]): Promise<LiveCandidate[]> => {
+    try {
+      return await convexQuery<LiveCandidate[]>("ta/candidates:getBatch", {
+        actorId: actor.id ?? undefined,
+        candidateIds: page,
+        ...(shape ? { shape } : {}),
+      });
+    } catch (e) {
+      if (page.length <= 25 || !/timed out/i.test(e instanceof Error ? e.message : String(e))) throw e;
+      const half = Math.ceil(page.length / 2);
+      return [...(await fetchPage(page.slice(0, half))), ...(await fetchPage(page.slice(half)))];
+    }
+  };
   const pages: Id[][] = [];
-  for (let i = 0; i < ids.length; i += 200) pages.push(ids.slice(i, i + 200));
+  for (let i = 0; i < ids.length; i += 100) pages.push(ids.slice(i, i + 100));
   for (let i = 0; i < pages.length; i += 4) {
-    const results = await Promise.all(
-      pages.slice(i, i + 4).map((page) =>
-        convexQuery<LiveCandidate[]>("ta/candidates:getBatch", {
-          actorId: actor.id ?? undefined,
-          candidateIds: page,
-          ...(shape ? { shape } : {}),
-        }),
-      ),
-    );
+    const results = await Promise.all(pages.slice(i, i + 4).map(fetchPage));
     for (const docs of results) out.push(...docs);
   }
   return out;
