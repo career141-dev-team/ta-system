@@ -175,6 +175,7 @@ Who talks to the candidate: the assistant, or a TA. `convex/lib/assistantControl
 - Auto-advance paths: the sweep (Flow E.7), and `followUpHelper.checkAndAdvanceFollowUp`, run after every detail write (`updateCandidateDetails`, `applications/applications.ts`, `candidates/candidates.ts`, `ta/voice.ts`). Both use `followUpBlockers` (29 Oct). The helper moves through `executeStageTransition` (system, `skipAutoOutreach`), so the move writes a `stage_change_second_shortlist` pipeline event and stops the sequence; it also reopens an application auto-rejected "Did not complete requirements within 7-day window" and clears its `taRejectionReason`. A TA's logged call (`applications.ts` "Interested" with nothing missing) skips Follow-up by the same rule, but still patches the stage itself.
 - Manual: `SendToDirectorReview` button (shown by `LiveFollowUp` when nothing is missing) -> `moveStageInline` with stage `director_review`.
 - `ReviewDetailsForm` ("Details for Director review", candidate page) lets a TA type salaries/notice/CV when the answer came by phone; `saveReviewDetails` -> `writeCandidateReview`.
+  Autosave (10 Nov): after 2 s without typing the form calls `saveReviewDetailsInline` itself (skipped while a restored browser draft is showing), and "Upload CV" saves anything typed first and refuses to upload if that save fails, because the upload ends in a full page reload that used to wipe unsaved fields. The `localStorage` draft stays as the fallback.
 - Dropped out: `executeStageTransition(unresponsive)` sets `isActive:false`, `droppedOutReason`, stops reminders. Triggers: sweep (attempts, `maxFollowUpDays`, 7-day legacy), TA move, "Removed from the opening", "Back to Excel Tables" (reason `BACK_TO_TABLES_REASON`).
 - Reinstate: `reinstate()` in `src/app/actions.ts` -> `backend.moveStage(... "ta_follow_up", "Brought back")`; the collision lock applies (owner or desk-wide only); the backend clears `rejected*`, `droppedOutReason`, restores `isActive` and claims the app if unowned. A reinstated app's `followUpAttemptCount` is not reset by this path (only `followUpMutations:resetFollowUpApp` / `addCandidateToJobFollowUp` do, and nothing in the TA UI calls them) (unverified whether anything else resets it).
 
@@ -337,9 +338,9 @@ Repo hard rules that apply: never run `convex deploy|run|import|env set` against
 - 2026-11-10 The Marketing cutoff covers the reminder too: `career141_followup_reminder` is checked with Meta before each send the same way (`applicationTemplateHold(found, name)`); a re-labelled or missing reminder is held, retried tomorrow, admins belled "Automatic WhatsApp to candidates stopped".
 
 <!-- skill-meta
-verified-commit: c1afe1fc
-verified-hash: 13709ea75af15e8d7c04a400eea7e32cb8284889
-verified-date: 2026-11-09
+verified-commit: 4295954
+verified-hash: 969c5afa07ca1e467a15d6d5909330da39b47c4f
+verified-date: 2026-11-10
 sources:
   convex/lib/jdFacts.ts
   tests/jdfacts.test.ts
