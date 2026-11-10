@@ -66,6 +66,35 @@ export interface WebsiteJob {
   applySubject: string;
 }
 
+/** A heading for the pay part of a JD. */
+const PAY_HEADING = /package|salary|compensation|remuneration|\bpay\b|benefit/i;
+/** A line that labels the client or the pay: "**Client** X", "Salary: LKR ...". */
+const PRIVATE_LABEL = /\*\*\s*(client|company|hiring company|package|salary)\s*\*\*|^\s*[-*]?\s*(client|company|hiring company|package|salary)\s*:/i;
+
+/**
+ * The JD as the public may read it (10 Nov). The JD is written for the desk:
+ * its top line is "**Client** · **Location** · **Package**" (src/lib/headhunt.ts
+ * jdShape) and it has a "### Package" section, so the first job listed carried
+ * its client and its salary. Both are taken out, and the client's name is
+ * replaced wherever else it appears - the same rule the voice agent keeps
+ * (convex/lib/screeningCall.ts callBrief).
+ */
+export function publicJd(jd: string, clientName?: string | null): string {
+  const out: string[] = [];
+  let skipping = false;
+  for (const line of jd.split(/\r?\n/)) {
+    const heading = /^\s*#{1,6}\s+(.*)$/.exec(line);
+    // A pay section runs until the next heading.
+    if (heading) skipping = PAY_HEADING.test(heading[1]);
+    if (skipping || PRIVATE_LABEL.test(line)) continue;
+    out.push(line);
+  }
+  let text = out.join("\n");
+  const name = (clientName ?? "").trim();
+  if (name.length > 2) text = text.replace(new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), "our client");
+  return text.replace(/\n{3,}/g, "\n\n").trim();
+}
+
 /**
  * What the website may show, or null when the job is not on it. Only listed,
  * open jobs with an approved JD. Never the client's name, the salary or the
@@ -80,6 +109,7 @@ export function websiteJob(job: {
   jdStatus?: string | null;
   websiteListedAt?: number | null;
   jobDescription?: string;
+  clientName?: string;
   location?: string;
   taLocations?: string[];
   requiredSkills?: string[];
@@ -97,7 +127,7 @@ export function websiteJob(job: {
     id: String(job._id),
     title,
     locations: job.taLocations?.length ? job.taLocations : job.location ? [job.location] : [],
-    description: job.jobDescription ?? "",
+    description: publicJd(job.jobDescription ?? "", job.clientName),
     skills: job.requiredSkills ?? [],
     experienceMinYears: job.experienceMinYears ?? null,
     experienceMaxYears: job.experienceMaxYears ?? null,

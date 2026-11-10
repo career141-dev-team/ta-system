@@ -103,7 +103,7 @@ Candidate rows can add a candidate to another active or draft job assigned to th
 - One switch per opening, `WebsiteSwitch` on the Openings list row and in `ContextBar`; the same flag, so a job already listed shows as on in both. Flag: `jobs.websiteListedAt` / `websiteListedBy` (index `by_websiteListedAt`), carried to the app as `Opening.websiteListedAt` (projections + `mapOpening`). NOT a `jobPosts` row: a post would join LinkedIn readiness, post routing and quiet-post chasing.
 - Who: `canPostToWebsite` (`src/lib/websiteJobs.ts`): admin always; `ops` and `ta_lead` when ticked on the People page ("Jobs on the website", setting `websitePosters`, default ops on, TA lead off). Checked in `setOpeningOnWebsite` and again in `ta/website:setListed`. Others see only an "On website" label.
 - On: refused unless the job is open and the JD approved (`websiteRefusal`). Off: unsets both fields.
-- Feed: `GET /integrations/v1/website/jobs` (`convex/integrations/websiteHttp.ts`, token `WEBSITE_API_TOKEN`, 503 unset) -> `ta/website:listed` -> `websiteJob`: listed + open (`active`/`draft`) + approved JD + not binned; title, locations, JD, skills, years, `applyEmail` cv@career141.com, `applySubject`. Never client, salary or team. A held/closed job drops off by itself and returns if reopened with the switch on (the switch shows amber then). Docs: `docs/WEBSITE-JOBS-API.md`.
+- Feed: `GET /integrations/v1/website/jobs` (`convex/integrations/websiteHttp.ts`, token `WEBSITE_API_TOKEN`, 503 unset) -> `ta/website:listed` -> `websiteJob`: listed + open (`active`/`draft`) + approved JD + not binned; title, locations, JD, skills, years, `applyEmail` cv@career141.com, `applySubject`. Never client, salary or team: the JD goes through `publicJd` (drops the "**Client** · **Package**" line, any Package/Salary/Benefits section, and replaces the client name with "our client"; the first listed job, 10 Nov, carried both in its JD). A held/closed job drops off by itself and returns if reopened with the switch on (the switch shows amber then). Docs: `docs/WEBSITE-JOBS-API.md`.
 
 ### 9. Job description, JD chat, Job details
 - Page `jd/page.tsx`: not approved -> `JdScreen` (write permission `assignedTaIds.includes(me) || opening.manage`; others see `OpeningBrief` and "Only an assigned TA can write this JD."); approved -> `JdRead` + chat + `OpeningBrief`. Client seats get only this page.
@@ -247,6 +247,7 @@ Capabilities from `src/lib/auth.ts` (`can`); seat from `seatFor` (`src/lib/visib
 - 2026-10-22 `cb821c3`, `7865d66`, `e959bb2` mobile openings, admin actions and New opening, sharing `src/lib/openings/*` with the web. 2026-10-23 `9d664d7` TA job performance in the Master Sheet.
 - 2026-11-10 A LinkedIn post's edit form shows two link boxes: 1 Recruiter link (`externalUrl`, routing) and 2 Public job link (`publicUrl`, sent to candidates on WhatsApp). The card shows both and warns when the public one is missing.
 - 2026-11-10 website switch: `jobs.websiteListedAt`, `ta/website:setListed`/`listed`, `GET /integrations/v1/website/jobs`, People page ticks (section 8b).
+- 2026-11-10 `publicJd`: the website JD without the client or the pay.
 
 <!-- skill-meta
 verified-commit: afba39bc

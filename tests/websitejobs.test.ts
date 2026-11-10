@@ -8,6 +8,7 @@ import {
   DEFAULT_WEBSITE_POSTERS,
   canPostToWebsite,
   parseWebsitePosters,
+  publicJd,
   websiteJob,
   websiteRefusal,
 } from "@/lib/websiteJobs";
@@ -51,6 +52,30 @@ eq("switch off: not shown", websiteJob({ ...job, websiteListedAt: undefined }), 
 eq("on hold, placed or closed: not shown", ["on_hold", "filled", "cancelled"].map((s) => websiteJob({ ...job, status: s })), [null, null, null]);
 eq("JD not approved: not shown", websiteJob({ ...job, jdStatus: "pending_ta_approval" }), null);
 eq("in the Bin: not shown", websiteJob({ ...job, binnedAt: 5 } as never), null);
+
+// The JD as the public reads it (10 Nov): the first job listed carried its
+// client and its salary in the JD itself. The layout is src/lib/headhunt.ts jdShape.
+const desk = [
+  "## Assistant Manager - Compliance",
+  "**Client** Acme Knits · **Location** Pannala, Sri Lanka · **Package** LKR 180,000 – 200,000 gross per month · ",
+  "### About the role",
+  "This role sits within Acme Knits, an apparel maker in Pannala.",
+  "### Responsibilities",
+  "- Run the audits",
+  "### Package",
+  "- Gross salary: LKR 180,000 – 200,000 per month.",
+  "- Transport provided",
+  "### Other",
+  "Salary: negotiable",
+  "Notice period: one month",
+].join("\r\n");
+const pub = publicJd(desk, "Acme Knits");
+eq("no client name anywhere", /acme/i.test(pub), false);
+eq("no pay anywhere", /LKR|salary|180,000|Transport provided|Package/i.test(pub), false);
+eq("the rest of the JD stays", ["## Assistant Manager - Compliance", "### About the role", "- Run the audits", "### Other", "Notice period: one month"].every((l) => pub.includes(l)), true);
+eq("the client named in a sentence reads as our client", pub.includes("This role sits within our client, an apparel maker"), true);
+eq("the website gets the public JD", websiteJob({ ...job, jobDescription: desk, clientName: "Acme Knits" })?.description, pub);
+eq("a short client name is left alone", publicJd("Work at IT dept", "IT"), "Work at IT dept");
 
 // The wiring.
 const read = (p: string) => fs.readFileSync(p, "utf8");
