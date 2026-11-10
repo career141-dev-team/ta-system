@@ -72,7 +72,8 @@ export function shortlistRows(
           lastStageChangedAt: a.lastStageChangedAt,
         },
         // Today's email carries today's candidates; older unsent days are a missed end of day.
-        { taId, day: workdayDate(Date.now()), ...eligibility },
+        // `day: undefined` in eligibility (the Today tab) must not erase today's date, or the page lists yesterday's CVs that the server refuses (10 Nov).
+        { taId, ...eligibility, day: eligibility.day ?? workdayDate(Date.now()) },
       );
     })
     // The client's copy is the Director's decision, not the TA's, so it is not

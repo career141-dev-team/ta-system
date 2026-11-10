@@ -172,6 +172,9 @@ repo.reset();
   eq("nor is it counted in the day", dayTotal(effortRow(o.id, ta)), 0);
   edit((raw) => Object.assign(raw.applications.find((a: { id: string }) => a.id === a1), { stage: "director_review" }));
   eq("moved to Director Review, it is in the email", shortlistRowsIds(o.id, ta).includes(a1), true);
+  // Today's tab passes day: undefined; yesterday's unsent CV belongs to the Missed tab, not today's email (10 Nov).
+  edit((raw) => Object.assign(raw.applications.find((a: { id: string }) => a.id === a1), { lastStageChangedAt: Date.now() - 36 * 3600000 }));
+  eq("a CV moved a day ago is not on Today's tab", shortlistRows(o.id, ta.id, "director", { workType: "100%", sessionStart: null, day: undefined }).some((r) => r.applicationId === a1), false);
 }
 
 console.log("\nSCOOP: of six mailed in by a lead, only the one sent to the Director");
