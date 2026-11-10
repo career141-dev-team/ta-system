@@ -1015,6 +1015,9 @@ try {
   assert.equal((await db.get("staleDay"))?.finishedAt, undefined, "Dry run does not mutate records");
   const newDay = await run("start", { actorId: "staleTa", jobId: "staleJob", workType: "Follow-up" });
   assert.notEqual(newDay.id, "staleDay");
+  // 10 Nov: Start saves today first; the old day closes in its own scheduled run.
+  assert.equal((await db.get("staleDay"))?.finishedAt, undefined, "Start does not wait on old-day recovery");
+  await run("recoverStaleFor", { userId: "staleTa" });
   assert.equal((await db.get("staleDay"))?.closureReason, "expired");
   assert.equal((await db.get(newDay.id))?.date, workdayDate(clock));
   user("recoverTa", "ta");
@@ -1025,6 +1028,7 @@ try {
   put("taWorkdayMail", { _id: "recoverReceipt", workdayId: "recoverDay", jobId: "recoverJob", userId: "recoverTa", workType: "100%",
     status: "accepted", startedAt: acceptedYesterday - 1000, acceptedAt: acceptedYesterday, finalizedAt: acceptedYesterday, applicationIds: [] });
   await run("start", { actorId: "recoverTa", jobId: "recoverJob", workType: "Follow-up" });
+  await run("recoverStaleFor", { userId: "recoverTa" });
   assert.equal((await db.get("recoverDay"))?.finishedAt, acceptedYesterday, "Yesterday's accepted EOD recovers its original finish time");
   assert.equal((await db.get("recoverDay"))?.closureReason, "eod");
   console.log(
