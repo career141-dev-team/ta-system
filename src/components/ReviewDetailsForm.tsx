@@ -224,6 +224,29 @@ export function ReviewDetailsForm({
     notes,
   ]);
 
+  // Typed details reach the server on their own (10 Nov): a TA who typed salary and notes and went straight to
+  // "Upload CV" lost them to the page reload that follows an upload. The browser draft above stays as the fallback.
+  const formRef = useRef<HTMLFormElement | null>(null);
+  const [autoSaved, setAutoSaved] = useState(false);
+  const fields = (a: string, b: string, c: string, d: string, e: string, f: string, g: string, h: CustomField[]) =>
+    JSON.stringify([a, b, c, d, e, f, g, h.map((x) => [x.label, x.value])]);
+  const snapshot = fields(curCurrency, curVal, expCurrency, expVal, npVal, designation, company, customFields);
+  const serverSnapshot = fields(cur, initialCurAmount, exp, initialExpAmount, initialNp, initialDesignation, initialCompany, parseInitialDetails(notes));
+  const savedSnapshot = useRef(serverSnapshot);
+  useEffect(() => { savedSnapshot.current = serverSnapshot; }, [serverSnapshot]);
+  const saveNow = () => saveReviewDetailsInline(null, new FormData(formRef.current!));
+  useEffect(() => {
+    // A restored draft waits for the TA to Save or Discard it: saving it unasked would override the choice.
+    if (!draftCheckedRef.current || draftRestored || snapshot === savedSnapshot.current) return;
+    setAutoSaved(false);
+    const timer = setTimeout(() => {
+      const sent = snapshot;
+      void saveNow().then((r) => { if (r.ok) { savedSnapshot.current = sent; setAutoSaved(true); } }).catch(() => {});
+    }, 2000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapshot, draftRestored]);
+
   const discardDraft = () => {
     try {
       localStorage.removeItem(`candidate-details-draft:${applicationId}`);
@@ -294,7 +317,7 @@ export function ReviewDetailsForm({
   ].filter(Boolean) as string[];
 
   /** Sent with XHR, not fetch, so the bar can say how far it has got. */
-  const send = (file: File) => {
+  const startUpload = (file: File) => {
     const body = new FormData();
     body.set("applicationId", applicationId);
     body.set("openingId", openingId);
@@ -338,6 +361,19 @@ export function ReviewDetailsForm({
     setUploaded(null);
     setUpload({ progress: 0, phase: "uploading", fileName: file.name });
     xhr.send(body);
+  };
+
+  /** Saves what is typed first, so the reload after an upload cannot lose it. */
+  const send = async (file: File) => {
+    if (snapshot !== savedSnapshot.current) {
+      const saved = await saveNow().catch(() => null);
+      if (!saved?.ok) {
+        setUploaded({ ok: false, message: `Your details could not be saved first, so the CV was not uploaded. ${saved?.message ?? "Press Save details, then upload again."}`, tone: "error", at: Date.now() });
+        return;
+      }
+      savedSnapshot.current = snapshot;
+    }
+    startUpload(file);
   };
 
   const addField = () => {
@@ -396,6 +432,7 @@ export function ReviewDetailsForm({
 
   return (
     <form
+      ref={formRef}
       onSubmit={(e) => save.run(submitted(e).formData)}
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes("Files")) e.preventDefault();
@@ -603,6 +640,7 @@ export function ReviewDetailsForm({
 
       <ActionNote result={uploaded} className="mt-3" />
       <ActionNote result={save.result} className="mt-3" />
+      {autoSaved && !save.pending && <p className="mt-2 text-[11.5px] text-ink-faint">Saved automatically</p>}
     </form>
   );
 }
