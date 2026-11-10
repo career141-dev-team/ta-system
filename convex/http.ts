@@ -33,6 +33,7 @@ import {
   opsWriteUnderOpening,
 } from "./integrations/opsWriteHttp";
 import { contactsDiscover, contactsDiscoverUnder } from "./integrations/contactsHttp";
+import { websiteJobs } from "./integrations/websiteHttp";
 import type { Id } from "./_generated/dataModel";
 import {
   isFreshVoiceAgentTimestamp,
@@ -89,6 +90,9 @@ http.route({ pathPrefix: "/integrations/v1/placements/", method: "POST", handler
 http.route({ path: "/integrations/v1/contacts/discover", method: "POST", handler: contactsDiscover });
 http.route({ pathPrefix: "/integrations/v1/contacts/discover/", method: "POST", handler: contactsDiscoverUnder });
 http.route({ pathPrefix: "/integrations/v1/contacts/discover/", method: "GET", handler: contactsDiscoverUnder });
+
+// The jobs career141.com lists (10 Nov), behind its own key (WEBSITE_API_TOKEN). Read-only.
+http.route({ path: "/integrations/v1/website/jobs", method: "GET", handler: websiteJobs });
 
 /**
  * Meta's webhook verification handshake.

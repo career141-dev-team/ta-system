@@ -153,6 +153,15 @@ export async function setAutoFollowUp(actor: Actor, openingId: Id, enabled: bool
   });
 }
 
+/** The opening's "On website" switch (convex/ta/website.ts `setListed`). */
+export async function setOnWebsite(actor: Actor, openingId: Id, listed: boolean) {
+  return convexMutation<{ ok: boolean; listed: boolean }>("ta/website:setListed", {
+    actorId: requireActorId(actor),
+    openingId,
+    listed,
+  });
+}
+
 export async function updateMasterSheetOpening(
   actor: Actor,
   openingId: Id,

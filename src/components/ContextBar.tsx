@@ -6,6 +6,8 @@ import { WorkingStageMenu } from "./WorkingStageMenu";
 import { OpeningMenu } from "./OpeningMenu";
 import { getCurrentUser } from "@/lib/session";
 import { allows } from "@/lib/auth";
+import { WebsiteSwitch } from "./WebsiteSwitch";
+import { WEBSITE_POSTERS_KEY, canPostToWebsite, parseWebsitePosters } from "@/lib/websiteJobs";
 
 /**
  * The persistent identity band: client, position, the TAs on it. It stays put
@@ -53,6 +55,12 @@ export async function ContextBar({
           whoever is working it. */}
       <StatusMenu openingId={openingId} status={o.status as OpeningStatus} size="small" />
       {canStage && <WorkingStageMenu openingId={openingId} stage={workingStage} size="small" />}
+      <WebsiteSwitch
+        openingId={openingId}
+        listed={!!o.websiteListedAt}
+        canPress={!!user && canPostToWebsite(user.role, parseWebsitePosters(repo.setting(WEBSITE_POSTERS_KEY, "")))}
+        hidden={o.status === "open" ? null : "Not showing: the job is not open. It comes back if the job is reopened."}
+      />
 
       {crumbs.map((c) => (
         <span key={c} className="flex shrink-0 items-center gap-2.5 text-[12.5px]">

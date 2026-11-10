@@ -102,6 +102,8 @@ export interface Opening {
    * `ta/followUp:setAuto`.
    */
   autoFollowUp: boolean;
+  /** On career141.com since then, or null (src/lib/websiteJobs.ts). Written only through `ta/website:setListed`. */
+  websiteListedAt?: number | null;
   jdStatus: "draft" | "pending_ta_approval" | "approved";
   jdApprovedBy: Id | null;
   jdApprovedAt: number | null;

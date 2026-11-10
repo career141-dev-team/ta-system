@@ -616,6 +616,9 @@ export default defineSchema({
     )),
     jdApprovedBy: v.optional(v.id("users")),
     jdApprovedAt: v.optional(v.number()),
+    /** On career141.com since then; unset when it is off (src/lib/websiteJobs.ts, 10 Nov). */
+    websiteListedAt: v.optional(v.number()),
+    websiteListedBy: v.optional(v.id("users")),
     briefId: v.optional(v.id("briefs")),
     /** P1–P5, driving the "day N of target" counters. */
     priorityTier: v.optional(v.string()),
@@ -676,6 +679,7 @@ export default defineSchema({
     .index("by_clientId", ["clientId"])
     .index("by_createdAt", ["createdAt"])
     .index("by_binnedAt", ["binnedAt"])
+    .index("by_websiteListedAt", ["websiteListedAt"])
     .searchIndex("search_title", {
       searchField: "title",
       filterFields: ["status", "primaryRecruiterId"]

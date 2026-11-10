@@ -22,6 +22,8 @@ import { isConvex } from "@/data/mode";
 import { convexQuery } from "@/lib/convexServer";
 // Shared with the mobile API, so a country filter picks the same rows (22 Oct).
 import { toCountry } from "@/lib/openingCountry";
+import { WebsiteSwitch } from "@/components/WebsiteSwitch";
+import { WEBSITE_POSTERS_KEY, canPostToWebsite, parseWebsitePosters } from "@/lib/websiteJobs";
 import {
   OpeningAccessApprovalQueue,
   RequestOpeningAccess,
@@ -74,6 +76,8 @@ export default async function OpeningsPage({
   const all = isDeskWide(user) || supportReview ? repo.openings() : mine;
   const liveAlerts = computeAlerts();
   const showTaFilter = isDeskWide(user) || supportReview;
+  // "On website" (10 Nov): an admin, or a TA lead / ops person the admin allowed.
+  const canPostWebsite = !readOnlyList && canPostToWebsite(user.role, parseWebsitePosters(repo.setting(WEBSITE_POSTERS_KEY, "")));
   // Who may move an opening to the Bin: the same test the delete action makes.
   const mayBin = (openingId: string) =>
     !readOnlyList && allows(user, "opening.manage", { openingId, assignment: repo.assignmentFor(openingId, user.id) ?? null });
@@ -286,6 +290,14 @@ export default async function OpeningsPage({
                           <WorkingStageMenu openingId={o.id} stage={workingStage} size="small" />
                         </span>
                       )}
+                      <span className="pointer-events-auto relative z-10">
+                        <WebsiteSwitch
+                          openingId={o.id}
+                          listed={!!o.websiteListedAt}
+                          canPress={canPostWebsite}
+                          hidden={o.status === "open" ? null : `Not showing: the job is ${OPENING_STATUS_LABEL[o.status].toLowerCase()}. It comes back if the job is reopened.`}
+                        />
+                      </span>
                       {o.targetNationalities.length > 0 && (
                         <span className="text-[11.5px] text-ink-faint">
                           {o.targetNationalities.join(", ")} only
