@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { getFunctionName } from "convex/server";
 import {
   applyCarryForwards,
   completionBlockers,
@@ -24,8 +25,19 @@ const rows = (table: string) => {
   if (!tables.has(table)) tables.set(table, []);
   return tables.get(table)!;
 };
+// Every write the real backend makes goes through a path that marks the
+// position's stored checklist stale (refreshWorkdayChecks) or is read live by
+// the next recompute. This harness writes rows directly, so it marks every
+// stored checklist stale on any write to another table - the dashboard then
+// computes live, as the backend would after its own mark (11 Nov).
+const CHECKLIST_TABLES = new Set(["taWorkdayChecklists", "taWorkdayTaskEvents"]);
+const markChecklists = (table: string) => {
+  if (CHECKLIST_TABLES.has(table)) return;
+  for (const r of rows("taWorkdayChecklists")) r.staleAt = clock;
+};
 const put = (table: string, row: Row) => {
   rows(table).push({ _creationTime: clock, ...row });
+  markChecklists(table);
   return row._id;
 };
 const db = {
@@ -42,6 +54,8 @@ const db = {
     const row = [...tables.values()].flat().find((r) => r._id === id);
     assert.ok(row);
     Object.assign(row, structuredClone(patch));
+    const table = [...tables.entries()].find(([, list]) => list.includes(row))?.[0] ?? "";
+    markChecklists(table);
   },
   normalizeId: (_table: string, id: string) => id,
   query: (table: string) => {
@@ -103,7 +117,15 @@ const db = {
     return query;
   },
 };
-const ctx = { db, auth: { getUserIdentity: async () => null }, scheduler: { runAt: async () => null, runAfter: async () => null } } as any;
+// A stage move no longer rebuilds the checklist inline: it schedules
+// ta/workdays:recomputeChecklist (11 Nov). The fake scheduler runs that one at
+// once, so the task-event assertions below see what the live backend writes a
+// moment later; every other scheduled function stays a no-op, as before.
+const runScheduled = async (ref: any, args: Row) => {
+  const name = typeof ref === "string" ? ref : getFunctionName(ref);
+  if (name === "ta/workdays:recomputeChecklist") await (workdays.recomputeChecklist as any)._handler(ctx, args);
+};
+const ctx: any = { db, auth: { getUserIdentity: async () => null }, scheduler: { runAt: async (_at: number, ref: any, args: Row) => runScheduled(ref, args), runAfter: async (_ms: number, ref: any, args: Row) => runScheduled(ref, args) } };
 const run = (name: keyof typeof workdays, args: Row) =>
   (workdays[name] as any)._handler(ctx, args);
 const user = (id: string, taRole: string) =>
@@ -208,6 +230,13 @@ try {
   assert.deepEqual(onlyJob2.active.jobs.map((j: Row) => j.jobId), ["job2"], "The composer's poll builds the one position it asked for");
   assert.ok(onlyJob2.active.jobs[0].checks.every((c: Row) => ["director_cv", "chatgpt", "daily_email", "mail"].includes(c.key.split(":")[0])), "An Add-on position carries only the returning checks");
   assert.equal((await run("dashboard", { actorId: "ta" })).active.jobs.length, 2, "The drawer still gets the whole day");
+  // The stored checklist (11 Nov): a write marks the position and one recompute stores the view.
+  assert.ok(rows("taWorkdayChecklists").some((r: Row) => r.jobId === "job2" && r.view && !r.staleAt && !r.pendingAt), "Adding a position leaves a stored, fresh checklist behind");
+  assert.equal((await run("dashboard", { actorId: "ta", jobId: "job2" })).active.staleChecklists, undefined, "A fresh stored checklist is served without a live rebuild");
+  for (const r of rows("taWorkdayChecklists")) if (r.jobId === "job2") r.staleAt = clock;
+  assert.deepEqual((await run("dashboard", { actorId: "ta", jobId: "job2" })).active.staleChecklists, ["job2"], "A stale stored checklist is computed live and named for a recompute");
+  await run("markChecklistsStale", { workdayId: day.id, jobIds: ["job2"] });
+  assert.ok(rows("taWorkdayChecklists").some((r: Row) => r.jobId === "job2" && !r.staleAt && !r.pendingAt), "The route's mark leaves it recomputed and fresh");
   await assertWorkdayScope(ctx, rows("users")[0] as any, "job2" as any);
   const support = await run("start", {
     actorId: "support",
