@@ -83,6 +83,8 @@ export interface WorkdayView {
   startedAt: number;
   finishedAt: number | null;
   closureReason?: "eod" | "expired";
+  /** Positions whose stored checklist was missing or past its freshness, so this view computed them live (11 Nov). The route asks for a recompute. */
+  staleChecklists?: string[];
   jobs: WorkdayJobView[];
   requests: {
     id: string;

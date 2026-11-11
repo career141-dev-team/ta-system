@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { primed, primeStore } from "@/data/prime";
 import { currentUser } from "@/lib/session";
-import { convexQuery } from "@/lib/convexServer";
+import { convexMutation, convexQuery } from "@/lib/convexServer";
 import type { WorkdayPayload } from "@/lib/workday";
 import { canViewWorkday } from "@/lib/workdayRoles";
 
@@ -58,6 +58,14 @@ export async function GET(request: Request) {
     if (payload.canWork && new URL(request.url).searchParams.get("detail") === "1") {
       step = "ta/dailyEmails:sent";
       payload.sentEmails = await convexQuery("ta/dailyEmails:sent", { actorId: user.id });
+    }
+    // A query cannot write: the positions this poll had to compute live are
+    // marked here so one recompute stores them for the next polls (11 Nov).
+    // Best effort - the answer above is already correct.
+    const stale = [payload.active, ...(payload.team ?? [])].filter((d): d is NonNullable<typeof d> => !!d && !!d.staleChecklists?.length);
+    for (const d of stale) {
+      step = "ta/workdays:markChecklistsStale";
+      await convexMutation("ta/workdays:markChecklistsStale", { workdayId: d.id, jobIds: d.staleChecklists }).catch(() => {});
     }
     return NextResponse.json(payload, {
       headers: { "Cache-Control": "private, no-store" },

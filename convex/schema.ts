@@ -145,6 +145,18 @@ export default defineSchema({
     completedAt: v.optional(v.number()), completedBy: v.optional(v.string()),
     observed: v.optional(v.boolean()),
   }).index("by_workday_job", ["workdayId", "jobId"]),
+  /*
+   * One position's checklist as last computed, per workday x job (11 Nov).
+   * The drawer and the EOD composer read this row; a stage move only marks
+   * it stale and schedules one recompute, instead of rebuilding every
+   * checklist inline in every mutation and on every 20 s poll. The EOD send
+   * still validates live evidence (emailPreflight). `view` is a WorkdayJobView.
+   */
+  taWorkdayChecklists: defineTable({
+    workdayId: v.id("taWorkdays"), jobId: v.id("jobs"), userId: v.id("users"),
+    computedAt: v.number(), staleAt: v.optional(v.number()), pendingAt: v.optional(v.number()),
+    actorId: v.optional(v.id("users")), view: v.optional(v.any()),
+  }).index("by_workday_job", ["workdayId", "jobId"]),
   taSourcingRuns: defineTable({
     jobId: v.id("jobs"), userId: v.optional(v.id("users")), round: v.number(),
     count: v.number(), at: v.number(),
