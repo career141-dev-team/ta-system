@@ -103,7 +103,7 @@ Reminder (nudge):
 
 ### Flow E: the automatic sweep
 
-Cron `evaluate-follow-up` (every 7 minutes, `convex/crons.ts`) -> `internal.crons.evaluateFollowUpStage({})` (the `taOnly` arg is used only by the staging cron, below). Everything in one mutation:
+Cron `evaluate-follow-up` (every 7 minutes, `convex/crons.ts`) -> `internal.crons.evaluateFollowUpStage({})` (the `taOnly` arg is used only by the staging cron, below). The sweep reads, decides and writes its cursor in one mutation; **since 11 Nov every stage move is its own scheduled mutation** - `sweepMove` schedules `internal.crons.sweepMoveOne({appId, targetStage, reason, after?})` staggered `MOVE_STAGGER_MS` (500 ms) apart, and `sweepMoveOne` re-checks the row is still in `follow_up`/`ta_shortlist` and not taken over before `executeStageTransition`, then applies `after` (the TA Follow-up clock patch, the `followUpState` close patch) in the same mutation. Why: each move rebuilds every TA's workday checklist for the job (`refreshWorkdayChecks`), and 60 of them in the sweep's own transaction ran past the 1 s budget on the live log (1.0 s, then 2.9 s failed) - and the cursor rolled back with it, so the same window was retried every 7 minutes and nobody advanced. Steps:
 
 1. Kill switches: `appSettings` row key `system`: `autopilotEnabled === false` -> return; `channel_toggles.whatsappFollowUp/emailFollowUp === false` pause that channel (both paused also freezes the time-based closes).
 2. Jobs: `jobs` by `by_status = active`, filtered by `sweepCovers(job, taOnly)` = `followUpOn(job)` (`agent3Enabled === true` and either channel flag true) and, if `taOnly`, `followUpStartsOnSend`.
@@ -117,7 +117,7 @@ Cron `evaluate-follow-up` (every 7 minutes, `convex/crons.ts`) -> `internal.cron
 10. TA openings (`followUpStartsOnSend`) stop here (`continue`): the day-tier flow would double up.
 11. Legacy static flow (CV-pipeline jobs only): 7 days in stage without completion -> `unresponsive` "Profile still incomplete after 7 days in Follow-up."; promised-ETA hold (`waitingForCandidateEta`, `candidateEtaMs`); records `followUpState.replyChannel` from the first inbound/completed call; day tiers by whole days in stage: 0 -> Meta initial template, 4 and 6 -> WhatsApp text from the missing list, 2 and odd days silent (AI call branch `triggerAiCall` is never set; voice suspended), idempotency by `followUpState.lastContactDay >= targetDay`. No email is sent from this flow (removed 2 Oct).
 
-All stage moves in the sweep use `sweepMove` -> `executeStageTransition({actorId:"system", bypassRoleCheck:true, skipAutoOutreach:true})`, so they close/stop/record properly (2 Oct, fdab754).
+All stage moves in the sweep use `sweepMove` -> (scheduled) `sweepMoveOne` -> `executeStageTransition({actorId:"system", bypassRoleCheck:true, skipAutoOutreach:true})`, so they close/stop/record properly (2 Oct, fdab754; one per mutation since 11 Nov). A move decided from a snapshot is dropped, with a log line, if the candidate left the stage or a TA took over in between.
 
 Staging/quiet registry: with `C141_DISABLE_CRONS=true` the whole `crons` registry is replaced by `quiet`; `C141_TA_FOLLOW_UP=on` adds cron `ta-evaluate-follow-up` (7 min, `{ taOnly: true }`). Read-only impact check before enabling outreach: `convex/admin/followUpBacklog.ts:countDueFollowUps` (dashboard function runner; run it, do not run mutations from a laptop).
 
@@ -303,6 +303,7 @@ Pre-merge checklist: tests + both type-checks pass; no new sender bypasses `reso
 Repo hard rules that apply: never run `convex deploy|run|import|env set` against api.career141.com or the VPS from a laptop (live changes only through `.github/workflows/deploy-production.yml`); work on a branch, merge by PR; no secrets in code or docs; data fixes are `dryRun` internal functions run by the pipeline; run locally with `deploy/local/start-app.sh` only, never pointed at a live address; anything touching the live server needs the owner's explicit go-ahead.
 
 ## History
+- 11 Nov 2026 (sweep-batches PR): the sweep's moves run one per scheduled mutation (`sweepMoveOne`, staggered 500 ms, source-stage guard, `after` patch travels with the move); the sweep's own transaction only reads, decides and writes the cursor. Also removed from `convex/crons.ts`: the no-op `update-dashboard-stats-cache` cron and the finished `bg-sept5-reextractor` cron (every minute, nothing claimed). Test: `tests/sweep.test.ts`.
 - 11 Nov 2026 (followup-right-opening PR): a WhatsApp reply is filed on ONE Follow-up opening or answered by nobody (`lib/senderRouting.ts pickReplyApplication`, read in `checkAndRecordFollowUpReply`). On a TA's line only that line's openings count (shared `lineFollowUps` with `handleOnTaLine`; the webhook now passes `phoneNumberId`). Two or more left: recorded on the last-written one, no assistant reply, no stage move, the TAs belled "replied - which opening?" (once an hour per candidate). Incident: a candidate in Follow-up for GM Operations and COO answered the TA's phone question; the reply was filed on COO (the last SYSTEM message), the assistant said "100% complete for Chief Operating Officer" and moved COO on. Also: image/document echoes from the TA's phone are recorded (caption or "[Image sent from the TA's phone]"), and any TA phone message takes over EVERY Follow-up application of that candidate. Echoes need Meta's `smb_message_echoes` webhook field (owner). Read-only list of who may have been hit: `admin/followUpMixups:list {days}`.
 - 9 Nov 2026 (desk-warm-cache PR): the in-memory working set is kept warm in the background - `primeStore` resolves at once when the rows a page needs are held and younger than 30 s, waits only when they were never loaded or a direct backend write marked them stale, and a reload is never discarded (this process's own saves are laid over what was fetched, `src/data/warm.ts`). `pipelineEvents` is read per opening (`ta/tables:eventsFor`; `repo.events`/`openingEvents` throw a loud error for an unprimed opening). Every application is read in parallel creation-time ranges (`ta/applications:listRange`). A save copies and diffs only the tables it touched. The HH/Scoop status poll calls `invalidateOpening(openingId)`, not `resetStore()`. Tests: `tests/warmcache.test.ts`, `tests/primewrites.test.ts`.
 
@@ -339,8 +340,8 @@ Repo hard rules that apply: never run `convex deploy|run|import|env set` against
 - 2026-11-10 The Marketing cutoff covers the reminder too: `career141_followup_reminder` is checked with Meta before each send the same way (`applicationTemplateHold(found, name)`); a re-labelled or missing reminder is held, retried tomorrow, admins belled "Automatic WhatsApp to candidates stopped".
 
 <!-- skill-meta
-verified-commit: 2d197230
-verified-hash: 1044df42a6f26a1a5b5d573bcf33e62a8c0bbb97
+verified-commit: ee103a2c
+verified-hash: 216c07efa9c112908f328e9dee47de8d34bb6e8b
 verified-date: 2026-11-11
 sources:
   convex/lib/jdFacts.ts
