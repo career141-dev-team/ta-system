@@ -5,7 +5,7 @@ import { sendMetaFreeText } from "./metaDirectSender";
 import { followUpCancelledReason } from "../lib/graphMail";
 import { REPLY_PAUSE_MS, MAX_BOT_REPLIES_PER_DAY, isEchoOfOurs } from "../lib/followUpWindow";
 import { colomboDayStart } from "../../src/lib/calendar";
-import { assistantQuietReason } from "../lib/assistantControl";
+import { assistantQuietReason, conversationStartedBy } from "../lib/assistantControl";
 import { notifyFollowUpTaFor } from "../lib/notifyTa";
 
 /** The candidate's application in Follow-up, else their newest open one. */
@@ -16,6 +16,19 @@ async function conversationApp(ctx: any, candidateId: any) {
     .collect();
   const open = apps.filter((a: any) => a.currentStage !== "rejected" && a.currentStage !== "placed");
   return open.find((a: any) => isFollowUpStage(a.currentStage)) ?? open[open.length - 1] ?? null;
+}
+
+/**
+ * Whether the system began this application's WhatsApp conversation (owner,
+ * 11 Nov; lib/assistantControl conversationStartedBy). Only then may the
+ * assistant answer: a chat the candidate or a TA began is the TA's.
+ */
+async function systemStartedChat(ctx: any, applicationId: any): Promise<boolean> {
+  const thread = await ctx.db
+    .query("communications")
+    .withIndex("by_applicationId", (q: any) => q.eq("applicationId", applicationId))
+    .collect();
+  return conversationStartedBy(thread) === "system";
 }
 
 async function seenMessage(ctx: any, messageId?: string): Promise<boolean> {
@@ -59,6 +72,7 @@ export const recordVoiceNote = internalMutation({
     if (!isFollowUpStage(app.currentStage)) return { handled: true };
     await notifyFollowUpTaFor(ctx, app._id, `${candidate.fullName ?? "A candidate"} sent a voice note`, "Listen to it in WhatsApp; the assistant cannot hear voice notes.");
     if (assistantQuietReason(app)) return { handled: true };
+    if (!(await systemStartedChat(ctx, app._id))) return { handled: true };
     const lastOurs = await ctx.db
       .query("communications")
       .withIndex("by_candidate_time", (q: any) => q.eq("candidateId", candidate._id).gte("sentAt", now - 60 * 60_000))
@@ -811,6 +825,10 @@ export const checkAndRecordFollowUpReply = internalMutation({
         }
       }
       console.log(`[checkAndRecordFollowUpReply] Candidate ${candidate._id} is in Follow-up on ${unclear.length} openings; recorded, not answered.`);
+    } else if (!(await systemStartedChat(ctx, activeApp._id))) {
+      // The candidate (or a TA by hand) began this chat, not the system: it is
+      // the TA's to answer (owner, 11 Nov). Recorded above; nothing sent.
+      console.log(`[checkAndRecordFollowUpReply] Application ${activeApp._id}: the system did not start this WhatsApp chat. Recorded; left to the TA.`);
     } else if (args.textBody && args.textBody.trim()) {
       // Any non-empty text. It skipped two characters and under, so a "no" to
       // "are you open to relocating?" was never read (Astra review, 29 Oct).

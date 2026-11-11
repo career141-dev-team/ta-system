@@ -47,3 +47,45 @@ export function historyLine(m: MessageLike): string {
   const where = m.channel === "email" ? ` (email${m.subject ? `: ${m.subject}` : ""})` : "";
   return `[${who}${where}] ${(m.body ?? "").trim()}`;
 }
+
+type ThreadMessage = {
+  direction: string;
+  channel?: string;
+  sentAt?: number | string | null;
+  senderAgent?: string | null;
+  senderId?: string | null;
+  deliveryStatus?: string | null;
+  errorMessage?: string | null;
+};
+
+/**
+ * Who started this opening's WhatsApp conversation (owner, 11 Nov): the
+ * assistant answers only a conversation the system began - a template, a
+ * follow-up, a campaign. One the candidate began, or a TA began by hand, is
+ * the TA's: a TA's own number is also their working phone, and the assistant
+ * answered a candidate who had written to the TA directly, told him a start
+ * date he did not have, and he rang the office.
+ *
+ * The first WhatsApp message on the application decides. Counted: any message
+ * from the candidate; one of ours that reached them (not failed, not still
+ * pending, not redirected to the test number). Ours with a person behind it
+ * (`senderAgent` "ta", or a `senderId` - pressed Send in the TA System) is the
+ * TA's. Nothing at all: nobody started it, so nobody is answered.
+ */
+export function conversationStartedBy(thread: ThreadMessage[]): "system" | "candidate" | "ta" | null {
+  const counted = thread
+    .filter((m) => (m.channel ?? "whatsapp") === "whatsapp")
+    .filter((m) => {
+      if (m.direction === "inbound") return true;
+      if (m.direction !== "outbound") return false;
+      const status = String(m.deliveryStatus ?? "");
+      if (status === "failed" || status === "bounced" || status === "pending") return false;
+      if (/^Test mode/i.test(String(m.errorMessage ?? ""))) return false;
+      return true;
+    })
+    .sort((a, b) => Number(a.sentAt ?? 0) - Number(b.sentAt ?? 0));
+  const first = counted[0];
+  if (!first) return null;
+  if (first.direction === "inbound") return "candidate";
+  return first.senderAgent === "ta" || first.senderId ? "ta" : "system";
+}

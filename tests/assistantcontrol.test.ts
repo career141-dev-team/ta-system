@@ -45,3 +45,21 @@ test("a TA on the opening, any TA lead, and an admin can switch automatic follow
   assert.ok(/if \(!isDeskWideUser\(user\)\) \{\s*await assertJobAccess/.test(setAuto), "a lead not on the opening's team is refused");
   assert.ok(read("src/lib/auth.ts").includes('const DESK_WIDE: Role[] = ["admin", "director", "ta_lead", "ops"];'), "the page and the backend no longer agree on who is desk-wide");
 });
+
+test("the assistant answers only a WhatsApp chat the system started (owner, 11 Nov)", async () => {
+  const { conversationStartedBy } = await import("../convex/lib/assistantControl");
+  const out = (sentAt: number, extra: Record<string, unknown> = {}) => ({ direction: "outbound", channel: "whatsapp", sentAt, deliveryStatus: "sent", ...extra });
+  const inb = (sentAt: number) => ({ direction: "inbound", channel: "whatsapp", sentAt });
+  // A template went first: the assistant may answer.
+  assert.equal(conversationStartedBy([inb(20), out(10)]), "system");
+  // The incident: the candidate wrote to the TA's number first.
+  assert.equal(conversationStartedBy([inb(10), out(20, { senderAgent: "system" })]), "candidate");
+  // A TA wrote first, from the phone or from the TA System.
+  assert.equal(conversationStartedBy([out(10, { senderAgent: "ta" }), inb(20)]), "ta");
+  assert.equal(conversationStartedBy([out(10, { senderId: "u1" }), inb(20)]), "ta");
+  // Ours that never reached them does not start anything.
+  assert.equal(conversationStartedBy([out(5, { deliveryStatus: "failed" }), out(6, { errorMessage: "Test mode active. [REDIRECTED TO TEST NUMBER: +94...]" }), inb(10)]), "candidate");
+  // An email first does not count for WhatsApp; nothing at all is nobody's.
+  assert.equal(conversationStartedBy([{ direction: "outbound", channel: "email", sentAt: 1, deliveryStatus: "sent" }, inb(10)]), "candidate");
+  assert.equal(conversationStartedBy([]), null);
+});
