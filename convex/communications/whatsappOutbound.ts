@@ -117,20 +117,29 @@ export const recordTaPhoneMessage = internalMutation({
       stoppedSequence: false,
       ...(args.messageId ? { externalMessageId: args.messageId } : {}),
     });
-    if (isFollowUpStage(app.currentStage) && typeof app.taTookOverAt !== "number") {
-      await ctx.db.patch(app._id, {
+    // Every Follow-up application of this candidate, not only the one the
+    // message is filed on (11 Nov): a person is talking to them on WhatsApp,
+    // so the assistant answers on no opening - it replied "100% complete" for
+    // one opening while the TA was asking about another.
+    const all = await ctx.db
+      .query("applications")
+      .withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidate._id))
+      .collect();
+    for (const a of all as any[]) {
+      if (!isFollowUpStage(a.currentStage) || typeof a.taTookOverAt === "number") continue;
+      await ctx.db.patch(a._id, {
         taTookOverAt: Date.now(),
         taTookOverVia: "phone",
         nextFollowUpScheduledAt: undefined,
         nextFollowUpMessage: undefined,
       });
-      console.log(`[recordTaPhoneMessage] A TA replied from the phone; the assistant stops for application ${app._id}.`);
+      console.log(`[recordTaPhoneMessage] A TA wrote from the phone; the assistant stops for application ${a._id}.`);
     }
     return { recorded: true };
   },
 });
 import { isFollowUpStage } from "../ta/stages";
-import { handleOnLine, isNumberLevelError, pickSender } from "../lib/senderRouting";
+import { handleOnLine, isNumberLevelError, pickReplyApplication, pickSender } from "../lib/senderRouting";
 
 /**
  * The Meta `phone_number_id` for the line an opening sends from.
@@ -174,34 +183,47 @@ export const getMetaPhoneNumberId = internalQuery({
   },
 });
 
+/**
+ * The number a message reached, and each Follow-up application with the TA
+ * whose line it belongs to - read by handleOnTaLine (is it ours?) and by
+ * checkAndRecordFollowUpReply (which opening is it about?).
+ */
+async function lineFollowUps(ctx: any, phoneNumberId: string | undefined, apps: any[]) {
+  const row = phoneNumberId
+    ? ((await ctx.db.query("whatsappNumbers").collect()) as any[]).find((n) => n.whatchimpPhoneId === phoneNumberId)
+    : undefined;
+  // A TA row has a TA or a readiness (admin/addTaWhatsAppNumbers); the main line has neither.
+  const isTaLine = !!row && (row.userId !== undefined || row.ready !== undefined);
+  const last9 = (s?: string | null) => String(s ?? "").replace(/[^0-9]/g, "").slice(-9);
+  const followUps: { id: string; stage: string; lineUserId: string | null }[] = [];
+  for (const a of apps) {
+    if (!isFollowUpStage(a.currentStage)) continue;
+    const job: any = await ctx.db.get(a.jobId);
+    // An opening set to send from this very number (outreachWhatsAppNumber,
+    // 10 Nov: one opening on Rakshana's line) is this line's, whoever owns
+    // the candidate - otherwise the replies to its own messages are ignored.
+    const openingOnThisLine = !!row && !!last9(job?.outreachWhatsAppNumber) && last9(job?.outreachWhatsAppNumber) === last9(row.phone);
+    followUps.push({
+      id: a._id,
+      stage: a.currentStage,
+      lineUserId: openingOnThisLine ? row.userId : a.ownerTaId ?? job?.assignedTaIds?.[0] ?? null,
+    });
+  }
+  return { isTaLine, lineUserId: row?.userId as string | undefined, followUps };
+}
+
 /** `handleOnLine` for one incoming message: is the receiving number a TA's, and is the sender being followed up? */
 export const handleOnTaLine = internalQuery({
   args: { phoneNumberId: v.optional(v.string()), senderPhone: v.string() },
   handler: async (ctx, args) => {
     if (!args.phoneNumberId) return true;
-    const row = (await ctx.db.query("whatsappNumbers").collect()).find((n) => n.whatchimpPhoneId === args.phoneNumberId);
-    // A TA row has a TA or a readiness (admin/addTaWhatsAppNumbers); the main line has neither.
-    const isTaLine = !!row && (row.userId !== undefined || row.ready !== undefined);
-    if (!isTaLine) return true;
     const candidate = await findCandidateByPhone(ctx, args.senderPhone);
     const apps = candidate
       ? await ctx.db.query("applications").withIndex("by_candidateId", (q: any) => q.eq("candidateId", candidate._id)).collect()
       : [];
-    const followUps = [];
-    const last9 = (s?: string | null) => String(s ?? "").replace(/[^0-9]/g, "").slice(-9);
-    for (const a of apps as any[]) {
-      if (!isFollowUpStage(a.currentStage)) continue;
-      const job: any = await ctx.db.get(a.jobId);
-      // An opening set to send from this very number (outreachWhatsAppNumber,
-      // 10 Nov: one opening on Rakshana's line) is this line's, whoever owns
-      // the candidate - otherwise the replies to its own messages are ignored.
-      const openingOnThisLine = !!last9(job?.outreachWhatsAppNumber) && last9(job?.outreachWhatsAppNumber) === last9(row.phone);
-      followUps.push({
-        stage: a.currentStage,
-        lineUserId: openingOnThisLine ? row.userId : a.ownerTaId ?? job?.assignedTaIds?.[0] ?? null,
-      });
-    }
-    return handleOnLine(true, row.userId, followUps, isFollowUpStage);
+    const line = await lineFollowUps(ctx, args.phoneNumberId, apps);
+    if (!line.isTaLine) return true;
+    return handleOnLine(true, line.lineUserId, line.followUps, isFollowUpStage);
   },
 });
 
@@ -647,6 +669,8 @@ export const checkAndRecordFollowUpReply = internalMutation({
     textBody: v.string(),
     /** Meta's message id ("wamid..."): the same message delivered twice is dropped by it. */
     messageId: v.optional(v.string()),
+    /** Meta phone_number_id of the number the message reached: a TA's line narrows the opening. */
+    phoneNumberId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const targetPhone = args.senderPhone;
@@ -681,9 +705,19 @@ export const checkAndRecordFollowUpReply = internalMutation({
     }
     // An application in Follow-up wins over one that is not: that is the
     // conversation the assistant is having (2 Oct).
-    if (!activeApp || !isFollowUpStage(activeApp.currentStage)) {
-      activeApp = apps.find((a: any) => isFollowUpStage(a.currentStage)) ?? activeApp;
-    }
+    // Which Follow-up opening, without guessing (11 Nov, lib/senderRouting
+    // pickReplyApplication): on a TA's number only that line's; two or more
+    // left means nobody is answered or moved and the TAs are told.
+    const line = await lineFollowUps(ctx, args.phoneNumberId, apps);
+    const picked = pickReplyApplication({
+      apps: line.followUps,
+      isTaLine: line.isTaLine,
+      lineUserId: line.lineUserId,
+      lastOutboundAppId: recentOutbound?.applicationId ?? null,
+      isFollowUpStage,
+    });
+    if (picked) activeApp = apps.find((a: any) => a._id === picked.appId) ?? activeApp;
+    const unclear = picked?.unclear ?? [];
 
     console.log(`[checkAndRecordFollowUpReply] Sender: ${args.senderPhone} -> Candidate: ${candidate.fullName} (${candidate._id}). Active stage: ${activeApp?.currentStage || "NONE"}. Text length: ${args.textBody?.length || 0}. Text preview: "${(args.textBody || "").substring(0, 100)}"`);
 
@@ -755,6 +789,28 @@ export const checkAndRecordFollowUpReply = internalMutation({
     // goes out instead.
     if (!isFollowUpStage(activeApp.currentStage)) {
       console.log(`[checkAndRecordFollowUpReply] Application ${activeApp._id} is in ${activeApp.currentStage}, not Follow-up. Recorded; no AI reply.`);
+    } else if (unclear.length > 1) {
+      // In Follow-up on more than one opening and nothing says which (11 Nov):
+      // recorded, nobody answered, nothing moved - a TA answers. Told once an
+      // hour per candidate, not once per message.
+      const titles: string[] = [];
+      for (const id of unclear) {
+        const a: any = apps.find((x: any) => x._id === id);
+        const j: any = a ? await ctx.db.get(a.jobId) : null;
+        titles.push(j?.title ?? "an opening");
+      }
+      const toldRecently = recentInbound && Number(recentInbound.sentAt) > receivedAt - 60 * 60_000;
+      if (!toldRecently) {
+        for (const id of unclear) {
+          await notifyFollowUpTaFor(
+            ctx,
+            id as any,
+            `${candidate.fullName ?? "A candidate"} replied - which opening?`,
+            `They are in Follow-up for ${titles.join(" and ")}. The assistant did not answer, so it would not save or move the wrong one. Please reply on WhatsApp yourself.`,
+          );
+        }
+      }
+      console.log(`[checkAndRecordFollowUpReply] Candidate ${candidate._id} is in Follow-up on ${unclear.length} openings; recorded, not answered.`);
     } else if (args.textBody && args.textBody.trim()) {
       // Any non-empty text. It skipped two characters and under, so a "no" to
       // "are you open to relocating?" was never read (Astra review, 29 Oct).

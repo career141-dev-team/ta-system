@@ -22,6 +22,7 @@ import type * as admin_deleteTestOpenings from "../admin/deleteTestOpenings.js";
 import type * as admin_excelTablesReport from "../admin/excelTablesReport.js";
 import type * as admin_failStuckSendingEmails from "../admin/failStuckSendingEmails.js";
 import type * as admin_followUpBacklog from "../admin/followUpBacklog.js";
+import type * as admin_followUpMixups from "../admin/followUpMixups.js";
 import type * as admin_inspectComms from "../admin/inspectComms.js";
 import type * as admin_ioPerformanceMigrations from "../admin/ioPerformanceMigrations.js";
 import type * as admin_migrateCandidates from "../admin/migrateCandidates.js";
@@ -318,6 +319,7 @@ declare const fullApi: ApiFromModules<{
   "admin/excelTablesReport": typeof admin_excelTablesReport;
   "admin/failStuckSendingEmails": typeof admin_failStuckSendingEmails;
   "admin/followUpBacklog": typeof admin_followUpBacklog;
+  "admin/followUpMixups": typeof admin_followUpMixups;
   "admin/inspectComms": typeof admin_inspectComms;
   "admin/ioPerformanceMigrations": typeof admin_ioPerformanceMigrations;
   "admin/migrateCandidates": typeof admin_migrateCandidates;
