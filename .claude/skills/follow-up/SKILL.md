@@ -303,6 +303,7 @@ Pre-merge checklist: tests + both type-checks pass; no new sender bypasses `reso
 Repo hard rules that apply: never run `convex deploy|run|import|env set` against api.career141.com or the VPS from a laptop (live changes only through `.github/workflows/deploy-production.yml`); work on a branch, merge by PR; no secrets in code or docs; data fixes are `dryRun` internal functions run by the pipeline; run locally with `deploy/local/start-app.sh` only, never pointed at a live address; anything touching the live server needs the owner's explicit go-ahead.
 
 ## History
+- 11 Nov 2026 (followup-right-opening PR): a WhatsApp reply is filed on ONE Follow-up opening or answered by nobody (`lib/senderRouting.ts pickReplyApplication`, read in `checkAndRecordFollowUpReply`). On a TA's line only that line's openings count (shared `lineFollowUps` with `handleOnTaLine`; the webhook now passes `phoneNumberId`). Two or more left: recorded on the last-written one, no assistant reply, no stage move, the TAs belled "replied - which opening?" (once an hour per candidate). Incident: a candidate in Follow-up for GM Operations and COO answered the TA's phone question; the reply was filed on COO (the last SYSTEM message), the assistant said "100% complete for Chief Operating Officer" and moved COO on. Also: image/document echoes from the TA's phone are recorded (caption or "[Image sent from the TA's phone]"), and any TA phone message takes over EVERY Follow-up application of that candidate. Echoes need Meta's `smb_message_echoes` webhook field (owner). Read-only list of who may have been hit: `admin/followUpMixups:list {days}`.
 - 9 Nov 2026 (desk-warm-cache PR): the in-memory working set is kept warm in the background - `primeStore` resolves at once when the rows a page needs are held and younger than 30 s, waits only when they were never loaded or a direct backend write marked them stale, and a reload is never discarded (this process's own saves are laid over what was fetched, `src/data/warm.ts`). `pipelineEvents` is read per opening (`ta/tables:eventsFor`; `repo.events`/`openingEvents` throw a loud error for an unprimed opening). Every application is read in parallel creation-time ranges (`ta/applications:listRange`). A save copies and diffs only the tables it touched. The HH/Scoop status poll calls `invalidateOpening(openingId)`, not `resetStore()`. Tests: `tests/warmcache.test.ts`, `tests/primewrites.test.ts`.
 
 - 2026-09-15 `bc022f5` send the proven sequence from the candidate's Chat tab; `eec5052` one fail-closed gate in front of every message; `376c8a2` nothing reaches a real person from a test deployment.
@@ -338,8 +339,8 @@ Repo hard rules that apply: never run `convex deploy|run|import|env set` against
 - 2026-11-10 The Marketing cutoff covers the reminder too: `career141_followup_reminder` is checked with Meta before each send the same way (`applicationTemplateHold(found, name)`); a re-labelled or missing reminder is held, retried tomorrow, admins belled "Automatic WhatsApp to candidates stopped".
 
 <!-- skill-meta
-verified-commit: 47d97a4
-verified-hash: 969c5afa07ca1e467a15d6d5909330da39b47c4f
+verified-commit: 2d197230
+verified-hash: 1044df42a6f26a1a5b5d573bcf33e62a8c0bbb97
 verified-date: 2026-11-11
 sources:
   convex/lib/jdFacts.ts

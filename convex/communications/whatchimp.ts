@@ -136,8 +136,17 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
   const echoes = body.entry?.[0]?.changes?.[0]?.value?.message_echoes;
   if (Array.isArray(echoes)) {
     for (const echo of echoes) {
-      const text = echo?.text?.body ?? "";
-      if (echo?.type === "text" && echo?.to && text) {
+      // A flyer or file the TA sends from the phone counts too (11 Nov): it
+      // was never recorded, so the assistant answered over a TA who was
+      // talking to the candidate about another opening.
+      const media = echo?.type === "image" || echo?.type === "document" ? echo?.[echo.type] : null;
+      const text =
+        echo?.type === "text"
+          ? echo?.text?.body ?? ""
+          : media
+            ? String(media.caption ?? "").trim() || (echo.type === "image" ? "[Image sent from the TA's phone]" : "[File sent from the TA's phone]")
+            : "";
+      if (echo?.to && text) {
         await ctx.runMutation(internal.communications.whatsappOutbound.recordTaPhoneMessage, {
           toPhone: String(echo.to),
           text: String(text),
@@ -234,6 +243,7 @@ export const handleWhatChimpWebhook = httpAction(async (ctx, request) => {
           senderPhone: cleanSender,
           textBody,
           messageId: typeof message.id === "string" ? message.id : undefined,
+          phoneNumberId: value.metadata?.phone_number_id ?? undefined,
         });
 
         if (checkResult?.isFollowUpReply) {
