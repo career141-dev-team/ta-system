@@ -19,22 +19,63 @@ import type { MutationCtx } from "./_generated/server";
  * their pending reminders were not stopped, and no pipeline event recorded the
  * move (2 Oct). Nothing is started on the way in — the sweep's own moves never
  * sent anything, and still do not.
+ *
+ * One move per mutation (11 Nov). Every move rebuilds the workday checklist
+ * of every TA holding the job (pipelineStateMachine -> refreshWorkdayChecks),
+ * and the sweep made up to 60 of them inside its own transaction: the live
+ * log showed it at 1.0 s one run and failed at 2.9 s the next, against a 1 s
+ * budget - and because its cursor rolled back with it, it retried the same
+ * window every seven minutes and those candidates never advanced. The sweep
+ * now only decides; each move runs in its own scheduled mutation, staggered,
+ * and the cursor is written by a sweep that cannot fail on a move.
  */
+const MOVE_STAGGER_MS = 500;
+let queuedMoves = 0;
+
 async function sweepMove(
   ctx: MutationCtx,
   appId: Id<"applications">,
   targetStage: "follow_up" | "second_shortlist" | "unresponsive",
   reason: string,
+  /** Patched onto the application AFTER the move, in the same mutation as the move. */
+  after?: Record<string, unknown>,
 ) {
-  await executeStageTransition(ctx, {
-    applicationId: appId,
+  await ctx.scheduler.runAfter(queuedMoves++ * MOVE_STAGGER_MS, internal.crons.sweepMoveOne, {
+    appId,
     targetStage,
-    actorId: "system",
     reason,
-    bypassRoleCheck: true,
-    skipAutoOutreach: true,
+    ...(after ? { after } : {}),
   });
 }
+
+/** The stages the sweep moves people out of; a row that left them since the sweep looked is left alone. */
+const SWEEP_SOURCE_STAGES = new Set(["follow_up", "ta_shortlist"]);
+
+export const sweepMoveOne = internalMutation({
+  args: {
+    appId: v.id("applications"),
+    targetStage: v.union(v.literal("follow_up"), v.literal("second_shortlist"), v.literal("unresponsive")),
+    reason: v.string(),
+    after: v.optional(v.any()),
+  },
+  handler: async (ctx, args) => {
+    const app = await ctx.db.get(args.appId);
+    // Decided from a snapshot a moment ago: a TA may have moved them since.
+    if (!app || !SWEEP_SOURCE_STAGES.has(app.currentStage) || typeof app.taTookOverAt === "number") {
+      console.log(`[Follow-Up Cron] ${args.appId} is no longer ${app ? app.currentStage : "there"}; the queued move to ${args.targetStage} is dropped.`);
+      return;
+    }
+    await executeStageTransition(ctx, {
+      applicationId: args.appId,
+      targetStage: args.targetStage,
+      actorId: "system",
+      reason: args.reason,
+      bypassRoleCheck: true,
+      skipAutoOutreach: true,
+    });
+    if (args.after) await ctx.db.patch(args.appId, args.after as Record<string, unknown>);
+  },
+});
 
 const crons = cronJobs();
 
@@ -45,6 +86,7 @@ export const evaluateFollowUpStage = internalMutation({
   },
   handler: async (ctx, args) => {
     const taOnly = args.taOnly === true;
+    queuedMoves = 0;
     // 1. Check Kill Switch
     const configRow = await ctx.db.query("appSettings")
       .withIndex("by_key", (q) => q.eq("key", "system"))
@@ -142,8 +184,7 @@ export const evaluateFollowUpStage = internalMutation({
      * close — more messages, not fewer.
      */
     const toTaFollowUp = async (app: any, reason: string) => {
-      await sweepMove(ctx, app._id, "follow_up", reason);
-      await ctx.db.patch(app._id, {
+      await sweepMove(ctx, app._id, "follow_up", reason, {
         aiFollowUpNoReply: true,
         nextFollowUpScheduledAt: undefined,
         nextFollowUpMessage: undefined,
@@ -269,13 +310,12 @@ export const evaluateFollowUpStage = internalMutation({
         : null;
 
       if (maxDaysMs && timeInStage >= maxDaysMs && !allFollowUpsPaused) {
-        await sweepMove(ctx, app._id, "unresponsive", `Profile still incomplete after ${job.maxFollowUpDays} days.`);
-        await ctx.db.patch(app._id, {
+        await sweepMove(ctx, app._id, "unresponsive", `Profile still incomplete after ${job.maxFollowUpDays} days.`, {
           followUpState: {
             lastContactDay: app.followUpState?.lastContactDay ?? 0,
             firstChannelUsed: app.followUpState?.firstChannelUsed,
             replyChannel: "unresponsive",
-          }
+          },
         });
         continue;
       }
@@ -447,13 +487,12 @@ export const evaluateFollowUpStage = internalMutation({
       // in the Follow-up tab. AI voice call is suspended.
       // Note: We suspend the 7-day expiration timer if ALL follow-up channels are globally paused.
       if (timeInStage >= SEVEN_DAYS_MS && !allFollowUpsPaused) {
-        await sweepMove(ctx, app._id, "unresponsive", "Profile still incomplete after 7 days in Follow-up.");
-        await ctx.db.patch(app._id, {
+        await sweepMove(ctx, app._id, "unresponsive", "Profile still incomplete after 7 days in Follow-up.", {
           followUpState: {
             lastContactDay: app.followUpState?.lastContactDay ?? 0,
             firstChannelUsed: app.followUpState?.firstChannelUsed,
             replyChannel: "unresponsive",
-          }
+          },
         });
         continue;
       }
@@ -847,11 +886,8 @@ crons.daily(
   internal.crons.checkSlaBreaches
 );
 
-crons.interval(
-  "update-dashboard-stats-cache",
-  { minutes: 19 },
-  internal.stats.stats.updateDashboardStatsCache
-);
+// "update-dashboard-stats-cache" (every 19 min) was removed on 11 Nov: its
+// handler is `return;` (stats/stats.ts) and it still took a turn on the backend.
 
 crons.interval(
   "recover-stuck-uploads",
@@ -879,11 +915,10 @@ crons.interval(
   internal.communications.emailBackfillMutations.recoverStalledMailboxScans
 );
 
-crons.interval(
-  "bg-sept5-reextractor",
-  { minutes: 1 },
-  internal.cvs.sept5ReextractorActions.runSept5ReextractionTick
-);
+// "bg-sept5-reextractor" (every minute) was removed on 11 Nov: the September
+// backfill finished long ago, and the live log showed the action returning
+// with nothing claimed 1,440 times a day while holding one of the six action
+// slots. The module stays; run it by hand through the pipeline if ever needed.
 
 /**
  * The background automation, switchable off.
