@@ -224,10 +224,8 @@ export function ReviewDetailsForm({
     notes,
   ]);
 
-  // Typed details reach the server on their own (10 Nov): a TA who typed salary and notes and went straight to
-  // "Upload CV" lost them to the page reload that follows an upload. The browser draft above stays as the fallback.
+  // No save while typing (11 Nov): it reset fields mid-typing. Details are saved by Save, or just before a CV upload (its reload would wipe them).
   const formRef = useRef<HTMLFormElement | null>(null);
-  const [autoSaved, setAutoSaved] = useState(false);
   const fields = (a: string, b: string, c: string, d: string, e: string, f: string, g: string, h: CustomField[]) =>
     JSON.stringify([a, b, c, d, e, f, g, h.map((x) => [x.label, x.value])]);
   const snapshot = fields(curCurrency, curVal, expCurrency, expVal, npVal, designation, company, customFields);
@@ -235,17 +233,6 @@ export function ReviewDetailsForm({
   const savedSnapshot = useRef(serverSnapshot);
   useEffect(() => { savedSnapshot.current = serverSnapshot; }, [serverSnapshot]);
   const saveNow = () => saveReviewDetailsInline(null, new FormData(formRef.current!));
-  useEffect(() => {
-    // A restored draft waits for the TA to Save or Discard it: saving it unasked would override the choice.
-    if (!draftCheckedRef.current || draftRestored || snapshot === savedSnapshot.current) return;
-    setAutoSaved(false);
-    const timer = setTimeout(() => {
-      const sent = snapshot;
-      void saveNow().then((r) => { if (r.ok) { savedSnapshot.current = sent; setAutoSaved(true); } }).catch(() => {});
-    }, 2000);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snapshot, draftRestored]);
 
   const discardDraft = () => {
     try {
@@ -640,7 +627,6 @@ export function ReviewDetailsForm({
 
       <ActionNote result={uploaded} className="mt-3" />
       <ActionNote result={save.result} className="mt-3" />
-      {autoSaved && !save.pending && <p className="mt-2 text-[11.5px] text-ink-faint">Saved automatically</p>}
     </form>
   );
 }
