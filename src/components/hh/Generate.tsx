@@ -1,3 +1,4 @@
+import { adultHit } from "@/lib/adultFilter";
 import { externalUrl } from "@/lib/url";
 import { aiStatus, FAILURE_MESSAGE, type AiFailure } from "@/lib/ai";
 import { serperConfigured } from "@/lib/serper";
@@ -81,7 +82,9 @@ export function Generate({
 }
 
 /** Every generated page shows where its claims came from. */
-export function Sources({ sources }: { sources: { url: string; title: string; quote: string }[] }) {
+export function Sources({ sources: all }: { sources: { url: string; title: string; quote: string }[] }) {
+  // Reports saved before 12 Nov can still hold adult pages; they are never shown.
+  const sources = all.filter((s) => !adultHit(s));
   if (sources.length === 0) return null;
   return (
     <section className="mt-6 rounded-xl border border-rule bg-surface px-6 py-5">

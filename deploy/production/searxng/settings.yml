@@ -40,7 +40,9 @@ search:
   formats:
     - html
     - json
-  safe_search: 0
+  # Strict. It was 0, and the app asked with safesearch=0 too, so adult sites
+  # came back as Research sources (12 Nov). The app now asks for 2 itself.
+  safe_search: 2
   autocomplete: ""
   default_lang: "en"
 
