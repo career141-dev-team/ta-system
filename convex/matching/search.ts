@@ -8,6 +8,21 @@ import { employerMatch, excludedByEmployer } from "../lib/employers";
 import { cvFileMissing } from "../../src/lib/cvMissing";
 import { scoreCandidateAgainstRequirements, selectLlmPool, scoreWithLLM, scoreBatchWithLLM, buildDeterministicTaReason, distinct, type ScoredCandidate } from "../cvs/cvScoring";
 
+/*
+ * Bounds on one keyword search (12 Nov; Track A row 17 cause 3).
+ *
+ * A search index hit is a WHOLE row: a candidateResumes row carries the CV
+ * text and a 1,024-float embedding, so `take(600)` on `search_text` (the
+ * Boolean mode asked 600 per term, six terms at once) read tens of megabytes
+ * against a 1 s / 16 MB budget - measured 9.2 s live. The three candidates
+ * indexes keep the caller's limit up to SEARCH_LIMIT_MAX; the CV-text index
+ * never returns more than RESUME_HITS_MAX rows, whatever was asked.
+ * ponytail: a ceiling, not a projection - Convex cannot read part of a row.
+ * The upgrade is a slim side table (candidateId + text) for the text index.
+ */
+const SEARCH_LIMIT_MAX = 300;
+const RESUME_HITS_MAX = 100;
+
 export const searchCandidates = internalQuery({
   args: {
     query: v.string(),
@@ -18,7 +33,7 @@ export const searchCandidates = internalQuery({
   handler: async (ctx, args) => {
     if (!args.query.trim()) return [];
 
-    const limit = args.limit ?? 20;
+    const limit = Math.min(args.limit ?? 20, SEARCH_LIMIT_MAX);
 
     const searchWithFilters = async (
       index: "search_skills" | "search_title" | "search_summary",
@@ -51,7 +66,7 @@ export const searchCandidates = internalQuery({
     } catch (e) {}
 
     try {
-      resumeResults = await ctx.db.query("candidateResumes").withSearchIndex("search_text", (q: any) => q.search("rawText", args.query)).take(limit);
+      resumeResults = await ctx.db.query("candidateResumes").withSearchIndex("search_text", (q: any) => q.search("rawText", args.query)).take(Math.min(limit, RESUME_HITS_MAX));
     } catch (e) {
       resumeResults = [];
     }
@@ -107,11 +122,14 @@ export const searchCandidates = internalQuery({
     filtered.sort((a, b) => (weight.get(b.candidateId) ?? 0) - (weight.get(a.candidateId) ?? 0));
 
     // No one whose CV file was lost in the Cloud move (src/lib/cvMissing.ts).
-    // Hits from CV text are only ids, so their row is read to check.
+    // Hits from CV text are only ids, so their row is read to check - all at
+    // once, not one awaited get per row (12 Nov).
     const docs = new Map<string, Doc<"candidates">>([...titleResults, ...skillsResults, ...summaryResults].map((c) => [c._id, c]));
+    const unread = filtered.filter((f) => !docs.has(f.candidateId)).map((f) => f.candidateId);
+    for (const c of await Promise.all(unread.map((id) => ctx.db.get(id)))) if (c) docs.set(c._id, c);
     const kept: typeof filtered = [];
     for (const f of filtered) {
-      const c = docs.get(f.candidateId) ?? (await ctx.db.get(f.candidateId));
+      const c = docs.get(f.candidateId);
       if (c && !cvFileMissing(c)) kept.push(f);
       if (kept.length === limit) break;
     }

@@ -389,7 +389,9 @@ export async function keywordSearch(
   });
 }
 
-/** Several phrasings at once, merged, best score per person kept. */
+const KEYWORD_CONCURRENCY = 2;
+
+/** Several phrasings, merged, best score per person kept. */
 export async function keywordSearchMany(
   actor: Actor,
   queries: string[],
@@ -399,7 +401,14 @@ export async function keywordSearchMany(
   if (terms.length === 0) return [];
   // A failed term is reported, not turned into "no matches": the empty
   // answer was shown as "nothing found" and cached for five minutes (29 Oct).
-  const settled = await Promise.allSettled(terms.map((t) => keywordSearch(actor, t, limitEach)));
+  // Two terms at a time, not all six at once (12 Nov): one database search
+  // runs two of these passes together, so a burst of up to twelve heavy
+  // queries hit the backend in the same second. Identical terms across the
+  // passes already share one request (the read cache in convexServer).
+  const settled: PromiseSettledResult<{ candidateId: Id; score: number }[]>[] = [];
+  for (let i = 0; i < terms.length; i += KEYWORD_CONCURRENCY) {
+    settled.push(...(await Promise.allSettled(terms.slice(i, i + KEYWORD_CONCURRENCY).map((t) => keywordSearch(actor, t, limitEach)))));
+  }
   const failed = settled.filter((r) => r.status === "rejected");
   if (failed.length) {
     throw new Error(`${failed.length} of ${terms.length} keyword searches failed: ${String((failed[0] as PromiseRejectedResult).reason?.message ?? failed[0])}`);
