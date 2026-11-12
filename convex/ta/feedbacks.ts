@@ -194,6 +194,21 @@ export const screenshotUrl = internalQuery({
   },
 });
 
+/** The voice note of one feedback item, for someone allowed to see that item. Only audio is ever served. */
+export const voiceNoteUrl = internalQuery({
+  args: { actorId: v.string(), feedbackId: v.string() },
+  handler: async (ctx, args) => {
+    const actor = await requireActor(ctx, args.actorId);
+    const id = ctx.db.normalizeId("feedbacks", args.feedbackId);
+    const row = id ? await ctx.db.get(id) : null;
+    if (!row || !maySee(actor, row) || !row.voiceNote) return null;
+    const fileId = ctx.db.system.normalizeId("_storage", row.voiceNote.replace(/^convex:/, ""));
+    const meta = fileId ? await ctx.db.system.get(fileId) : null;
+    if (!meta || !(meta.contentType ?? "").startsWith("audio/")) return null;
+    return await ctx.storage.getUrl(fileId!);
+  },
+});
+
 export const listFeedbacks = internalQuery({
   args: {
     actorId: v.optional(v.string()),
@@ -231,6 +246,7 @@ export const listFeedbacks = internalQuery({
       pageUrl: r.pageUrl,
       openingId: r.openingId,
       screenshot: r.screenshot,
+      voiceNote: r.voiceNote,
       status: r.status,
       leadReviewedBy: r.leadReviewedBy,
       leadReviewedByName: r.leadReviewedByName,

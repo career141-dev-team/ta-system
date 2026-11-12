@@ -9,14 +9,18 @@ import type { HeldCv } from "@/lib/nameCheck";
  * so the card says so and when it was read; it is never presented as where the
  * person works now.
  */
-export function ReferralCard({ p, cvs = [] }: { p: ReferralPerson; cvs?: HeldCv[] }) {
+export function ReferralCard({ p, cvs = [], pick = false }: { p: ReferralPerson; cvs?: HeldCv[]; pick?: boolean }) {
   const tel = p.phone?.replace(/[^\d+]/g, "") ?? "";
   const cv = cvs[0];
   return (
     <li className="rounded-xl border border-rule bg-surface px-5 py-4">
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
         <div className="min-w-0 flex-1">
-          <p className="text-[14.5px] font-semibold">{p.name}</p>
+          <p className="flex items-center gap-2 text-[14.5px] font-semibold">
+            {/* Ticked ones go to the export form in ExportBar (form="referral-export"). */}
+            {pick && <input type="checkbox" name="id" value={p.id} form="referral-export" aria-label={`Select ${p.name} for export`} className="h-4 w-4" />}
+            {p.name}
+          </p>
           <p className="mt-0.5 text-[12.5px]">
             {p.designation ?? <span className="text-ink-faint">Title not on the CV</span>}
             {p.company && (

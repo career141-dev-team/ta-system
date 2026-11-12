@@ -1717,6 +1717,7 @@ export interface FeedbackItem {
   pageUrl?: string;
   openingId?: Id;
   screenshot?: string;
+  voiceNote?: string;
   status: FeedbackStatus;
   leadReviewedBy?: Id;
   leadReviewedByName?: string;

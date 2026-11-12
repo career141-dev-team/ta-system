@@ -120,6 +120,8 @@ Names (29 Oct): the box is `ReferralSearchBox` (a textarea that grows to eight l
 
 `/database/referral`: GET form `?q=` (max 500 characters) and `x=` for dropped chips (max 30). `referralSearch` (`src/lib/referralSearch.ts`): `readReferralQuery` (cached 5 min, 200 entries) asks Claude (`askBridge` task `match_read`), then DeepSeek (`getOpenAI("jd_extraction", 20_000)`, `max_tokens 500`, spend reserved), then `ruleRead` words. Then `ta/referenceSearch:search` (no model, deterministic): up to `MAX_TERMS = 8` terms, `PER_TERM = 400` rows per search index (`search_company`, `search_designation`, `search_name` on `referees`), `SHOW = 60` people, 5 named-by candidates each, `isPlausibleReferee` filter, "deep" flag when an index hit its limit. Not available outside Convex mode (page says so). Returns phone and email, so internal query only.
 
+Opening and export (12 Nov): the results are `src/components/db/ReferralResults.tsx`, shared by `/database/referral` and `/openings/[id]/referral` (sidebar entry "Referral Search" after Database CVs; needs a sourcing seat on the opening via `requireSourcingSeat` plus `database.read`). `basePath` keeps chip and "search it as a question" links on the page you are on. Each card has a checkbox (`name="id"`, `form="referral-export"`); `ExportBar` counts them, selects all shown (at most 60) and POSTs ids plus `q`/`x`/`for` to `/api/referral/export`, which re-runs `referralSearch`, keeps only the ticked ids, adds a "CV on file" column from `findByNames(..., {loose:false})`, and returns an .xlsx (`src/lib/referralExport.ts`, `buildXlsx`). Same permission checks as the pages; each export is logged to the server console only. The pasted-names list is not exportable.
+
 ### 10. Per-opening database matches
 
 Triggers: (a) JD approval (`approveJd` in `actions.ts`: `markMatching`, then `after(rematchWhenRequirementsSettle(...,"jd_approved"))`); (b) after a Job details save or Re-extract (the other `markMatching` call sites, same helper); (c) "Run matching"/"Run again" button (`findMatchesNow`, authorize `opening.sourcing`, then `startMatching`); (d) the mobile route `POST /api/mobile/v1/openings/[id]/matching`; (e) the nightly route (flow 12).
@@ -363,6 +365,10 @@ sources:
   src/lib/searchScope.ts
   src/lib/searchIntent.ts
   src/lib/referralSearch.ts
+  src/lib/referralExport.ts
+  src/components/db/ReferralResults.tsx
+  src/app/api/referral/**
+  src/app/openings/[id]/referral/**
   src/lib/referenceCv.ts
   src/lib/lookalikeMatch.ts
   src/lib/matchingNow.ts

@@ -6438,6 +6438,7 @@ export async function submitFeedbackAction(input: {
   pageUrl?: string;
   openingId?: string;
   screenshot?: string;
+  voiceNote?: string;
 }): Promise<{ ok: true; id: string; status: FeedbackStatus } | { ok: false; message: string }> {
   await primeStore();
   const user = await getCurrentUser();
@@ -6445,7 +6446,9 @@ export async function submitFeedbackAction(input: {
     return { ok: false, message: "You must be logged in to submit feedback." };
   }
 
-  const description = (input.description || "").trim();
+  const voiceNote = input.voiceNote?.trim() || undefined;
+  // A voice note can stand on its own (12 Nov): a lead listens to it, nothing transcribes it.
+  const description = (input.description || "").trim() || (voiceNote ? "Voice note — no written details." : "");
   if (!description) {
     return { ok: false, message: "Please provide a description of the feedback or issue." };
   }
@@ -6474,6 +6477,7 @@ export async function submitFeedbackAction(input: {
     pageUrl,
     openingId: input.openingId,
     screenshot: input.screenshot,
+    voiceNote,
     status,
     ...(isLeadOrAdmin
       ? {

@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useTransition, useRef } from "react";
+import { useState, useTransition, useRef, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { submitFeedbackAction, uploadFeedbackScreenshotAction } from "@/app/actions";
 import type { FeedbackCategory, FeedbackPriority } from "@/data/types";
+import { VOICE_MAX_BYTES, VOICE_MAX_SECONDS } from "@/lib/voiceNote";
 
 export function FeedbackWidget({ isTa = true }: { isTa?: boolean } = {}) {
   const [open, setOpen] = useState(false);
@@ -18,6 +19,70 @@ export function FeedbackWidget({ isTa = true }: { isTa?: boolean } = {}) {
   const [isPending, startTransition] = useTransition();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Voice note (12 Nov): recorded here or chosen from a file; sent as audio, not transcribed.
+  const [voiceBlob, setVoiceBlob] = useState<Blob | null>(null);
+  const [voiceUrl, setVoiceUrl] = useState<string | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [seconds, setSeconds] = useState(0);
+  const recorder = useRef<MediaRecorder | null>(null);
+  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const voiceFileRef = useRef<HTMLInputElement>(null);
+
+  const setVoice = (blob: Blob | null) => {
+    setVoiceUrl((old) => {
+      if (old) URL.revokeObjectURL(old);
+      return blob ? URL.createObjectURL(blob) : null;
+    });
+    setVoiceBlob(blob);
+    if (!blob && voiceFileRef.current) voiceFileRef.current.value = "";
+  };
+
+  const stopRecording = () => {
+    if (timer.current) clearInterval(timer.current);
+    if (recorder.current?.state === "recording") recorder.current.stop();
+    setRecording(false);
+  };
+
+  const startRecording = async () => {
+    setErrorMessage(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream);
+      const chunks: Blob[] = [];
+      mr.ondataavailable = (e) => e.data.size > 0 && chunks.push(e.data);
+      mr.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        if (chunks.length) setVoice(new Blob(chunks, { type: mr.mimeType || "audio/webm" }));
+      };
+      mr.start();
+      recorder.current = mr;
+      setVoice(null);
+      setSeconds(0);
+      setRecording(true);
+      timer.current = setInterval(() => setSeconds((n) => n + 1), 1000);
+    } catch {
+      setErrorMessage("The microphone is blocked or not available. Allow it in the browser, or choose an audio file instead.");
+    }
+  };
+
+  // The note ends itself at the limit; leaving the page releases the microphone.
+  useEffect(() => {
+    if (recording && seconds >= VOICE_MAX_SECONDS) stopRecording();
+  }, [recording, seconds]);
+  useEffect(() => () => {
+    if (timer.current) clearInterval(timer.current);
+    recorder.current?.stream.getTracks().forEach((t) => t.stop());
+  }, []);
+
+  const handleVoiceFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > VOICE_MAX_BYTES) return setErrorMessage("That voice note is over 10 MB. Choose a shorter one.");
+    if (!file.type.startsWith("audio/")) return setErrorMessage("Please choose an audio file (m4a, mp3, ogg, wav, webm).");
+    setErrorMessage(null);
+    setVoice(file);
+  };
   const pathname = usePathname();
 
   // Extract opening ID if currently on an opening route
@@ -67,13 +132,13 @@ export function FeedbackWidget({ isTa = true }: { isTa?: boolean } = {}) {
     setErrorMessage(null);
 
     const finalDescription = description.trim();
-    if (!finalDescription) {
-      setErrorMessage("Please describe the feedback or issue in detail.");
+    if (!finalDescription && !voiceBlob) {
+      setErrorMessage("Please describe the feedback or issue, or record a voice note.");
       return;
     }
 
     const firstLine = finalDescription.split("\n")[0].trim();
-    const finalTitle = (firstLine.length > 70 ? `${firstLine.slice(0, 67)}...` : firstLine) || "TA Feedback";
+    const finalTitle = (firstLine.length > 70 ? `${firstLine.slice(0, 67)}...` : firstLine) || (voiceBlob ? "Voice note" : "TA Feedback");
     const finalCategory: FeedbackCategory = "other";
     const finalPriority: FeedbackPriority = "medium";
 
@@ -99,6 +164,21 @@ export function FeedbackWidget({ isTa = true }: { isTa?: boolean } = {}) {
           uploadedStorageId = uploadRes.storageId;
         }
 
+        let uploadedVoiceId: string | undefined = undefined;
+        if (voiceBlob) {
+          const fd = new FormData();
+          fd.append("file", voiceBlob, "voice-note");
+          const up = (await fetch("/api/feedback/voice", { method: "POST", body: fd }).then((r) => r.json()).catch(() => null)) as
+            | { ok: true; storageId: string }
+            | { ok: false; message: string }
+            | null;
+          if (!up?.ok) {
+            setErrorMessage(up?.message ?? "The voice note could not be sent. Try again.");
+            return;
+          }
+          uploadedVoiceId = up.storageId;
+        }
+
         const res = await submitFeedbackAction({
           category: finalCategory,
           priority: finalPriority,
@@ -107,11 +187,13 @@ export function FeedbackWidget({ isTa = true }: { isTa?: boolean } = {}) {
           pageUrl: currentUrl,
           openingId,
           screenshot: uploadedStorageId,
+          voiceNote: uploadedVoiceId,
         });
 
         if (res.ok) {
           setSubmittedId(res.id);
           setDescription("");
+          setVoice(null);
           if (screenshotPreview) URL.revokeObjectURL(screenshotPreview);
           setScreenshotFile(null);
           setScreenshotPreview(null);
@@ -126,6 +208,8 @@ export function FeedbackWidget({ isTa = true }: { isTa?: boolean } = {}) {
   };
 
   const handleReset = () => {
+    stopRecording();
+    setVoice(null);
     setSubmittedId(null);
     setErrorMessage(null);
     if (screenshotPreview) URL.revokeObjectURL(screenshotPreview);
@@ -253,7 +337,7 @@ export function FeedbackWidget({ isTa = true }: { isTa?: boolean } = {}) {
                   </div>
                   <textarea
                     id="fb-desc"
-                    required
+                    required={!voiceBlob}
                     rows={5}
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
@@ -328,6 +412,55 @@ export function FeedbackWidget({ isTa = true }: { isTa?: boolean } = {}) {
                   )}
                 </div>
 
+                {/* Voice note */}
+                <div className="mb-4">
+                  <label className="mb-1.5 block text-[12.5px] font-semibold text-ink">Voice note (optional)</label>
+                  <input ref={voiceFileRef} type="file" accept="audio/*" onChange={handleVoiceFile} className="hidden" />
+                  {recording ? (
+                    <div className="flex items-center gap-3 rounded-lg border border-danger/30 bg-danger/5 px-3 py-2.5">
+                      <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-danger" aria-hidden="true" />
+                      <span className="tabular text-[12.5px] font-medium text-ink">
+                        {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")} / {VOICE_MAX_SECONDS / 60}:00
+                      </span>
+                      <button type="button" onClick={stopRecording} className="ml-auto rounded-md bg-danger px-3 py-1.5 text-[12px] font-medium text-white">
+                        Stop
+                      </button>
+                    </div>
+                  ) : voiceUrl ? (
+                    <div className="flex items-center gap-2 rounded-lg border border-rule bg-paper p-2.5">
+                      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                      <audio controls src={voiceUrl} className="h-9 min-w-0 flex-1" />
+                      <button type="button" onClick={startRecording} className="rounded-md px-2 py-1 text-[12px] font-medium text-ink-soft hover:bg-surface hover:text-brand">
+                        Record again
+                      </button>
+                      <button type="button" onClick={() => setVoice(null)} className="rounded-md px-2 py-1 text-[12px] font-medium text-ink-soft hover:bg-surface hover:text-danger" title="Remove voice note">
+                        Remove
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={startRecording}
+                        className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-dashed border-rule bg-paper/50 py-2.5 text-[12.5px] font-medium text-ink-soft transition-colors hover:border-brand-line hover:bg-brand/5 hover:text-brand"
+                      >
+                        <svg width={15} height={15} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" aria-hidden="true">
+                          <rect x="6" y="1.5" width="4" height="8" rx="2" />
+                          <path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2.5" />
+                        </svg>
+                        Record a voice note
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => voiceFileRef.current?.click()}
+                        className="rounded-lg border border-dashed border-rule bg-paper/50 px-3 text-[12.5px] font-medium text-ink-soft transition-colors hover:border-brand-line hover:text-brand"
+                      >
+                        Upload audio
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 {/* Actions */}
                 <div className="mt-auto flex items-center justify-end gap-2.5 border-t border-rule pt-4">
                   <button
@@ -339,7 +472,7 @@ export function FeedbackWidget({ isTa = true }: { isTa?: boolean } = {}) {
                   </button>
                   <button
                     type="submit"
-                    disabled={isPending || !description.trim()}
+                    disabled={isPending || recording || (!description.trim() && !voiceBlob)}
                     className="flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-[13px] font-medium text-white transition-opacity hover:opacity-95 disabled:opacity-40"
                   >
                     {isPending ? (
