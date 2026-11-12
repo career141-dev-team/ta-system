@@ -18,8 +18,10 @@
 // moves), SplitText, CustomEase, Observer, MotionPathPlugin, Draggable,
 // InertiaPlugin, DrawSVGPlugin, MorphSVGPlugin, ScrollToPlugin, TextPlugin.
 import gsap from "gsap";
+import { Flip } from "gsap/Flip";
 import { useGSAP } from "@gsap/react";
 
-gsap.registerPlugin(useGSAP);
+// Flip: the CV preview's frame growing to full view and back (12 Nov 2026).
+gsap.registerPlugin(useGSAP, Flip);
 
-export { gsap, useGSAP };
+export { gsap, useGSAP, Flip };

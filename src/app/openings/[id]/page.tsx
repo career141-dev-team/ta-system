@@ -84,7 +84,7 @@ function Column({
           has, so the screen fits the window instead of scrolling. On a phone
           the columns stack and the rows keep the design's height. */}
       <ul className="md:grid md:min-h-0 md:flex-1 md:grid-rows-8">
-        {items.map(([label, path], i) => (
+        {items.map(([label, path]) => (
           // The line under each row: a real 1px border (snaps to whole pixels, so every
           // line is the same weight; a drawn line at a fractional height blurred and looked
           // different row to row) with one colour, fading out to the right.
@@ -92,12 +92,7 @@ function Column({
             key={path}
             className="border-b border-solid [border-image:linear-gradient(to_right,#e4e7e7,#e4e7e700)_1] md:min-h-0"
           >
-            <RowLink
-              href={`${base}/${path}`}
-              base={base}
-              view={inPlace ? (path as WorkView) : undefined}
-              isHome={first && i === 0}
-            >
+            <RowLink href={`${base}/${path}`} view={inPlace ? (path as WorkView) : undefined}>
               {label}
             </RowLink>
           </li>

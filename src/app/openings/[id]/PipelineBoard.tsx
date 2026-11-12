@@ -6,6 +6,7 @@ import { gsap, useGSAP } from "@/lib/gsap";
 import { useOpeningView } from "./view";
 import PillMenu, { type MenuOption } from "./PillMenu";
 import TickList from "./TickList";
+import CvPreview from "./CvPreview";
 
 // Placeholder: sample candidates from the design, until the board reads the backend.
 // When it does, each column reads its own first page (about 20 cards) from an index
@@ -145,6 +146,8 @@ export default function PipelineBoard() {
   // the card stood in its old column, so Undo puts it back in the same place.
   const [moved, setMoved] = useState<{ card: Card; from: string; to: string; at: number } | null>(null);
   const [undone, setUndone] = useState<{ id: string; n: number } | null>(null);
+  // The candidate whose CV is open in the preview, if any.
+  const [cvFor, setCvFor] = useState<Card | null>(null);
 
   /**
    * Pick up, carry and drop, all moved by GSAP (owner, 12 Nov 2026: the browser's own
@@ -258,7 +261,10 @@ export default function PipelineBoard() {
       window.removeEventListener("pointercancel", up);
       document.body.style.cursor = "";
       const g = ghost as HTMLElement | null;
-      if (!g) return; // a plain click, never lifted
+      if (!g) return; // a plain click, never lifted: the card's own click opens the CV
+      // A drag that ends over its own card must not also count as a click on it.
+      el.dataset.dragged = "1";
+      setTimeout(() => delete el.dataset.dragged, 0);
       if (target) {
         const to = target;
         landing.current = { id: card.id, ghost: g };
@@ -459,7 +465,7 @@ export default function PipelineBoard() {
                     />
                   )}
                   {cards.map((p) => (
-                    <CandidateCard key={p.id} p={p} onPickUp={(e) => pickUp(e, p, s.name)} />
+                    <CandidateCard key={p.id} p={p} onPickUp={(e) => pickUp(e, p, s.name)} onOpenCv={() => setCvFor(p)} />
                   ))}
                 </TickList>
               </section>
@@ -468,6 +474,16 @@ export default function PipelineBoard() {
         </div>
       ) : (
         <ListView board={board} match={match} />
+      )}
+
+      {cvFor && (
+        <CvPreview
+          name={cvFor.name}
+          title={cvFor.title}
+          // Sample: the two demo CVs in public/cvs; the real board reads each candidate's own.
+          src={cvFor.name === "Rashini Kaweesha" ? "/cvs/p1.pdf" : "/cvs/p2.pdf"}
+          onClose={() => setCvFor(null)}
+        />
       )}
 
       {moved && (
@@ -602,11 +618,25 @@ export function BackButton() {
   );
 }
 
-function CandidateCard({ p, onPickUp }: { p: Card; onPickUp: (e: React.PointerEvent<HTMLElement>) => void }) {
+function CandidateCard({
+  p,
+  onPickUp,
+  onOpenCv,
+}: {
+  p: Card;
+  onPickUp: (e: React.PointerEvent<HTMLElement>) => void;
+  onOpenCv: () => void;
+}) {
   return (
     <article
       data-card-id={p.id}
       onPointerDown={onPickUp}
+      // A click anywhere on the card (name, initials, details) opens the CV
+      // (owner, 12 Nov 2026); a drag does not.
+      onClick={(e) => {
+        if (e.currentTarget.dataset.dragged) return;
+        onOpenCv();
+      }}
       className="cursor-grab touch-none select-none rounded-[0.9rem] border border-[#eef0f3] bg-white p-[max(1rem,12px)] will-change-transform"
     >
       <div className="flex items-start gap-[max(0.6rem,7px)]">
@@ -632,10 +662,28 @@ function CandidateCard({ p, onPickUp }: { p: Card; onPickUp: (e: React.PointerEv
       </div>
 
       <div className="mt-[max(0.7rem,8px)] flex items-center gap-[max(0.35rem,4px)] whitespace-nowrap text-chip">
-        <span className="rounded-md bg-[#f0f1f3] px-1.5 py-0.5 text-ink">CV</span>
+        {/* Opens the CV preview. Its press does not start a drag of the card. */}
+        <button
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenCv();
+          }}
+          aria-label={`Open the CV of ${p.name}`}
+          className="cursor-pointer rounded-md bg-[#f0f1f3] px-1.5 py-0.5 text-ink transition-colors hover:bg-pill-line hover:text-white"
+        >
+          CV
+        </button>
         <span className="rounded-md bg-[#f0f1f3] px-1.5 py-0.5 text-ink">Salary</span>
         <span className="rounded-md bg-[#fdf1dc] px-1.5 py-0.5 text-[#d48806]">Notice Period</span>
-        <button type="button" aria-label={`More for ${p.name}`} className="ml-auto rounded p-0.5 text-ink hover:bg-soft">
+        <button
+          type="button"
+          aria-label={`More for ${p.name}`}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          className="ml-auto rounded p-0.5 text-ink hover:bg-soft"
+        >
           <svg viewBox="0 0 24 24" fill="currentColor" className="size-[max(0.9rem,12px)]" aria-hidden="true">
             <circle cx="12" cy="5" r="1.8" />
             <circle cx="12" cy="12" r="1.8" />

@@ -5,6 +5,7 @@ import { gsap, useGSAP } from "@/lib/gsap";
 import { VIEW_TABS, ViewContext, useOpeningView, type View } from "./view";
 import Notch from "./Notch";
 import PipelineBoard from "./PipelineBoard";
+import ScoopsView from "./ScoopsView";
 import { BackButton } from "./PipelineBoard";
 
 /** The opening screen and its work views, switched in place (no page change).
@@ -60,7 +61,13 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
         ) : (
           <div className="relative flex min-h-0 flex-1 flex-col rounded-[1.5rem] bg-white">
             <Notch label={tab?.[1] ?? ""} />
-            {view === "pipeline" ? <PipelineBoard /> : <ComingView label={tab?.[1] ?? ""} />}
+            {view === "pipeline" ? (
+              <PipelineBoard />
+            ) : view === "scoops" ? (
+              <ScoopsView />
+            ) : (
+              <ComingView label={tab?.[1] ?? ""} />
+            )}
           </div>
         )}
       </main>
