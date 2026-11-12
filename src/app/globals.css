@@ -2,14 +2,46 @@
 
 :root {
   --background: #f9fafc;
-  --foreground: #171717;
+  --foreground: #1f2321;
   --board-dot: #dde1ea;
-  --board-gap: 22px;
+  --board-gap: 1.375rem;
+}
+
+/* The design is drawn 1920 wide. Every size in the app is in rem, and 1rem is
+   1/120 of the window width, so the screen keeps the design's proportions at
+   any window size or browser zoom (16px at 1920). It stops shrinking at 9px
+   (a 1080 window) so text stays readable, and stops growing at 16px.
+   So: write sizes with Tailwind's rem scale (h-8.5, not h-[34px]). */
+html {
+  font-size: clamp(9px, calc(100vw / 120), 16px);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  /* The design's palette (opening screen, 11 Nov 2026). */
+  --color-ink: #1f2321;
+  --color-muted: #5d6361;
+  --color-brand: #1b6b47;
+  --color-pill-line: #1d4d3a;
+  --color-line: #ececec;
+  --color-soft: #f4f5f6;
+  --font-sans: "Poppins", ui-sans-serif, system-ui, sans-serif;
+  /* Text sizes with a floor. On a laptop (a window about 1270 wide) the
+     design's small text scaled down to 8px and could not be read, so each
+     follows the window like everything else but never goes below its floor. */
+  --text-nav: max(0.75rem, 12.5px);
+  --text-title: max(1rem, 15px);
+  --text-pill: max(0.71875rem, 11px);
+  --text-tab: max(1rem, 13px);
+  --text-row: max(1.5rem, 15px);
+  /* The pipeline board (12 Nov 2026). */
+  --text-col: max(0.95rem, 12.5px);
+  --text-card-name: max(1rem, 13.5px);
+  --text-card-sub: max(0.7rem, 10.5px);
+  --text-card-line: max(0.8rem, 11.5px);
+  --text-chip: max(0.66rem, 10px);
+  --text-tool: max(0.78rem, 11px);
 }
 
 body {
