@@ -16,6 +16,17 @@ html {
   font-size: clamp(9px, calc(100vw / 120), 16px);
 }
 
+/* One motion rhythm for CSS, matching DUR and EASE in src/lib/gsap.ts: every
+   transition-* utility without its own duration runs 180ms on the same curve as
+   GSAP's power3.out (12 Nov 2026: hovers ran at 150, 200 and 300ms). */
+@theme {
+  --dur-tap: 120ms;
+  --dur-fast: 180ms;
+  --ease-out: cubic-bezier(0.215, 0.61, 0.355, 1);
+  --default-transition-duration: var(--dur-fast);
+  --default-transition-timing-function: var(--ease-out);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -59,4 +70,19 @@ body {
     transparent 1.5px
   );
   background-size: var(--board-gap) var(--board-gap);
+}
+
+/* Press feedback (12 Nov 2026: nothing answered a press). Every button and link
+   gives a little under the finger, and all their hover colours move at the one
+   speed. Unlayered on purpose, so it reaches elements whose utilities set their
+   own transition list; at rest nothing looks different. Opacity is left out:
+   GSAP fades buttons, and a CSS transition would drag behind every frame. An
+   element GSAP has moved carries an inline `scale: none` and keeps still. */
+:where(button, a, [role="button"]) {
+  transition-property: color, background-color, border-color, box-shadow, translate, scale;
+  transition-duration: var(--dur-fast), var(--dur-fast), var(--dur-fast), var(--dur-fast), var(--dur-fast), var(--dur-tap);
+  transition-timing-function: var(--ease-out);
+}
+:where(button, a, [role="button"]):active:not(:disabled) {
+  scale: 0.97;
 }

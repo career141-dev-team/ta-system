@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { gsap, useGSAP } from "@/lib/gsap";
+import { DUR, EASE, gsap, motionOK, useExit, useGSAP } from "@/lib/gsap";
 import { BackButton } from "./PipelineBoard";
-import CvPreview from "./CvPreview";
-import CvPages from "./CvPages";
+import CvPages, { warmPdf } from "./CvPages";
+
+const CvPreview = dynamic(() => import("./CvPreview"), { ssr: false });
 
 // Placeholder: sample scoops (CVs sent or uploaded to this opening by a TA), each
 // with its own demo CV file in public/cvs (made-up people, fake contacts). With the
@@ -60,17 +62,41 @@ export default function ScoopsView() {
   const seq = useRef(0);
   // The scoop whose CV is open big in the viewer, if any.
   const [reading, setReading] = useState<Scoop | null>(null);
+  const [readingOpen, setReadingOpen] = useState(false);
+  const read = (s: Scoop) => {
+    setReading(s);
+    setReadingOpen(true);
+  };
+  // Each of these leaves the way it came instead of vanishing (useExit).
+  const cvBox = useRef<HTMLDivElement>(null);
+  const toolsEl = useRef<HTMLDivElement>(null);
+  const filterEl = useRef<HTMLLabelElement>(null);
+  const dropEl = useRef<HTMLDivElement>(null);
+  const readingShown = useExit(readingOpen, cvBox, FADE_OUT);
+  const toolsShown = useExit(tools, toolsEl, TOOLS_OUT);
+  const filterShown = useExit(filterOpen, filterEl, FILTER_OUT);
+  const dropShown = useExit(dragging, dropEl, FADE_OUT);
   const root = useRef<HTMLDivElement>(null);
-  const busy = useRef(false);
-  const current = list.find((s) => s.id === chosen) ?? list[0];
+  // Shortlisted rows still sliding out: already gone for every purpose but the eye.
+  const [leaving, setLeaving] = useState<string[]>([]);
+  // Where each row stood just before one was taken out, so the rest can close up
+  // by moving (transform) instead of jumping.
+  const tops = useRef(new Map<string, number>());
+  const live = list.filter((s) => !leaving.includes(s.id));
+  const current = live.find((s) => s.id === chosen) ?? live[0];
+  // The next scoop's CV is opened ahead, so moving down the list shows it at once.
+  const nextCv = current ? live[live.indexOf(current) + 1]?.cv : undefined;
+  useEffect(() => {
+    if (nextCv) warmPdf(nextCv);
+  }, [nextCv]);
 
   // Arrive: rows in turn from the left, the CV from the right.
   useGSAP(
     () => {
-      gsap.from("[data-scoop-row]", { x: -24, opacity: 0, duration: 0.45, stagger: 0.06, ease: "power3.out", delay: 0.1 });
+      gsap.from("[data-scoop-row]", { x: -24, opacity: 0, duration: DUR.base, stagger: 0.05, delay: 0.08 });
       // The CV panel arrives with the choice animation below (one tween, not two:
       // two fades on one element on first load left it invisible).
-      gsap.from("[data-shortlist]", { y: 12, opacity: 0, duration: 0.4, ease: "power2.out", delay: 0.4 });
+      gsap.from("[data-shortlist]", { y: 12, opacity: 0, duration: DUR.base, delay: 0.25 });
     },
     { scope: root },
   );
@@ -79,7 +105,8 @@ export default function ScoopsView() {
   // as they are drawn (CvPages).
   useGSAP(
     () => {
-      gsap.fromTo("[data-scoop-cv]", { x: 24, opacity: 0 }, { x: 0, opacity: 1, duration: 0.4, ease: "power3.out" });
+      // overwrite: holding an arrow key restarts it cleanly instead of stacking fades.
+      gsap.fromTo("[data-scoop-cv]", { x: 24, opacity: 0 }, { x: 0, opacity: 1, duration: DUR.base, overwrite: true });
     },
     { dependencies: [chosen], scope: root, revertOnUpdate: false },
   );
@@ -106,11 +133,13 @@ export default function ScoopsView() {
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+      // The big CV viewer is open: the arrows scroll it, not this list.
+      if (readingOpen) return;
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
       e.preventDefault();
-      const i = list.findIndex((s) => s.id === chosen);
-      const next = list[Math.max(0, Math.min(list.length - 1, i + (e.key === "ArrowDown" ? 1 : -1)))];
+      const i = live.findIndex((s) => s.id === chosen);
+      const next = live[Math.max(0, Math.min(live.length - 1, i + (e.key === "ArrowDown" ? 1 : -1)))];
       if (next) {
         setChosen(next.id);
         root.current?.querySelector(`[data-scoop-row="${next.id}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -118,27 +147,42 @@ export default function ScoopsView() {
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [list, chosen]);
+  }, [live, chosen, readingOpen]);
 
-  // Shortlist: the row slides out right, the gap closes, the next one is chosen.
+  // Shortlist: everything that matters happens on the click - the next candidate
+  // is chosen, the notice rises - and the row only then slides out right. A
+  // timer, not the slide's end, takes it out of the list, so a held-back frame
+  // never leaves the click looking dead.
   const shortlist = () => {
-    if (!current || busy.current) return;
-    busy.current = true;
-    const row = root.current?.querySelector<HTMLElement>(`[data-scoop-row="${current.id}"]`);
-    const i = list.findIndex((s) => s.id === current.id);
-    const nextId = (list[i + 1] ?? list[i - 1])?.id;
-    const done = () => {
-      setList((l) => l.filter((s) => s.id !== current.id));
-      if (nextId) setChosen(nextId);
-      setNotice((n) => ({ bold: current.name, rest: " shortlisted", n: (n?.n ?? 0) + 1 }));
-      busy.current = false;
-    };
-    if (!row) return done();
-    gsap
-      .timeline({ onComplete: done })
-      .to(row, { x: 60, opacity: 0, duration: 0.28, ease: "power2.in" })
-      .to(row, { height: 0, marginTop: 0, marginBottom: 0, paddingTop: 0, paddingBottom: 0, borderWidth: 0, duration: 0.3, ease: "power3.inOut" });
+    if (!current) return;
+    const id = current.id;
+    const i = live.findIndex((s) => s.id === id);
+    const nextId = (live[i + 1] ?? live[i - 1])?.id;
+    setLeaving((l) => [...l, id]);
+    if (nextId) setChosen(nextId);
+    setNotice((n) => ({ bold: current.name, rest: " shortlisted", n: (n?.n ?? 0) + 1 }));
+    const row = root.current?.querySelector<HTMLElement>(`[data-scoop-row="${id}"]`);
+    if (row) gsap.to(row, { x: 60, opacity: 0, scaleY: 0.6, transformOrigin: "50% 0%", duration: DUR.fast, ease: EASE.in });
+    setTimeout(() => {
+      root.current?.querySelectorAll<HTMLElement>("[data-scoop-row]").forEach((r) => {
+        tops.current.set(r.dataset.scoopRow!, r.getBoundingClientRect().top);
+      });
+      setList((l) => l.filter((s) => s.id !== id));
+      setLeaving((l) => l.filter((x) => x !== id));
+    }, 250);
   };
+
+  // The row is gone: the rows under it start where they stood and glide up.
+  useLayoutEffect(() => {
+    const was = tops.current;
+    if (!was.size) return;
+    tops.current = new Map();
+    root.current?.querySelectorAll<HTMLElement>("[data-scoop-row]").forEach((r) => {
+      const from = was.get(r.dataset.scoopRow!);
+      const d = from === undefined ? 0 : from - r.getBoundingClientRect().top;
+      if (d) gsap.fromTo(r, { y: d }, { y: 0, duration: DUR.base });
+    });
+  }, [list]);
 
   // CV files picked or dropped: PDF and Word only; each gets a progress row.
   // ponytail: the progress is a stand-in animation until the backend takes the
@@ -223,8 +267,9 @@ export default function ScoopsView() {
       <div className="flex items-center">
         <BackButton />
         <div className="ml-auto flex items-center">
-          {tools ? (
+          {toolsShown ? (
             <Tools
+              ref={toolsEl}
               filterOn={filterOpen}
               onFold={() => setTools(false)}
               onFilter={() => setFilterOpen((f) => !f)}
@@ -262,8 +307,8 @@ export default function ScoopsView() {
       <div className="mt-[max(1rem,10px)] grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-[max(4.6rem,20px)] px-[max(0.6rem,4px)]">
         {/* The scooped candidates; CV files dropped anywhere here are uploaded. */}
         <div {...dropZone} className="relative flex min-h-0 flex-col">
-          {filterOpen && (
-            <FilterBox value={q} onChange={setQ} onClose={() => { setFilterOpen(false); setQ(""); }} />
+          {filterShown && (
+            <FilterBox ref={filterEl} value={q} onChange={setQ} onClose={() => { setFilterOpen(false); setQ(""); }} />
           )}
         <ul className="min-h-0 flex-1 space-y-[max(1.5rem,10px)] overflow-y-auto pb-2 pr-1 [scrollbar-width:none]" aria-label="Scoops">
           {(list.length > 0 || uploads.length > 0) && (
@@ -282,8 +327,9 @@ export default function ScoopsView() {
               <li
                 key={s.id}
                 data-scoop-row={s.id}
+                inert={leaving.includes(s.id)}
                 className={
-                  "overflow-hidden rounded-[0.9rem] border bg-white transition-[border-color,box-shadow] duration-300 " +
+                  "overflow-hidden rounded-[0.9rem] border bg-white transition-[border-color,box-shadow] " +
                   (on
                     ? "border-[#bcdccb] shadow-[0_8px_28px_rgba(27,107,71,0.12)]"
                     : "border-[#eef0f3] hover:shadow-[0_6px_22px_rgba(0,0,0,0.06)]")
@@ -319,7 +365,7 @@ export default function ScoopsView() {
             <li className="pt-8 text-center text-[max(0.9rem,12px)] text-muted">No scoop matches &ldquo;{q}&rdquo;.</li>
           )}
         </ul>
-          {dragging && <DropOverlay />}
+          {dropShown && <DropOverlay ref={dropEl} />}
         </div>
 
         {/* The chosen candidate's CV, and Shortlist under it. */}
@@ -329,7 +375,7 @@ export default function ScoopsView() {
             // pages a scroll away (owner, 12 Nov 2026). Double-click opens it big.
             <div
               data-scoop-cv
-              onDoubleClick={() => setReading(current)}
+              onDoubleClick={() => read(current)}
               title="Double-click to open this CV big"
               className="relative min-h-0 flex-1 overflow-hidden"
             >
@@ -340,7 +386,7 @@ export default function ScoopsView() {
               )}
               <button
                 type="button"
-                onClick={() => setReading(current)}
+                onClick={() => read(current)}
                 aria-label="Open this CV big"
                 className="absolute right-3 top-3 flex size-[max(2.2rem,28px)] items-center justify-center rounded-full bg-white/90 text-ink shadow-[0_4px_14px_rgba(0,0,0,0.12)] transition-colors hover:bg-white"
               >
@@ -368,7 +414,9 @@ export default function ScoopsView() {
       </div>
 
       {notice && <Toast key={notice.n} bold={notice.bold} rest={notice.rest} />}
-      {reading && <CvPreview name={reading.name} title={reading.title} src={reading.cv} onClose={() => setReading(null)} />}
+      {readingShown && reading && (
+        <CvPreview ref={cvBox} name={reading.name} title={reading.title} src={reading.cv} onClose={() => setReadingOpen(false)} />
+      )}
     </div>
   );
 }
@@ -388,11 +436,13 @@ function WordWaiting({ name }: { name: string }) {
 function Toast({ bold, rest }: { bold: string; rest: string }) {
   const el = useRef<HTMLDivElement>(null);
   useGSAP(
-    () => {
-      gsap
-        .timeline()
-        .fromTo(el.current, { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.4, ease: "back.out(1.6)" })
-        .to(el.current, { y: 20, opacity: 0, duration: 0.3, ease: "power2.in" }, "+=2.2");
+    (_, contextSafe) => {
+      gsap.fromTo(el.current, { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: DUR.base, ease: EASE.pop });
+      // The wait is real time, not animation time, so it keeps its length when the
+      // system asks for less motion (which speeds every tween up).
+      const sink = contextSafe!(() => gsap.to(el.current, { y: 20, opacity: 0, duration: DUR.fast, ease: EASE.in }));
+      const t = setTimeout(sink, 2600);
+      return () => clearTimeout(t);
     },
     { scope: el },
   );
@@ -416,6 +466,11 @@ function Toast({ bold, rest }: { bold: string; rest: string }) {
   );
 }
 
+// How each piece leaves (useExit): the way it came, faster.
+const FADE_OUT = { opacity: 0 };
+const TOOLS_OUT = { opacity: 0, scaleX: 0.4 };
+const FILTER_OUT = { opacity: 0, y: -8 };
+
 const CV_FILE = /\.(pdf|docx?|rtf)$/i;
 
 /** "jane_doe-CV.pdf" -> "Jane Doe": a first name for a CV until it has been read. */
@@ -433,21 +488,22 @@ const sizeText = (b: number) => (b > 1048576 ? (b / 1048576).toFixed(1) + " MB" 
 /** The pill from the design: fold it back, filter the list, upload CVs. It grows
  *  out of the corner from the right, its buttons arriving one after another. */
 function Tools({
+  ref: el,
   filterOn,
   onFold,
   onFilter,
   onUpload,
 }: {
+  ref: RefObject<HTMLDivElement | null>;
   filterOn: boolean;
   onFold: () => void;
   onFilter: () => void;
   onUpload: () => void;
 }) {
-  const el = useRef<HTMLDivElement>(null);
   useGSAP(
     () => {
-      gsap.from(el.current, { scaleX: 0.4, opacity: 0, duration: 0.35, ease: "back.out(1.5)", transformOrigin: "right center" });
-      gsap.from(el.current!.children, { x: 14, opacity: 0, duration: 0.3, stagger: 0.05, delay: 0.08, ease: "power2.out" });
+      gsap.from(el.current, { scaleX: 0.4, opacity: 0, duration: DUR.base, ease: EASE.pop, transformOrigin: "right center" });
+      gsap.from(el.current!.children, { x: 14, opacity: 0, duration: DUR.base, stagger: 0.05, delay: 0.08 });
     },
     { scope: el },
   );
@@ -487,15 +543,24 @@ function Tools({
 }
 
 /** The search box the filter button opens, above the list. */
-function FilterBox({ value, onChange, onClose }: { value: string; onChange: (v: string) => void; onClose: () => void }) {
-  const el = useRef<HTMLLabelElement>(null);
+function FilterBox({
+  ref: el,
+  value,
+  onChange,
+  onClose,
+}: {
+  ref: RefObject<HTMLLabelElement | null>;
+  value: string;
+  onChange: (v: string) => void;
+  onClose: () => void;
+}) {
   useGSAP(() => {
-    gsap.from(el.current, { y: -8, opacity: 0, duration: 0.3, ease: "power2.out" });
+    gsap.from(el.current, { y: -8, opacity: 0, duration: DUR.fast });
   });
   return (
     <label
       ref={el}
-      className="mb-[max(1rem,8px)] flex h-[max(2.6rem,32px)] items-center gap-2 rounded-full border border-[#e3e5e8] bg-white px-[max(1rem,12px)]"
+      className="mb-[max(1rem,8px)] flex h-[max(2.6rem,32px)] items-center gap-2 rounded-full border border-[#e3e5e8] bg-white px-[max(1rem,12px)] has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-brand/30"
     >
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="size-[max(1rem,13px)] text-muted" aria-hidden="true">
         <circle cx="11" cy="11" r="7" />
@@ -546,8 +611,9 @@ function DropStrip({ onPick }: { onPick: () => void }) {
 function DropEmpty({ onPick }: { onPick: () => void }) {
   const el = useRef<HTMLButtonElement>(null);
   useGSAP(() => {
-    gsap.from(el.current, { scale: 0.96, opacity: 0, duration: 0.4, ease: "power2.out" });
-    gsap.to(el.current!.querySelector("svg"), { y: -5, duration: 0.9, repeat: -1, yoyo: true, ease: "sine.inOut" });
+    gsap.from(el.current, { scale: 0.96, opacity: 0, duration: DUR.base });
+    // The endless bob stops when the system asks for less motion.
+    if (motionOK()) gsap.to(el.current!.querySelector("svg"), { y: -5, duration: 0.9, repeat: -1, yoyo: true, ease: "sine.inOut" });
   });
   return (
     <button
@@ -566,10 +632,9 @@ function DropEmpty({ onPick }: { onPick: () => void }) {
 }
 
 /** While CV files are dragged over the list. */
-function DropOverlay() {
-  const el = useRef<HTMLDivElement>(null);
+function DropOverlay({ ref: el }: { ref: RefObject<HTMLDivElement | null> }) {
   useGSAP(() => {
-    gsap.from(el.current, { opacity: 0, scale: 0.98, duration: 0.2, ease: "power2.out" });
+    gsap.from(el.current, { opacity: 0, scale: 0.98, duration: DUR.fast });
   });
   return (
     <div
@@ -594,7 +659,7 @@ function UploadRow({ file, size, onDone }: { file: string; size: number; onDone:
       const bar = el.current!.querySelector<HTMLElement>("[data-bar]");
       const pct = el.current!.querySelector<HTMLElement>("[data-pct]");
       const p = { v: 0 };
-      gsap.from(el.current, { y: -10, opacity: 0, duration: 0.3, ease: "power2.out" });
+      gsap.from(el.current, { y: -10, opacity: 0, duration: DUR.fast });
       gsap
         .timeline({ onComplete: () => done.current() })
         .to(p, {
@@ -606,7 +671,7 @@ function UploadRow({ file, size, onDone }: { file: string; size: number; onDone:
             if (pct) pct.textContent = Math.round(p.v) + "%";
           },
         })
-        .to(el.current, { opacity: 0, y: 6, duration: 0.25, ease: "power2.in" }, "+=0.25");
+        .to(el.current, { opacity: 0, y: 6, duration: DUR.fast, ease: EASE.in }, "+=0.25");
     },
     { scope: el },
   );

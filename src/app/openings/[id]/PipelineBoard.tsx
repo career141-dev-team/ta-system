@@ -1,12 +1,16 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import { memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { gsap, useGSAP } from "@/lib/gsap";
+import { DUR, EASE, gsap, useExit, useGSAP } from "@/lib/gsap";
 import { useOpeningView } from "./view";
 import PillMenu, { type MenuOption } from "./PillMenu";
 import TickList from "./TickList";
-import CvPreview from "./CvPreview";
+import { warmPdf } from "./CvPages";
+
+// The CV preview is its own download, fetched while the screen is idle (OpeningView).
+const CvPreview = dynamic(() => import("./CvPreview"), { ssr: false });
 
 // Placeholder: sample candidates from the design, until the board reads the backend.
 // When it does, each column reads its own first page (about 20 cards) from an index
@@ -116,12 +120,18 @@ const initials = (name: string) =>
     .slice(0, 2)
     .toUpperCase();
 
+/** How an overlay (the moved box, the CV preview) leaves: it fades. */
+const FADE_OUT = { opacity: 0 };
+
 const TOOL_PILL =
   "flex h-[max(2.4rem,33px)] items-center gap-1.5 rounded-full border border-[#e3e5e8] bg-white px-[max(1rem,13px)] text-[max(0.85rem,12.5px)] text-ink";
 
 export default function PipelineBoard() {
   const [mode, setMode] = useState<"board" | "list">("board");
   const [q, setQ] = useState("");
+  // The box shows each key at once; the board filters a beat behind, so typing
+  // never waits on seven columns being drawn again.
+  const searched = useDeferredValue(q);
   const [job, setJob] = useState("all");
   const [recruiter, setRecruiter] = useState("");
   const [priority, setPriority] = useState("");
@@ -135,19 +145,27 @@ export default function PipelineBoard() {
   const [board, setBoard] = useState<Record<string, Card[]>>(() =>
     Object.fromEntries(STAGES.map((s, i) => [s.name, cardsFor(i)])),
   );
-  // Which column the carried card is over, and the card being carried (its height
-  // sizes the slot that opens in that column).
-  const [over, setOver] = useState<string | null>(null);
-  const [carry, setCarry] = useState<{ id: string; from: string; h: number } | null>(null);
   // A drop waiting to land: the floating copy flies into the card's new place.
   const landing = useRef<{ id: string; ghost: HTMLElement } | null>(null);
   // The move just made, told back to the person AFTER it happens (owner, 12 Nov 2026:
   // "no need confirm before... after moving I need this"), with Undo. `at` is where
   // the card stood in its old column, so Undo puts it back in the same place.
   const [moved, setMoved] = useState<{ card: Card; from: string; to: string; at: number } | null>(null);
+  // The box shows while this is true; `moved` stays behind it so the box can fade
+  // out with its words still in it.
+  const [movedOpen, setMovedOpen] = useState(false);
+  const movedBox = useRef<HTMLDivElement>(null);
+  const movedShown = useExit(movedOpen, movedBox, FADE_OUT);
   const [undone, setUndone] = useState<{ id: string; n: number } | null>(null);
   // The candidate whose CV is open in the preview, if any.
   const [cvFor, setCvFor] = useState<Card | null>(null);
+  const [cvOpen, setCvOpen] = useState(false);
+  const cvBox = useRef<HTMLDivElement>(null);
+  const cvShown = useExit(cvOpen, cvBox, FADE_OUT);
+  const openCv = useCallback((p: Card) => {
+    setCvFor(p);
+    setCvOpen(true);
+  }, []);
 
   /**
    * Pick up, carry and drop, all moved by GSAP (owner, 12 Nov 2026: the browser's own
@@ -155,9 +173,13 @@ export default function PipelineBoard() {
    * moving a few pixels lifts a floating copy of it; the copy follows the pointer
    * with a soft lag and sways with its speed; the column under it opens a slot;
    * letting go flies the copy into the slot, or back home when it is not over another
-   * column. Only transform, opacity and shadow move, so it stays smooth.
+   * column. Only the copy's transform moves while carrying, and nothing goes through
+   * React until the drop: the column under the pointer is marked on the element
+   * itself (`data-over`) and its slot opened by GSAP, so a drag re-draws nothing.
+   * One function for every card (it takes the card), so a card can skip re-drawing
+   * when the board does.
    */
-  const pickUp = (e: React.PointerEvent<HTMLElement>, card: Card, from: string) => {
+  const pickUp = useCallback((e: React.PointerEvent<HTMLElement>, card: Card, from: string) => {
     if (e.button !== 0) return;
     const el = e.currentTarget;
     const sx = e.clientX;
@@ -172,7 +194,34 @@ export default function PipelineBoard() {
     let px = sx;
     let py = sy;
     let frame = 0;
+    // The carried card's height: the slot opens to it.
+    let h = 0;
     const board = el.closest<HTMLElement>("[data-board]");
+    let edges: DOMRect | null = null;
+    const colOf = (name: string) => board?.querySelector<HTMLElement>(`[data-col][aria-label="${name}"]`);
+    const slotOf = (name: string) => board?.querySelector<HTMLElement>(`[data-slot="${name}"]`);
+
+    // The slot in the column under the carried card opens smoothly to the card's
+    // height, and closes the same way when the pointer moves on, so the cards under
+    // it never jump.
+    const openSlot = (name: string) => {
+      colOf(name)?.setAttribute("data-over", "");
+      const slot = slotOf(name);
+      if (!slot) return;
+      slot.parentElement?.scrollTo({ top: 0, behavior: "smooth" });
+      gsap.set(slot, { display: "block" });
+      gsap.fromTo(slot, { height: 0, opacity: 0 }, { height: h, opacity: 1, duration: DUR.base, overwrite: true });
+    };
+    const closeSlot = (name: string) => {
+      colOf(name)?.removeAttribute("data-over");
+      const slot = slotOf(name);
+      if (!slot) return;
+      gsap.to(slot, { height: 0, opacity: 0, duration: DUR.fast, ease: EASE.in, overwrite: true });
+      // Out of the flow once closed - on a timer, not the tween's end (see lib/gsap).
+      setTimeout(() => {
+        if (target !== name) gsap.set(slot, { display: "none" });
+      }, 250);
+    };
 
     // Which column is under the pointer (not the one it came from).
     const aim = () => {
@@ -180,35 +229,38 @@ export default function PipelineBoard() {
       const name = col?.getAttribute("aria-label") ?? null;
       const next = name && name !== from ? name : null;
       if (next !== target) {
+        if (target) closeSlot(target);
         target = next;
-        setOver(next);
+        if (next) openSlot(next);
       }
     };
 
     // Carried near the left or right edge of the board, the board scrolls that way
     // on its own, faster the nearer the edge, so a column out of sight (Offer,
     // Placed) can be reached and dropped on (owner, 12 Nov 2026: "if I pick a card I
-    // need to go with side scroll").
+    // need to go with side scroll"). It runs frame by frame only while the pointer
+    // is in an edge zone.
     const edgeScroll = () => {
       frame = 0;
-      if (!ghost || !board) return;
-      const r = board.getBoundingClientRect();
-      const zone = Math.min(140, r.width * 0.14);
+      if (!ghost || !board || !edges) return;
+      const zone = Math.min(140, edges.width * 0.14);
       let v = 0;
-      if (px > r.right - zone) v = ((px - (r.right - zone)) / zone) * 24;
-      else if (px < r.left + zone) v = -((r.left + zone - px) / zone) * 24;
-      if (v !== 0) {
-        const before = board.scrollLeft;
-        board.scrollLeft += v;
-        if (board.scrollLeft !== before) aim(); // the columns slid under the pointer
-      }
+      if (px > edges.right - zone) v = ((px - (edges.right - zone)) / zone) * 24;
+      else if (px < edges.left + zone) v = -((edges.left + zone - px) / zone) * 24;
+      if (v === 0) return;
+      const before = board.scrollLeft;
+      board.scrollLeft += v;
+      if (board.scrollLeft !== before) aim(); // the columns slid under the pointer
       frame = requestAnimationFrame(edgeScroll);
     };
 
     const lift = () => {
       const r = el.getBoundingClientRect();
+      edges = board?.getBoundingClientRect() ?? null;
+      h = r.height;
       const g = el.cloneNode(true) as HTMLElement;
       g.removeAttribute("data-card-id"); // only the real card answers to its id
+      // The shadow is set once, not animated: only the copy's transform moves.
       Object.assign(g.style, {
         position: "fixed",
         left: r.left + "px",
@@ -217,24 +269,19 @@ export default function PipelineBoard() {
         margin: "0",
         zIndex: "70",
         pointerEvents: "none",
+        willChange: "transform",
+        boxShadow: "0 26px 60px rgba(17, 44, 32, 0.22)",
       });
       document.body.append(g);
       document.body.style.cursor = "grabbing";
       gsap.set(g, { transformOrigin: sx - r.left + "px " + (sy - r.top) + "px", opacity: 1, scale: 1 });
-      gsap.to(g, {
-        scale: 1.05,
-        rotation: -2,
-        boxShadow: "0 26px 60px rgba(17, 44, 32, 0.22)",
-        duration: 0.24,
-        ease: "power2.out",
-      });
+      gsap.to(g, { scale: 1.05, rotation: -2, duration: DUR.fast });
       el.dataset.hold = "1"; // the column wheel leaves the faded original alone
-      gsap.to(el, { opacity: 0.22, scale: 0.96, duration: 0.24, ease: "power2.out" });
-      xTo = gsap.quickTo(g, "x", { duration: 0.28, ease: "power3.out" });
-      yTo = gsap.quickTo(g, "y", { duration: 0.28, ease: "power3.out" });
-      tilt = gsap.quickTo(g, "rotation", { duration: 0.45, ease: "power3.out" });
+      gsap.to(el, { opacity: 0.22, scale: 0.96, duration: DUR.fast });
+      xTo = gsap.quickTo(g, "x", { duration: DUR.base });
+      yTo = gsap.quickTo(g, "y", { duration: DUR.base });
+      tilt = gsap.quickTo(g, "rotation", { duration: DUR.slow });
       ghost = g;
-      setCarry({ id: card.id, from, h: r.height });
     };
 
     const move = (ev: PointerEvent) => {
@@ -265,11 +312,19 @@ export default function PipelineBoard() {
       // A drag that ends over its own card must not also count as a click on it.
       el.dataset.dragged = "1";
       setTimeout(() => delete el.dataset.dragged, 0);
-      if (target) {
-        const to = target;
+      // The slot goes at once: the card takes its place in the same frame.
+      const to = target;
+      target = null;
+      if (to) colOf(to)?.removeAttribute("data-over");
+      board?.querySelectorAll<HTMLElement>("[data-slot]").forEach((slot) => {
+        gsap.killTweensOf(slot);
+        gsap.set(slot, { display: "none", height: 0, opacity: 0 });
+      });
+      if (to) {
         landing.current = { id: card.id, ghost: g };
         setBoard((bd) => {
           setMoved({ card, from, to, at: bd[from].findIndex((c) => c.id === card.id) });
+          setMovedOpen(true);
           return {
             ...bd,
             [from]: bd[from].filter((c) => c.id !== card.id),
@@ -278,30 +333,19 @@ export default function PipelineBoard() {
         });
       } else {
         // Not over another column: glide home and settle.
-        gsap.to(g, {
-          x: 0,
-          y: 0,
-          rotation: 0,
-          scale: 1,
-          boxShadow: "0 0 0 rgba(0,0,0,0)",
-          duration: 0.38,
-          ease: "power3.out",
-          onComplete: () => g.remove(),
-        });
-        gsap.to(el, { opacity: 1, scale: 1, duration: 0.3, delay: 0.1, onComplete: () => delete el.dataset.hold });
+        gsap.to(g, { x: 0, y: 0, rotation: 0, scale: 1, duration: DUR.base, onComplete: () => g.remove() });
+        gsap.to(el, { opacity: 1, scale: 1, duration: DUR.base, delay: 0.1, onComplete: () => delete el.dataset.hold });
       }
-      setOver(null);
-      setCarry(null);
     };
 
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
     window.addEventListener("pointercancel", up);
-  };
+  }, []);
 
   // Undo: the card goes back to its old column, in the place it stood, with a pop.
   const undoMove = () => {
-    if (!moved) return;
+    if (!moved || !movedOpen) return; // already answered; the box is only fading out
     const { card, from, to, at } = moved;
     setBoard((bd) => {
       const back = [...bd[from]];
@@ -309,7 +353,7 @@ export default function PipelineBoard() {
       return { ...bd, [to]: bd[to].filter((c) => c.id !== card.id), [from]: back };
     });
     setUndone((u) => ({ id: card.id, n: (u?.n ?? 0) + 1 }));
-    setMoved(null);
+    setMovedOpen(false);
   };
 
   useEffect(() => {
@@ -317,17 +361,8 @@ export default function PipelineBoard() {
     const card = document.querySelector<HTMLElement>('[data-card-id="' + undone.id + '"]');
     if (!card) return;
     card.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    gsap.fromTo(card, { scale: 0.9, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.4, ease: "back.out(1.6)" });
+    gsap.fromTo(card, { scale: 0.9, opacity: 0 }, { scale: 1, opacity: 1, duration: DUR.base, ease: EASE.pop });
   }, [undone]);
-
-  // The slot in the column under the carried card opens smoothly to the card's height.
-  useEffect(() => {
-    if (!over || !carry) return;
-    const slot = document.querySelector<HTMLElement>('[data-slot="' + over + '"]');
-    if (!slot) return;
-    slot.parentElement?.scrollTo({ top: 0, behavior: "smooth" });
-    gsap.fromTo(slot, { height: 0, opacity: 0 }, { height: carry.h, opacity: 1, duration: 0.3, ease: "power3.out" });
-  }, [over, carry]);
 
   // After a drop has re-drawn the board: fly the floating copy onto the card's new
   // place at the top of its column, then hand over to the real card.
@@ -349,9 +384,8 @@ export default function PipelineBoard() {
       y: r.top - parseFloat(l.ghost.style.top),
       rotation: 0,
       scale: 1,
-      boxShadow: "0 8px 28px rgba(27, 107, 71, 0.12)",
-      duration: 0.42,
-      ease: "power3.inOut",
+      duration: DUR.slow,
+      ease: EASE.inOut,
       onComplete: () => {
         delete card.dataset.hold;
         gsap.set(card, { opacity: 1, scale: 1 });
@@ -360,21 +394,29 @@ export default function PipelineBoard() {
     });
   });
 
-  const query = q.trim().toLowerCase();
+  const query = searched.trim().toLowerCase();
   const filtering = !!(query || recruiter || priority || source);
   // ponytail: filters the sample cards in the browser; with the backend each
   // filter is part of the column's indexed, paged query instead.
-  const match = (p: Card) =>
-    (!query || [p.name, p.title, p.company].some((s) => s.toLowerCase().includes(query))) &&
-    (recruiter !== "mine" || p.mine) &&
-    (recruiter !== "none" || !p.owned) &&
-    (!priority || priority === OPENING_TIER) &&
-    (!source || p.channel === source);
+  const match = useCallback(
+    (p: Card) =>
+      (!query || [p.name, p.title, p.company].some((s) => s.toLowerCase().includes(query))) &&
+      (recruiter !== "mine" || p.mine) &&
+      (recruiter !== "none" || !p.owned) &&
+      (!priority || priority === OPENING_TIER) &&
+      (!source || p.channel === source),
+    [query, recruiter, priority, source],
+  );
+  // Each column's cards, worked out again only when the board or a filter changes.
+  const columns = useMemo(
+    () => STAGES.map((s) => ({ s, all: board[s.name], cards: board[s.name].filter(match) })),
+    [board, match],
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* Row one: back, and the two actions. */}
-      <div className="flex items-center px-[max(1.5rem,14px)] pt-[max(1.4rem,14px)]">
+      <div data-intro className="flex items-center px-[max(1.5rem,14px)] pt-[max(1.4rem,14px)]">
         <BackButton />
         <div className="ml-auto flex items-center gap-[max(0.6rem,8px)]">
           <button type="button" className={TOOL_PILL}>
@@ -392,8 +434,8 @@ export default function PipelineBoard() {
       </div>
 
       {/* Row two: search, filters, and Board / List. */}
-      <div className="flex items-center gap-[max(0.5rem,6px)] px-[max(1.5rem,14px)] pb-[max(1.2rem,12px)] pt-[max(1.1rem,11px)]">
-        <label className="flex h-[max(2.4rem,33px)] w-[max(15.5rem,200px)] items-center gap-2 rounded-full border border-[#e3e5e8] bg-white px-[max(1rem,13px)]">
+      <div data-intro className="flex items-center gap-[max(0.5rem,6px)] px-[max(1.5rem,14px)] pb-[max(1.2rem,12px)] pt-[max(1.1rem,11px)]">
+        <label className="flex h-[max(2.4rem,33px)] w-[max(15.5rem,200px)] items-center gap-2 rounded-full border border-[#e3e5e8] bg-white px-[max(1rem,13px)] has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-brand/30">
           <SearchIcon />
           <input
             type="search"
@@ -436,63 +478,57 @@ export default function PipelineBoard() {
       {mode === "board" ? (
         // Columns side by side; the row scrolls sideways, each column scrolls itself.
         <div data-board className="flex min-h-0 flex-1 gap-[max(1.1rem,12px)] overflow-x-auto px-[max(1.5rem,14px)] [scrollbar-color:#e3e6ea_transparent] [scrollbar-width:thin]">
-          {STAGES.map((s) => {
-            const all = board[s.name];
-            const cards = all.filter(match);
-            return (
-              <section
-                key={s.name}
-                data-col
-                aria-label={s.name}
-                className={
-                  "flex min-h-0 w-[max(22rem,280px)] shrink-0 flex-col rounded-t-[1.2rem] border-[1.8px] border-b-0 transition-colors duration-300 " +
-                  (over === s.name ? "border-[#9fd0b5] bg-[#f3faf6]" : "border-[#f2f3f6] bg-white")
-                }
-              >
-                <header className="flex items-center gap-2 px-[max(1rem,11px)] pb-[max(0.8rem,9px)] pt-[max(1rem,11px)]">
-                  <span aria-hidden="true" className="size-2 shrink-0 rounded-full" style={{ background: s.dot }} />
-                  <h3 className="min-w-0 flex-1 truncate text-col font-semibold">{s.name}</h3>
-                  <span className="rounded-md bg-[#eef0f2] px-2 py-0.5 text-chip font-medium text-muted">
-                    {filtering ? cards.length : s.count + all.length - 6}
-                  </span>
-                </header>
-                <TickList>
-                  {over === s.name && carry && (
-                    <div
-                      data-slot={s.name}
-                      aria-hidden="true"
-                      className="rounded-[0.9rem] border-[1.5px] border-dashed border-[#9fd0b5] bg-[#eaf6ef]"
-                    />
-                  )}
-                  {cards.map((p) => (
-                    <CandidateCard key={p.id} p={p} onPickUp={(e) => pickUp(e, p, s.name)} onOpenCv={() => setCvFor(p)} />
-                  ))}
-                </TickList>
-              </section>
-            );
-          })}
+          {columns.map(({ s, all, cards }) => (
+            <section
+              key={s.name}
+              data-col
+              aria-label={s.name}
+              className="flex min-h-0 w-[max(22rem,280px)] shrink-0 flex-col rounded-t-[1.2rem] border-[1.8px] border-b-0 border-[#f2f3f6] bg-white transition-colors data-[over]:border-[#9fd0b5] data-[over]:bg-[#f3faf6]"
+            >
+              <header className="flex items-center gap-2 px-[max(1rem,11px)] pb-[max(0.8rem,9px)] pt-[max(1rem,11px)]">
+                <span aria-hidden="true" className="size-2 shrink-0 rounded-full" style={{ background: s.dot }} />
+                <h3 className="min-w-0 flex-1 truncate text-col font-semibold">{s.name}</h3>
+                <span className="rounded-md bg-[#eef0f2] px-2 py-0.5 text-chip font-medium text-muted">
+                  {filtering ? cards.length : s.count + all.length - 6}
+                </span>
+              </header>
+              <TickList>
+                {/* Where a carried card would land; opened and closed by the drag. */}
+                <div
+                  data-slot={s.name}
+                  aria-hidden="true"
+                  className="hidden rounded-[0.9rem] border-[1.5px] border-dashed border-[#9fd0b5] bg-[#eaf6ef]"
+                />
+                {cards.map((p) => (
+                  <CandidateCard key={p.id} p={p} stage={s.name} onPickUp={pickUp} onOpenCv={openCv} />
+                ))}
+              </TickList>
+            </section>
+          ))}
         </div>
       ) : (
         <ListView board={board} match={match} />
       )}
 
-      {cvFor && (
+      {cvShown && cvFor && (
         <CvPreview
+          ref={cvBox}
           name={cvFor.name}
           title={cvFor.title}
           // Sample: the two demo CVs in public/cvs; the real board reads each candidate's own.
           src={cvFor.name === "Rashini Kaweesha" ? "/cvs/p1.pdf" : "/cvs/p2.pdf"}
-          onClose={() => setCvFor(null)}
+          onClose={() => setCvOpen(false)}
         />
       )}
 
-      {moved && (
+      {movedShown && moved && (
         <MovedNotice
+          ref={movedBox}
           name={moved.card.name}
           from={STAGES.find((st) => st.name === moved.from)!}
           to={STAGES.find((st) => st.name === moved.to)!}
           onUndo={undoMove}
-          onDone={() => setMoved(null)}
+          onDone={() => setMovedOpen(false)}
         />
       )}
     </div>
@@ -512,26 +548,27 @@ function Stage({ s }: { s: { name: string; dot: string } }) {
 /** "Candidate moved" - shown once a drop has moved someone. Enter or Escape closes it;
  *  Undo puts the candidate back. */
 function MovedNotice({
+  ref: root,
   name,
   from,
   to,
   onUndo,
   onDone,
 }: {
+  ref: RefObject<HTMLDivElement | null>;
   name: string;
   from: { name: string; dot: string };
   to: { name: string; dot: string };
   onUndo: () => void;
   onDone: () => void;
 }) {
-  const root = useRef<HTMLDivElement>(null);
 
   // The veil fades in and the box rises with a small spring.
   useGSAP(
     () => {
-      // A short wait, so the card is seen landing before the box arrives.
-      gsap.from("[data-veil]", { opacity: 0, duration: 0.2, ease: "power1.out", delay: 0.35 });
-      gsap.from("[data-box]", { opacity: 0, y: 14, scale: 0.94, duration: 0.34, ease: "back.out(1.7)", delay: 0.35 });
+      // A short wait, so the card is seen starting to land before the box arrives.
+      gsap.from("[data-veil]", { opacity: 0, duration: DUR.fast, delay: DUR.tap });
+      gsap.from("[data-box]", { opacity: 0, y: 14, scale: 0.94, duration: DUR.base, ease: EASE.pop, delay: DUR.tap });
     },
     { scope: root },
   );
@@ -618,26 +655,32 @@ export function BackButton() {
   );
 }
 
-function CandidateCard({
+// Drawn again only when its own candidate changes: the handlers are the board's
+// stable ones and take the card, so a search or a drop elsewhere skips it.
+const CandidateCard = memo(function CandidateCard({
   p,
+  stage,
   onPickUp,
   onOpenCv,
 }: {
   p: Card;
-  onPickUp: (e: React.PointerEvent<HTMLElement>) => void;
-  onOpenCv: () => void;
+  stage: string;
+  onPickUp: (e: React.PointerEvent<HTMLElement>, card: Card, from: string) => void;
+  onOpenCv: (card: Card) => void;
 }) {
   return (
     <article
       data-card-id={p.id}
-      onPointerDown={onPickUp}
+      onPointerDown={(e) => onPickUp(e, p, stage)}
+      // A click opens the CV: start pdf.js on the way in, so it opens with no wait.
+      onPointerEnter={() => warmPdf()}
       // A click anywhere on the card (name, initials, details) opens the CV
       // (owner, 12 Nov 2026); a drag does not.
       onClick={(e) => {
         if (e.currentTarget.dataset.dragged) return;
-        onOpenCv();
+        onOpenCv(p);
       }}
-      className="cursor-grab touch-none select-none rounded-[0.9rem] border border-[#eef0f3] bg-white p-[max(1rem,12px)] will-change-transform"
+      className="cursor-grab touch-none select-none rounded-[0.9rem] border border-[#eef0f3] bg-white p-[max(1rem,12px)]"
     >
       <div className="flex items-start gap-[max(0.6rem,7px)]">
         <span className="flex size-[max(2.4rem,32px)] shrink-0 items-center justify-center rounded-full bg-[#e8f1fb] text-chip font-semibold text-[#4a78b0]">
@@ -668,7 +711,7 @@ function CandidateCard({
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
-            onOpenCv();
+            onOpenCv(p);
           }}
           aria-label={`Open the CV of ${p.name}`}
           className="cursor-pointer rounded-md bg-[#f0f1f3] px-1.5 py-0.5 text-ink transition-colors hover:bg-pill-line hover:text-white"
@@ -693,7 +736,7 @@ function CandidateCard({
       </div>
     </article>
   );
-}
+});
 
 /** The same candidates as one table. */
 function ListView({ board, match }: { board: Record<string, Card[]>; match: (p: Card) => boolean }) {

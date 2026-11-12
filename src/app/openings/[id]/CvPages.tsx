@@ -1,26 +1,38 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
-import { gsap } from "@/lib/gsap";
+import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
+import { DUR, gsap } from "@/lib/gsap";
 
 // One open document per file, kept while the page is open, so going back to a
 // candidate shows their CV at once instead of fetching it again.
 const docs = new Map<string, Promise<PDFDocumentProxy>>();
 
-/** pdf.js is loaded only when a CV is first shown, never with the board, and
- *  always with the worker shipped for its own version (as the TA System does). */
+// pdf.js is loaded only when a CV is about to be shown, never with the board, and
+// always with the worker shipped for its own version (as the TA System does). The
+// worker is started once, up front, and every document shares it.
+let lib: Promise<typeof import("pdfjs-dist")> | undefined;
+const pdfjs = () =>
+  (lib ??= import("pdfjs-dist").then((m) => {
+    m.GlobalWorkerOptions.workerPort = new Worker(`/pdfjs/${m.version}/pdf.worker.min.mjs`, { type: "module" });
+    return m;
+  }));
+
 function openPdf(src: string) {
   let p = docs.get(src);
   if (!p) {
-    p = import("pdfjs-dist").then((pdfjs) => {
-      pdfjs.GlobalWorkerOptions.workerSrc = `/pdfjs/${pdfjs.version}/pdf.worker.min.mjs`;
-      return pdfjs.getDocument({ url: src }).promise;
-    });
+    p = pdfjs().then((m) => m.getDocument({ url: src }).promise);
     docs.set(src, p);
     p.catch(() => docs.delete(src));
   }
   return p;
+}
+
+/** Gets a CV ready before it is asked for, so it opens with no wait: with no file,
+ *  pdf.js and its worker (a hover on a card, the Scoops tab); with a file, that
+ *  file too (the next scoop in the list). Safe to call again and again. */
+export function warmPdf(src?: string) {
+  (src ? openPdf(src) : pdfjs()).catch(() => {});
 }
 
 /**
@@ -51,14 +63,20 @@ export default function CvPages({ src, fit }: { src: string; fit: "page" | "widt
     };
   }, [src]);
 
-  // Follow the space it is given, so a page always fits after a resize.
+  // Follow the space it is given, so a page always fits after a resize. The first
+  // size is taken at once, so the first page is not kept waiting.
   useEffect(() => {
     const el = box.current;
     if (!el) return;
     let t: ReturnType<typeof setTimeout> | undefined;
+    let first = true;
     const ro = new ResizeObserver(() => {
       clearTimeout(t);
-      t = setTimeout(() => setSize({ w: el.clientWidth, h: el.clientHeight }), 80);
+      const take = () => setSize({ w: el.clientWidth, h: el.clientHeight });
+      if (first) {
+        first = false;
+        take();
+      } else t = setTimeout(take, 80);
     });
     ro.observe(el);
     return () => {
@@ -67,44 +85,63 @@ export default function CvPages({ src, fit }: { src: string; fit: "page" | "widt
     };
   }, []);
 
-  // Draw every page at the fitted size, sharp on high-density screens.
+  // Every page is given its size first, read from the page itself, so nothing jumps
+  // as pages arrive. The first page is drawn first, then the rest. Each is drawn off screen and copied in whole, so a resize never shows a
+  // blank page. Sharp on high-density screens.
   const shown = useRef(false);
   useEffect(() => {
     if (!doc || !size.w || !size.h || !box.current) return;
     const root = box.current;
     const tasks: RenderTask[] = [];
     let off = false;
+    const ratio = window.devicePixelRatio || 1;
+    const canvasOf = (n: number) => root.querySelector<HTMLCanvasElement>(`canvas[data-page="${n}"]`);
+    // A fitted page fills the panel edge to edge, with no frame around it (owner,
+    // 12 Nov 2026); Scoops then asked for the full width, no side gaps.
+    const scaleOf = (page: PDFPageProxy) => {
+      const base = page.getViewport({ scale: 1 });
+      return fit === "page" ? Math.min(size.w / base.width, size.h / base.height) : size.w / base.width;
+    };
+
+    const draw = async (n: number) => {
+      const page = await doc.getPage(n);
+      const canvas = canvasOf(n);
+      if (off || !canvas) return;
+      const vp = page.getViewport({ scale: scaleOf(page) * ratio });
+      const back = document.createElement("canvas");
+      back.width = Math.floor(vp.width);
+      back.height = Math.floor(vp.height);
+      const task = page.render({ canvas: back, viewport: vp });
+      tasks.push(task);
+      try {
+        await task.promise;
+      } catch {
+        return; // cancelled by a newer size
+      }
+      if (off) return;
+      canvas.width = back.width;
+      canvas.height = back.height;
+      canvas.getContext("2d")?.drawImage(back, 0, 0);
+      if (n === 1 && !shown.current) {
+        shown.current = true;
+        gsap.fromTo(root.querySelectorAll("canvas"), { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: DUR.base, stagger: 0.08 });
+      }
+    };
+
+    // ponytail: the later pages are drawn straight after the first, not when they
+    // scroll near. A CV is one to three pages, and a "when seen" watcher left page 2
+    // blank in a busy tab (12 Nov 2026). Draw on sight if CVs grow to tens of pages.
     (async () => {
-      // A fitted page fills the panel edge to edge, with no frame around it (owner, 12 Nov 2026); Scoops then asked for the full width, no side gaps.
-      const pad = 0;
       for (let n = 1; n <= doc.numPages; n++) {
         const page = await doc.getPage(n);
+        const canvas = canvasOf(n);
         if (off) return;
-        const base = page.getViewport({ scale: 1 });
-        const scale =
-          fit === "page"
-            ? Math.min((size.w - pad * 2) / base.width, (size.h - pad * 2) / base.height)
-            : (size.w - pad * 2) / base.width;
-        const ratio = window.devicePixelRatio || 1;
-        const vp = page.getViewport({ scale: scale * ratio });
-        const canvas = root.querySelector<HTMLCanvasElement>(`canvas[data-page="${n}"]`);
         if (!canvas) continue;
-        canvas.width = Math.floor(vp.width);
-        canvas.height = Math.floor(vp.height);
-        canvas.style.width = `${Math.floor(vp.width / ratio)}px`;
-        canvas.style.height = `${Math.floor(vp.height / ratio)}px`;
-        const task = page.render({ canvas, viewport: vp });
-        tasks.push(task);
-        try {
-          await task.promise;
-        } catch {
-          return; // cancelled by a newer size
-        }
-        if (n === 1 && !shown.current) {
-          shown.current = true;
-          gsap.fromTo(root.querySelectorAll("canvas"), { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.4, stagger: 0.08, ease: "power2.out" });
-        }
+        const vp = page.getViewport({ scale: scaleOf(page) });
+        canvas.style.width = `${Math.floor(vp.width)}px`;
+        canvas.style.height = `${Math.floor(vp.height)}px`;
       }
+      for (let n = 1; n <= doc.numPages && !off; n++) await draw(n);
     })();
     return () => {
       off = true;
@@ -128,6 +165,8 @@ export default function CvPages({ src, fit }: { src: string; fit: "page" | "widt
               key={i}
               data-page={i + 1}
               aria-label={`CV page ${i + 1} of ${doc.numPages}`}
+              // Unseen until the first page is drawn; then all fade in together.
+              style={{ opacity: 0 }}
               className="rounded-sm bg-white shadow-[0_6px_24px_rgba(0,0,0,0.10)]"
             />
           ))}

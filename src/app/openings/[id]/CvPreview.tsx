@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { Flip, gsap, useGSAP } from "@/lib/gsap";
+import { DUR, EASE, gsap, loadFlip, useGSAP, type FlipPlugin } from "@/lib/gsap";
 import CvPages from "./CvPages";
 
 // Placeholder: one sample CV laid out as in the owner's design (12 Nov 2026),
@@ -47,44 +47,58 @@ const SAMPLE = {
  *  12 Nov 2026: "a whole view, with a full view I need it"). Escape or a click on
  *  the blurred board closes it. */
 export default function CvPreview({
+  ref,
   name,
   title,
   src,
   onClose,
 }: {
+  /** The opener's handle on the preview, so it can play the preview's exit (useExit). */
+  ref?: RefObject<HTMLDivElement | null>;
   name: string;
   title: string;
   /** The candidate's own CV file; without one the sample layout below is shown. */
   src?: string;
   onClose: () => void;
 }) {
-  const root = useRef<HTMLDivElement>(null);
+  const own = useRef<HTMLDivElement>(null);
+  const root = ref ?? own;
   const [full, setFull] = useState(false);
+  // Flip arrives with the first preview (it is not in the board's download); the
+  // corner button works before it lands, only without the glide.
+  const flip = useRef<FlipPlugin | null>(null);
+  useEffect(() => {
+    loadFlip().then((f) => (flip.current = f));
+  }, []);
   // The frame's size and place before a full-view change, for Flip to animate from.
-  const before = useRef<Flip.FlipState | null>(null);
+  const before = useRef<ReturnType<FlipPlugin["getState"]> | null>(null);
 
   const toggleFull = () => {
-    // Finish the frame's opening rise first: pressed during it, Flip took over
-    // mid-way and the frame stayed half-faded and lowered.
-    gsap.getTweensOf("[data-frame]").forEach((t) => t.progress(1));
-    before.current = Flip.getState("[data-frame]");
+    const F = flip.current;
+    if (F) {
+      // Finish the frame's opening rise first: pressed during it, Flip took over
+      // mid-way and the frame stayed half-faded and lowered.
+      gsap.getTweensOf("[data-frame]").forEach((t) => t.progress(1));
+      before.current = F.getState("[data-frame]");
+    }
     setFull((f) => !f);
   };
 
   // After the frame has its new size, glide it there from where it was.
   useLayoutEffect(() => {
     const state = before.current;
-    if (!state) return;
+    const F = flip.current;
+    if (!state || !F) return;
     before.current = null;
-    Flip.from(state, { duration: 0.5, ease: "power3.inOut" });
+    F.from(state, { duration: DUR.slow, ease: EASE.inOut });
   }, [full]);
 
   // The veil fades in and the frame rises from below, like a sheet.
   useGSAP(
     () => {
-      gsap.from("[data-veil]", { opacity: 0, duration: 0.3, ease: "power1.out" });
-      gsap.from("[data-frame]", { yPercent: 18, opacity: 0, duration: 0.5, ease: "power3.out" });
-      gsap.from("[data-doc] > *", { y: 14, opacity: 0, duration: 0.45, stagger: 0.05, delay: 0.15, ease: "power2.out" });
+      gsap.from("[data-veil]", { opacity: 0, duration: DUR.fast });
+      gsap.from("[data-frame]", { yPercent: 18, opacity: 0, duration: DUR.base });
+      gsap.from("[data-doc] > *", { y: 14, opacity: 0, duration: DUR.base, stagger: 0.05, delay: 0.15 });
     },
     { scope: root },
   );

@@ -61,7 +61,7 @@ export default function TopNav() {
       <form
         action="/search"
         role="search"
-        className="ml-auto hidden h-11 w-78 min-w-40 shrink-[999] items-center gap-2 rounded-full bg-soft px-3.75 min-[1520px]:flex"
+        className="ml-auto hidden h-11 w-78 min-w-40 shrink-[999] items-center gap-2 rounded-full bg-soft px-3.75 min-[1520px]:flex has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-brand/30"
       >
         <SearchIcon className="size-[max(0.9375rem,13px)] shrink-0 text-muted" />
         <input
@@ -74,6 +74,7 @@ export default function TopNav() {
       </form>
       <Link
         href="/search"
+        prefetch={false}
         aria-label="Search opening and candidates"
         className={CIRCLE + " ml-auto bg-soft text-ink min-[1520px]:hidden"}
       >
@@ -82,6 +83,7 @@ export default function TopNav() {
 
       <Link
         href="/alerts"
+        prefetch={false}
         aria-label="Notifications"
         className={CIRCLE + " relative ml-[max(1.1875rem,10px)] bg-soft text-ink"}
       >

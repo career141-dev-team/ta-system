@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { gsap, useGSAP } from "@/lib/gsap";
+import { DUR, HOVER_IN, HOVER_OUT, gsap, useExit, useGSAP, useGlide } from "@/lib/gsap";
 
 export type MenuOption = {
   value: string;
@@ -13,6 +13,8 @@ export type MenuOption = {
    *  (a filter's "All recruiters" shows as "Recruiter", as in the design). */
   pillLabel?: string;
 };
+
+const MENU_OUT = { opacity: 0, y: -6, scale: 0.97 };
 
 /** A pill that opens a small menu on hover: an optional coloured dot per option, an
  *  optional grey hint, and a mark beside the one that is current. Used for the
@@ -60,16 +62,19 @@ export default function PillMenu({
   }, [me]);
   const root = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLDivElement>(null);
+  // Closing, the menu lifts and fades the way it came instead of vanishing.
+  const shown = useExit(open, panel, MENU_OUT);
   const current = options.find((o) => o.value === value) ?? options[0];
 
-  // A short grace period so moving from the pill down to the menu does not close it.
+  // Opens after a short rest (a pointer crossing the toolbar opens nothing), and a
+  // short grace so moving from the pill down to the menu does not close it.
   const hoverIn = () => {
     clearTimeout(timer.current);
-    if (!open) show();
+    if (!open) timer.current = setTimeout(show, HOVER_IN);
   };
   const hoverOut = () => {
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => setOpen(false), 140);
+    timer.current = setTimeout(() => setOpen(false), HOVER_OUT);
   };
   useEffect(() => () => clearTimeout(timer.current), []);
 
@@ -91,19 +96,9 @@ export default function PillMenu({
   // One soft highlight that glides from row to row under the pointer (the idea from the
   // sliding-pill navigation), and fades when the pointer leaves the list.
   // The highlight is found from the row itself, so no ref is read while rendering.
-  const glowOf = (el: Element) => el.closest("[data-glide]")?.querySelector<HTMLElement>("[data-glow]") ?? null;
-  const { contextSafe } = useGSAP({ scope: root });
-  const glideTo = contextSafe((el: HTMLElement) => {
-    const glow = glowOf(el);
-    if (!glow) return;
-    const hidden = Number(gsap.getProperty(glow, "opacity")) < 0.05;
-    const to = { y: el.offsetTop, height: el.offsetHeight };
-    if (hidden) gsap.set(glow, to);
-    gsap.to(glow, { ...to, opacity: 1, duration: hidden ? 0.12 : 0.26, ease: "power3.out", overwrite: true });
-  });
-  const glideOut = contextSafe((e: React.MouseEvent<HTMLElement>) => {
-    gsap.to(glowOf(e.currentTarget), { opacity: 0, duration: 0.2, ease: "power2.out" });
-  });
+  const glide = useGlide();
+  const glowOf = (el: Element) => el.closest("[data-glide]")?.querySelector<HTMLElement>("[data-glow]");
+  const glideTo = (el: HTMLElement) => glide.to(glowOf(el), { y: el.offsetTop, height: el.offsetHeight });
 
   // The menu eases in: opacity and a small lift/scale only (cheap, never blocks a frame).
   useGSAP(
@@ -112,14 +107,13 @@ export default function PillMenu({
       gsap.fromTo(
         panel.current,
         { opacity: 0, y: -6, scale: 0.97 },
-        { opacity: 1, y: 0, scale: 1, duration: 0.18, ease: "power2.out", transformOrigin: "top left" },
+        { opacity: 1, y: 0, scale: 1, duration: DUR.fast, transformOrigin: "top left" },
       );
       gsap.from(panel.current.querySelectorAll("[role=menuitem]"), {
         opacity: 0,
         y: -4,
-        duration: 0.16,
+        duration: DUR.fast,
         stagger: 0.03,
-        ease: "power2.out",
       });
     },
     { dependencies: [open], scope: root },
@@ -131,7 +125,7 @@ export default function PillMenu({
     <div ref={root} className="relative" onMouseEnter={hoverIn} onMouseLeave={hoverOut}>
       <button
         type="button"
-        className={pillClass + " transition-colors duration-300 hover:bg-soft" + (open ? " bg-soft" : "")}
+        className={pillClass + " transition-colors hover:bg-soft" + (open ? " bg-soft" : "")}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => (open ? setOpen(false) : show())}
@@ -155,7 +149,7 @@ export default function PillMenu({
         </svg>
       </button>
 
-      {open && (
+      {shown && (
         <div className="absolute left-0 top-full z-20 pt-2">
         <div
           ref={panel}
@@ -163,7 +157,7 @@ export default function PillMenu({
           className="w-[max(15rem,200px)] rounded-2xl border border-line bg-white py-2 shadow-[0_8px_30px_rgba(0,0,0,0.12)]"
         >
           {title && <p className="px-4 pb-1 pt-1.5 text-pill font-semibold text-muted">{title}</p>}
-          <div data-glide className="relative" onMouseLeave={glideOut}>
+          <div data-glide className="relative" onMouseLeave={(e) => glide.out(glowOf(e.currentTarget))}>
             <span
               data-glow
               aria-hidden="true"

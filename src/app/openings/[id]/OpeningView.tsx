@@ -1,12 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { gsap, useGSAP } from "@/lib/gsap";
+import dynamic from "next/dynamic";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { DUR, EASE, HOVER_IN, HOVER_OUT, gsap, loadFlip, useExit, useGSAP, useGlide } from "@/lib/gsap";
 import { VIEW_TABS, ViewContext, useOpeningView, type View } from "./view";
 import Notch from "./Notch";
 import PipelineBoard from "./PipelineBoard";
-import ScoopsView from "./ScoopsView";
 import { BackButton } from "./PipelineBoard";
+import { warmPdf } from "./CvPages";
+
+// Pipeline is in the first download; Scoops (and the CV preview, and Flip) come in
+// their own pieces, fetched while the screen sits idle, so they are ready by the
+// time they are opened.
+const ScoopsView = dynamic(() => import("./ScoopsView"));
 
 /** The opening screen and its work views, switched in place (no page change).
  *  The overview (title row + card) arrives from the server as `overview`; a work
@@ -14,32 +20,65 @@ import { BackButton } from "./PipelineBoard";
 export default function OpeningView({ overview }: { overview: ReactNode }) {
   const [view, setView] = useState<View>("overview");
   const focus = view !== "overview";
-  const { contextSafe } = useGSAP();
 
-  // Leave the current view (a quick ease out), then switch. The switch runs on its
-  // own timer, never on the tween finishing: when the browser holds back animation
-  // frames (a busy or background tab) onComplete came seconds late and the click
-  // looked dead (owner, 12 Nov 2026: "I can't see Pipeline").
-  const go = contextSafe((next: View) => {
-    if (next === view) return;
-    const stage = document.querySelector("[data-view-stage]");
-    gsap.to(stage, { opacity: 0, scale: 0.985, y: 6, duration: 0.14, ease: "power2.in", overwrite: "auto" });
-    setTimeout(() => setView(next), 140);
-  });
+  // Switch at once, on the click: no leave animation to wait for. The arrival below
+  // plays over the new view instead. A waited switch looked dead whenever the
+  // browser held back frames (owner, 12 Nov 2026: "I can't see Pipeline"), and even
+  // a fixed 140 ms made every click feel slow. The ref stops a double click from
+  // switching twice.
+  const current = useRef<View>("overview");
+  const go = useCallback((next: View) => {
+    if (next === current.current) return;
+    current.current = next;
+    setView(next);
+  }, []);
+  // One value per view, so the rows and back buttons that only need `go` do not
+  // re-render on every render of this screen.
+  const ctx = useMemo(() => ({ view, go }), [view, go]);
 
-  // Arrive: the stage zooms in, then the board's columns follow one by one.
+  // Once the screen is idle, fetch the pieces that are not in the first download.
+  useEffect(() => {
+    const idle = window.requestIdleCallback?.bind(window) ?? ((f: () => void) => setTimeout(f, 1200));
+    idle(() => {
+      void import("./ScoopsView");
+      void import("./CvPreview");
+      void loadFlip();
+    });
+  }, []);
+
+  // Arrive, like one camera move: the stage zooms in, the toolbar rows drop into
+  // place, the columns rise one after another, and the cards inside each column
+  // pour in from below. The board is there and usable at once; the motion only
+  // plays over it (owner, 12 Nov 2026: "the loading needs to be quick, but the
+  // animation needs to show"). Transform and opacity only, about 0.8 s in all; the
+  // stage starts at 0.97, not smaller, so its text stays sharp while it grows.
+  // The full sequence is for Pipeline; any other view just fades up into place.
   useGSAP(
     () => {
       const stage = document.querySelector<HTMLElement>("[data-view-stage]");
       if (!stage) return;
-      gsap.fromTo(
+      if (view !== "pipeline") {
+        gsap.fromTo(stage, { opacity: 0, y: 10 }, { opacity: 1, y: 0, scale: 1, duration: DUR.base });
+        return;
+      }
+      const tl = gsap.timeline();
+      // expo, not the usual curve: this one is the "zoom" the owner picked.
+      tl.fromTo(
         stage,
-        { opacity: 0, scale: 0.975, y: 10 },
-        { opacity: 1, scale: 1, y: 0, duration: 0.36, ease: "power3.out", transformOrigin: "50% 20%", overwrite: "auto" },
+        { opacity: 0, scale: 0.97, y: 16 },
+        { opacity: 1, scale: 1, y: 0, duration: DUR.slow, ease: "expo.out", transformOrigin: "50% 30%" },
       );
-      const cols = stage.querySelectorAll("[data-col]");
+      const bars = stage.querySelectorAll("[data-intro]");
+      if (bars.length) tl.from(bars, { opacity: 0, y: -14, duration: DUR.base, stagger: 0.06 }, 0.06);
+      const cols = Array.from(stage.querySelectorAll<HTMLElement>("[data-col]"));
       if (cols.length) {
-        gsap.from(cols, { opacity: 0, y: 18, duration: 0.42, stagger: 0.05, ease: "power3.out", delay: 0.06 });
+        tl.from(cols, { opacity: 0, y: 36, scale: 0.97, duration: DUR.slow, stagger: 0.04, transformOrigin: "50% 0%" }, 0.1);
+        // Only the cards in view pour in; the rest are off screen anyway. Only `y`
+        // moves, because the column's wheel sets each card's scale and fade itself.
+        cols.forEach((col, i) => {
+          const cards = Array.from(col.querySelectorAll<HTMLElement>("[data-card-id]")).slice(0, 5);
+          if (cards.length) tl.from(cards, { y: 28, duration: DUR.base, stagger: 0.04 }, 0.16 + i * 0.04);
+        });
       }
     },
     { dependencies: [view] },
@@ -48,7 +87,7 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
   const tab = VIEW_TABS.find(([v]) => v === view);
 
   return (
-    <ViewContext.Provider value={{ view, go }}>
+    <ViewContext.Provider value={ctx}>
       <main
         data-view-stage
         className={
@@ -96,24 +135,30 @@ function ComingView({ label }: { label: string }) {
   );
 }
 
+const TABS_OUT = { opacity: 0, y: 16, scale: 0.97 };
+
 /** Focus mode: hides the top bar (it slides down when the pointer reaches the top
  *  of the window) and puts an arrow at the bottom that opens the View tabs bar. */
 function FocusChrome() {
   const [tabsOpen, setTabsOpen] = useState(false);
-  // The View tabs bar rises when the pointer reaches the bottom edge or the arrow,
+  // The View tabs bar rises when the pointer rests on the bottom edge or the arrow,
   // like the top bar does at the top (owner, 12 Nov 2026), and goes a moment after
-  // the pointer leaves - the grace lets it travel from the arrow up to the bar.
+  // the pointer leaves - the grace lets it travel from the arrow up to the bar. It
+  // opens only after HOVER_IN of rest, so a pointer passing by does not raise it.
   const tabsTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const openTabs = () => {
     clearTimeout(tabsTimer.current);
-    setTabsOpen(true);
+    tabsTimer.current = setTimeout(() => setTabsOpen(true), HOVER_IN);
   };
   const closeTabsSoon = () => {
     clearTimeout(tabsTimer.current);
-    tabsTimer.current = setTimeout(() => setTabsOpen(false), 260);
+    tabsTimer.current = setTimeout(() => setTabsOpen(false), HOVER_OUT);
   };
   useEffect(() => () => clearTimeout(tabsTimer.current), []);
   const strip = useRef<HTMLDivElement>(null);
+  // Closing, the bar sinks and fades the way it rose instead of vanishing.
+  const tabsNav = useRef<HTMLElement>(null);
+  const tabsShown = useExit(tabsOpen, tabsNav, TABS_OUT);
 
   useGSAP(() => {
     const bar = document.getElementById("topnav");
@@ -133,6 +178,7 @@ function FocusChrome() {
     });
 
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let intent: ReturnType<typeof setTimeout> | undefined;
     // The bar slides down OVER the board, and the board behind it blurs, so it is
     // plain the bar is on top and the board has not moved (owner, 12 Nov 2026: "no
     // need drag kanban... blur the background and show the top bar as before").
@@ -140,22 +186,29 @@ function FocusChrome() {
     const veil = document.querySelector<HTMLElement>("[data-topnav-veil]");
     const show = () => {
       clearTimeout(timer);
-      gsap.to(bar, { yPercent: 0, duration: 0.38, ease: "power3.out", overwrite: true });
-      if (veil) gsap.to(veil, { autoAlpha: 1, duration: 0.3, ease: "power2.out", overwrite: true });
+      gsap.to(bar, { yPercent: 0, duration: DUR.base, overwrite: true });
+      if (veil) gsap.to(veil, { autoAlpha: 1, duration: DUR.fast, overwrite: true });
     };
     const hide = () => {
-      gsap.to(bar, { yPercent: -170, duration: 0.3, ease: "power2.in", overwrite: true });
-      if (veil) gsap.to(veil, { autoAlpha: 0, duration: 0.25, ease: "power2.in", overwrite: true });
+      gsap.to(bar, { yPercent: -170, duration: DUR.fast, ease: EASE.in, overwrite: true });
+      if (veil) gsap.to(veil, { autoAlpha: 0, duration: DUR.fast, ease: EASE.in, overwrite: true });
     };
     const hideSoon = () => {
       clearTimeout(timer);
-      timer = setTimeout(hide, 260);
+      clearTimeout(intent);
+      timer = setTimeout(hide, HOVER_OUT);
+    };
+    // The top edge strip only brings the bar down after a short rest on it.
+    const showSoon = () => {
+      clearTimeout(timer);
+      clearTimeout(intent);
+      intent = setTimeout(show, HOVER_IN);
     };
     const leftBar = (e: FocusEvent) => {
       if (!bar.contains(e.relatedTarget as Node)) hideSoon();
     };
 
-    zone.addEventListener("mouseenter", show);
+    zone.addEventListener("mouseenter", showSoon);
     zone.addEventListener("mouseleave", hideSoon);
     bar.addEventListener("mouseenter", show);
     bar.addEventListener("mouseleave", hideSoon);
@@ -163,7 +216,8 @@ function FocusChrome() {
     bar.addEventListener("focusout", leftBar);
     return () => {
       clearTimeout(timer);
-      zone.removeEventListener("mouseenter", show);
+      clearTimeout(intent);
+      zone.removeEventListener("mouseenter", showSoon);
       zone.removeEventListener("mouseleave", hideSoon);
       bar.removeEventListener("mouseenter", show);
       bar.removeEventListener("mouseleave", hideSoon);
@@ -195,7 +249,7 @@ function FocusChrome() {
         className="fixed inset-x-0 bottom-0 z-30 h-5"
       />
 
-      {tabsOpen && <ViewTabs onEnter={openTabs} onLeave={closeTabsSoon} />}
+      {tabsShown && <ViewTabs ref={tabsNav} onEnter={openTabs} onLeave={closeTabsSoon} />}
 
       <div
         onMouseEnter={openTabs}
@@ -216,7 +270,7 @@ function FocusChrome() {
             strokeWidth="2.4"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className={"size-[max(1rem,14px)] transition-transform duration-300 " + (tabsOpen ? "rotate-180" : "")}
+            className={"size-[max(1rem,14px)] transition-transform " + (tabsOpen ? "rotate-180" : "")}
             aria-hidden="true"
           >
             <path d="m6 15 6-6 6 6" />
@@ -229,32 +283,39 @@ function FocusChrome() {
 
 /** The View tabs bar: white pill, the current view in black. The black pill glides
  *  to whichever tab is picked. */
-function ViewTabs({ onEnter, onLeave }: { onEnter: () => void; onLeave: () => void }) {
+function ViewTabs({
+  ref: root,
+  onEnter,
+  onLeave,
+}: {
+  ref: RefObject<HTMLElement | null>;
+  onEnter: () => void;
+  onLeave: () => void;
+}) {
   const { view, go } = useOpeningView();
-  const root = useRef<HTMLDivElement>(null);
-  const first = useRef(true);
 
   // The bar rises in once when it opens.
   useGSAP(
     () => {
-      gsap.from(root.current, { opacity: 0, y: 16, scale: 0.97, duration: 0.3, ease: "power3.out" });
+      gsap.from(root.current, { opacity: 0, y: 16, scale: 0.97, duration: DUR.base });
     },
     { scope: root },
   );
 
-  // The black pill follows the current view: placed on the first run, glides after.
+  // The black pill follows the current view: placed on the first run (it starts
+  // hidden, so it appears in place), glides after. It runs in the commit of the
+  // click itself, because a view switch changes state at once (no wait).
+  const glide = useGlide();
   useGSAP(
     () => {
-      const pill = root.current?.querySelector<HTMLElement>("[data-glow]");
       const on = root.current?.querySelector<HTMLElement>("[aria-current=page]");
-      if (!pill || !on) return;
-      const to = { x: on.offsetLeft, y: on.offsetTop, width: on.offsetWidth, height: on.offsetHeight };
-      if (first.current) {
-        gsap.set(pill, to);
-        first.current = false;
-      } else {
-        gsap.to(pill, { ...to, duration: 0.38, ease: "power3.out", overwrite: true });
-      }
+      if (!on) return;
+      glide.to(root.current?.querySelector<HTMLElement>("[data-glow]"), {
+        x: on.offsetLeft,
+        y: on.offsetTop,
+        width: on.offsetWidth,
+        height: on.offsetHeight,
+      });
     },
     { dependencies: [view], scope: root },
   );
@@ -271,7 +332,7 @@ function ViewTabs({ onEnter, onLeave }: { onEnter: () => void; onLeave: () => vo
         aria-label="Views of this opening"
         className="relative flex items-center gap-[max(0.3rem,2px)] whitespace-nowrap rounded-full bg-white p-[max(0.5rem,5px)] shadow-[0_10px_40px_rgba(0,0,0,0.14)]"
       >
-        <span data-glow aria-hidden="true" className="absolute left-0 top-0 rounded-full bg-black" />
+        <span data-glow aria-hidden="true" style={{ opacity: 0 }} className="absolute left-0 top-0 rounded-full bg-black" />
         {VIEW_TABS.map(([value, label]) => {
           const on = value === view;
           return (
@@ -279,9 +340,11 @@ function ViewTabs({ onEnter, onLeave }: { onEnter: () => void; onLeave: () => vo
               key={value}
               type="button"
               aria-current={on ? "page" : undefined}
+              // Scoops opens on a CV: get pdf.js ready while the pointer is on its way.
+              onPointerEnter={value === "scoops" ? () => warmPdf() : undefined}
               onClick={() => go(value)}
               className={
-                "relative rounded-full px-[max(1rem,11px)] py-[max(0.45rem,5px)] text-[max(0.9rem,12px)] transition-colors duration-300 " +
+                "relative rounded-full px-[max(1rem,11px)] py-[max(0.45rem,5px)] text-[max(0.9rem,12px)] transition-colors " +
                 (on ? "text-white" : "text-black/60 hover:text-black")
               }
             >
