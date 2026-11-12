@@ -747,6 +747,7 @@ export const TABLES: Record<string, TableModel> = {
     "adminResolution",
     "resolvedAt",
     "screenshot",
+    "voiceNote",
   ]),
 };
 

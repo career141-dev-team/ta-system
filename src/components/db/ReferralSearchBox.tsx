@@ -9,10 +9,10 @@ import { inputClass } from "@/components/form";
  * and Shift+Enter starts a new line, so a list pasted in keeps its lines. Still
  * a plain GET form, so a search has its own address.
  */
-export function ReferralSearchBox({ defaultValue, autoFocus }: { defaultValue: string; autoFocus: boolean }) {
+export function ReferralSearchBox({ defaultValue, autoFocus, action = "/database/referral" }: { defaultValue: string; autoFocus: boolean; action?: string }) {
   const [text, setText] = useState(defaultValue);
   return (
-    <form method="GET" action="/database/referral" className="flex items-start gap-2">
+    <form method="GET" action={action} className="flex items-start gap-2">
       <textarea
         name="q"
         value={text}

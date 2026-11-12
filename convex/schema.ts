@@ -3576,6 +3576,8 @@ export default defineSchema({
     adminResolution: v.optional(v.string()),
     resolvedAt: v.optional(v.number()),
     screenshot: v.optional(v.string()),
+    /** Convex storage id of a recorded or uploaded voice note (12 Nov). */
+    voiceNote: v.optional(v.string()),
   })
     .index("by_status", ["status"])
     .index("by_submittedBy", ["submittedBy"])

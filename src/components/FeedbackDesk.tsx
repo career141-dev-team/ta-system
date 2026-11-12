@@ -762,6 +762,15 @@ export function FeedbackDesk({ initialFeedbacks, currentUser }: FeedbackDeskProp
                   </div>
                 )}
 
+                {/* Voice note: played from the item's own route, which checks who may hear it */}
+                {item.voiceNote && (
+                  <div className="mt-3.5">
+                    <p className="mb-1 text-[11.5px] font-medium text-ink-soft">Voice note</p>
+                    {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                    <audio controls preload="none" src={`/api/feedback/voice/${item.id}`} className="h-9 w-full max-w-[420px]" />
+                  </div>
+                )}
+
                 {/* Specific context tags (only if meaningful) */}
                 {(hasSpecificPage || item.openingId) && (
                   <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px] text-ink-faint">

@@ -146,6 +146,7 @@ export function ProjectSidebar({
     // moment it was signed off.
     { href: `${base}/jd`, label: "Job description" },
     { href: `${base}/database`, label: "Database CVs" },
+    { href: `${base}/referral`, label: "Referral Search" },
     { href: `${base}/snippets`, label: "Snippets" },
     // What the TA Lead asked this TA to try on the job (Strategy Planner, 8 Oct).
     { href: `${base}/strategies`, label: "Strategies" },
