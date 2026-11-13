@@ -18,6 +18,7 @@ const PEEK_MS = 1600;
 const ScoopsView = dynamic(() => import("./ScoopsView"));
 const DailyEmailView = dynamic(() => import("./DailyEmailView"));
 const LinkedInJobView = dynamic(() => import("./LinkedInJobView"));
+const StrategiesView = dynamic(() => import("./StrategiesView"));
 
 /** The opening screen and its work views, switched in place (no page change).
  *  The overview (title row + card) arrives from the server as `overview`; a work
@@ -57,6 +58,7 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
     idle(() => {
       void import("./ScoopsView");
       void import("./LinkedInJobView");
+      void import("./StrategiesView");
       void import("./CvPreview");
       void loadFlip();
     });
@@ -106,6 +108,8 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
                 <ScoopsView />
               ) : v === "midday" ? (
                 <DailyEmailView />
+              ) : v === "strategies" ? (
+                <StrategiesView />
               ) : v === "linkedin-job" ? (
                 <LinkedInJobView />
               ) : (
