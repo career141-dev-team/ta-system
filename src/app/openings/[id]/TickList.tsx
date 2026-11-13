@@ -142,7 +142,7 @@ export default function TickList({ children }: { children: ReactNode }) {
   return (
     <div
       ref={list}
-      className="relative min-h-0 flex-1 snap-y snap-mandatory space-y-[max(0.75rem,9px)] overflow-y-auto px-[max(0.75rem,8px)] [scrollbar-width:none] [&>*]:snap-start [&>*]:transition-[border-color,box-shadow] [&>[data-active=true]]:border-[#bcdccb] [&>[data-active=true]]:shadow-[0_8px_28px_rgba(27,107,71,0.12)]"
+      className="relative min-h-0 flex-1 snap-y snap-mandatory space-y-[max(0.75rem,9px)] overflow-y-auto px-[max(0.75rem,8px)] [scrollbar-width:none] [&>*]:snap-start [&>*]:transition-[border-color,box-shadow] [&>[data-active=true]]:border-brand/30 [&>[data-active=true]]:shadow-float"
     >
       {children}
     </div>

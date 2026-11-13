@@ -1,8 +1,8 @@
 import { Suspense } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { USER } from "@/lib/user";
 import ActiveNavLinks, { NavLinks, SearchShortcut } from "./NavLinks";
+import { Bell, Person } from "./TopMenus";
 
 
 const CIRCLE =
@@ -38,15 +38,10 @@ function SearchIcon({ className }: { className: string }) {
 // not fit; on a phone the search box becomes a round button (13 Nov 2026: "responsive for
 // mobile and all devices").
 export default function TopNav() {
-  const initials = USER.name
-    .split(" ")
-    .map((w) => w[0])
-    .join("");
-
   return (
     <header
       id="topnav"
-      className="mx-11 mt-[max(2.125rem,14px)] flex h-[max(5rem,64px)] shrink-0 items-center rounded-full bg-white pl-[max(1.875rem,18px)] pr-[max(1.5rem,14px)] max-lg:h-auto max-lg:flex-wrap max-lg:rounded-[1.75rem] max-lg:py-2.5 max-md:mx-3 max-md:mt-3 max-md:px-4 shadow-[0_6px_18px_-4px_rgba(15,23,31,0.05),0_1px_2px_rgba(15,23,31,0.04)]"
+      className="mx-11 mt-[max(2.125rem,14px)] flex h-[max(5rem,64px)] shrink-0 items-center rounded-full bg-white pl-[max(1.875rem,18px)] pr-[max(1.5rem,14px)] max-lg:h-auto max-lg:flex-wrap max-lg:rounded-lg max-lg:py-2.5 max-md:mx-3 max-md:mt-3 max-md:px-4 shadow-card"
     >
       <Link href="/" className="relative -top-1 shrink-0">
         <Image
@@ -66,17 +61,17 @@ export default function TopNav() {
       <form
         action="/search"
         role="search"
-        className="ml-auto hidden h-[max(2.875rem,36px)] w-[max(21.25rem,180px)] sm:flex min-w-36 shrink items-center gap-[max(0.625rem,6px)] rounded-full bg-soft pl-[max(1.125rem,12px)] pr-[max(0.625rem,6px)] has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-brand/30"
+        className="ml-auto hidden h-[max(2.875rem,36px)] w-[max(21.25rem,180px)] sm:flex min-w-36 shrink items-center gap-[max(0.625rem,6px)] rounded-full bg-surface-2 pl-[max(1.125rem,12px)] pr-[max(0.625rem,6px)] has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-brand/30"
       >
-        <SearchIcon className="size-[max(0.9375rem,13px)] shrink-0 text-muted" />
+        <SearchIcon className="size-[max(0.9375rem,13px)] shrink-0 text-ink-2" />
         <input
           name="q"
           type="search"
           placeholder="Search or ask AURA"
           aria-label="Search or ask AURA"
-          className="min-w-0 flex-1 text-ellipsis bg-transparent text-nav text-ink outline-none placeholder:text-muted"
+          className="min-w-0 flex-1 text-ellipsis bg-transparent text-nav text-ink outline-none placeholder:text-ink-2"
         />
-        <kbd className="shrink-0 rounded-md bg-white px-[max(0.375rem,4px)] py-px font-sans text-[max(0.6875rem,10px)] text-muted">
+        <kbd className="shrink-0 rounded-md bg-white px-[max(0.375rem,4px)] py-px font-sans text-[max(0.6875rem,10px)] text-ink-2">
           ⌘K
         </kbd>
         <SearchShortcut />
@@ -85,42 +80,15 @@ export default function TopNav() {
         href="/search"
         prefetch={false}
         aria-label="Search or ask AURA"
-        className={CIRCLE + " ml-auto bg-soft text-ink sm:hidden"}
+        className={CIRCLE + " ml-auto bg-surface-2 text-ink sm:hidden"}
       >
         <SearchIcon className="size-[45%]" />
       </Link>
 
-      <Link
-        href="/alerts"
-        prefetch={false}
-        aria-label="Notifications"
-        className={CIRCLE + " relative ml-[max(1.1875rem,10px)] bg-soft text-ink"}
-      >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="size-1/2"
-          aria-hidden="true"
-        >
-          <path d="M6 9a6 6 0 1 1 12 0c0 5 2 6.5 2 6.5H4S6 14 6 9Z" />
-          <path d="M10 19a2 2 0 0 0 4 0" />
-        </svg>
-        <span className="absolute right-[22%] top-[20%] size-[20%] rounded-full bg-[#e5342b]" />
-      </Link>
-
-      <div className="ml-[max(1.125rem,10px)] flex shrink-0 items-center gap-[max(0.9375rem,9px)]">
-        <span aria-hidden="true" className={CIRCLE + " bg-ink text-nav font-medium text-white"}>
-          {initials}
-        </span>
-        <span className="hidden leading-tight min-[1200px]:block">
-          <span className="block text-nav font-semibold">{USER.name}</span>
-          <span className="block text-nav text-muted">{USER.role}</span>
-        </span>
-      </div>
+      {/* The bell's list and the person's menu (TopMenus): what the TA System's
+          bell and name button open (FLOW-CHECK 7.1, 7.3). */}
+      <Bell />
+      <Person />
     </header>
   );
 }

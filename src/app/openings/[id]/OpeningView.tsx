@@ -2,32 +2,21 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import { DUR, EASE, HOVER_IN, HOVER_OUT, gsap, loadFlip, useExit, useGSAP } from "@/lib/gsap";
-import { SHOW_TABS, ViewContext, isWorkView, useOpeningView, viewLabel, type View, type WorkView } from "./view";
+import { DUR, EASE, HOVER_IN, HOVER_OUT, gsap, loadFlip, swapIn, useExit, useGSAP, useGlide } from "@/lib/gsap";
+import { HH_VIEWS, SHOW_TABS, VIEW_TABS, ViewContext, setOf, useOpeningView, viewLabel, type View, type ViewSet } from "./view";
 import Notch from "./Notch";
 import PipelineBoard from "./PipelineBoard";
 import { BackButton } from "./PipelineBoard";
 import { warmPdf } from "./CvPages";
 
-const RECENT_KEY = "ta-ui:recent-views";
-const RECENT_MAX = 8;
 /** How long the bottom bar stays up on its own after a view opens or an arrow key. */
 const PEEK_MS = 1600;
-
-function loadRecent(): WorkView[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const v: unknown = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]");
-    return Array.isArray(v) ? v.filter(isWorkView).slice(0, RECENT_MAX) : [];
-  } catch {
-    return [];
-  }
-}
 
 // Pipeline is in the first download; Scoops (and the CV preview, and Flip) come in
 // their own pieces, fetched while the screen sits idle, so they are ready by the
 // time they are opened.
 const ScoopsView = dynamic(() => import("./ScoopsView"));
+const DailyEmailView = dynamic(() => import("./DailyEmailView"));
 
 /** The opening screen and its work views, switched in place (no page change).
  *  The overview (title row + card) arrives from the server as `overview`; a work
@@ -43,22 +32,6 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
   // switching twice.
   const current = useRef<View>("overview");
 
-  // The bottom bar's tabs are the views this person has opened (owner, 12 Nov
-  // 2026: "if they open five or six tabs, those tabs only come in the bottom bar").
-  // A new view joins at the end and an opened one keeps its place, so the tabs
-  // never jump about under the pointer. Over RECENT_MAX, the view used longest
-  // ago leaves. Kept in this browser only, as a convenience.
-  const [recent, setRecent] = useState<WorkView[]>(loadRecent);
-  const used = useRef(new Map<WorkView, number>());
-  const tick = useRef(0);
-  useEffect(() => {
-    try {
-      localStorage.setItem(RECENT_KEY, JSON.stringify(recent));
-    } catch {
-      // Private window or blocked storage: the bar still works for this visit.
-    }
-  }, [recent]);
-
   // Every view opened on this visit stays alive, hidden, when another is on screen
   // (owner, 12 Nov 2026: "lightning quick"; this UI will read a lot of backend
   // data). So coming back to a view is instant: nothing is drawn or fetched again,
@@ -72,22 +45,10 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
     current.current = next;
     setView(next);
     setOpened((o) => (o.includes(next) ? o : [...o, next]));
-    if (next === "overview") return;
-    used.current.set(next, ++tick.current);
-    const last = used.current;
-    setRecent((r) => {
-      if (r.includes(next)) return r;
-      const out = [...r, next];
-      while (out.length > RECENT_MAX) {
-        const oldest = out.filter((v) => v !== next).sort((a, b) => (last.get(a) ?? 0) - (last.get(b) ?? 0))[0];
-        out.splice(out.indexOf(oldest), 1);
-      }
-      return out;
-    });
   }, []);
   // One value per view, so the rows and back buttons that only need `go` do not
   // re-render on every render of this screen.
-  const ctx = useMemo(() => ({ view, go, recent }), [view, go, recent]);
+  const ctx = useMemo(() => ({ view, go }), [view, go]);
 
   // Once the screen is idle, fetch the pieces that are not in the first download.
   useEffect(() => {
@@ -99,46 +60,16 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
     });
   }, []);
 
-  // Arrive, like one camera move: the stage zooms in, the toolbar rows drop into
-  // place, the columns rise one after another, and the cards inside each column
-  // pour in from below. The board is there and usable at once; the motion only
-  // plays over it (owner, 12 Nov 2026: "the loading needs to be quick, but the
-  // animation needs to show"). Transform and opacity only, about 0.8 s in all; the
-  // stage starts at 0.97, not smaller, so its text stays sharp while it grows.
-  // The full sequence plays the first time Pipeline opens; after that, and for every
-  // other view, the view just fades up - quick, because switching on hover must
-  // feel instant (owner, 12 Nov 2026).
-  const played = useRef(false);
+  // Every view arrives the same way - the app's one switch (swapIn in lib/gsap):
+  // the new view fades up 6px, once. The Pipeline used to have its own camera-move
+  // entrance; the owner asked for one transition everywhere (13 Nov 2026: "you made
+  // different for the different things").
   useGSAP(
     () => {
       const stage = document.querySelector<HTMLElement>("[data-view-stage]");
       if (!stage) return;
       const panel = view === "overview" ? stage : stage.querySelector<HTMLElement>(`[data-panel="${view}"]`);
-      if (!panel) return;
-      if (view !== "pipeline" || played.current) {
-        gsap.fromTo(panel, { opacity: 0, y: 8 }, { opacity: 1, y: 0, scale: 1, duration: DUR.fast, overwrite: true });
-        return;
-      }
-      played.current = true;
-      const tl = gsap.timeline();
-      // expo, not the usual curve: this one is the "zoom" the owner picked.
-      tl.fromTo(
-        panel,
-        { opacity: 0, scale: 0.97, y: 16 },
-        { opacity: 1, scale: 1, y: 0, duration: DUR.slow, ease: "expo.out", transformOrigin: "50% 30%" },
-      );
-      const bars = panel.querySelectorAll("[data-intro]");
-      if (bars.length) tl.from(bars, { opacity: 0, y: -14, duration: DUR.base, stagger: 0.06 }, 0.06);
-      const cols = Array.from(panel.querySelectorAll<HTMLElement>("[data-col]"));
-      if (cols.length) {
-        tl.from(cols, { opacity: 0, y: 36, scale: 0.97, duration: DUR.slow, stagger: 0.04, transformOrigin: "50% 0%" }, 0.1);
-        // Only the cards in view pour in; the rest are off screen anyway. Only `y`
-        // moves, because the column's wheel sets each card's scale and fade itself.
-        cols.forEach((col, i) => {
-          const cards = Array.from(col.querySelectorAll<HTMLElement>("[data-card-id]")).slice(0, 5);
-          if (cards.length) tl.from(cards, { y: 28, duration: DUR.base, stagger: 0.04 }, 0.16 + i * 0.04);
-        });
-      }
+      if (panel) swapIn(panel);
     },
     { dependencies: [view] },
   );
@@ -163,10 +94,19 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
             <div
               key={v}
               data-panel={v}
-              className={v === view ? "relative flex min-h-0 flex-1 flex-col rounded-[1.5rem] bg-white" : "hidden"}
+              className={v === view ? "relative flex min-h-0 flex-1 flex-col rounded-lg bg-white" : "hidden"}
             >
-              <Notch label={viewLabel(v)} />
-              {v === "pipeline" ? <PipelineBoard /> : v === "scoops" ? <ScoopsView /> : <ComingView label={viewLabel(v)} />}
+              {/* The email view names its own notch: Midday or End of day email. */}
+              {v !== "midday" && <Notch label={viewLabel(v)} />}
+              {v === "pipeline" ? (
+                <PipelineBoard />
+              ) : v === "scoops" ? (
+                <ScoopsView />
+              ) : v === "midday" ? (
+                <DailyEmailView />
+              ) : (
+                <ComingView label={viewLabel(v)} />
+              )}
             </div>
           ),
         )}
@@ -184,11 +124,11 @@ function ComingView({ label }: { label: string }) {
     <div className="flex flex-1 flex-col px-[max(1.5rem,14px)] pt-[max(1.4rem,14px)] max-md:pt-11">
       <BackButton />
       <div className="m-auto flex flex-col items-center gap-[max(1rem,12px)]">
-        <p className="text-tool text-muted">{label} is not built yet.</p>
+        <p className="text-tool text-ink-2">{label} is not built yet.</p>
         <button
           type="button"
           onClick={() => go("pipeline")}
-          className="flex h-[max(2.3rem,30px)] items-center rounded-full bg-pill-line px-[max(1.2rem,14px)] text-tool font-medium text-white hover:bg-[#163d2e]"
+          className="flex h-[max(2.3rem,30px)] items-center rounded-full bg-brand px-[max(1.2rem,14px)] text-tool font-medium text-white hover:bg-brand-strong"
         >
           Open Pipeline
         </button>
@@ -205,7 +145,7 @@ const TABS_OUT = { opacity: 0, y: 16, scale: 0.97 };
  *  and the arrow are only there inside a view; on Overview the bar stays while the
  *  cursor is on it and sinks when it leaves. */
 function TabsBar() {
-  const { view, recent, go } = useOpeningView();
+  const { view, go } = useOpeningView();
   const focus = view !== "overview";
   const [tabsOpen, setTabsOpen] = useState(false);
   const tabsTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -251,8 +191,8 @@ function TabsBar() {
   useEffect(() => () => clearTimeout(tabsTimer.current), []);
 
   // Back raises the bar and keeps it up (no timer): the person chooses where to go,
-  // the Overview tab or another view. It goes when the pointer leaves it, on
-  // Escape, or with the choice.
+  // the Overview tab or another view (owner, 12 Nov 2026). It goes when the pointer
+  // leaves it, on Escape, or with the choice.
   useEffect(() => {
     const show = () => {
       clearTimeout(tabsTimer.current);
@@ -267,8 +207,8 @@ function TabsBar() {
     };
   }, []);
 
-  // Left and right arrow keys move along the tabs (Overview first), like a click on
-  // the next one: inside a view, or on Overview while the bar is up. Not while
+  // Left and right arrow keys move along the tabs of the view's own set, like a
+  // click on the next one: inside a view, or on the opening while the bar is up. Not while
   // typing, not with a modifier, and not while a CV or a notice is open over the
   // board (owner, 12 Nov 2026).
   useEffect(() => {
@@ -279,17 +219,17 @@ function TabsBar() {
       const t = e.target;
       if (t instanceof Element && t.closest("input, textarea, select, [contenteditable=true]")) return;
       if (document.querySelector("[role=dialog], [role=alertdialog]")) return;
-      const tabs: View[] = ["overview", ...recent];
+      const tabs = tabsOf(view === "overview" ? lastSet() : setOf(view));
       const at = tabs.indexOf(view);
-      const next = tabs[at + (e.key === "ArrowRight" ? 1 : -1)];
-      if (at < 0 || !next) return;
+      const next = at < 0 ? (e.key === "ArrowRight" ? tabs[0] : undefined) : tabs[at + (e.key === "ArrowRight" ? 1 : -1)];
+      if (!next) return;
       e.preventDefault();
       go(next);
       peek();
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [focus, tabsOpen, view, recent, go, peek]);
+  }, [focus, tabsOpen, view, go, peek]);
 
   // Closing, the bar sinks and fades the way it rose instead of vanishing.
   const tabsNav = useRef<HTMLElement>(null);
@@ -321,7 +261,7 @@ function TabsBar() {
                 clearTimeout(tabsTimer.current);
                 setTabsOpen((o) => !o);
               }}
-              className="flex h-[max(1.9rem,24px)] w-[max(3.4rem,44px)] items-center justify-center rounded-full bg-white text-ink shadow-[0_6px_24px_rgba(0,0,0,0.12)] transition-colors hover:bg-soft"
+              className="flex h-[max(1.9rem,24px)] w-[max(3.4rem,44px)] items-center justify-center rounded-full bg-white text-ink shadow-float transition-colors hover:bg-surface-2"
             >
               <svg
                 viewBox="0 0 24 24"
@@ -458,8 +398,41 @@ function flow(pill: HTMLElement, to: HTMLElement) {
     .to(pill, { scaleY: 1, duration: 0.75, ease: "elastic.out(1, 0.35)" }, "<");
 }
 
-/** The View tabs bar: white pill, the views this person has opened, the current one
- *  in black. The black pill flows like water to whichever tab is picked. */
+// Placeholder counts on the tabs, as drawn in the design (what waits in each view).
+// With the backend each is one small number from that view's own read.
+const COUNTS: Partial<Record<View, string>> = {
+  scoops: "4",
+  "linkedin-job": "14",
+  database: "38",
+  strategies: "1",
+  "hh-suggestions": "6",
+  "hh-tables": "L1–L3",
+};
+
+// The ATS set starts with the opening itself, as the old system's ATS list does.
+const tabsOf = (set: ViewSet): View[] => (set === "hh" ? HH_VIEWS.map(([k]) => k) : ["overview", ...VIEW_TABS.map(([k]) => k)]);
+
+// The set last looked at, so the bar opened from the opening itself shows it again.
+const SET_KEY = "ta-ui:view-set";
+function lastSet(): ViewSet {
+  try {
+    return localStorage.getItem(SET_KEY) === "hh" ? "hh" : "ats";
+  } catch {
+    return "ats";
+  }
+}
+function keepSet(set: ViewSet) {
+  try {
+    localStorage.setItem(SET_KEY, set);
+  } catch {
+    // Blocked storage: the bar still works; it just starts on ATS next time.
+  }
+}
+
+/** The View tabs bar (owner's design, Figma 713-2421): the ATS | Headhunting switch,
+ *  then every view of that set, the current one in black. The bar opens on the set
+ *  of the view on screen; pointing at the other half of the switch shows the other
+ *  set at once. The black pill flows like water to whichever tab is picked. */
 function ViewTabs({
   ref: root,
   onEnter,
@@ -469,15 +442,33 @@ function ViewTabs({
   onEnter: () => void;
   onLeave: () => void;
 }) {
-  const { view, go, recent } = useOpeningView();
+  const { view, go } = useOpeningView();
+  // Fresh each time the bar rises: the set of the view on screen (or, on the
+  // opening, the one last looked at) until the switch is pointed at.
+  const [set, setSet] = useState<ViewSet>(() => (view === "overview" ? lastSet() : setOf(view)));
+  const pickSet = (next: ViewSet) => {
+    if (next === set) return;
+    // The Headhunting set is shorter. Without this the bar would shrink away from
+    // under the pointer resting on the switch and close; it keeps the width it had.
+    const nav = root.current;
+    if (nav) nav.style.minWidth = `${Math.max(nav.offsetWidth, parseFloat(nav.style.minWidth) || 0)}px`;
+    setSet(next);
+    keepSet(next);
+  };
 
-  // The cursor alone changes the view, at once: no click and no wait (owner, 12 Nov
-  // 2026: "based on the cursor it changes between the tabs... lightning quick, no
-  // delay"). Opened views stay alive (OpeningView), so sweeping across the bar only
-  // shows views that are already drawn; each draws once, the first time. The bar
-  // stays up on Overview while the cursor is on it, so landing there is harmless.
+  // Pointing shows, clicking acts (owner, 13 Nov 2026, replacing hover-to-switch):
+  // a soft highlight glides under the tab the pointer is on, and a click changes
+  // the view at once. Opened views stay alive (OpeningView), so the click is
+  // instant; and a pointer crossing the bar no longer flashes every page past or
+  // starts loading pages nobody asked for.
+  const glide = useGlide();
+  const hoverGlow = () => root.current?.querySelector<HTMLElement>("[data-hover-glow]");
+  const point = (el: HTMLElement, value: View) => {
+    if (value === "scoops") warmPdf(); // Scoops opens on a CV: get pdf.js ready while pointing.
+    glide.to(hoverGlow(), { x: el.offsetLeft, y: el.offsetTop, width: el.offsetWidth, height: el.offsetHeight });
+  };
   const aim = (value: View) => {
-    if (value === "scoops") warmPdf(); // Scoops opens on a CV: get pdf.js ready now.
+    keepSet(setOf(value));
     go(value);
   };
 
@@ -493,21 +484,26 @@ function ViewTabs({
   // on the tab it last stood on (or the current one), then flows on. "No place
   // yet" is read off the pill itself, not a ref: in development React runs this
   // twice and GSAP undoes the first placing in between, which left the pill at
-  // the bar's left edge (12 Nov 2026). It runs in the commit of the click itself.
+  // the bar's left edge (12 Nov 2026). When the set on show does not hold the
+  // current view, the pill fades and is placed afresh when it comes back.
   useGSAP(
     () => {
       const nav = root.current;
       const pill = nav?.querySelector<HTMLElement>("[data-glow]");
       const on = nav?.querySelector<HTMLElement>("[aria-current=page]");
-      if (!nav || !pill || !on) return;
-      if (!pill.style.width) {
+      if (!nav || !pill) return;
+      if (!on) {
+        gsap.to(pill, { opacity: 0, duration: DUR.fast, overwrite: true });
+        return;
+      }
+      if (!pill.style.width || Number(gsap.getProperty(pill, "opacity")) < 0.05) {
         const start = (pillAt && nav.querySelector<HTMLElement>(`[data-view="${pillAt}"]`)) || on;
         gsap.set(pill, { x: start.offsetLeft, y: start.offsetTop, width: start.offsetWidth, height: start.offsetHeight, opacity: 1 });
       }
       flow(pill, on);
       pillAt = view;
     },
-    { dependencies: [view, recent], scope: root },
+    { dependencies: [view, set], scope: root },
   );
 
   return (
@@ -520,25 +516,62 @@ function ViewTabs({
       <nav
         ref={root}
         aria-label="Views of this opening"
-        className="relative flex max-w-[calc(100vw-24px)] items-center gap-[max(0.3rem,2px)] overflow-x-auto whitespace-nowrap rounded-full bg-white p-[max(0.5rem,5px)] shadow-[0_10px_40px_rgba(0,0,0,0.14)] [scrollbar-width:none]"
+        onPointerLeave={() => glide.out(hoverGlow())}
+        className="relative flex max-w-[calc(100vw-24px)] items-center gap-[max(0.3rem,2px)] overflow-x-auto whitespace-nowrap rounded-full bg-surface p-[max(0.5rem,5px)] shadow-float [scrollbar-width:none]"
       >
-        <span data-glow aria-hidden="true" style={{ opacity: 0 }} className="absolute left-0 top-0 rounded-full bg-black" />
-        {(["overview", ...recent] as View[]).map((value) => {
+        {/* The set switch: a click shows that set (owner, 13 Nov 2026: no hover here). */}
+        <div role="tablist" aria-label="Which set of views" className="flex shrink-0 rounded-full bg-surface-2 p-[max(0.25rem,3px)]">
+          {(
+            [
+              ["ats", "ATS"],
+              ["hh", "Headhunting"],
+            ] as const
+          ).map(([k, label]) => (
+            <button
+              key={k}
+              type="button"
+              role="tab"
+              aria-selected={set === k}
+              onClick={() => pickSet(k)}
+              className={
+                "rounded-full px-[max(0.9rem,10px)] py-[max(0.4rem,5px)] text-small transition-colors " +
+                (set === k ? "bg-surface font-medium text-brand shadow-card" : "text-ink-3 hover:text-ink")
+              }
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <span aria-hidden="true" className="mx-[max(0.4rem,4px)] h-[max(1.4rem,18px)] w-px shrink-0 bg-border" />
+        <span data-hover-glow aria-hidden="true" style={{ opacity: 0 }} className="absolute left-0 top-0 rounded-full bg-surface-2" />
+        <span data-glow aria-hidden="true" style={{ opacity: 0 }} className="absolute left-0 top-0 rounded-full bg-ink" />
+        {tabsOf(set).map((value) => {
           const on = value === view;
+          const count = COUNTS[value];
           return (
             <button
               key={value}
               type="button"
               data-view={value}
               aria-current={on ? "page" : undefined}
-              onPointerEnter={() => aim(value)}
-              onClick={() => go(value)}
+              onPointerEnter={(e) => point(e.currentTarget, value)}
+              onClick={() => aim(value)}
               className={
-                "relative rounded-full px-[max(1rem,11px)] py-[max(0.45rem,5px)] text-[max(0.9rem,12px)] transition-colors " +
-                (on ? "text-white" : "text-black/60 hover:text-black")
+                "relative flex shrink-0 items-center gap-[max(0.4rem,5px)] rounded-full px-[max(1rem,11px)] py-[max(0.45rem,5px)] text-small transition-colors " +
+                (on ? "text-white" : "text-ink hover:text-ink-2")
               }
             >
               {value === "overview" ? "Overview" : viewLabel(value)}
+              {count && (
+                <span
+                  className={
+                    "rounded-full px-[max(0.4rem,5px)] text-caption font-medium leading-[1.5] transition-colors " +
+                    (on ? "bg-surface text-ink" : "bg-brand-soft text-brand")
+                  }
+                >
+                  {count}
+                </span>
+              )}
             </button>
           );
         })}

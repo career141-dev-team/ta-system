@@ -1,8 +1,9 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f9fafc;
-  --foreground: #1f2321;
+  /* The page behind every board: the guidelines' canvas with its dots (DESIGN.md). */
+  --background: #f6f7f9;
+  --foreground: #16191d;
   --board-dot: #dde1ea;
   --board-gap: 1.375rem;
 }
@@ -28,25 +29,118 @@ html {
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  /* The design's palette (opening screen, 11 Nov 2026). */
-  --color-ink: #1f2321;
-  --color-muted: #5d6361;
-  --color-brand: #1b6b47;
-  --color-pill-line: #1d4d3a;
-  --color-line: #ececec;
-  --color-soft: #f4f5f6;
+  /* ===== The design guidelines (DESIGN.md), from the owner's Figma page
+     "Whiteboard - a calm workspace for recruiters", 13 Nov 2026. Every screen
+     takes its colours, type, corners and shadows from here - never a hex in a
+     component. ===== */
+
+  /* Canvas and surfaces: neutral, near-white boards so the data and the green
+     actions stand out. */
+  --color-canvas: #f6f7f9;
+  --color-surface: #ffffff;
+  --color-surface-2: #f3f4f6;
+  --color-surface-3: #eceef1;
+  --color-border: #e7e9ed;
+  --color-border-strong: #d3d7dd;
+  /* Ink: text, strongest to quietest; marker is the "pen" colour. */
+  --color-ink: #16191d;
+  --color-ink-2: #4e5862;
+  --color-ink-3: #8a939c;
+  --color-marker: #1f2a37;
+  /* Brand: Career141 green for actions. */
+  --color-brand: #165b42;
+  --color-brand-strong: #0b3f2c;
+  --color-brand-soft: #e6f2ec;
+  --color-brand-tint: #f2f8f5;
+  --color-brand-leaf: #3fa34d;
+  /* Status: always paired with its soft tint. */
+  --color-info: #167ca9;
+  --color-info-soft: #eaf7fe;
+  --color-warn: #a8791b;
+  --color-warn-soft: #fcf5e3;
+  --color-danger: #d93a31;
+  --color-danger-soft: #fdeceb;
+  --color-success: #1e8a4c;
+  --color-success-soft: #e5f5ec;
+  --color-violet: #6e4fe8;
+  --color-violet-soft: #f0ecfe;
+  /* Sticky notes. */
+  --color-sticky-yellow: #fff3b0;
+  --color-sticky-mint: #d9f4e3;
+  --color-sticky-sky: #dceefb;
+  --color-sticky-pink: #fde1e3;
+  --color-sticky-lilac: #ece5fe;
+  /* AURA: for AI only. */
+  --color-aura-1: #8b5cff;
+  --color-aura-2: #3d6bff;
+  --color-aura-3: #22d3c5;
+  --color-aura-4: #8cf55a;
+
+  /* Older names, kept so nothing breaks; new code uses the names above. */
+  --color-background: var(--color-canvas);
+  --color-foreground: var(--color-ink);
+  --color-muted: var(--color-ink-2);
+  --color-pill-line: var(--color-brand);
+  --color-line: var(--color-border);
+  --color-soft: var(--color-surface-2);
+
+  /* Faces: Poppins for the product; Caveat is the marker pen (greetings, sticky
+     notes, AURA hints - never data); JetBrains Mono for ids and times. */
   --font-sans: "Poppins", ui-sans-serif, system-ui, sans-serif;
-  /* Text sizes with a floor. On a laptop (a window about 1270 wide) the
-     design's small text scaled down to 8px and could not be read, so each
-     follows the window like everything else but never goes below its floor. */
+  --font-hand: "Caveat", "Poppins", cursive;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* The type scale (Figma text styles WB/...). Sizes are the 1920 design's px in
+     rem, each with a floor so a laptop window stays readable. Use the class
+     (text-h1 ...) with its weight: display/h1 font-light, h3/caption
+     font-medium, hand-l font-bold. */
+  --text-display: max(3.5rem, 36px);
+  --text-display--line-height: 1.18;
+  --text-display--letter-spacing: -0.027em;
+  --text-h1: max(2.5rem, 28px);
+  --text-h1--line-height: 1.25;
+  --text-h1--letter-spacing: -0.025em;
+  --text-h2: max(1.625rem, 20px);
+  --text-h2--line-height: 1.31;
+  --text-h2--letter-spacing: -0.015em;
+  --text-h3: max(1.125rem, 15px);
+  --text-h3--line-height: 1.44;
+  --text-h3--letter-spacing: -0.006em;
+  --text-body: max(1rem, 13.5px);
+  --text-body--line-height: 1.625;
+  --text-small: max(0.875rem, 12px);
+  --text-small--line-height: 1.5;
+  --text-caption: max(0.75rem, 11px);
+  --text-caption--line-height: 1.33;
+  --text-caption--letter-spacing: 0.025em;
+  --text-mono: max(0.8125rem, 11.5px);
+  --text-mono--line-height: 1.38;
+  --text-hand-l: max(2.125rem, 24px);
+  --text-hand-l--line-height: 1.12;
+  --text-hand-m: max(1.5rem, 18px);
+  --text-hand-m--line-height: 1.17;
+
+  /* Corners: soft and rounded. */
+  --radius-xs: 0.375rem;
+  --radius-sm: 0.625rem;
+  --radius-md: 1rem;
+  --radius-lg: 1.5rem;
+  --radius-xl: 2rem;
+  --radius-pill: 999px;
+
+  /* Depth: boards float on the dotted canvas; nothing has a heavy border. */
+  --shadow-card: 0 1px 2px rgba(15, 23, 31, 0.04), 0 6px 18px -4px rgba(15, 23, 31, 0.05);
+  --shadow-float: 0 2px 6px rgba(15, 23, 31, 0.06), 0 18px 40px -8px rgba(15, 23, 31, 0.1);
+  --shadow-sticky: 0 8px 14px -6px rgba(77, 64, 13, 0.12);
+  --shadow-aura: 0 8px 28px -6px rgba(107, 84, 255, 0.28);
+
+  /* Screen sizes taken from the owner's screen designs (11-12 Nov 2026), each
+     with a floor for the laptop window. */
   --text-nav: max(0.75rem, 12.5px);
   --text-title: max(1rem, 15px);
   --text-pill: max(0.71875rem, 11px);
   --text-tab: max(1rem, 13px);
   --text-row: max(1.5rem, 15px);
-  /* The pipeline board (12 Nov 2026). */
   --text-col: max(0.95rem, 12.5px);
   --text-card-name: max(1rem, 13.5px);
   --text-card-sub: max(0.7rem, 10.5px);

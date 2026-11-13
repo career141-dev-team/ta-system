@@ -11,7 +11,7 @@ const ON = "font-semibold text-brand";
 // no row starts green (owner, 12 Nov 2026: "no need to initially show the pipeline
 // as a green colour... if I hover over any links... that need to be green").
 const OFF =
-  "font-light text-muted transition-[color,translate] hover:translate-x-1 hover:text-brand focus-visible:text-brand";
+  "font-light text-ink-2 transition-[color,translate] hover:translate-x-1 hover:text-brand focus-visible:text-brand";
 
 /** A row of the opening card. An ATS row (`view`) opens its work view in place,
  *  without leaving the page; a Headhunting row is still a link, green while its

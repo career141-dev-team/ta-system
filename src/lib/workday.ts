@@ -1,0 +1,65 @@
+"use client";
+
+import { useSyncExternalStore } from "react";
+import { USER } from "./user";
+
+// Today's started workday, shared by Today (which starts it) and by every screen
+// the TA System gates on it: a TA cannot upload a CV, shortlist or move a candidate
+// until the day is started (FLOW-CHECK 6.2; convex/lib/workdayScope.ts in the TA
+// System). Placeholder until the backend is wired: the started day is kept in this
+// browser only, for today's date, so a refresh keeps it and tomorrow starts fresh.
+// With the backend the started workday - and which positions are on it - is the
+// server's, and the server stays the judge.
+const KEY = "ta-ui:workday";
+const CHANGED = "workday:change";
+
+const todayKey = () => new Date().toLocaleDateString("en-CA"); // 2026-11-13
+
+// Where the start is kept when the browser blocks storage (a private window), so
+// Start workday still works for this visit.
+let memory: number | undefined;
+
+function read(): string {
+  try {
+    const v = JSON.parse(localStorage.getItem(KEY) ?? "null") as { day?: string; at?: number } | null;
+    if (v?.day === todayKey() && v.at) return String(v.at);
+  } catch {
+    // Blocked storage: fall through to this visit's own memory.
+  }
+  return memory ? String(memory) : "none";
+}
+const subscribe = (cb: () => void) => {
+  window.addEventListener(CHANGED, cb);
+  window.addEventListener("storage", cb);
+  return () => {
+    window.removeEventListener(CHANGED, cb);
+    window.removeEventListener("storage", cb);
+  };
+};
+
+/** "pending" while the page hydrates, "none" before Start workday, else when it started. */
+export function useWorkday(): "pending" | "none" | number {
+  const v = useSyncExternalStore(subscribe, read, () => "pending");
+  return v === "pending" || v === "none" ? v : Number(v);
+}
+
+export function startWorkday() {
+  memory = Date.now();
+  try {
+    localStorage.setItem(KEY, JSON.stringify({ day: todayKey(), at: memory }));
+  } catch {
+    // Blocked storage: `memory` keeps the day started for this visit.
+  }
+  window.dispatchEvent(new Event(CHANGED));
+}
+
+/** The gate, in the TA System's words: empty when work is allowed. Only a TA is
+ *  gated; a TA Lead, admin, Director or Ops person works without a started day.
+ *  ponytail: "started today" only; whether THIS opening is on today's workday
+ *  ("X is not on today's workday... Add another position") needs the day's
+ *  positions from the backend. */
+export function useWorkdayGate(): string {
+  const day = useWorkday();
+  if (/lead|admin|director|ops/i.test(USER.role)) return "";
+  return day === "none" ? "Your workday has not started today." : "";
+}

@@ -118,12 +118,12 @@ export default function CvPreview({
         aria-modal="true"
         aria-label={`CV of ${name}`}
         className={
-          "absolute flex flex-col bg-[#1c1c1c] pr-[2%] shadow-[0_-20px_80px_rgba(0,0,0,0.25)] " +
+          "absolute flex flex-col bg-ink pr-[2%] shadow-[0_-20px_80px_rgba(0,0,0,0.25)] " +
           (full
-            ? "inset-[max(1rem,8px)] rounded-[2.5rem] pl-[3%] pt-[max(3.25rem,24px)]"
+            ? "inset-[max(1rem,8px)] rounded-lg pl-[3%] pt-[max(3.25rem,24px)]"
             : "bottom-0 left-[12.3%] top-[11%] w-[75.3%] rounded-t-[3.75rem] pl-[5%] pt-[max(4.75rem,28px)] " +
               // A phone: the sheet takes the whole width.
-              "max-md:left-0 max-md:top-[7%] max-md:w-full max-md:rounded-t-[1.75rem] max-md:px-2 max-md:pt-12")
+              "max-md:left-0 max-md:top-[7%] max-md:w-full max-md:rounded-t-lg max-md:px-2 max-md:pt-12")
         }
       >
         <button
@@ -142,26 +142,55 @@ export default function CvPreview({
             )}
           </svg>
         </button>
+        {/* The candidate's own file: download it, or open it in a new tab, as the TA
+            System's CV view offers (FLOW-CHECK 5.1, 5.6). Plain links, no script. */}
+        {src && (
+          <div className="absolute right-[max(4.6rem,50px)] top-[max(1rem,8px)] flex gap-[max(0.6rem,8px)]">
+            <a
+              href={src}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Open this CV in a new tab"
+              title="Open in a new tab"
+              className="flex size-[max(2.4rem,30px)] items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/25"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-1/2" aria-hidden="true">
+                <path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
+              </svg>
+            </a>
+            <a
+              href={src}
+              download={name.replace(/\s+/g, "-") + "-CV.pdf"}
+              aria-label="Download this CV"
+              title="Download"
+              className="flex size-[max(2.4rem,30px)] items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/25"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-1/2" aria-hidden="true">
+                <path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M4 19h16" />
+              </svg>
+            </a>
+          </div>
+        )}
         {/* The CV scrolls inside the dark frame; the scrollbar sits in the frame's right gutter. */}
         {src ? (
-          <div className="min-h-0 flex-1 overflow-hidden rounded-t-[2.6rem] bg-[#2a2a2a] max-md:rounded-t-[1.25rem]">
+          <div className="min-h-0 flex-1 overflow-hidden rounded-t-[2.6rem] bg-ink max-md:rounded-t-md">
             <CvPages key={src} src={src} fit="width" />
           </div>
         ) : (
         <div className="min-h-0 flex-1 overflow-y-auto pr-[3%] [scrollbar-color:#fff_transparent] [scrollbar-width:thin]">
           <article
             data-doc
-            className="min-h-full rounded-t-[2.6rem] bg-white pb-[max(3rem,24px)] font-[Arial,Helvetica,sans-serif] text-[#2b2b2b]"
+            className="min-h-full rounded-t-[2.6rem] bg-white pb-[max(3rem,24px)] font-[Arial,Helvetica,sans-serif] text-ink"
           >
             <header className="px-[max(3.6rem,22px)] pt-[max(2.8rem,20px)]">
-              <h2 className="text-[max(3.3rem,26px)] font-extrabold uppercase leading-none tracking-tight text-[#1452b4]">
+              <h2 className="text-[max(3.3rem,26px)] font-extrabold uppercase leading-none tracking-tight text-info">
                 {name}
               </h2>
               <p className="mt-[max(1.6rem,10px)] text-[max(2rem,17px)] font-bold uppercase text-[#222]">{title}</p>
               <a
                 href="#"
                 onClick={(e) => e.preventDefault()}
-                className="mt-[max(1rem,6px)] inline-flex items-center gap-2 text-[max(1.55rem,14px)] text-[#1452b4] underline underline-offset-4"
+                className="mt-[max(1rem,6px)] inline-flex items-center gap-2 text-[max(1.55rem,14px)] text-info underline underline-offset-4"
               >
                 View Design Portfolio
                 <svg viewBox="0 0 24 24" fill="none" stroke="#222" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-[1em]" aria-hidden="true">
@@ -170,7 +199,7 @@ export default function CvPreview({
               </a>
             </header>
 
-            <div className="mt-[max(1.6rem,12px)] flex flex-wrap items-center justify-between gap-x-6 gap-y-3 bg-[#f3f7fd] px-[max(5rem,24px)] py-[max(1.4rem,12px)] text-[max(1.15rem,12px)] text-[#333]">
+            <div className="mt-[max(1.6rem,12px)] flex flex-wrap items-center justify-between gap-x-6 gap-y-3 bg-info-soft px-[max(5rem,24px)] py-[max(1.4rem,12px)] text-[max(1.15rem,12px)] text-[#333]">
               <Contact icon="phone">{SAMPLE.phone}</Contact>
               <Contact icon="mail">{SAMPLE.email}</Contact>
               <Contact icon="in">{SAMPLE.linkedin}</Contact>
@@ -184,8 +213,8 @@ export default function CvPreview({
             <Section title="Professional Experience">
               {SAMPLE.jobs.map((j) => (
                 <div key={j.role + j.company} className="mb-[max(1.8rem,14px)] last:mb-0">
-                  <p className="text-[max(1.5rem,14px)] font-bold text-[#1452b4]">{j.role}</p>
-                  <p className="mt-1 font-bold text-[#1452b4]">{j.company}</p>
+                  <p className="text-[max(1.5rem,14px)] font-bold text-info">{j.role}</p>
+                  <p className="mt-1 font-bold text-info">{j.company}</p>
                   <p className="mt-1 text-[#444]">{j.dates}</p>
                   <ul className="mt-[max(1rem,8px)] list-disc space-y-1 pl-[max(1.8rem,16px)]">
                     {j.points.map((pt) => (
@@ -203,7 +232,7 @@ export default function CvPreview({
             <Section title="Education">
               {SAMPLE.education.map((e) => (
                 <div key={e.degree}>
-                  <p className="font-bold text-[#1452b4]">{e.degree}</p>
+                  <p className="font-bold text-info">{e.degree}</p>
                   <p className="mt-1">{e.school}</p>
                   <p className="mt-1 text-[#444]">{e.dates}</p>
                 </div>
@@ -221,7 +250,7 @@ export default function CvPreview({
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="mx-[max(3.6rem,22px)] mt-[max(2.2rem,18px)] text-[max(1.3rem,13px)] leading-[1.6]">
-      <h3 className="border-y-2 border-[#5b8fd6] px-[0.75rem] py-[max(0.45rem,4px)] text-[max(1.55rem,14px)] font-bold uppercase text-[#1452b4]">
+      <h3 className="border-y-2 border-info px-[0.75rem] py-[max(0.45rem,4px)] text-[max(1.55rem,14px)] font-bold uppercase text-info">
         {title}
       </h3>
       <div className="px-[0.75rem] pt-[max(1.6rem,12px)]">{children}</div>
@@ -232,7 +261,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function Contact({ icon, children }: { icon: "phone" | "mail" | "in" | "web"; children: React.ReactNode }) {
   return (
     <span className="flex items-center gap-[max(0.9rem,8px)]">
-      <span className="flex size-[max(2.2rem,22px)] shrink-0 items-center justify-center rounded-full bg-[#1c1c1c] text-white">
+      <span className="flex size-[max(2.2rem,22px)] shrink-0 items-center justify-center rounded-full bg-ink text-white">
         {icon === "in" ? (
           <span className="text-[0.7em] font-bold">in</span>
         ) : (

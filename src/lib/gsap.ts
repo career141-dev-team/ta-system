@@ -34,6 +34,42 @@ gsap.registerPlugin(useGSAP);
 export const DUR = { tap: 0.12, fast: 0.18, base: 0.28, slow: 0.45 } as const;
 export const EASE = { out: "power3.out", in: "power2.in", inOut: "power3.inOut", pop: "back.out(1.6)" } as const;
 
+/** The guidelines' named motions (DESIGN.md, "Shape, depth & motion"):
+ *  draw-in - lines and charts draw left to right, 400 ms ease-out;
+ *  pin & settle - cards drop in with a 6px rise and a 2 degree settle, 40 ms apart;
+ *  board slide - moving into a job zooms its card into the full board, 320 ms;
+ *  AURA breathe - the AURA orb's gradient pulses slowly while thinking, never spins;
+ *  respect calm - less motion asked for: fades only (see below). */
+export const MOTION = { drawIn: 0.4, boardSlide: 0.32, settleStagger: 0.04 } as const;
+
+/** Pin & settle, ready for gsap.from(cards, PIN_IN). */
+export const PIN_IN = { y: 6, rotation: 2, opacity: 0, duration: DUR.base, stagger: MOTION.settleStagger, ease: EASE.out } as const;
+
+/** THE switch: whenever what is shown in a place changes - a view, a tab, Midday
+ *  to End of day, a list to a reading view, one CV to the next - the new content
+ *  fades up 6px, once, in DUR.base. Never staggered, never rotated, never a
+ *  "loading" sequence: one quiet move everywhere, so the whole app feels like one
+ *  thing (owner, 13 Nov 2026: "consistently stick with one proper transition"). */
+export function swapIn(target: gsap.TweenTarget) {
+  gsap.fromTo(target, { opacity: 0, y: 6 }, { opacity: 1, y: 0, duration: DUR.base, ease: EASE.out, overwrite: true, clearProps: "opacity,transform" });
+}
+
+/** swapIn on `ref` each time `key` changes - not on the first draw, because the
+ *  view that holds it already switched in. */
+export function useSwap(ref: RefObject<HTMLElement | null>, key: unknown) {
+  const first = useRef(true);
+  useGSAP(
+    () => {
+      if (first.current) {
+        first.current = false;
+        return;
+      }
+      if (ref.current) swapIn(ref.current);
+    },
+    { dependencies: [key], revertOnUpdate: false },
+  );
+}
+
 /** Milliseconds a pointer must rest before a hover opens something (so a pointer
  *  passing by opens nothing), and the one grace before it closes again: menus,
  *  the top bar and the View tabs. */

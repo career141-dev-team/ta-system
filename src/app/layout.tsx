@@ -5,6 +5,11 @@ import "@fontsource/poppins/300.css";
 import "@fontsource/poppins/400.css";
 import "@fontsource/poppins/500.css";
 import "@fontsource/poppins/600.css";
+// The guidelines' other two faces (DESIGN.md): Caveat, the "marker pen" for
+// greetings, sticky notes and AURA hints only; JetBrains Mono for ids and times.
+import "@fontsource/caveat/400.css";
+import "@fontsource/caveat/700.css";
+import "@fontsource/jetbrains-mono/400.css";
 import "./globals.css";
 import TopNav from "./TopNav";
 
