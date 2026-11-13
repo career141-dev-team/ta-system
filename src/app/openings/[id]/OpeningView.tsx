@@ -17,6 +17,7 @@ const PEEK_MS = 1600;
 // time they are opened.
 const ScoopsView = dynamic(() => import("./ScoopsView"));
 const DailyEmailView = dynamic(() => import("./DailyEmailView"));
+const LinkedInJobView = dynamic(() => import("./LinkedInJobView"));
 
 /** The opening screen and its work views, switched in place (no page change).
  *  The overview (title row + card) arrives from the server as `overview`; a work
@@ -55,6 +56,7 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
     const idle = window.requestIdleCallback?.bind(window) ?? ((f: () => void) => setTimeout(f, 1200));
     idle(() => {
       void import("./ScoopsView");
+      void import("./LinkedInJobView");
       void import("./CvPreview");
       void loadFlip();
     });
@@ -104,6 +106,8 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
                 <ScoopsView />
               ) : v === "midday" ? (
                 <DailyEmailView />
+              ) : v === "linkedin-job" ? (
+                <LinkedInJobView />
               ) : (
                 <ComingView label={viewLabel(v)} />
               )}
