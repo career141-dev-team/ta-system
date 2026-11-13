@@ -8,6 +8,10 @@ import Notch from "./Notch";
 import PipelineBoard from "./PipelineBoard";
 import { BackButton } from "./PipelineBoard";
 import { warmPdf } from "./CvPages";
+import { CAN_SOURCE } from "@/lib/user";
+
+/** How far (px) the pointer may stray from a held bar before it sinks. */
+const AWAY = 64;
 
 /** How long the bottom bar stays up on its own after a view opens or an arrow key. */
 const PEEK_MS = 1600;
@@ -18,6 +22,11 @@ const PEEK_MS = 1600;
 const ScoopsView = dynamic(() => import("./ScoopsView"));
 const DailyEmailView = dynamic(() => import("./DailyEmailView"));
 const LinkedInJobView = dynamic(() => import("./LinkedInJobView"));
+const HhOverview = dynamic(() => import("./HhOverview"));
+const ResearchView = dynamic(() => import("./ResearchView"));
+const SuggestionsView = dynamic(() => import("./SuggestionsView"));
+const ExcelTablesView = dynamic(() => import("./ExcelTablesView"));
+const RefereeCallsView = dynamic(() => import("./RefereeCallsView"));
 
 /** The opening screen and its work views, switched in place (no page change).
  *  The overview (title row + card) arrives from the server as `overview`; a work
@@ -43,6 +52,7 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
 
   const go = useCallback((next: View) => {
     if (next === current.current) return;
+    if (!CAN_SOURCE && setOf(next) === "hh") return;
     current.current = next;
     setView(next);
     setOpened((o) => (o.includes(next) ? o : [...o, next]));
@@ -108,6 +118,16 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
                 <DailyEmailView />
               ) : v === "linkedin-job" ? (
                 <LinkedInJobView />
+              ) : v === "hh-overview" ? (
+                <HhOverview />
+              ) : v === "hh-research" ? (
+                <ResearchView />
+              ) : v === "hh-suggestions" ? (
+                <SuggestionsView />
+              ) : v === "hh-tables" ? (
+                <ExcelTablesView />
+              ) : v === "hh-referees" ? (
+                <RefereeCallsView />
               ) : (
                 <ComingView label={viewLabel(v)} />
               )}
@@ -168,14 +188,43 @@ function TabsBar() {
     clearTimeout(tabsTimer.current);
     tabsTimer.current = setTimeout(() => setTabsOpen(false), HOVER_OUT);
   };
+  // A set switch resizes the bar around its centre, which can leave the pointer
+  // just outside it; the bar then stays up until the pointer comes back and
+  // leaves again, Escape, or a choice - as after Back.
+  const held = useRef(false);
+  const tabsNav = useRef<HTMLElement>(null);
   const enterBar = () => {
+    held.current = false;
     inside.current = true;
     clearTimeout(tabsTimer.current);
     setTabsOpen(true);
   };
   const leaveBar = () => {
     inside.current = false;
-    closeTabsSoon();
+    if (!held.current) {
+      closeTabsSoon();
+      return;
+    }
+    // Held after a set switch: it goes once the pointer is clearly away from the
+    // bar (more than AWAY px) or presses somewhere else - never left up for good.
+    const away = (e: PointerEvent) => {
+      const nav = tabsNav.current;
+      if (!held.current || !nav) return stop();
+      const b = nav.getBoundingClientRect();
+      const dx = Math.max(b.left - e.clientX, 0, e.clientX - b.right);
+      const dy = Math.max(b.top - e.clientY, 0, e.clientY - b.bottom);
+      if (e.type === "pointerdown" ? !nav.contains(e.target as Node) : Math.hypot(dx, dy) > AWAY) {
+        stop();
+        held.current = false;
+        if (!inside.current) setTabsOpen(false);
+      }
+    };
+    const stop = () => {
+      window.removeEventListener("pointermove", away);
+      window.removeEventListener("pointerdown", away);
+    };
+    window.addEventListener("pointermove", away);
+    window.addEventListener("pointerdown", away);
   };
   // The bar rises on its own for a moment, then sinks unless the cursor is on it.
   // Run when a work view opens from the overview (so a person learns the bar is
@@ -219,11 +268,14 @@ function TabsBar() {
     if (!focus && !tabsOpen) return;
     const key = (e: KeyboardEvent) => {
       if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      // A screen that uses the arrows itself (the Referee Calls grid) has them.
+      if (e.defaultPrevented) return;
       if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
       const t = e.target;
       if (t instanceof Element && t.closest("input, textarea, select, [contenteditable=true]")) return;
       if (document.querySelector("[role=dialog], [role=alertdialog]")) return;
-      const tabs = tabsOf(view === "overview" ? lastSet() : setOf(view));
+      // The bar's own order: Job first, then the set's views.
+      const tabs: View[] = ["overview", ...tabsOf(view === "overview" ? lastSet() : setOf(view))];
       const at = tabs.indexOf(view);
       const next = at < 0 ? (e.key === "ArrowRight" ? tabs[0] : undefined) : tabs[at + (e.key === "ArrowRight" ? 1 : -1)];
       if (!next) return;
@@ -236,12 +288,11 @@ function TabsBar() {
   }, [focus, tabsOpen, view, go, peek]);
 
   // Closing, the bar sinks and fades the way it rose instead of vanishing.
-  const tabsNav = useRef<HTMLElement>(null);
   const tabsShown = useExit(tabsOpen, tabsNav, TABS_OUT);
 
   return (
     <>
-      {tabsShown && <ViewTabs ref={tabsNav} onEnter={enterBar} onLeave={leaveBar} />}
+      {tabsShown && <ViewTabs ref={tabsNav} onEnter={enterBar} onLeave={leaveBar} onHold={() => (held.current = true)} />}
       {focus && (
         <>
           {/* The hover zone along the bottom edge that brings the View tabs up. */}
@@ -413,14 +464,16 @@ const COUNTS: Partial<Record<View, string>> = {
   "hh-tables": "L1–L3",
 };
 
-// The ATS set starts with the opening itself, as the old system's ATS list does.
-const tabsOf = (set: ViewSet): View[] => (set === "hh" ? HH_VIEWS.map(([k]) => k) : ["overview", ...VIEW_TABS.map(([k]) => k)]);
+// The opening itself is not in either set: it holds both, so it has its own Job
+// button at the bar's left (owner, 13 Nov 2026 - an "Overview" in ATS beside the
+// Headhunting Overview read as the same thing twice).
+const tabsOf = (set: ViewSet): View[] => (set === "hh" ? HH_VIEWS : VIEW_TABS).map(([k]) => k);
 
 // The set last looked at, so the bar opened from the opening itself shows it again.
 const SET_KEY = "ta-ui:view-set";
 function lastSet(): ViewSet {
   try {
-    return localStorage.getItem(SET_KEY) === "hh" ? "hh" : "ats";
+    return CAN_SOURCE && localStorage.getItem(SET_KEY) === "hh" ? "hh" : "ats";
   } catch {
     return "ats";
   }
@@ -441,10 +494,12 @@ function ViewTabs({
   ref: root,
   onEnter,
   onLeave,
+  onHold,
 }: {
   ref: RefObject<HTMLElement | null>;
   onEnter: () => void;
   onLeave: () => void;
+  onHold: () => void;
 }) {
   const { view, go } = useOpeningView();
   // Fresh each time the bar rises: the set of the view on screen (or, on the
@@ -452,10 +507,11 @@ function ViewTabs({
   const [set, setSet] = useState<ViewSet>(() => (view === "overview" ? lastSet() : setOf(view)));
   const pickSet = (next: ViewSet) => {
     if (next === set) return;
-    // The Headhunting set is shorter. Without this the bar would shrink away from
-    // under the pointer resting on the switch and close; it keeps the width it had.
-    const nav = root.current;
-    if (nav) nav.style.minWidth = `${Math.max(nav.offsetWidth, parseFloat(nav.style.minWidth) || 0)}px`;
+    // The bar fits each set and stays centred (owner, 13 Nov 2026: the shorter
+    // Headhunting set sat off to one side in the ATS width). It glides from its old
+    // width to the new one, and is held open in case it shrank from under the pointer.
+    fromWidth.current = root.current?.offsetWidth ?? 0;
+    onHold();
     setSet(next);
     keepSet(next);
   };
@@ -472,9 +528,22 @@ function ViewTabs({
     glide.to(hoverGlow(), { x: el.offsetLeft, y: el.offsetTop, width: el.offsetWidth, height: el.offsetHeight });
   };
   const aim = (value: View) => {
-    keepSet(setOf(value));
+    if (value !== "overview") keepSet(setOf(value));
     go(value);
   };
+
+  const fromWidth = useRef(0);
+  useGSAP(
+    () => {
+      const nav = root.current;
+      const from = fromWidth.current;
+      fromWidth.current = 0;
+      if (!nav || !from) return;
+      const to = nav.offsetWidth;
+      if (to !== from) gsap.fromTo(nav, { width: from }, { width: to, duration: DUR.base, ease: EASE.out, clearProps: "width" });
+    },
+    { dependencies: [set], scope: root },
+  );
 
   // The bar rises in once when it opens.
   useGSAP(
@@ -523,7 +592,29 @@ function ViewTabs({
         onPointerLeave={() => glide.out(hoverGlow())}
         className="relative flex max-w-[calc(100vw-24px)] items-center gap-[max(0.3rem,2px)] overflow-x-auto whitespace-nowrap rounded-full bg-surface p-[max(0.5rem,5px)] shadow-float [scrollbar-width:none]"
       >
-        {/* The set switch: a click shows that set (owner, 13 Nov 2026: no hover here). */}
+        {/* The opening itself, in neither set: one click home from any view. */}
+        <button
+          type="button"
+          data-view="overview"
+          aria-current={view === "overview" ? "page" : undefined}
+          aria-label="Job: back to this opening"
+          onPointerEnter={(e) => point(e.currentTarget, "overview")}
+          onClick={() => aim("overview")}
+          className={
+            "relative z-[1] flex shrink-0 items-center gap-[max(0.4rem,5px)] rounded-full px-[max(0.9rem,10px)] py-[max(0.45rem,5px)] text-small transition-colors " +
+            (view === "overview" ? "text-white" : "text-ink hover:text-ink-2")
+          }
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-[max(1rem,13px)]" aria-hidden="true">
+            <path d="M3 10.5 12 3l9 7.5" />
+            <path d="M5 9.5V20h14V9.5" />
+          </svg>
+          Job
+        </button>
+        <span aria-hidden="true" className="mx-[max(0.3rem,3px)] h-[max(1.4rem,18px)] w-px shrink-0 bg-border" />
+        {/* The set switch: a click shows that set (owner, 13 Nov 2026: no hover here).
+            No Headhunting for someone without a sourcing seat, so no switch either. */}
+        {CAN_SOURCE && (<>
         <div role="tablist" aria-label="Which set of views" className="flex shrink-0 rounded-full bg-surface-2 p-[max(0.25rem,3px)]">
           {(
             [
@@ -547,6 +638,7 @@ function ViewTabs({
           ))}
         </div>
         <span aria-hidden="true" className="mx-[max(0.4rem,4px)] h-[max(1.4rem,18px)] w-px shrink-0 bg-border" />
+        </>)}
         <span data-hover-glow aria-hidden="true" style={{ opacity: 0 }} className="absolute left-0 top-0 rounded-full bg-surface-2" />
         <span data-glow aria-hidden="true" style={{ opacity: 0 }} className="absolute left-0 top-0 rounded-full bg-ink" />
         {tabsOf(set).map((value) => {
@@ -565,7 +657,7 @@ function ViewTabs({
                 (on ? "text-white" : "text-ink hover:text-ink-2")
               }
             >
-              {value === "overview" ? "Overview" : viewLabel(value)}
+              {viewLabel(value)}
               {count && (
                 <span
                   className={

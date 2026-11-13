@@ -3,6 +3,7 @@ import PillMenu, { type MenuOption } from "./PillMenu";
 import Notch from "./Notch";
 import OpeningView from "./OpeningView";
 import type { WorkView } from "./view";
+import { CAN_SOURCE } from "@/lib/user";
 
 // Placeholder: the opening shown in the design. Replaced by the backend read
 // when the owner wires this screen.
@@ -144,11 +145,13 @@ export default async function OpeningPage({ params }: PageProps<"/openings/[id]"
       {/* Takes the height left in the window, up to the design's own 706px. */}
       <div className="relative mt-12.5 grid min-h-0 flex-1 rounded-lg bg-white max-md:flex-none md:max-h-[44.125rem] md:grid-cols-2">
         <Column name="ATS" items={ATS} base={base} first inPlace />
-        <Column name="Headhunting" items={HEADHUNTING} base={base} inPlace />
-        <span
-          aria-hidden="true"
-          className="absolute bottom-11.25 left-1/2 top-6.5 hidden w-px bg-border md:block"
-        />
+        {CAN_SOURCE && <Column name="Headhunting" items={HEADHUNTING} base={base} inPlace />}
+        {CAN_SOURCE && (
+          <span
+            aria-hidden="true"
+            className="absolute bottom-11.25 left-1/2 top-6.5 hidden w-px bg-border md:block"
+          />
+        )}
       </div>
         </>
       }

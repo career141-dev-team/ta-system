@@ -14,6 +14,7 @@ import Toast from "./Toast";
 import PillMenu from "./PillMenu";
 import { EXPERIENCE, FIELD_PILL, NOTICE, inRange } from "./filters";
 import WorkdayBlocked from "./WorkdayBlocked";
+import { useLiftMenu } from "./liftMenu";
 
 const CvPreview = dynamic(() => import("./CvPreview"), { ssr: false });
 
@@ -135,7 +136,6 @@ const STATUS_CHIP: Record<Status, string> = {
   closed: "bg-surface-2 text-ink-3",
 };
 const FADE_OUT = { opacity: 0 };
-const LIFT_OUT = { opacity: 0, y: -6, scale: 0.97 };
 
 const count = (p: Post, t: Tab) => p.applicants[t].length + p.more[t];
 
@@ -528,7 +528,7 @@ function PostHeader({
     <>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-3">
         {post.channel === "linkedin" ? (
-          <Image src="/linkedin-icon.svg" alt="LinkedIn" width={21} height={21} className="size-[max(1.3125rem,18px)] shrink-0 object-contain" />
+          <Image src="/li.svg" alt="LinkedIn" width={21} height={21} className="size-[max(1.3125rem,18px)] shrink-0 object-contain" />
         ) : (
           <span className={CHIP + " bg-violet-soft text-violet"}>{post.channel === "facebook" ? "Meta" : "Email"}</span>
         )}
@@ -575,32 +575,6 @@ function Detail({ label, value, wide, missing }: { label: string; value: string;
 
 /** A small menu that lifts open under its button (the app's lift): outside press or
  *  Escape closes it. */
-function useLiftMenu() {
-  const [open, setOpen] = useState(false);
-  const root = useRef<HTMLDivElement>(null);
-  const panel = useRef<HTMLDivElement>(null);
-  const shown = useExit(open, panel, LIFT_OUT);
-  useEffect(() => {
-    if (!open) return;
-    const away = (e: PointerEvent) => !root.current?.contains(e.target as Node) && setOpen(false);
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("pointerdown", away);
-    document.addEventListener("keydown", esc);
-    return () => {
-      document.removeEventListener("pointerdown", away);
-      document.removeEventListener("keydown", esc);
-    };
-  }, [open]);
-  useGSAP(
-    () => {
-      if (!open || !panel.current) return;
-      gsap.fromTo(panel.current, LIFT_OUT, { opacity: 1, y: 0, scale: 1, duration: DUR.fast, transformOrigin: "top right" });
-      gsap.from(panel.current.querySelectorAll("[role=menuitem]"), { opacity: 0, y: -4, duration: DUR.fast, stagger: 0.03 });
-    },
-    { dependencies: [open], scope: root },
-  );
-  return { open, setOpen, root, panel, shown };
-}
 
 const MENU = "absolute right-0 top-full z-30 mt-2 min-w-[max(14rem,180px)] rounded-md border border-border bg-surface p-1.5 shadow-float";
 const ITEM = "flex w-full items-center rounded-sm px-3 py-2 text-left text-small text-ink hover:bg-surface-2";

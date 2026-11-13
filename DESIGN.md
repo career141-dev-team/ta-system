@@ -142,3 +142,10 @@ phone **375×812**.
 - [ ] Motion through `src/lib/gsap.ts`: content that changes uses the one switch (`swapIn` / `useSwap`); no screen-specific entrance.
 - [ ] AURA colours only on AI things.
 - [ ] Checked at 1920×950, 1267×587 and 375×812.
+- [ ] **Used it like a TA, not just looked at it** (owner, 13 Nov 2026: "check every user experience without compromise"):
+  - Pointer: every hover, click and drag; where the pointer ends up after the screen moves or resizes; nothing left open for good.
+  - Keyboard: Tab reaches every control with a visible ring; Enter/Escape/arrows do what the screen suggests.
+  - Touch: no hover-only action; targets big enough; the whole card is clickable when it looks like one.
+  - States: empty, one, many, very long text, locked/no access, lead vs TA wording, error and waiting.
+  - Nothing jumps, shifts off-centre or overlaps when the content changes.
+  - Every gap found is fixed or written down for the owner - never left silent.

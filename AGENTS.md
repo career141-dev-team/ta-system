@@ -33,23 +33,30 @@ Openings ─▶ one opening (/openings/[id])
             Overview: title row, Status / Stage, then two lists of views
               ATS:         Pipeline · Scoops · LinkedIn Job · Job Description ·
                            Database CVs · Snippets · Strategies · Midday email
-              Headhunting: Research · Suggestions · Excel Tables · Referee Calls
+              Headhunting: Overview · Research · Suggestions · Excel Tables · Referee Calls
             Clicking a view opens it IN PLACE (no page change). Every view opened
             stays alive and hidden, so coming back is instant.
-            The bottom tabs bar (hover, or ← → keys) moves between Overview and
-            the views opened on this visit.
+            The bottom bar (rises at the bottom edge): Job (back to this opening,
+            in neither set) · ATS | Headhunting switch · that set's views.
+            ATS starts with Pipeline; Headhunting starts with its own Overview.
+            A click switches; ← → move inside the set.
 ```
 
 | Screen | File(s) | State |
 |---|---|---|
 | Top bar | `src/app/TopNav.tsx`, `NavLinks.tsx`, `TopMenus.tsx` | built |
-| Today T1 / T2 | `src/app/today/` (`TodayScreen` picks which) | built; T2 not released yet |
+| Today T1 / T2 | `src/app/today/` (`TodayScreen` picks which) | built |
 | Opening overview | `src/app/openings/[id]/page.tsx`, `OpeningView.tsx`, `view.ts` | built |
 | Pipeline board | `PipelineBoard.tsx`, `TickList.tsx`, `CardMenu.tsx`, `MoveForm.tsx`, `pipelineRules.ts` | built |
 | CV preview | `CvPreview.tsx`, `CvPages.tsx` (pdf.js) | built |
 | Scoops (list + reading view) | `ScoopsView.tsx` | built |
 | Midday / End of day email | `DailyEmailView.tsx`, `EmailParts.tsx` | built |
 | Pipeline Automations | `Automations.tsx` | built |
+| LinkedIn Job | `LinkedInJobView.tsx`, `filters.ts`, `liftMenu.ts` | built |
+| Headhunting Overview | `HhOverview.tsx` | built |
+| Headhunting Research | `ResearchView.tsx` | built |
+| Headhunting Suggestions | `SuggestionsView.tsx` | built |
+| Headhunting Excel Tables | `ExcelTablesView.tsx`, `FindCvButton.tsx` (shared) | built |
 | Everything else | `src/app/NotBuilt.tsx` pages, `ComingView` in `OpeningView.tsx` | "next to build" |
 
 Sample people and the signed-in user are placeholders (`src/lib/user.ts`); the rules
