@@ -28,6 +28,7 @@ function loadRecent(): WorkView[] {
 // their own pieces, fetched while the screen sits idle, so they are ready by the
 // time they are opened.
 const ScoopsView = dynamic(() => import("./ScoopsView"));
+const LinkedInJobView = dynamic(() => import("./LinkedInJobView"));
 
 /** The opening screen and its work views, switched in place (no page change).
  *  The overview (title row + card) arrives from the server as `overview`; a work
@@ -94,6 +95,7 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
     const idle = window.requestIdleCallback?.bind(window) ?? ((f: () => void) => setTimeout(f, 1200));
     idle(() => {
       void import("./ScoopsView");
+      void import("./LinkedInJobView");
       void import("./CvPreview");
       void loadFlip();
     });
@@ -166,7 +168,15 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
               className={v === view ? "relative flex min-h-0 flex-1 flex-col rounded-[1.5rem] bg-white" : "hidden"}
             >
               <Notch label={viewLabel(v)} />
-              {v === "pipeline" ? <PipelineBoard /> : v === "scoops" ? <ScoopsView /> : <ComingView label={viewLabel(v)} />}
+              {v === "pipeline" ? (
+                <PipelineBoard />
+              ) : v === "scoops" ? (
+                <ScoopsView />
+              ) : v === "linkedin-job" ? (
+                <LinkedInJobView />
+              ) : (
+                <ComingView label={viewLabel(v)} />
+              )}
             </div>
           ),
         )}
