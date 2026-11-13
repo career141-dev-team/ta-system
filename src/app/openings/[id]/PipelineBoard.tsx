@@ -1,13 +1,21 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Automations from "./Automations";
 import { memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { DUR, EASE, gsap, useExit, useGSAP } from "@/lib/gsap";
+import { USER } from "@/lib/user";
 import { SHOW_TABS } from "./view";
 import PillMenu, { type MenuOption } from "./PillMenu";
 import TickList from "./TickList";
 import { warmPdf } from "./CvPages";
+import CardMenu from "./CardMenu";
+import MoveForm from "./MoveForm";
+import Toast from "./Toast";
+import { STAGES, checkMove, movesFrom, type Needs } from "./pipelineRules";
+import WorkdayBlocked from "./WorkdayBlocked";
+import { useWorkdayGate } from "@/lib/workday";
 
 // The CV preview is its own download, fetched while the screen is idle (OpeningView).
 const CvPreview = dynamic(() => import("./CvPreview"), { ssr: false });
@@ -63,11 +71,52 @@ const SOURCES: MenuOption[] = [
   { value: "SCOOP", label: "Database", hint: "Shortlisted and reviewed" },
 ];
 const CHANNELS = SOURCES.slice(1).map((o) => o.value);
+// The TA System's own three list filters (CandidateList.tsx), which the design's
+// toolbar did not carry (FLOW-CHECK 2.11).
+const EXPERIENCE: MenuOption[] = [
+  { value: "", label: "Any experience", pillLabel: "Experience" },
+  { value: "5", label: "5+ years" },
+  { value: "10", label: "10+ years" },
+  { value: "15", label: "15+ years" },
+];
+const NOTICE: MenuOption[] = [
+  { value: "", label: "Any notice", pillLabel: "Notice" },
+  { value: "30", label: "30 days or less" },
+  { value: "60", label: "60 days or less" },
+];
+const MARKS: MenuOption[] = [
+  { value: "", label: "All candidates", pillLabel: "Add-on / Backup" },
+  { value: "addOn", label: "Add-ons only" },
+  { value: "backup", label: "Backups only" },
+  { value: "neither", label: "Neither" },
+];
 
 /** Placeholder: this opening's priority tier, until it comes from the backend. */
 const OPENING_TIER = "P2";
 
-type Card = Person & { id: string; mine: boolean; owned: boolean; channel: string };
+type Card = Person & {
+  id: string;
+  mine: boolean;
+  owned: boolean;
+  channel: string;
+  /** Another TA shortlisted them first (the collision lock): their first name. */
+  lockedBy?: string;
+  /** Still needed before Director Review: "CV", "Salary", "Notice Period". */
+  missing: string[];
+  addOn?: boolean;
+  backup?: boolean;
+  /** Years of experience and notice period in days, for the two filters. */
+  yearsN: number;
+  noticeDays: number;
+};
+
+/** Placeholder: the person's other open jobs (the same sample ones as Today), and
+ *  the set a shortlist joins, until the backend sends them. */
+const OTHER_JOBS = ["Finance Manager - Hayleys", "Production Executive - MAS Holdings", "HR Business Partner - Dialog"];
+const OPEN_SET = 3;
+
+/** Placeholder: the other TAs on this opening, until the backend sends the team. */
+const OTHER_TAS = ["Hasini", "Dinuka"];
 
 const PEOPLE: Person[] = [
   {
@@ -90,26 +139,26 @@ const PEOPLE: Person[] = [
   },
 ];
 
-// The stages in the order the work moves, with the design's dot colours.
-const STAGES = [
-  { name: "TA Follow-Up", dot: "#14b8c4", count: 96 },
-  { name: "Ai Follow-Up", dot: "#e8b417", count: 96 },
-  { name: "Director Shortlist", dot: "#2f80ed", count: 96 },
-  { name: "Client Shortlist", dot: "#a43ee0", count: 96 },
-  { name: "Interview", dot: "#16a34a", count: 96 },
-  { name: "Offer", dot: "#f97316", count: 96 },
-  { name: "Placed", dot: "#1d4d3a", count: 96 },
-];
+// The stages and the rules of a move live in pipelineRules.ts (the TA System's own).
 
 /** Six sample cards per stage; the first stage starts with the design's first card.
- *  Owner and source vary so the filters have something to filter. */
+ *  Owner and source vary so the filters have something to filter; every third card
+ *  is another TA's (locked), and in the two follow-up stages every other card still
+ *  lacks its notice period, so the Director Review rule has something to refuse. */
 const cardsFor = (i: number): Card[] =>
   Array.from({ length: 6 }, (_, n) => ({
     ...(i === 0 && n === 0 ? PEOPLE[0] : PEOPLE[1]),
     id: `${i}-${n}`,
     mine: n % 3 === 0,
-    owned: n % 3 !== 2,
+    // Nobody owns a candidate only before the first shortlist, so only in the
+    // two follow-up stages; from Director Review on, everyone has an owner.
+    owned: i >= 2 || n % 3 !== 2,
+    lockedBy: n % 3 === 1 ? OTHER_TAS[(i + n) % OTHER_TAS.length] : undefined,
+    missing: i < 2 && n % 2 === 0 ? ["Notice Period"] : [],
     channel: CHANNELS[(i + n) % CHANNELS.length],
+    yearsN: [5, 3, 8, 12, 16, 6][n],
+    years: [5, 3, 8, 12, 16, 6][n] + " years",
+    noticeDays: [30, 60, 90, 30, 45, 60][n],
   }));
 
 const initials = (name: string) =>
@@ -122,9 +171,10 @@ const initials = (name: string) =>
 
 /** How an overlay (the moved box, the CV preview) leaves: it fades. */
 const FADE_OUT = { opacity: 0 };
+const MENU_OUT = { opacity: 0, y: -6, scale: 0.97 };
 
 const TOOL_PILL =
-  "flex h-[max(2.4rem,33px)] items-center gap-1.5 whitespace-nowrap rounded-full border border-[#e3e5e8] bg-white px-[max(1rem,13px)] text-[max(0.85rem,12.5px)] text-ink";
+  "flex h-[max(2.4rem,33px)] items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-white px-[max(1rem,13px)] text-[max(0.85rem,12.5px)] text-ink";
 
 export default function PipelineBoard() {
   const [mode, setMode] = useState<"board" | "list">("board");
@@ -136,6 +186,9 @@ export default function PipelineBoard() {
   const [recruiter, setRecruiter] = useState("");
   const [priority, setPriority] = useState("");
   const [source, setSource] = useState("");
+  const [exp, setExp] = useState("");
+  const [noticeMax, setNoticeMax] = useState("");
+  const [marks, setMarks] = useState("");
 
   // The board itself: the cards of each stage, by stage name. Dragging a card onto
   // another column moves it there (owner, 12 Nov 2026: "track and drop everyone
@@ -150,7 +203,9 @@ export default function PipelineBoard() {
   // The move just made, told back to the person AFTER it happens (owner, 12 Nov 2026:
   // "no need confirm before... after moving I need this"), with Undo. `at` is where
   // the card stood in its old column, so Undo puts it back in the same place.
-  const [moved, setMoved] = useState<{ card: Card; from: string; to: string; at: number } | null>(null);
+  // `note` is the answer a move needed first (the reason, the booking, the offer);
+  // such a move has no Undo - taking it back is a second real move in the TA System.
+  const [moved, setMoved] = useState<{ card: Card; from: string; to: string; at: number; note?: string } | null>(null);
   // The box shows while this is true; `moved` stays behind it so the box can fade
   // out with its words still in it.
   const [movedOpen, setMovedOpen] = useState(false);
@@ -166,6 +221,117 @@ export default function PipelineBoard() {
     setCvFor(p);
     setCvOpen(true);
   }, []);
+
+  // A move the rules refuse says why, in a notice at the bottom (FLOW-CHECK 2.2).
+  const [toast, setToast] = useState<{ bold?: string; rest: string; n: number; warn?: boolean } | null>(null);
+  const refuse = useCallback((why: string) => setToast((t) => ({ rest: why, warn: true, n: (t?.n ?? 0) + 1 })), []);
+  const tell = (bold: string, rest: string) => setToast((t) => ({ bold, rest, n: (t?.n ?? 0) + 1 }));
+
+  // The workday gate: a TA moves nobody until today's workday is started (6.2).
+  // In a ref as well, because the drag handler below is made once.
+  const gate = useWorkdayGate();
+  const gateNow = useRef(gate);
+  useEffect(() => {
+    gateNow.current = gate;
+  }, [gate]);
+  const GATE_HINT = " Start it on Today, then move candidates.";
+
+  // A move that needs an answer first (a reason, a booking, an offer, a placement):
+  // the form opens, and the card moves only when it is saved (2.3, 2.4).
+  const [ask, setAsk] = useState<{ card: Card; from: string; to: string; needs: Needs | "job" } | null>(null);
+  const [askOpen, setAskOpen] = useState(false);
+  const askBox = useRef<HTMLDivElement>(null);
+  const askShown = useExit(askOpen, askBox, FADE_OUT);
+  const openAsk = useCallback((card: Card, from: string, to: string, needs: Needs | "job") => {
+    setAsk({ card, from, to, needs });
+    setAskOpen(true);
+  }, []);
+
+  // The card whose ⋮ menu is open (2.8).
+  const [menu, setMenu] = useState<{ card: Card; stage: string; at: DOMRect } | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuBox = useRef<HTMLDivElement>(null);
+  const menuShown = useExit(menuOpen, menuBox, MENU_OUT);
+  const menuFor = useRef<string | null>(null);
+  const closeMenu = useCallback(() => {
+    menuFor.current = null;
+    setMenuOpen(false);
+  }, []);
+  // A second press on the same ⋮ closes it.
+  const openMenu = useCallback((card: Card, stage: string, el: HTMLElement) => {
+    if (menuFor.current === card.id) {
+      menuFor.current = null;
+      setMenuOpen(false);
+      return;
+    }
+    menuFor.current = card.id;
+    setMenu({ card, stage, at: el.getBoundingClientRect() });
+    setMenuOpen(true);
+  }, []);
+
+  // The one place a card changes column: a drop, the menu, or a saved form. With
+  // the backend this is one stage move through the TA System's own transition.
+  // `pop` is for a move with no carried copy to land (menu, form): the card pops in.
+  const moveCard = useCallback((card: Card, from: string, to: string, opts?: { note?: string; pop?: boolean }) => {
+    setBoard((bd) => {
+      setMoved({ card, from, to, at: bd[from].findIndex((c) => c.id === card.id), note: opts?.note });
+      setMovedOpen(true);
+      return {
+        ...bd,
+        [from]: bd[from].filter((c) => c.id !== card.id),
+        [to]: [card, ...bd[to].filter((c) => c.id !== card.id)],
+      };
+    });
+    if (opts?.pop) setUndone((u) => ({ id: card.id, n: (u?.n ?? 0) + 1 }));
+  }, []);
+
+  // From the menu: the same rules as a drop.
+  const menuMove = (to: string) => {
+    if (!menu) return;
+    if (gate) return refuse(gate + GATE_HINT);
+    const { card, stage } = menu;
+    const v = checkMove(card, stage, to, USER.role);
+    if (!v.ok) return refuse(v.why);
+    closeMenu();
+    if (v.needs) openAsk(card, stage, to, v.needs);
+    else moveCard(card, stage, to, { pop: true });
+  };
+
+  // Shortlist, for a candidate nobody owns yet: it claims them for this TA, gives
+  // the set number and puts them in TA Follow-Up (FLOW-CHECK 2.6), as the TA
+  // System's row does. Already there, the card only changes owner.
+  const shortlistCard = () => {
+    if (!menu) return;
+    if (gate) return refuse(gate + GATE_HINT);
+    const { card, stage } = menu;
+    const mine = { ...card, owned: true, mine: true };
+    closeMenu();
+    if (stage === "TA Follow-Up") {
+      setBoard((bd) => ({ ...bd, [stage]: bd[stage].map((c) => (c.id === card.id ? mine : c)) }));
+      tell(card.name, ` shortlisted as set ${OPEN_SET}`);
+    } else moveCard(mine, stage, "TA Follow-Up", { note: `Shortlisted as set ${OPEN_SET}. They are yours from now on.`, pop: true });
+  };
+
+  // Add to another job: the candidate joins that job's TA Follow-Up and stays here too.
+  const addToJob = () => {
+    if (!menu) return;
+    if (gate) return refuse(gate + GATE_HINT);
+    closeMenu();
+    openAsk(menu.card, menu.stage, "TA Follow-Up", "job");
+  };
+
+  // Add-on and Backup marks. A backup only makes sense behind someone at interview
+  // or offer (the TA System refuses it otherwise).
+  const toggleMark = (mark: "addOn" | "backup") => {
+    if (!menu) return;
+    if (gate) return refuse(gate + GATE_HINT);
+    const { card, stage } = menu;
+    if (mark === "backup" && !card.backup && board.Interview.length + board.Offer.length === 0)
+      return refuse("Nobody on this role is at interview or offer yet, so there is nobody to back up.");
+    const next = { ...card, [mark]: !card[mark] };
+    setBoard((bd) => ({ ...bd, [stage]: bd[stage].map((c) => (c.id === card.id ? next : c)) }));
+    setMenu({ ...menu, card: next });
+  };
 
   /**
    * Pick up, carry and drop, all moved by GSAP (owner, 12 Nov 2026: the browser's own
@@ -185,11 +351,16 @@ export default function PipelineBoard() {
     // 2026). ponytail: no drag and drop by touch; a long press to pick up is the
     // way to add it if phones and tablets need to move candidates.
     if (e.pointerType === "touch") return;
+    // Another TA's candidate stays where it is (the collision lock, FLOW-CHECK 2.6).
+    if (card.lockedBy) return;
     const el = e.currentTarget;
     const sx = e.clientX;
     const sy = e.clientY;
     let ghost: HTMLElement | null = null;
     let target: string | null = null;
+    // A column this card may not go to, while the pointer is on it: it is marked
+    // and opens no slot; letting go there says why (2.2).
+    let barred: string | null = null;
     let lastX = sx;
     let xTo: (v: number) => void = () => {};
     let yTo: (v: number) => void = () => {};
@@ -231,7 +402,14 @@ export default function PipelineBoard() {
     const aim = () => {
       const col = document.elementFromPoint(px, py)?.closest("[data-col]");
       const name = col?.getAttribute("aria-label") ?? null;
-      const next = name && name !== from ? name : null;
+      const over = name && name !== from ? name : null;
+      const next = over && checkMove(card, from, over, USER.role).ok ? over : null;
+      const no = over && !next ? over : null;
+      if (no !== barred) {
+        if (barred) colOf(barred)?.removeAttribute("data-no");
+        barred = no;
+        if (no) colOf(no)?.setAttribute("data-no", "");
+      }
       if (next !== target) {
         if (target) closeSlot(target);
         target = next;
@@ -318,34 +496,42 @@ export default function PipelineBoard() {
       setTimeout(() => delete el.dataset.dragged, 0);
       // The slot goes at once: the card takes its place in the same frame.
       const to = target;
+      const no = barred;
       target = null;
+      barred = null;
       if (to) colOf(to)?.removeAttribute("data-over");
+      if (no) colOf(no)?.removeAttribute("data-no");
       board?.querySelectorAll<HTMLElement>("[data-slot]").forEach((slot) => {
         gsap.killTweensOf(slot);
         gsap.set(slot, { display: "none", height: 0, opacity: 0 });
       });
-      if (to) {
-        landing.current = { id: card.id, ghost: g };
-        setBoard((bd) => {
-          setMoved({ card, from, to, at: bd[from].findIndex((c) => c.id === card.id) });
-          setMovedOpen(true);
-          return {
-            ...bd,
-            [from]: bd[from].filter((c) => c.id !== card.id),
-            [to]: [card, ...bd[to]],
-          };
-        });
-      } else {
-        // Not over another column: glide home and settle.
+      const v = to ? checkMove(card, from, to, USER.role) : null;
+      const shut = gateNow.current;
+      if (shut && (to || no)) {
+        // Before the day is started nothing moves, whatever the stage rules say.
         gsap.to(g, { x: 0, y: 0, rotation: 0, scale: 1, duration: DUR.base, onComplete: () => g.remove() });
         gsap.to(el, { opacity: 1, scale: 1, duration: DUR.base, delay: 0.1, onComplete: () => delete el.dataset.hold });
+        refuse(shut + " Start it on Today, then move candidates.");
+      } else if (to && v?.ok && !v.needs) {
+        landing.current = { id: card.id, ghost: g };
+        moveCard(card, from, to);
+      } else {
+        // Not moved (yet): glide home and settle. A move that needs an answer
+        // first opens its form; a column the rules refuse says why.
+        gsap.to(g, { x: 0, y: 0, rotation: 0, scale: 1, duration: DUR.base, onComplete: () => g.remove() });
+        gsap.to(el, { opacity: 1, scale: 1, duration: DUR.base, delay: 0.1, onComplete: () => delete el.dataset.hold });
+        if (to && v?.ok && v.needs) openAsk(card, from, to, v.needs);
+        else if (no) {
+          const r = checkMove(card, from, no, USER.role);
+          if (!r.ok) refuse(r.why);
+        }
       }
     };
 
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
     window.addEventListener("pointercancel", up);
-  }, []);
+  }, [moveCard, openAsk, refuse]);
 
   // Undo: the card goes back to its old column, in the place it stood, with a pop.
   const undoMove = () => {
@@ -399,7 +585,7 @@ export default function PipelineBoard() {
   });
 
   const query = searched.trim().toLowerCase();
-  const filtering = !!(query || recruiter || priority || source);
+  const filtering = !!(query || recruiter || priority || source || exp || noticeMax || marks);
   // ponytail: filters the sample cards in the browser; with the backend each
   // filter is part of the column's indexed, paged query instead.
   const match = useCallback(
@@ -408,8 +594,11 @@ export default function PipelineBoard() {
       (recruiter !== "mine" || p.mine) &&
       (recruiter !== "none" || !p.owned) &&
       (!priority || priority === OPENING_TIER) &&
-      (!source || p.channel === source),
-    [query, recruiter, priority, source],
+      (!source || p.channel === source) &&
+      (!exp || p.yearsN >= Number(exp)) &&
+      (!noticeMax || p.noticeDays <= Number(noticeMax)) &&
+      (!marks || (marks === "addOn" ? !!p.addOn : marks === "backup" ? !!p.backup : !p.addOn && !p.backup)),
+    [query, recruiter, priority, source, exp, noticeMax, marks],
   );
   // Each column's cards, worked out again only when the board or a filter changes.
   const columns = useMemo(
@@ -424,13 +613,10 @@ export default function PipelineBoard() {
       <div data-intro className="flex items-center px-[max(1.5rem,14px)] pt-[max(1.4rem,14px)] max-md:pt-11">
         <BackButton />
         <div className="ml-auto flex items-center gap-[max(0.6rem,8px)]">
-          <button type="button" className={TOOL_PILL}>
-            <SlidersIcon />
-            Automations
-          </button>
+          <Automations pillClass={TOOL_PILL} icon={<SlidersIcon />} />
           <button
             type="button"
-            className="flex h-[max(2.6rem,35px)] items-center gap-1.5 whitespace-nowrap rounded-full bg-pill-line px-[max(1.3rem,16px)] text-[max(0.85rem,12.5px)] font-medium text-white hover:bg-[#163d2e]"
+            className="flex h-[max(2.6rem,35px)] items-center gap-1.5 whitespace-nowrap rounded-full bg-brand px-[max(1.3rem,16px)] text-[max(0.85rem,12.5px)] font-medium text-white hover:bg-brand-strong"
           >
             <PlusIcon />
             Add candidate
@@ -443,7 +629,7 @@ export default function PipelineBoard() {
           so a filter menu's own z-index counted only inside the row and the menus
           opened behind the cards (owner, 12 Nov 2026). */}
       <div data-intro className="relative z-20 flex items-center gap-[max(0.5rem,6px)] px-[max(1.5rem,14px)] flex-wrap pb-[max(1.2rem,12px)] pt-[max(1.1rem,11px)]">
-        <label className="flex h-[max(2.4rem,33px)] w-[max(15.5rem,200px)] items-center gap-2 max-md:w-full rounded-full border border-[#e3e5e8] bg-white px-[max(1rem,13px)] has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-brand/30">
+        <label className="flex h-[max(2.4rem,33px)] w-[max(15.5rem,200px)] items-center gap-2 max-md:w-full rounded-full border border-border bg-white px-[max(1rem,13px)] has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-brand/30">
           <SearchIcon />
           <input
             type="search"
@@ -451,15 +637,18 @@ export default function PipelineBoard() {
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search candidates..."
             aria-label="Search candidates"
-            className="min-w-0 flex-1 bg-transparent text-[max(0.85rem,12.5px)] outline-none placeholder:text-muted"
+            className="min-w-0 flex-1 bg-transparent text-[max(0.85rem,12.5px)] outline-none placeholder:text-ink-2"
           />
         </label>
         <PillMenu options={JOBS} initial={job} onChange={setJob} mark="tick" pillClass={TOOL_PILL} />
         <PillMenu options={RECRUITERS} initial={recruiter} onChange={setRecruiter} mark="tick" pillClass={TOOL_PILL} />
         <PillMenu options={PRIORITIES} initial={priority} onChange={setPriority} mark="tick" pillClass={TOOL_PILL} />
         <PillMenu options={SOURCES} initial={source} onChange={setSource} mark="tick" pillClass={TOOL_PILL} />
+        <PillMenu options={EXPERIENCE} initial={exp} onChange={setExp} mark="tick" pillClass={TOOL_PILL} />
+        <PillMenu options={NOTICE} initial={noticeMax} onChange={setNoticeMax} mark="tick" pillClass={TOOL_PILL} />
+        <PillMenu options={MARKS} initial={marks} onChange={setMarks} mark="tick" pillClass={TOOL_PILL} />
 
-        <div className="ml-auto flex items-center rounded-full bg-soft p-[3px] text-[max(0.85rem,12.5px)]">
+        <div className="ml-auto flex items-center rounded-full bg-surface-2 p-[3px] text-[max(0.85rem,12.5px)]">
           {(
             [
               ["board", "Board", <BoardIcon key="b" />],
@@ -473,7 +662,7 @@ export default function PipelineBoard() {
               onClick={() => setMode(value)}
               className={
                 "flex h-[max(2.1rem,29px)] items-center gap-1.5 rounded-full px-[max(0.9rem,12px)] transition-colors " +
-                (mode === value ? "bg-white text-ink shadow-sm" : "text-muted hover:text-ink")
+                (mode === value ? "bg-white text-ink shadow-sm" : "text-ink-2 hover:text-ink")
               }
             >
               {icon}
@@ -483,6 +672,8 @@ export default function PipelineBoard() {
         </div>
       </div>
 
+      {gate && <WorkdayBlocked what="move candidates" className="mx-[max(1.5rem,14px)] mb-[max(1rem,10px)]" />}
+
       {mode === "board" ? (
         // Columns side by side; the row scrolls sideways, each column scrolls itself.
         <div data-board className="flex min-h-0 flex-1 gap-[max(1.1rem,12px)] overflow-x-auto px-[max(1.5rem,14px)] [scrollbar-color:#e3e6ea_transparent] [scrollbar-width:thin]">
@@ -491,12 +682,12 @@ export default function PipelineBoard() {
               key={s.name}
               data-col
               aria-label={s.name}
-              className="flex min-h-0 w-[max(22rem,280px)] shrink-0 flex-col rounded-t-[1.2rem] border-[1.8px] border-b-0 border-[#f2f3f6] bg-white transition-colors data-[over]:border-[#9fd0b5] data-[over]:bg-[#f3faf6]"
+              className="flex min-h-0 w-[max(22rem,280px)] shrink-0 flex-col rounded-t-md border-[1.8px] border-b-0 border-surface-2 bg-white transition-colors data-[no]:border-danger/30 data-[no]:bg-danger-soft data-[over]:border-brand/40 data-[over]:bg-brand-tint"
             >
               <header className="flex items-center gap-2 px-[max(1rem,11px)] pb-[max(0.8rem,9px)] pt-[max(1rem,11px)]">
                 <span aria-hidden="true" className="size-2 shrink-0 rounded-full" style={{ background: s.dot }} />
                 <h3 className="min-w-0 flex-1 truncate text-col font-semibold">{s.name}</h3>
-                <span className="rounded-md bg-[#eef0f2] px-2 py-0.5 text-chip font-medium text-muted">
+                <span className="rounded-md bg-surface-3 px-2 py-0.5 text-chip font-medium text-ink-2">
                   {filtering ? cards.length : s.count + all.length - 6}
                 </span>
               </header>
@@ -505,10 +696,10 @@ export default function PipelineBoard() {
                 <div
                   data-slot={s.name}
                   aria-hidden="true"
-                  className="hidden rounded-[0.9rem] border-[1.5px] border-dashed border-[#9fd0b5] bg-[#eaf6ef]"
+                  className="hidden rounded-md border-[1.5px] border-dashed border-brand/40 bg-brand-soft"
                 />
                 {cards.map((p) => (
-                  <CandidateCard key={p.id} p={p} stage={s.name} onPickUp={pickUp} onOpenCv={openCv} />
+                  <CandidateCard key={p.id} p={p} stage={s.name} onPickUp={pickUp} onOpenCv={openCv} onMenu={openMenu} />
                 ))}
               </TickList>
             </section>
@@ -535,10 +726,44 @@ export default function PipelineBoard() {
           name={moved.card.name}
           from={STAGES.find((st) => st.name === moved.from)!}
           to={STAGES.find((st) => st.name === moved.to)!}
+          note={moved.note}
           onUndo={undoMove}
           onDone={() => setMovedOpen(false)}
         />
       )}
+
+      {menuShown && menu && (
+        <CardMenu
+          ref={menuBox}
+          at={menu.at}
+          name={menu.card.name}
+          from={menu.stage}
+          moves={movesFrom(menu.card, menu.stage, USER.role)}
+          addOn={!!menu.card.addOn}
+          backup={!!menu.card.backup}
+          onMove={menuMove}
+          onToggle={toggleMark}
+          onShortlist={menu.card.owned ? undefined : shortlistCard}
+          onAddToJob={addToJob}
+          onClose={closeMenu}
+        />
+      )}
+
+      {askShown && ask && (
+        <MoveForm
+          ref={askBox}
+          ask={{ needs: ask.needs, name: ask.card.name, from: ask.from, to: STAGES.find((st) => st.name === ask.to)!, jobs: OTHER_JOBS }}
+          onCancel={() => setAskOpen(false)}
+          onSave={(note) => {
+            setAskOpen(false);
+            // "Add to another job" moves nobody on this board; it only says so.
+            if (ask.needs === "job") tell(ask.card.name, ` added to TA Follow-Up on ${note}. They stay on this job too.`);
+            else moveCard(ask.card, ask.from, ask.to, { note, pop: true });
+          }}
+        />
+      )}
+
+      {toast && <Toast key={toast.n} bold={toast.bold} rest={toast.rest} warn={toast.warn} />}
     </div>
   );
 }
@@ -560,6 +785,7 @@ function MovedNotice({
   name,
   from,
   to,
+  note,
   onUndo,
   onDone,
 }: {
@@ -567,6 +793,9 @@ function MovedNotice({
   name: string;
   from: { name: string; dot: string };
   to: { name: string; dot: string };
+  /** What was recorded with the move (the reason, the booking...). With a note there
+   *  is no Undo: taking such a move back is a second real move. */
+  note?: string;
   onUndo: () => void;
   onDone: () => void;
 }) {
@@ -600,33 +829,38 @@ function MovedNotice({
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="move-title"
-        className="relative w-[max(26rem,320px)] max-w-[calc(100vw-24px)] rounded-[1.4rem] bg-white p-[max(1.6rem,20px)] shadow-[0_30px_80px_rgba(17,44,32,0.25)]"
+        className="relative w-[max(26rem,320px)] max-w-[calc(100vw-24px)] rounded-lg bg-white p-[max(1.6rem,20px)] shadow-[0_30px_80px_rgba(17,44,32,0.25)]"
       >
         <h2 id="move-title" className="flex items-center gap-2 text-[max(1.05rem,15px)] font-semibold text-ink">
-          <span className="flex size-[max(1.4rem,19px)] items-center justify-center rounded-full bg-[#e6f4ec] text-brand">
+          <span className="flex size-[max(1.4rem,19px)] items-center justify-center rounded-full bg-brand-soft text-brand">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="size-3/5" aria-hidden="true">
               <path d="m5 12 5 5 9-10" />
             </svg>
           </span>
           Candidate moved
         </h2>
-        <p className="mt-[max(0.6rem,8px)] text-[max(0.85rem,12.5px)] leading-relaxed text-muted">
+        <p className="mt-[max(0.6rem,8px)] text-[max(0.85rem,12.5px)] leading-relaxed text-ink-2">
           <span className="font-semibold text-ink">{name}</span> moved from <Stage s={from} /> to{" "}
           <Stage s={to} />.
         </p>
+        {note && (
+          <p className="mt-[max(0.5rem,6px)] rounded-xl bg-surface-2 px-3 py-2 text-[max(0.8rem,11.5px)] leading-relaxed text-ink">{note}</p>
+        )}
         <div className="mt-[max(1.4rem,16px)] flex justify-end gap-[max(0.6rem,8px)]">
-          <button
-            type="button"
-            onClick={onUndo}
-            className="h-[max(2.4rem,33px)] rounded-full border border-[#e3e5e8] px-[max(1.2rem,15px)] text-[max(0.85rem,12.5px)] text-ink hover:bg-soft"
-          >
-            Undo
-          </button>
+          {!note && (
+            <button
+              type="button"
+              onClick={onUndo}
+              className="h-[max(2.4rem,33px)] rounded-full border border-border px-[max(1.2rem,15px)] text-[max(0.85rem,12.5px)] text-ink hover:bg-surface-2"
+            >
+              Undo
+            </button>
+          )}
           <button
             type="button"
             autoFocus
             onClick={onDone}
-            className="h-[max(2.4rem,33px)] rounded-full bg-pill-line px-[max(1.4rem,17px)] text-[max(0.85rem,12.5px)] font-medium text-white hover:bg-[#163d2e]"
+            className="h-[max(2.4rem,33px)] rounded-full bg-brand px-[max(1.4rem,17px)] text-[max(0.85rem,12.5px)] font-medium text-white hover:bg-brand-strong"
           >
             Done
           </button>
@@ -641,13 +875,13 @@ function MovedNotice({
  *  bar, whose first tab is the opening's Overview, so the person picks where to go
  *  - the overview or any view they had open (owner, 12 Nov 2026: "the back button
  *  needs to show the bottom bar"). The bar listens for SHOW_TABS (FocusChrome). */
-export function BackButton() {
+export function BackButton({ onClick, label }: { onClick?: () => void; label?: string } = {}) {
   return (
     <button
       type="button"
-      aria-label="Back: choose where to go"
-      onClick={() => window.dispatchEvent(new Event(SHOW_TABS))}
-      className="flex size-[max(2.6rem,35px)] shrink-0 items-center justify-center rounded-full border-[1.5px] border-pill-line text-pill-line transition-colors hover:bg-pill-line hover:text-white"
+      aria-label={label ?? "Back: choose where to go"}
+      onClick={onClick ?? (() => window.dispatchEvent(new Event(SHOW_TABS)))}
+      className="flex size-[max(2.6rem,35px)] shrink-0 items-center justify-center rounded-full border-[1.5px] border-brand text-brand transition-colors hover:bg-brand hover:text-white"
     >
       <svg
         viewBox="0 0 24 24"
@@ -672,15 +906,28 @@ const CandidateCard = memo(function CandidateCard({
   stage,
   onPickUp,
   onOpenCv,
+  onMenu,
 }: {
   p: Card;
   stage: string;
   onPickUp: (e: React.PointerEvent<HTMLElement>, card: Card, from: string) => void;
   onOpenCv: (card: Card) => void;
+  onMenu: (card: Card, stage: string, el: HTMLElement) => void;
 }) {
+  // The three chips are what Director Review needs: grey when it is on record,
+  // amber while it is still missing (the design's amber "Notice Period").
+  const chip = (label: string) =>
+    p.missing.includes(label) ? (
+      <span title="Needed before Director Review" className="rounded-md bg-warn-soft px-1.5 py-0.5 text-warn">
+        {label}
+      </span>
+    ) : (
+      <span className="rounded-md bg-surface-3 px-1.5 py-0.5 text-ink">{label}</span>
+    );
   return (
     <article
       data-card-id={p.id}
+      data-locked={p.lockedBy ? "" : undefined}
       onPointerDown={(e) => onPickUp(e, p, stage)}
       // A click opens the CV: start pdf.js on the way in, so it opens with no wait.
       onPointerEnter={() => warmPdf()}
@@ -690,24 +937,26 @@ const CandidateCard = memo(function CandidateCard({
         if (e.currentTarget.dataset.dragged) return;
         onOpenCv(p);
       }}
-      className="cursor-grab select-none rounded-[0.9rem] border border-[#eef0f3] bg-white p-[max(1rem,12px)]"
+      className="cursor-grab select-none rounded-md border border-border bg-white p-[max(1rem,12px)] data-[locked]:cursor-default data-[locked]:bg-canvas"
     >
       <div className="flex items-start gap-[max(0.6rem,7px)]">
-        <span className="flex size-[max(2.4rem,32px)] shrink-0 items-center justify-center rounded-full bg-[#e8f1fb] text-chip font-semibold text-[#4a78b0]">
+        <span className="flex size-[max(2.4rem,32px)] shrink-0 items-center justify-center rounded-full bg-info-soft text-chip font-semibold text-info">
           {initials(p.name)}
         </span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-card-name font-semibold leading-tight text-ink">{p.name}</p>
-          <p className="truncate text-card-sub text-muted">{p.title}</p>
+          <p className="truncate text-card-sub text-ink-2">{p.title}</p>
         </div>
+        {p.addOn && <span className="shrink-0 rounded-md bg-info-soft px-1.5 py-0.5 text-chip font-medium text-info">Add-on</span>}
+        {p.backup && <span className="shrink-0 rounded-md bg-violet-soft px-1.5 py-0.5 text-chip font-medium text-violet">Backup</span>}
         <LinkedInIcon />
       </div>
 
-      <div className="mt-[max(0.8rem,9px)] space-y-[max(0.4rem,4px)] text-card-line text-[#3d4240]">
+      <div className="mt-[max(0.8rem,9px)] space-y-[max(0.4rem,4px)] text-card-line text-ink-2">
         <p className="truncate">C : {p.company}</p>
         <p className="flex items-center">
           <span className="flex-1 truncate">L : {p.location}</span>
-          <span aria-hidden="true" className="mx-2 h-[1em] w-px bg-[#3d4240]" />
+          <span aria-hidden="true" className="mx-2 h-[1em] w-px bg-ink-2" />
           <span className="flex-1 truncate pl-2">E : {p.years}</span>
         </p>
         <p className="truncate">P : {p.phone}</p>
@@ -724,25 +973,40 @@ const CandidateCard = memo(function CandidateCard({
             onOpenCv(p);
           }}
           aria-label={`Open the CV of ${p.name}`}
-          className="cursor-pointer rounded-md bg-[#f0f1f3] px-1.5 py-0.5 text-ink transition-colors hover:bg-pill-line hover:text-white"
+          className="cursor-pointer rounded-md bg-surface-3 px-1.5 py-0.5 text-ink transition-colors hover:bg-brand hover:text-white"
         >
           CV
         </button>
-        <span className="rounded-md bg-[#f0f1f3] px-1.5 py-0.5 text-ink">Salary</span>
-        <span className="rounded-md bg-[#fdf1dc] px-1.5 py-0.5 text-[#d48806]">Notice Period</span>
-        <button
-          type="button"
-          aria-label={`More for ${p.name}`}
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => e.stopPropagation()}
-          className="ml-auto rounded p-0.5 text-ink hover:bg-soft"
-        >
-          <svg viewBox="0 0 24 24" fill="currentColor" className="size-[max(0.9rem,12px)]" aria-hidden="true">
-            <circle cx="12" cy="5" r="1.8" />
-            <circle cx="12" cy="12" r="1.8" />
-            <circle cx="12" cy="19" r="1.8" />
-          </svg>
-        </button>
+        {chip("Salary")}
+        {chip("Notice Period")}
+        {p.lockedBy ? (
+          // Another TA's candidate: no menu, no move (the TA System's collision lock).
+          <span className="ml-auto flex min-w-0 items-center gap-1 text-ink-2" title={`Shortlisted by ${p.lockedBy}. You cannot contact.`}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-[max(0.8rem,11px)] shrink-0" aria-hidden="true">
+              <rect x="5" y="11" width="14" height="9" rx="2" />
+              <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+            </svg>
+            <span className="truncate">{p.lockedBy}&rsquo;s</span>
+          </span>
+        ) : (
+          <button
+            type="button"
+            aria-label={`Move or mark ${p.name}`}
+            aria-haspopup="menu"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onMenu(p, stage, e.currentTarget);
+            }}
+            className="ml-auto rounded p-0.5 text-ink hover:bg-surface-2"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" className="size-[max(0.9rem,12px)]" aria-hidden="true">
+              <circle cx="12" cy="5" r="1.8" />
+              <circle cx="12" cy="12" r="1.8" />
+              <circle cx="12" cy="19" r="1.8" />
+            </svg>
+          </button>
+        )}
       </div>
     </article>
   );
@@ -754,10 +1018,10 @@ function ListView({ board, match }: { board: Record<string, Card[]>; match: (p: 
   return (
     <div className="min-h-0 flex-1 overflow-auto px-[max(1.5rem,14px)] [scrollbar-width:thin]">
       <table className="w-full text-left text-card-line">
-        <thead className="sticky top-0 bg-white text-muted">
+        <thead className="sticky top-0 bg-white text-ink-2">
           <tr>
             {["Name", "Stage", "Company", "Location", "Experience", "Phone", "Email"].map((h) => (
-              <th key={h} className="border-b border-line py-2 pr-4 font-medium">
+              <th key={h} className="border-b border-border py-2 pr-4 font-medium">
                 {h}
               </th>
             ))}
@@ -765,17 +1029,17 @@ function ListView({ board, match }: { board: Record<string, Card[]>; match: (p: 
         </thead>
         <tbody>
           {rows.map(({ p, stage }) => (
-            <tr key={p.id} className="hover:bg-soft">
-              <td className="border-b border-line py-2 pr-4 font-medium text-ink">{p.name}</td>
-              <td className="border-b border-line py-2 pr-4">
+            <tr key={p.id} className="hover:bg-surface-2">
+              <td className="border-b border-border py-2 pr-4 font-medium text-ink">{p.name}</td>
+              <td className="border-b border-border py-2 pr-4">
                 <span className="mr-1.5 inline-block size-2 rounded-full" style={{ background: stage.dot }} />
                 {stage.name}
               </td>
-              <td className="border-b border-line py-2 pr-4">{p.company}</td>
-              <td className="border-b border-line py-2 pr-4">{p.location}</td>
-              <td className="border-b border-line py-2 pr-4">{p.years}</td>
-              <td className="border-b border-line py-2 pr-4">{p.phone}</td>
-              <td className="border-b border-line py-2 pr-4">{p.email}</td>
+              <td className="border-b border-border py-2 pr-4">{p.company}</td>
+              <td className="border-b border-border py-2 pr-4">{p.location}</td>
+              <td className="border-b border-border py-2 pr-4">{p.years}</td>
+              <td className="border-b border-border py-2 pr-4">{p.phone}</td>
+              <td className="border-b border-border py-2 pr-4">{p.email}</td>
             </tr>
           ))}
         </tbody>
@@ -808,7 +1072,7 @@ function LinkedInIcon() {
 }
 function SearchIcon() {
   return (
-    <svg {...stroke} className={ICON + " text-muted"}>
+    <svg {...stroke} className={ICON + " text-ink-2"}>
       <circle cx="11" cy="11" r="7" />
       <path d="m20 20-3.5-3.5" />
     </svg>

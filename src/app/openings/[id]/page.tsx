@@ -37,19 +37,19 @@ const HEADHUNTING: readonly (readonly [string, WorkView])[] = [
 // Sizes are on Tailwind's rem scale (2.125rem = 34px at 1920) so they follow
 // the window width; see globals.css. The px floors keep them usable on a laptop.
 const PILL =
-  "flex h-[max(2.125rem,26px)] items-center gap-1.5 rounded-full border-[1.5px] border-pill-line bg-white px-3.75 text-pill";
+  "flex h-[max(2.125rem,26px)] items-center gap-1.5 rounded-full border-[1.5px] border-brand bg-white px-3.75 text-pill";
 
 // The two menus on the title row (same options as the TA System).
 const STATUS: MenuOption[] = [
-  { value: "Active", label: "Active", dot: "#1d4d3a" },
-  { value: "On hold", label: "On hold", dot: "#9a6b12" },
-  { value: "Placed", label: "Placed", dot: "#8c9090" },
-  { value: "Closed / Lost", label: "Closed / Lost", dot: "#c9cccc" },
+  { value: "Active", label: "Active", dot: "var(--color-brand)" },
+  { value: "On hold", label: "On hold", dot: "var(--color-warn)" },
+  { value: "Placed", label: "Placed", dot: "var(--color-ink-3)" },
+  { value: "Closed / Lost", label: "Closed / Lost", dot: "var(--color-border-strong)" },
 ];
 const STAGE: MenuOption[] = [
-  { value: "100%", label: "100%", hint: "Full hunt", dot: "#1d4d3a" },
-  { value: "Follow-up", label: "Follow-up", hint: "Chasing follow-up", dot: "#9a6b12" },
-  { value: "Add-on", label: "Add-on", hint: "Additional sourcing", dot: "#0ea5e9" },
+  { value: "100%", label: "100%", hint: "Full hunt", dot: "var(--color-brand)" },
+  { value: "Follow-up", label: "Follow-up", hint: "Chasing follow-up", dot: "var(--color-warn)" },
+  { value: "Add-on", label: "Add-on", hint: "Additional sourcing", dot: "var(--color-info)" },
 ];
 
 function Divider() {
@@ -89,7 +89,7 @@ function Column({
           // different row to row) with one colour, fading out to the right.
           <li
             key={path}
-            className="border-b border-solid [border-image:linear-gradient(to_right,#e4e7e7,#e4e7e700)_1] md:min-h-0"
+            className="border-b border-solid [border-image:linear-gradient(to_right,var(--color-border),transparent)_1] md:min-h-0"
           >
             <RowLink href={`${base}/${path}`} view={inPlace ? (path as WorkView) : undefined}>
               {label}
@@ -142,12 +142,12 @@ export default async function OpeningPage({ params }: PageProps<"/openings/[id]"
       </div>
 
       {/* Takes the height left in the window, up to the design's own 706px. */}
-      <div className="relative mt-12.5 grid min-h-0 flex-1 rounded-[1.75rem] bg-white max-md:flex-none md:max-h-[44.125rem] md:grid-cols-2">
+      <div className="relative mt-12.5 grid min-h-0 flex-1 rounded-lg bg-white max-md:flex-none md:max-h-[44.125rem] md:grid-cols-2">
         <Column name="ATS" items={ATS} base={base} first inPlace />
         <Column name="Headhunting" items={HEADHUNTING} base={base} inPlace />
         <span
           aria-hidden="true"
-          className="absolute bottom-11.25 left-1/2 top-6.5 hidden w-px bg-line md:block"
+          className="absolute bottom-11.25 left-1/2 top-6.5 hidden w-px bg-border md:block"
         />
       </div>
         </>

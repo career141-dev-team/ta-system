@@ -40,7 +40,7 @@ export function NavLinks({ pathname = "" }: { pathname?: string }) {
         data-glow
         aria-hidden="true"
         style={{ opacity: 0 }}
-        className="pointer-events-none absolute left-0 top-0 rounded-full bg-soft"
+        className="pointer-events-none absolute left-0 top-0 rounded-full bg-surface-2"
       />
       {LINKS.map(([label, href]) => {
         const active = pathname === href || pathname.startsWith(href + "/");
@@ -54,7 +54,7 @@ export function NavLinks({ pathname = "" }: { pathname?: string }) {
             onMouseEnter={(e) => moveTo(e.currentTarget)}
             className={
               "relative flex h-[max(2.5rem,34px)] items-center rounded-full px-[max(1.125rem,12px)] transition-colors " +
-              (active ? "bg-soft text-ink" : "text-muted hover:text-ink")
+              (active ? "bg-surface-2 text-ink" : "text-ink-2 hover:text-ink")
             }
           >
             {label}

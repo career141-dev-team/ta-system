@@ -130,7 +130,7 @@ export default function PillMenu({
     <div ref={root} className="relative" onMouseEnter={hoverIn} onMouseLeave={hoverOut}>
       <button
         type="button"
-        className={pillClass + " transition-colors hover:bg-soft" + (open ? " bg-soft" : "")}
+        className={pillClass + " transition-colors hover:bg-surface-2" + (open ? " bg-surface-2" : "")}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => (open ? setOpen(false) : show())}
@@ -159,15 +159,15 @@ export default function PillMenu({
         <div
           ref={panel}
           role="menu"
-          className="w-[max(15rem,200px)] rounded-2xl border border-line bg-white py-2 shadow-[0_8px_30px_rgba(0,0,0,0.12)]"
+          className="w-[max(15rem,200px)] rounded-2xl border border-border bg-white py-2 shadow-float"
         >
-          {title && <p className="px-4 pb-1 pt-1.5 text-pill font-semibold text-muted">{title}</p>}
+          {title && <p className="px-4 pb-1 pt-1.5 text-pill font-semibold text-ink-2">{title}</p>}
           <div data-glide className="relative" onMouseLeave={(e) => glide.out(glowOf(e.currentTarget))}>
             <span
               data-glow
               aria-hidden="true"
               style={{ opacity: 0 }}
-              className="pointer-events-none absolute inset-x-2 top-0 rounded-xl bg-soft"
+              className="pointer-events-none absolute inset-x-2 top-0 rounded-xl bg-surface-2"
             />
             {options.map((o) => (
               <button
@@ -186,11 +186,11 @@ export default function PillMenu({
                 {o.dot && <Dot colour={o.dot} />}
                 <span className="min-w-0 flex-1">
                   <span className="block text-nav font-semibold">{o.label}</span>
-                  {o.hint && <span className="block text-pill text-muted">{o.hint}</span>}
+                  {o.hint && <span className="block text-pill text-ink-2">{o.hint}</span>}
                 </span>
                 {o.value === value &&
                   (mark === "now" ? (
-                    <span className="text-pill font-semibold text-muted">now</span>
+                    <span className="text-pill font-semibold text-ink-2">now</span>
                   ) : (
                     <svg
                       viewBox="0 0 24 24"

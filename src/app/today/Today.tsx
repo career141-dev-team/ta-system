@@ -28,8 +28,9 @@ function readNow() {
   return `${part}|${date}`;
 }
 
-/** T1 · Today: the greeting, what is waiting, and Start workday over a soft glow. */
-export default function Today() {
+/** T1 · Today: the greeting, what is waiting, and Start workday over a soft glow.
+ *  Start workday opens T2 (TodayScreen). */
+export default function Today({ onStart }: { onStart: () => void }) {
   const root = useRef<HTMLDivElement>(null);
   const [part, date] = useSyncExternalStore(noop, readNow, () => "morning|").split("|");
   const first = USER.name.split(" ")[0];
@@ -64,16 +65,16 @@ export default function Today() {
       {/* The glow: a violet, a blue and a green light behind the button, drawn with
           gradients alone (no blur filter), so it costs the browser almost nothing. */}
       <div data-glow aria-hidden="true" className="pointer-events-none absolute left-1/2 top-[64%] h-[78%] w-[62%] -translate-x-1/2 -translate-y-1/2">
-        <div data-glow-a className="absolute inset-y-0 left-0 w-[60%] bg-[radial-gradient(closest-side,rgba(167,139,250,0.30),transparent)]" />
-        <div className="absolute inset-y-[8%] left-[25%] w-[50%] bg-[radial-gradient(closest-side,rgba(125,182,248,0.28),transparent)]" />
-        <div data-glow-b className="absolute inset-y-0 right-0 w-[60%] bg-[radial-gradient(closest-side,rgba(110,231,183,0.30),transparent)]" />
+        <div data-glow-a className="absolute inset-y-0 left-0 w-[60%] bg-[radial-gradient(closest-side,color-mix(in_srgb,var(--color-aura-1)_30%,transparent),transparent)]" />
+        <div className="absolute inset-y-[8%] left-[25%] w-[50%] bg-[radial-gradient(closest-side,color-mix(in_srgb,var(--color-aura-2)_22%,transparent),transparent)]" />
+        <div data-glow-b className="absolute inset-y-0 right-0 w-[60%] bg-[radial-gradient(closest-side,color-mix(in_srgb,var(--color-aura-3)_28%,transparent),transparent)]" />
       </div>
 
       <div className="relative my-auto flex flex-col items-center py-6 text-center">
-        <p data-date className="min-h-[1.5em] text-[max(0.875rem,12px)] text-[#8a939c]">
+        <p data-date className="min-h-[1.5em] text-[max(0.875rem,12px)] text-ink-3">
           {date}
         </p>
-        <h1 className="mt-[max(1.25rem,8px)] text-[max(4.75rem,40px)] font-light leading-[1.15] tracking-[-0.02em] text-ink">
+        <h1 className="mt-[max(1.25rem,8px)] text-display font-light text-ink">
           {/* Each word rises from behind its own edge. The space sits between the
               words, outside them: inside an inline-block it was dropped. */}
           {words.map((w, i) => (
@@ -87,21 +88,22 @@ export default function Today() {
             </Fragment>
           ))}
         </h1>
-        <p data-line className="mt-[max(1.25rem,8px)] text-[max(1.125rem,14px)] text-[#4e5862]">
+        <p data-line className="mt-[max(1.25rem,8px)] text-[max(1.125rem,14px)] text-ink-2">
           {WAITING}
         </p>
 
         <button
           type="button"
           data-start
-          className="group mt-[max(4rem,22px)] flex h-[max(4.75rem,52px)] items-center gap-[max(1rem,10px)] rounded-full bg-[#1a1c1e] pl-[max(0.625rem,7px)] pr-[max(2.125rem,20px)] text-[max(1.3125rem,16px)] font-medium text-white shadow-[0_18px_40px_-12px_rgba(15,23,31,0.45)] transition-[scale,box-shadow] hover:shadow-[0_22px_48px_-12px_rgba(15,23,31,0.55)]"
+          onClick={onStart}
+          className="group mt-[max(4rem,22px)] flex h-[max(4.75rem,52px)] items-center gap-[max(1rem,10px)] rounded-full bg-ink pl-[max(0.625rem,7px)] pr-[max(2.125rem,20px)] text-[max(1.3125rem,16px)] font-medium text-white shadow-[0_18px_40px_-12px_rgba(15,23,31,0.45)] transition-[scale,box-shadow] hover:shadow-[0_22px_48px_-12px_rgba(15,23,31,0.55)]"
         >
           <span className="flex size-[max(3.5rem,38px)] shrink-0 items-center justify-center overflow-hidden rounded-full bg-black">
             <Image src="/aura-mark.png" alt="" width={56} height={56} priority className="size-full" />
           </span>
           Start workday
         </button>
-        <p data-caption className="mt-[max(1.75rem,12px)] text-[max(0.875rem,12px)] text-[#8a939c]">
+        <p data-caption className="mt-[max(1.75rem,12px)] text-[max(0.875rem,12px)] text-ink-3">
           AURA will brief you and plan the day with you.
         </p>
       </div>
@@ -110,7 +112,7 @@ export default function Today() {
         {STATS.map(([n, label]) => (
           <li key={label} data-stat className="flex items-baseline gap-[max(0.5rem,6px)]">
             <span className="text-[max(1rem,14px)] font-medium text-ink">{n}</span>
-            <span className="text-[max(0.875rem,12px)] text-[#8a939c]">{label}</span>
+            <span className="text-[max(0.875rem,12px)] text-ink-3">{label}</span>
           </li>
         ))}
       </ul>

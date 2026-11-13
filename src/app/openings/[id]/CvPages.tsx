@@ -124,7 +124,7 @@ export default function CvPages({ src, fit }: { src: string; fit: "page" | "widt
       canvas.getContext("2d")?.drawImage(back, 0, 0);
       if (n === 1 && !shown.current) {
         shown.current = true;
-        gsap.fromTo(root.querySelectorAll("canvas"), { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: DUR.base, stagger: 0.08 });
+        gsap.fromTo(root.querySelectorAll("canvas"), { opacity: 0 }, { opacity: 1, duration: DUR.fast });
       }
     };
 
@@ -152,11 +152,11 @@ export default function CvPages({ src, fit }: { src: string; fit: "page" | "widt
   return (
     <div ref={box} className="h-full w-full overflow-y-auto [scrollbar-width:thin]">
       {failed ? (
-        <p className="flex h-full items-center justify-center text-[max(0.85rem,12px)] text-muted">This CV could not be opened.</p>
+        <p className="flex h-full items-center justify-center text-[max(0.85rem,12px)] text-ink-2">This CV could not be opened.</p>
       ) : !doc ? (
         // Until the file is read: a blank page of the right shape, so nothing jumps.
         <div className="flex h-full items-start justify-center p-3">
-          <div className="aspect-[1/1.414] h-full max-w-full animate-pulse rounded-md bg-[#eef0f3]" />
+          <div className="aspect-[1/1.414] h-full max-w-full animate-pulse rounded-md bg-surface-3" />
         </div>
       ) : (
         <div className="flex flex-col items-center gap-3">
@@ -167,7 +167,7 @@ export default function CvPages({ src, fit }: { src: string; fit: "page" | "widt
               aria-label={`CV page ${i + 1} of ${doc.numPages}`}
               // Unseen until the first page is drawn; then all fade in together.
               style={{ opacity: 0 }}
-              className="rounded-sm bg-white shadow-[0_6px_24px_rgba(0,0,0,0.10)]"
+              className="rounded-sm bg-white shadow-float"
             />
           ))}
         </div>
