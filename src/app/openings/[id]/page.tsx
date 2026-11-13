@@ -15,8 +15,7 @@ const OPENING = {
   targetCvs: 20,
 };
 
-// The paths under an opening are the TA System's own. The ATS ones open as work
-// views in place (OpeningView); Headhunting rows are still links.
+// Every row opens its work view in place (OpeningView), ATS and Headhunting alike.
 const ATS: readonly (readonly [string, WorkView])[] = [
   ["Pipeline", "pipeline"],
   ["LinkedIn Job", "linkedin-job"],
@@ -28,12 +27,12 @@ const ATS: readonly (readonly [string, WorkView])[] = [
   ["Midday Email", "midday"],
 ];
 
-const HEADHUNTING = [
-  ["Research", "hh/research"],
-  ["Suggestions", "hh/suggestions"],
-  ["Excel Tables", "hh"],
-  ["Referee Calls", "hh/referees"],
-] as const;
+const HEADHUNTING: readonly (readonly [string, WorkView])[] = [
+  ["Research", "hh-research"],
+  ["Suggestions", "hh-suggestions"],
+  ["Excel Tables", "hh-tables"],
+  ["Referee Calls", "hh-referees"],
+];
 
 // Sizes are on Tailwind's rem scale (2.125rem = 34px at 1920) so they follow
 // the window width; see globals.css. The px floors keep them usable on a laptop.
@@ -143,9 +142,9 @@ export default async function OpeningPage({ params }: PageProps<"/openings/[id]"
       </div>
 
       {/* Takes the height left in the window, up to the design's own 706px. */}
-      <div className="relative mt-12.5 grid min-h-0 flex-1 rounded-[1.75rem] bg-white md:max-h-[44.125rem] md:grid-cols-2">
+      <div className="relative mt-12.5 grid min-h-0 flex-1 rounded-[1.75rem] bg-white max-md:flex-none md:max-h-[44.125rem] md:grid-cols-2">
         <Column name="ATS" items={ATS} base={base} first inPlace />
-        <Column name="Headhunting" items={HEADHUNTING} base={base} />
+        <Column name="Headhunting" items={HEADHUNTING} base={base} inPlace />
         <span
           aria-hidden="true"
           className="absolute bottom-11.25 left-1/2 top-6.5 hidden w-px bg-line md:block"

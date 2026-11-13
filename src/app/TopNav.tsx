@@ -1,10 +1,9 @@
 import { Suspense } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import ActiveNavLinks, { NavLinks } from "./NavLinks";
+import { USER } from "@/lib/user";
+import ActiveNavLinks, { NavLinks, SearchShortcut } from "./NavLinks";
 
-// Placeholder until sign-in is wired: the person shown in the design.
-const USER = { name: "Chathura Sampath", role: "Talent Acquisition" };
 
 const CIRCLE =
   "flex size-[max(2.5rem,34px)] shrink-0 items-center justify-center rounded-full";
@@ -26,15 +25,18 @@ function SearchIcon({ className }: { className: string }) {
   );
 }
 
-// Sizes are on Tailwind's rem scale (5rem = 80px at 1920) so the bar follows
-// the window width; see the html rule in globals.css. Each max(..., Npx) is a
-// floor: on a laptop window (about 1270 wide) the bar had scaled down until
-// the logo and links were too small to read (owner, 11 Nov 2026).
+// The owner's second top bar (TopNavV2, 12 Nov 2026): five links, "Search or ask
+// AURA" and a soft shadow. Sizes are on Tailwind's rem scale (5rem = 80px at
+// 1920) so the bar follows the window width; see the html rule in globals.css.
+// Each max(..., Npx) is a floor: on a laptop window (about 1270 wide) the bar
+// had scaled down until the logo and links were too small to read (owner, 11 Nov
+// 2026). With five links the search box fits a laptop window too, so it is
+// always the box.
 //
-// Those floors cost width, and on a laptop the eleven links, the logo and the
-// name cannot also share the bar with a search box. So under a 1520 window the
-// search box is a round button that opens the search page; from 1520 up it is
-// the box in the design.
+// On a phone or tablet (under 1024) the bar is two rows: the logo, search, bell and the
+// person on top, and the five links underneath, sliding sideways when they do
+// not fit; on a phone the search box becomes a round button (13 Nov 2026: "responsive for
+// mobile and all devices").
 export default function TopNav() {
   const initials = USER.name
     .split(" ")
@@ -42,7 +44,10 @@ export default function TopNav() {
     .join("");
 
   return (
-    <header id="topnav" className="mx-11.25 mt-10.5 flex h-[max(5rem,64px)] shrink-0 items-center rounded-full bg-white pl-8 pr-9.75">
+    <header
+      id="topnav"
+      className="mx-11 mt-[max(2.125rem,14px)] flex h-[max(5rem,64px)] shrink-0 items-center rounded-full bg-white pl-[max(1.875rem,18px)] pr-[max(1.5rem,14px)] max-lg:h-auto max-lg:flex-wrap max-lg:rounded-[1.75rem] max-lg:py-2.5 max-md:mx-3 max-md:mt-3 max-md:px-4 shadow-[0_6px_18px_-4px_rgba(15,23,31,0.05),0_1px_2px_rgba(15,23,31,0.04)]"
+    >
       <Link href="/" className="relative -top-1 shrink-0">
         <Image
           src="/career141-lockup.png"
@@ -61,22 +66,26 @@ export default function TopNav() {
       <form
         action="/search"
         role="search"
-        className="ml-auto hidden h-11 w-78 min-w-40 shrink-[999] items-center gap-2 rounded-full bg-soft px-3.75 min-[1520px]:flex has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-brand/30"
+        className="ml-auto hidden h-[max(2.875rem,36px)] w-[max(21.25rem,180px)] sm:flex min-w-36 shrink items-center gap-[max(0.625rem,6px)] rounded-full bg-soft pl-[max(1.125rem,12px)] pr-[max(0.625rem,6px)] has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-brand/30"
       >
         <SearchIcon className="size-[max(0.9375rem,13px)] shrink-0 text-muted" />
         <input
           name="q"
           type="search"
-          placeholder="Search opening and candidates"
-          aria-label="Search opening and candidates"
-          className="min-w-0 flex-1 text-ellipsis bg-transparent text-nav text-ink outline-none placeholder:text-[#3d4240]"
+          placeholder="Search or ask AURA"
+          aria-label="Search or ask AURA"
+          className="min-w-0 flex-1 text-ellipsis bg-transparent text-nav text-ink outline-none placeholder:text-muted"
         />
+        <kbd className="shrink-0 rounded-md bg-white px-[max(0.375rem,4px)] py-px font-sans text-[max(0.6875rem,10px)] text-muted">
+          ⌘K
+        </kbd>
+        <SearchShortcut />
       </form>
       <Link
         href="/search"
         prefetch={false}
-        aria-label="Search opening and candidates"
-        className={CIRCLE + " ml-auto bg-soft text-ink min-[1520px]:hidden"}
+        aria-label="Search or ask AURA"
+        className={CIRCLE + " ml-auto bg-soft text-ink sm:hidden"}
       >
         <SearchIcon className="size-[45%]" />
       </Link>
@@ -107,7 +116,7 @@ export default function TopNav() {
         <span aria-hidden="true" className={CIRCLE + " bg-ink text-nav font-medium text-white"}>
           {initials}
         </span>
-        <span className="hidden leading-tight lg:block">
+        <span className="hidden leading-tight min-[1200px]:block">
           <span className="block text-nav font-semibold">{USER.name}</span>
           <span className="block text-nav text-muted">{USER.role}</span>
         </span>

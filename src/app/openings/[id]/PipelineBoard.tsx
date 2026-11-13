@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import { memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { DUR, EASE, gsap, useExit, useGSAP } from "@/lib/gsap";
-import { useOpeningView } from "./view";
+import { SHOW_TABS } from "./view";
 import PillMenu, { type MenuOption } from "./PillMenu";
 import TickList from "./TickList";
 import { warmPdf } from "./CvPages";
@@ -124,7 +124,7 @@ const initials = (name: string) =>
 const FADE_OUT = { opacity: 0 };
 
 const TOOL_PILL =
-  "flex h-[max(2.4rem,33px)] items-center gap-1.5 rounded-full border border-[#e3e5e8] bg-white px-[max(1rem,13px)] text-[max(0.85rem,12.5px)] text-ink";
+  "flex h-[max(2.4rem,33px)] items-center gap-1.5 whitespace-nowrap rounded-full border border-[#e3e5e8] bg-white px-[max(1rem,13px)] text-[max(0.85rem,12.5px)] text-ink";
 
 export default function PipelineBoard() {
   const [mode, setMode] = useState<"board" | "list">("board");
@@ -181,6 +181,10 @@ export default function PipelineBoard() {
    */
   const pickUp = useCallback((e: React.PointerEvent<HTMLElement>, card: Card, from: string) => {
     if (e.button !== 0) return;
+    // A finger scrolls the column and the board; it does not carry a card (13 Nov
+    // 2026). ponytail: no drag and drop by touch; a long press to pick up is the
+    // way to add it if phones and tablets need to move candidates.
+    if (e.pointerType === "touch") return;
     const el = e.currentTarget;
     const sx = e.clientX;
     const sy = e.clientY;
@@ -415,8 +419,9 @@ export default function PipelineBoard() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* Row one: back, and the two actions. */}
-      <div data-intro className="flex items-center px-[max(1.5rem,14px)] pt-[max(1.4rem,14px)]">
+      {/* Row one: back, and the two actions. On a phone the rows sit lower, clear
+          of the view's name notch, and row two wraps (13 Nov 2026). */}
+      <div data-intro className="flex items-center px-[max(1.5rem,14px)] pt-[max(1.4rem,14px)] max-md:pt-11">
         <BackButton />
         <div className="ml-auto flex items-center gap-[max(0.6rem,8px)]">
           <button type="button" className={TOOL_PILL}>
@@ -425,7 +430,7 @@ export default function PipelineBoard() {
           </button>
           <button
             type="button"
-            className="flex h-[max(2.6rem,35px)] items-center gap-1.5 rounded-full bg-pill-line px-[max(1.3rem,16px)] text-[max(0.85rem,12.5px)] font-medium text-white hover:bg-[#163d2e]"
+            className="flex h-[max(2.6rem,35px)] items-center gap-1.5 whitespace-nowrap rounded-full bg-pill-line px-[max(1.3rem,16px)] text-[max(0.85rem,12.5px)] font-medium text-white hover:bg-[#163d2e]"
           >
             <PlusIcon />
             Add candidate
@@ -433,9 +438,12 @@ export default function PipelineBoard() {
         </div>
       </div>
 
-      {/* Row two: search, filters, and Board / List. */}
-      <div data-intro className="flex items-center gap-[max(0.5rem,6px)] px-[max(1.5rem,14px)] pb-[max(1.2rem,12px)] pt-[max(1.1rem,11px)]">
-        <label className="flex h-[max(2.4rem,33px)] w-[max(15.5rem,200px)] items-center gap-2 rounded-full border border-[#e3e5e8] bg-white px-[max(1rem,13px)] has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-brand/30">
+      {/* Row two: search, filters, and Board / List. It sits above the board
+          (relative z-20): the entrance animation leaves this row as its own layer,
+          so a filter menu's own z-index counted only inside the row and the menus
+          opened behind the cards (owner, 12 Nov 2026). */}
+      <div data-intro className="relative z-20 flex items-center gap-[max(0.5rem,6px)] px-[max(1.5rem,14px)] flex-wrap pb-[max(1.2rem,12px)] pt-[max(1.1rem,11px)]">
+        <label className="flex h-[max(2.4rem,33px)] w-[max(15.5rem,200px)] items-center gap-2 max-md:w-full rounded-full border border-[#e3e5e8] bg-white px-[max(1rem,13px)] has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-brand/30">
           <SearchIcon />
           <input
             type="search"
@@ -592,7 +600,7 @@ function MovedNotice({
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="move-title"
-        className="relative w-[max(26rem,320px)] rounded-[1.4rem] bg-white p-[max(1.6rem,20px)] shadow-[0_30px_80px_rgba(17,44,32,0.25)]"
+        className="relative w-[max(26rem,320px)] max-w-[calc(100vw-24px)] rounded-[1.4rem] bg-white p-[max(1.6rem,20px)] shadow-[0_30px_80px_rgba(17,44,32,0.25)]"
       >
         <h2 id="move-title" className="flex items-center gap-2 text-[max(1.05rem,15px)] font-semibold text-ink">
           <span className="flex size-[max(1.4rem,19px)] items-center justify-center rounded-full bg-[#e6f4ec] text-brand">
@@ -629,14 +637,16 @@ function MovedNotice({
   );
 }
 
-/** The round back arrow: returns to the opening's own screen. */
+/** The round back arrow. It does not leave the view at once: it raises the bottom
+ *  bar, whose first tab is the opening's Overview, so the person picks where to go
+ *  - the overview or any view they had open (owner, 12 Nov 2026: "the back button
+ *  needs to show the bottom bar"). The bar listens for SHOW_TABS (FocusChrome). */
 export function BackButton() {
-  const { go } = useOpeningView();
   return (
     <button
       type="button"
-      aria-label="Back to the opening"
-      onClick={() => go("overview")}
+      aria-label="Back: choose where to go"
+      onClick={() => window.dispatchEvent(new Event(SHOW_TABS))}
       className="flex size-[max(2.6rem,35px)] shrink-0 items-center justify-center rounded-full border-[1.5px] border-pill-line text-pill-line transition-colors hover:bg-pill-line hover:text-white"
     >
       <svg
@@ -680,7 +690,7 @@ const CandidateCard = memo(function CandidateCard({
         if (e.currentTarget.dataset.dragged) return;
         onOpenCv(p);
       }}
-      className="cursor-grab touch-none select-none rounded-[0.9rem] border border-[#eef0f3] bg-white p-[max(1rem,12px)]"
+      className="cursor-grab select-none rounded-[0.9rem] border border-[#eef0f3] bg-white p-[max(1rem,12px)]"
     >
       <div className="flex items-start gap-[max(0.6rem,7px)]">
         <span className="flex size-[max(2.4rem,32px)] shrink-0 items-center justify-center rounded-full bg-[#e8f1fb] text-chip font-semibold text-[#4a78b0]">

@@ -16,12 +16,16 @@ const nextConfig: NextConfig = {
         images: { unoptimized: true },
       }
     : {
-        // Placeholder: there is no home screen in the design yet, so the root
-        // opens the one screen that exists. Done here, not with redirect() in a
-        // page: under Cache Components that raised a dev "Issue" on every visit
-        // to "/". The static site does the same with public/_redirects.
+        // The root opens Today, the first screen after sign-in (owner's T1 design,
+        // 12 Nov 2026). Openings opens the one opening built so far, until the
+        // Openings list (O1) exists. Done here, not with redirect() in a page:
+        // under Cache Components that raised a dev "Issue" on every visit. The
+        // static site does the same with public/_redirects.
         async redirects() {
-          return [{ source: "/", destination: "/openings/demo", permanent: false }];
+          return [
+            { source: "/", destination: "/today", permanent: false },
+            { source: "/openings", destination: "/openings/demo", permanent: false },
+          ];
         },
       }),
   // Static export cannot pre-render in parts, so the static build leaves these off.

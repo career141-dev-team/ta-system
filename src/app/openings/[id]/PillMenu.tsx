@@ -104,6 +104,11 @@ export default function PillMenu({
   useGSAP(
     () => {
       if (!open || !panel.current) return;
+      // On a narrow screen a menu near the right edge slides left to stay on it.
+      const wrap = panel.current.parentElement!;
+      wrap.style.left = "0px";
+      const over = wrap.getBoundingClientRect().right - (document.documentElement.clientWidth - 8);
+      if (over > 0) wrap.style.left = -over + "px";
       gsap.fromTo(
         panel.current,
         { opacity: 0, y: -6, scale: 0.97 },

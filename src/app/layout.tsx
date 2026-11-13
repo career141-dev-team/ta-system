@@ -16,12 +16,14 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className="antialiased">
-      {/* From a tablet up the page is exactly one window tall, so a screen can
-          fit itself to the height and nothing needs scrolling.
+      {/* On every device the page is exactly one window tall, so a screen fits
+          itself to the height and anything longer scrolls inside its own card. A
+          phone once got a page that grew without end: the board's columns fill
+          their height, so an unbounded page kept growing (13 Nov 2026).
           suppressHydrationWarning: browser extensions (ColorZilla's
           cz-shortcut-listen, Grammarly) write attributes onto <body> before React
           loads; this ignores those attributes only, not the page inside. */}
-      <body suppressHydrationWarning className="board flex min-h-dvh flex-col font-sans text-ink md:h-dvh">
+      <body suppressHydrationWarning className="board flex h-dvh flex-col font-sans text-ink">
         <TopNav />
         {children}
       </body>

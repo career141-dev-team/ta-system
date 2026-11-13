@@ -121,7 +121,9 @@ export default function CvPreview({
           "absolute flex flex-col bg-[#1c1c1c] pr-[2%] shadow-[0_-20px_80px_rgba(0,0,0,0.25)] " +
           (full
             ? "inset-[max(1rem,8px)] rounded-[2.5rem] pl-[3%] pt-[max(3.25rem,24px)]"
-            : "bottom-0 left-[12.3%] top-[11%] w-[75.3%] rounded-t-[3.75rem] pl-[5%] pt-[max(4.75rem,28px)]")
+            : "bottom-0 left-[12.3%] top-[11%] w-[75.3%] rounded-t-[3.75rem] pl-[5%] pt-[max(4.75rem,28px)] " +
+              // A phone: the sheet takes the whole width.
+              "max-md:left-0 max-md:top-[7%] max-md:w-full max-md:rounded-t-[1.75rem] max-md:px-2 max-md:pt-12")
         }
       >
         <button
@@ -142,7 +144,7 @@ export default function CvPreview({
         </button>
         {/* The CV scrolls inside the dark frame; the scrollbar sits in the frame's right gutter. */}
         {src ? (
-          <div className="min-h-0 flex-1 overflow-hidden rounded-t-[2.6rem] bg-[#2a2a2a]">
+          <div className="min-h-0 flex-1 overflow-hidden rounded-t-[2.6rem] bg-[#2a2a2a] max-md:rounded-t-[1.25rem]">
             <CvPages key={src} src={src} fit="width" />
           </div>
         ) : (

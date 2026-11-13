@@ -135,6 +135,9 @@ export default function ScoopsView() {
       if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
       // The big CV viewer is open: the arrows scroll it, not this list.
       if (readingOpen) return;
+      // Scoops stays alive while another view is on screen (OpeningView keeps
+      // opened views); hidden, it must not take the arrows.
+      if (!root.current?.offsetParent) return;
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
       e.preventDefault();
@@ -263,7 +266,7 @@ export default function ScoopsView() {
   const pick = () => fileInput.current?.click();
 
   return (
-    <div ref={root} className="flex min-h-0 flex-1 flex-col px-[max(1.5rem,14px)] pb-[max(1.4rem,12px)] pt-[max(1.4rem,14px)]">
+    <div ref={root} className="flex min-h-0 flex-1 flex-col px-[max(1.5rem,14px)] pb-[max(1.4rem,12px)] pt-[max(1.4rem,14px)] max-md:pt-11">
       <div className="flex items-center">
         <BackButton />
         <div className="ml-auto flex items-center">
@@ -304,7 +307,9 @@ export default function ScoopsView() {
         </div>
       </div>
 
-      <div className="mt-[max(1rem,10px)] grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-[max(4.6rem,20px)] px-[max(0.6rem,4px)]">
+      {/* Side by side from a tablet up; on a phone the list sits on top and the CV
+          under it, each scrolling itself (13 Nov 2026). */}
+      <div className="mt-[max(1rem,10px)] grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-[max(4.6rem,20px)] px-[max(0.6rem,4px)] max-md:grid-cols-1 max-md:grid-rows-[minmax(0,2fr)_minmax(0,3fr)] max-md:gap-4">
         {/* The scooped candidates; CV files dropped anywhere here are uploaded. */}
         <div {...dropZone} className="relative flex min-h-0 flex-col">
           {filterShown && (
