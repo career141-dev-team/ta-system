@@ -7,6 +7,7 @@ import { BackButton } from "./PipelineBoard";
 import CvPages, { warmPdf } from "./CvPages";
 import PillMenu, { type MenuOption } from "./PillMenu";
 import Toast from "./Toast";
+import { EXPERIENCE, NOTICE, inRange } from "./filters";
 import WorkdayBlocked from "./WorkdayBlocked";
 import { useWorkdayGate } from "@/lib/workday";
 
@@ -66,20 +67,6 @@ const MAX_FILES = 10;
 const MAX_BYTES = 10 * 1048576;
 const CV_FILE = /\.(pdf|docx?)$/i;
 
-const EXPERIENCE: MenuOption[] = [
-  { value: "", label: "Any experience" },
-  { value: "0-2", label: "0 to 2 years" },
-  { value: "3-5", label: "3 to 5 years" },
-  { value: "6-9", label: "6 to 9 years" },
-  { value: "10-99", label: "10 years or more" },
-];
-const NOTICE: MenuOption[] = [
-  { value: "", label: "Any notice" },
-  { value: "0-0", label: "Can start now" },
-  { value: "1-30", label: "Up to 1 month" },
-  { value: "31-90", label: "1 to 3 months" },
-  { value: "91-999", label: "Over 3 months" },
-];
 const WHO: MenuOption[] = [
   { value: "", label: "All candidates" },
   { value: "open", label: "Not shortlisted yet" },
@@ -89,12 +76,6 @@ const WHO: MenuOption[] = [
 
 type Filters = { q: string; exp: string; notice: string; who: string };
 const NO_FILTERS: Filters = { q: "", exp: "", notice: "", who: "" };
-
-const inRange = (n: number, r: string) => {
-  if (!r) return true;
-  const [lo, hi] = r.split("-").map(Number);
-  return n >= lo && n <= hi;
-};
 
 function matches(s: Scoop, f: Filters) {
   const q = f.q.trim().toLowerCase();
