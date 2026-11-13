@@ -1,12 +1,14 @@
 import type { NextConfig } from "next";
 
-// `npm run build:static` builds plain HTML/CSS/JS in out/ for the Cloudflare Pages
-// dev link (owner, 12 Nov 2026); npm names the running script in
-// npm_lifecycle_event, so no extra package is needed. The screens hold sample data
-// only, so no server is needed yet. When they read the backend this becomes a
-// server deployment instead.
+// `npm run build:static` (or `npm run build` on Cloudflare Pages) builds plain
+// HTML/CSS/JS in out/ for the Cloudflare Pages dev link (owner, 12 Nov 2026).
+// The screens hold sample data only, so no server is needed yet. When they read
+// the backend this becomes a server deployment instead.
 const staticExport =
-  process.env.npm_lifecycle_event === "build:static" || process.env.STATIC_EXPORT === "1";
+  process.env.npm_lifecycle_event === "build:static" ||
+  process.env.npm_lifecycle_event === "build" ||
+  process.env.STATIC_EXPORT === "1" ||
+  process.env.CF_PAGES === "1";
 
 const nextConfig: NextConfig = {
   ...(staticExport
