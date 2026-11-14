@@ -355,7 +355,7 @@ export default function SuggestionsView() {
   };
 
   return (
-    <div className="flex min-h-0 flex-1 gap-[max(1.5rem,14px)] overflow-y-auto px-[max(2.3rem,14px)] pb-[max(2rem,16px)] pt-[max(2rem,48px)] max-lg:flex-col max-md:pt-14 lg:overflow-hidden">
+    <div className="flex min-h-0 flex-1 gap-[max(1.5rem,14px)] overflow-y-auto px-[max(2.3rem,14px)] pb-[max(2rem,16px)] pt-[max(2rem,48px)] short:pt-[30px] max-lg:flex-col max-md:pt-14 lg:overflow-hidden">
       {/* The people */}
       <div className="flex min-w-0 flex-1 flex-col lg:min-h-0">
         <div className="flex flex-wrap items-center gap-x-[max(1.25rem,10px)] gap-y-3">

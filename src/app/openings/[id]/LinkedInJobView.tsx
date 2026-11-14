@@ -263,7 +263,7 @@ export default function LinkedInJobView() {
   const rejected = STAGES.find((s) => s.name === "Rejected")!;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col px-[max(2.3rem,14px)] pb-[max(2.5rem,12px)] pt-[max(2.8rem,40px)] max-md:overflow-y-auto max-md:pt-11">
+    <div className="flex min-h-0 flex-1 flex-col px-[max(2.3rem,14px)] pb-[max(2.5rem,12px)] pt-[max(2.8rem,40px)] short:pt-[30px] max-md:overflow-y-auto max-md:pt-11">
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,27.5rem)_minmax(0,1fr)] gap-x-[max(1.75rem,14px)] max-md:grid-cols-1 max-md:gap-y-6">
         {/* Posts */}
         <aside className="flex min-h-0 flex-col">
@@ -321,7 +321,7 @@ export default function LinkedInJobView() {
         </aside>
 
         {/* The chosen post (or all posts). Its left border is the design's divider. */}
-        <section ref={side} className="mt-[max(0.7rem,0px)] flex min-h-0 flex-col gap-[max(1.25rem,12px)] border-l border-border pl-[max(1.875rem,14px)] max-md:mt-0 max-md:border-l-0 max-md:pl-0">
+        <section ref={side} className="mt-[max(0.7rem,0px)] flex min-h-0 flex-col gap-[max(1.25rem,12px)] short:overflow-y-auto short:[scrollbar-width:thin] border-l border-border pl-[max(1.875rem,14px)] max-md:mt-0 max-md:border-l-0 max-md:pl-0">
           {gate && <WorkdayBlocked what="shortlist applicants" />}
           {post ? (
             <PostHeader
@@ -391,7 +391,7 @@ export default function LinkedInJobView() {
             )}
           </div>
 
-          <ul className="min-h-0 flex-1 space-y-[max(1.25rem,10px)] overflow-y-auto pb-2 [scrollbar-width:none]">
+          <ul className="min-h-0 flex-1 space-y-[max(1.25rem,10px)] overflow-y-auto pb-2 [scrollbar-width:none] short:flex-none short:overflow-visible">
             {shown.map(({ a, postId, postTitle }) => (
               <li key={postId + a.id} className="flex flex-wrap items-center gap-x-[max(1.125rem,10px)] gap-y-3 rounded-md border border-border bg-surface px-[max(1.375rem,12px)] py-4 shadow-card">
                 {/* The initials tick the row for Shortlist selected (as in Scoops). */}

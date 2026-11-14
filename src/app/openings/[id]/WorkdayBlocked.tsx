@@ -8,7 +8,7 @@ export default function WorkdayBlocked({ what, className = "" }: { what: string;
     <div
       role="note"
       className={
-        "flex flex-wrap items-center gap-x-[max(1rem,10px)] gap-y-2 rounded-md border border-warn/30 bg-warn-soft px-[max(1.4rem,12px)] py-[max(0.8rem,8px)] " +
+        "flex flex-wrap items-center gap-x-[max(1rem,10px)] gap-y-2 rounded-md border border-warn/30 bg-warn-soft px-[max(1.2rem,12px)] py-[max(0.45rem,5px)] " +
         className
       }
     >
@@ -20,7 +20,7 @@ export default function WorkdayBlocked({ what, className = "" }: { what: string;
       </p>
       <Link
         href="/today"
-        className="flex h-[max(2.2rem,30px)] items-center rounded-full bg-ink px-[max(1.1rem,13px)] text-[max(0.85rem,12px)] font-medium text-white hover:bg-black"
+        className="flex h-[max(1.9rem,26px)] items-center rounded-full bg-ink px-[max(1rem,12px)] text-[max(0.85rem,12px)] font-medium text-white hover:bg-black"
       >
         Start workday
       </Link>

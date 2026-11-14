@@ -322,7 +322,7 @@ export default function RefereeCallsView() {
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col px-[max(2.3rem,14px)] pb-[max(1.4rem,12px)] pt-[max(2rem,48px)] max-md:pt-14">
+    <div className="flex min-h-0 flex-1 flex-col px-[max(2.3rem,14px)] pb-[max(1.4rem,12px)] pt-[max(2rem,48px)] short:pt-[30px] max-md:pt-14">
       <div className="flex flex-wrap items-center gap-x-[max(0.9rem,8px)] gap-y-2">
         <BackButton />
         <PillMenu

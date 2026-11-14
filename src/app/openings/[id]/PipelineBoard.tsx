@@ -686,7 +686,7 @@ export default function PipelineBoard() {
               key={s.name}
               data-col
               aria-label={s.name}
-              className="flex min-h-0 w-[max(22rem,280px)] shrink-0 flex-col rounded-t-md border-[1.8px] border-b-0 border-surface-2 bg-white transition-colors data-[no]:border-danger/30 data-[no]:bg-danger-soft data-[over]:border-brand/40 data-[over]:bg-brand-tint"
+              className="flex min-h-0 w-[max(22rem,292px)] shrink-0 flex-col rounded-t-md border-[1.8px] border-b-0 border-surface-2 bg-white transition-colors data-[no]:border-danger/30 data-[no]:bg-danger-soft data-[over]:border-brand/40 data-[over]:bg-brand-tint"
             >
               <header className="flex items-center gap-2 px-[max(1rem,11px)] pb-[max(0.8rem,9px)] pt-[max(1rem,11px)]">
                 <span aria-hidden="true" className="size-2 shrink-0 rounded-full" style={{ background: s.dot }} />

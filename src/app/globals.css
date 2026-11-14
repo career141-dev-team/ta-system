@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* A short window (a laptop with its browser bars: about 1267 x 587). Tabs drop the
+   tall top margins they keep for a full-height screen, so more rows show (owner 14 Nov
+   2026: "only 2.5 rows visible"). Not on phones, which scroll the page anyway. */
+@custom-variant short (@media (max-height: 760px) and (min-width: 768px));
+
 :root {
   /* The page behind every board: the guidelines' canvas with its dots (DESIGN.md). */
   --background: #f6f7f9;
@@ -14,8 +19,13 @@
    (a 1080 window) so text stays readable, and stops growing at 16px.
    So: write sizes with Tailwind's rem scale (h-8.5, not h-[34px]). */
 html {
-  font-size: clamp(9px, calc(100vw / 120), 16px);
+  font-size: clamp(9px, min(calc(100vw / 120), calc(100dvh / 62)), 16px);
 }
+/* ...and by the height too (owner 14 Nov 2026: on a short laptop window a tab showed
+   two and a half rows and hid the rest): a wide, short window - 1267 x 587 - takes
+   the smaller of the two, so spacing and boxes tighten and more rows fit, while text
+   keeps its readable floor (every text size is max(rem, px)). A full-height 1920
+   window is unchanged. */
 
 /* One motion rhythm for CSS, matching DUR and EASE in src/lib/gsap.ts: every
    transition-* utility without its own duration runs 180ms on the same curve as
@@ -143,12 +153,14 @@ html {
   --text-pill: max(0.71875rem, 11px);
   --text-tab: max(1rem, 13px);
   --text-row: max(1.5rem, 15px);
-  --text-col: max(0.95rem, 12.5px);
-  --text-card-name: max(1rem, 13.5px);
-  --text-card-sub: max(0.7rem, 10.5px);
-  --text-card-line: max(0.8rem, 11.5px);
-  --text-chip: max(0.66rem, 10px);
-  --text-tool: max(0.78rem, 11px);
+  /* The pipeline's cards, readable on a laptop (owner 14 Nov 2026: "the Kanban text
+     is small... make the cards so they can see them clearly"). */
+  --text-col: max(0.95rem, 14px);
+  --text-card-name: max(1rem, 15px);
+  --text-card-sub: max(0.8rem, 12.5px);
+  --text-card-line: max(0.85rem, 13px);
+  --text-chip: max(0.7rem, 11.5px);
+  --text-tool: max(0.8rem, 12.5px);
 }
 
 /* Dark mode (owner, 14 Nov 2026: "dark mode we can implement"): the same tokens,

@@ -217,7 +217,7 @@ export default function ResearchView() {
   );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[max(2.3rem,14px)] pb-[max(2rem,16px)] pt-[max(2rem,48px)] max-md:pt-14">
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[max(2.3rem,14px)] pb-[max(2rem,16px)] pt-[max(2rem,48px)] short:pt-[30px] max-md:pt-14">
       {/* Header: back, when and from what it was researched, the two actions */}
       <div className="flex flex-wrap items-center gap-x-[max(1.3rem,10px)] gap-y-3">
         <BackButton />

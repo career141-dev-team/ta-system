@@ -403,7 +403,7 @@ export default function SnippetsView() {
   const step = (d: number) => setS((x) => ({ ...x, body: Math.min(40, Math.max(16, x.body + d)) }));
   if (!CAN_SOURCE || !JD_APPROVED)
     return (
-      <div className="flex flex-1 flex-col px-[max(2.3rem,14px)] pt-[max(2.8rem,40px)] max-md:pt-11">
+      <div className="flex flex-1 flex-col px-[max(2.3rem,14px)] pt-[max(2.8rem,40px)] short:pt-[30px] max-md:pt-11">
         <BackButton />
         <div className="m-auto flex flex-col items-center gap-3 text-center">
           <p className="text-body text-ink-2">
@@ -425,7 +425,7 @@ export default function SnippetsView() {
     });
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col pb-[max(3.5rem,14px)] pl-[max(7.1875rem,14px)] pr-[max(2.3rem,14px)] pt-[max(4.4375rem,52px)] max-md:overflow-y-auto max-md:pt-11">
+    <div className="relative flex min-h-0 flex-1 flex-col pb-[max(3.5rem,14px)] pl-[max(7.1875rem,14px)] pr-[max(2.3rem,14px)] pt-[max(4.4375rem,52px)] short:pt-[30px] max-md:overflow-y-auto max-md:pt-11">
       <div className="absolute left-[max(2.3rem,14px)] top-[max(2.8rem,40px)] max-md:static max-md:mb-4">
         <BackButton />
       </div>
