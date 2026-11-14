@@ -10,14 +10,20 @@ import { ROLES, useRole, type Role } from "@/lib/role";
 // same routes as the TA System so a link means the same place in both. Alerts
 // moved to the bell; the rest are not in this bar's design.
 // Each link only for the roles the old TA System showed it to (owner 14 Nov 2026:
-// "links by role"; old TopNav): Strategy Planner for whoever assigns strategies (TA
-// Lead, Director, Admin), TA Track for a TA Lead or Admin. Follows "View as".
+// "links by role", then "the important things need to be in the top bar"; old
+// TopNav): Strategy Planner for whoever assigns strategies (TA Lead, Director, Admin),
+// Excel Tables (every TA's rows, read only) for TA Support, TA Track for a TA Lead or
+// Admin, the Feedback board for everyone but a TA, the Bin for the whole desk.
+// Follows "View as".
 const LINKS: [string, string, Role[]][] = [
   ["Today", "/today", ROLES],
   ["Openings", "/openings", ROLES],
   ["Strategy Planner", "/strategy", ["Lead", "Director"]],
   ["Database", "/database", ROLES],
+  ["Excel Tables", "/excel-tables", ["TA Support"]],
   ["TA Track", "/ta-track", ["Lead"]],
+  ["Feedback", "/feedback", ["Lead", "Director", "Ops"]],
+  ["Bin", "/bin", ROLES],
 ];
 
 /** The links, with the one for `pathname` marked. Also the Suspense fallback, with no path. */

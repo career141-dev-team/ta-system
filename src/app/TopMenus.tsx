@@ -238,8 +238,6 @@ export function Person() {
               }}
             />
             <MenuRow icon="people" label="People & roles" hint="admin" href="/people" onClick={close} />
-            <MenuRow icon="tables" label="Excel Tables" hint="TA Support" href="/excel-tables" onClick={close} />
-            <MenuRow icon="bin" label="Bin" hint="7 days" href="/bin" onClick={close} />
             <li role="separator" className="mx-2.5 my-1.5 h-px bg-border" />
             {/* Until sign-in: see the app as each role (homes, rights). */}
             <li data-row role="none" className="px-2.5 py-1.5">

@@ -4,7 +4,6 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { DUR, EASE, gsap, motionOK } from "@/lib/gsap";
 import Count from "../Count";
-import type { Role } from "@/lib/role";
 
 // Homes for the TA Lead, the Director and Ops (owner 14 Nov 2026: "based on the UI,
 // make the home view for the lead, director, ops"). Each keeps what its old dashboard
@@ -15,7 +14,7 @@ import type { Role } from "@/lib/role";
 // coordinate and what to chase. No design: built from the screens already drawn.
 // ponytail: sample numbers; with the backend, one small read per section.
 
-const PERSON: Record<Exclude<Role, "TA">, { first: string; line: string }> = {
+const PERSON: Record<"Lead" | "Director" | "Ops", { first: string; line: string }> = {
   Lead: { first: "Rashmi", line: "11 open across the team · 3 need a decision" },
   Director: { first: "Nadeesha", line: "Across the agency" },
   Ops: { first: "Kavindi", line: "Chasing and coordination" },
@@ -26,7 +25,7 @@ const greeting = () => {
   return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
 };
 
-export default function Home({ role }: { role: Exclude<Role, "TA"> }) {
+export default function Home({ role }: { role: "Lead" | "Director" | "Ops" }) {
   const root = useRef<HTMLDivElement>(null);
   const [hello] = useState(greeting);
   // Sections rise in one after another (start states set at once, never on a tick).

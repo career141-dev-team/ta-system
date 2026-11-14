@@ -4,7 +4,7 @@ import { startWorkday, useWorkday } from "@/lib/workday";
 import Today from "./Today";
 import Workday from "./Workday";
 import Home from "./Homes";
-import { useRole } from "@/lib/role";
+import { useRole, worksADay } from "@/lib/role";
 
 // Which Today to show: T1 "Good morning" until the workday is started, then T2.
 // The started day itself lives in src/lib/workday.ts, because the opening's
@@ -16,7 +16,7 @@ export default function TodayScreen() {
   const started = useWorkday();
   // A lead, Director or Ops person has their own home (no workday of their own).
   const role = useRole();
-  if (role !== "TA") return <Home key={role} role={role} />;
+  if (!worksADay(role)) return <Home key={role} role={role as "Lead" | "Director" | "Ops"} />;
 
   if (started === "pending") return <div className="flex-1" />;
   if (started === "none") return <Today onStart={startWorkday} />;

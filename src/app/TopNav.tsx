@@ -61,7 +61,7 @@ export default function TopNav() {
       <form
         action="/database"
         role="search"
-        className="ml-auto hidden h-[max(2.875rem,36px)] w-[max(21.25rem,180px)] sm:flex min-w-36 shrink items-center gap-[max(0.625rem,6px)] rounded-full bg-surface-2 pl-[max(1.125rem,12px)] pr-[max(0.625rem,6px)] has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-brand/30"
+        className="ml-auto hidden h-[max(2.875rem,36px)] w-[max(21.25rem,180px)] min-[1520px]:flex min-w-36 shrink items-center gap-[max(0.625rem,6px)] rounded-full bg-surface-2 pl-[max(1.125rem,12px)] pr-[max(0.625rem,6px)] has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-brand/30"
       >
         <SearchIcon className="size-[max(0.9375rem,13px)] shrink-0 text-ink-2" />
         <input
@@ -76,11 +76,13 @@ export default function TopNav() {
         </kbd>
         <SearchShortcut />
       </form>
+      {/* Under a 1520 window the box is a round button, so the top bar has room for
+          every link a role needs (owner 14 Nov 2026). */}
       <Link
         href="/database"
         prefetch={false}
         aria-label="Search or ask AURA"
-        className={CIRCLE + " ml-auto bg-surface-2 text-ink sm:hidden"}
+        className={CIRCLE + " ml-auto bg-surface-2 text-ink min-[1520px]:hidden"}
       >
         <SearchIcon className="size-[45%]" />
       </Link>

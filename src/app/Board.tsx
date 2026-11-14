@@ -21,12 +21,12 @@ const PAGES: [string, string][] = [
   ["/strategy/submissions", "New submissions"],
   ["/strategy/manage", "Strategy list"],
   ["/database", "Database"],
+  ["/excel-tables", "Excel Tables"],
   ["/ta-track", "TA Track"],
+  ["/feedback", "Feedback & support"],
+  ["/bin", "Bin"],
   ["/alerts", "Alerts"],
   ["/people", "People and roles"],
-  ["/feedback", "Feedback & support"],
-  ["/excel-tables", "Excel Tables"],
-  ["/bin", "Bin"],
 ];
 const at = (path: string) => PAGES.findIndex(([p]) => p === path);
 
