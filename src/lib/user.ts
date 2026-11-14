@@ -9,3 +9,7 @@ export const CAN_SOURCE: boolean = true;
 
 /** A TA sees their own headhunting numbers; a lead or admin sees the whole job's. */
 export const SEES_WHOLE_JOB = USER.role !== "Talent Acquisition";
+
+/** TA Track: admins and leads see every TA; a TA sees only themself (the Work From
+ *  Home Tracker's own rule). Placeholder until sign-in: on, so the team view shows. */
+export const TRACK_VIEW_ALL: boolean = true;

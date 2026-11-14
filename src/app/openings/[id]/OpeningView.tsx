@@ -1,5 +1,6 @@
 "use client";
 
+import { ViewSkeleton } from "@/app/Skeleton";
 import DatabaseCvsView from "./DatabaseCvsView";
 import dynamic from "next/dynamic";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
@@ -211,7 +212,7 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
             >
               {/* The email view names its own notch: Midday or End of day email. */}
               {v !== "midday" && <Notch label={viewLabel(v)} />}
-              <Suspense fallback={null}>
+              <Suspense fallback={<ViewSkeleton />}>
               {v === "pipeline" ? (
                 <PipelineBoard />
               ) : v === "scoops" ? (

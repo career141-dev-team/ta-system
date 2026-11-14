@@ -140,6 +140,15 @@ run this in a plain effect, not useGSAP (a view still downloading suspends React
 reverts a useGSAP context), and find elements by ref or on-screen only - Next keeps
 earlier visits of a page in the document, hidden.
 
+**Loading, the premium way (owner, 14 Nov 2026).** The first load: the top bar drops in
+and the board rises in (`.enter-nav`, `.enter-board` - pure CSS, fill mode backwards, so
+no hydration mismatch and nothing held after). Moving between pages: the rounded loading
+bar under the tab rises, a glowing pill in AURA's colours glides along it, and it fills
+green and sinks when the page arrives (Board.tsx). While a screen or a view's code is
+still coming, a shimmer placeholder shaped like it (`src/app/Skeleton.tsx`,
+`.shimmer`) - never a blank area. Less motion asked for: the pill holds still and the
+shimmer stops.
+
 **One board for the whole app (owner, 14 Nov 2026: "one common tab... only the tab
 changes").** Today, Openings, Strategy Planner, Database, TA Track (and Alerts, Search,
 People) sit on one white board with one middle tab, drawn once in `src/app/Board.tsx`

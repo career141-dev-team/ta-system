@@ -222,3 +222,35 @@ body {
     }
   }
 }
+
+/* Loading, the premium way (owner, 14 Nov 2026: "use the motion to load the screen...
+   give the premium vibe"). Pure CSS on purpose: it runs the moment the page paints,
+   before React takes the page over, and writes nothing into the HTML - so it can
+   never cause a hydration mismatch the way a script tween did.
+   - The top bar drops in and the board rises in once, on the first load. Fill mode
+     "backwards" only: once done they hold nothing, so GSAP stays free to move the
+     top bar inside a view.
+   - .shimmer: a soft light sweeping across a placeholder shaped like what is coming. */
+@keyframes enter-drop {
+  from { opacity: 0; transform: translateY(-14px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes enter-rise {
+  from { opacity: 0; transform: translateY(18px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes shimmer {
+  from { background-position: 150% 0; }
+  to { background-position: -50% 0; }
+}
+.enter-nav { animation: enter-drop 0.6s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+.enter-board { animation: enter-rise 0.75s cubic-bezier(0.22, 1, 0.36, 1) 0.1s backwards; }
+.shimmer {
+  background: linear-gradient(100deg, var(--color-surface-2) 30%, var(--color-surface) 50%, var(--color-surface-2) 70%);
+  background-size: 250% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .enter-nav, .enter-board { animation-duration: 0.01s; animation-delay: 0s; }
+  .shimmer { animation: none; }
+}

@@ -58,6 +58,7 @@ Openings ─▶ one opening (/openings/[id])
 | Headhunting Suggestions | `SuggestionsView.tsx` | built |
 | Headhunting Excel Tables | `ExcelTablesView.tsx`, `FindCvButton.tsx` (shared) | built |
 | Database D1 + D2 (chat with AURA; a person opens in a panel beside it, Add to job / Shortlist through the chat) | `src/app/database/DatabaseView.tsx`, `aura.ts` | built |
+| TA Track TT1 + TT2 (the team / one TA: rings, where the time goes, CVs to Director, trend, AURA notes; day timeline, websites with tracker detail, tracking status; Today/Week/Month/Custom, CSV) | `src/app/ta-track/TaTrackView.tsx`, `data.ts` | built (sample data shaped like whf-tracker rows) |
 | Openings O1 (lists by category, filter popover, ⌘K spotlight, New opening sheet read by AURA) | `src/app/openings/page.tsx`, `OpeningsView.tsx`, `Spotlight.tsx`, `NewOpening.tsx`, `data.ts` | built |
 | ATS Database CVs (matches for the job, CV beside the list, Shortlist / Not for this job) | `DatabaseCvsView.tsx` | built |
 | ATS Job Description (draft, approve, chat, versions, match chips) | `JobDescriptionView.tsx` | built (shane123-tech, fitted 14 Nov) |
