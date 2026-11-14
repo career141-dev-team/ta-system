@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { ViewSkeleton } from "@/app/Skeleton";
 import DatabaseCvsView from "./DatabaseCvsView";
 import dynamic from "next/dynamic";
@@ -239,6 +241,8 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
                 <ExcelTablesView />
               ) : v === "hh-referees" ? (
                 <RefereeCallsView />
+              ) : v === "referral" ? (
+                <ReferralView />
               ) : (
                 <ComingView label={viewLabel(v)} />
               )}
@@ -250,6 +254,32 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
       {focus && <FocusChrome />}
       <TabsBar />
     </ViewContext.Provider>
+  );
+}
+
+/** Referral Search lives in the Database chat, Referees mode (owner 14 Nov 2026: one
+ *  chat, the mode in the search bar). This tab starts it with searches for this job. */
+function ReferralView() {
+  // ponytail: the demo opening's title and rivals; with the backend, the job's own.
+  const asks = ["SAP Leads at competitors", "HR Managers at Dialog", "Finance Directors at Hemas", "General Managers in retail"];
+  return (
+    <div className="flex flex-1 flex-col px-[max(1.5rem,14px)] pt-[max(1.4rem,14px)] max-md:pt-11">
+      <BackButton />
+      <div className="m-auto flex max-w-[40rem] flex-col items-center gap-[max(1rem,10px)] text-center">
+        <p className="text-h3 font-medium text-ink">Referral Search</p>
+        <p className="text-small text-ink-3">Find the referees named on our CVs by title, company or both, with their numbers. It opens in the Database chat, in Referees mode.</p>
+        <div className="flex flex-wrap justify-center gap-2">
+          {asks.map((a) => (
+            <Link key={a} href={`/database?mode=referees&q=${encodeURIComponent(a)}`} className="rounded-full border border-border px-3.5 py-1.5 text-small text-ink-2 hover:border-border-strong hover:bg-surface-2 hover:text-ink">
+              {a}
+            </Link>
+          ))}
+        </div>
+        <Link href="/database?mode=referees" className="rounded-full bg-ink px-5 py-2.5 text-small font-medium text-white hover:bg-black">
+          Open Referral Search
+        </Link>
+      </div>
+    </div>
   );
 }
 

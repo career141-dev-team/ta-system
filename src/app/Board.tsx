@@ -90,7 +90,7 @@ export default function Board({ children }: { children: ReactNode }) {
       g.removeAttribute("data-board-body");
       g.setAttribute("aria-hidden", "true");
       g.inert = true;
-      Object.assign(g.style, { position: "absolute", inset: "0", pointerEvents: "none", zIndex: "5", background: "white" });
+      Object.assign(g.style, { position: "absolute", inset: "0", pointerEvents: "none", zIndex: "5", background: "var(--color-surface)" });
       s.appendChild(g);
       ghost.current = g;
       loading(true);

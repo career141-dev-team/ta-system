@@ -6,6 +6,7 @@ import Image from "next/image";
 import { gsap, motionOK, swapIn, useGSAP } from "@/lib/gsap";
 import { useWorkdayGate } from "@/lib/workday";
 import { useLiftMenu } from "../openings/[id]/liftMenu";
+import { refereeReply, toCsv, type Referee } from "./referees";
 import {
   JOBS,
   fitOf,
@@ -16,6 +17,7 @@ import {
   type Person,
   type Reply,
 } from "./aura";
+import { POOL } from "./aura";
 
 // D1 · Database - search by chatting with AURA (owner's design, 14 Nov 2026).
 // Left: the chats (Today / Earlier) and New search - the history IS the chats, so
@@ -32,6 +34,10 @@ import {
 // mark breathes while it looks (never spins).
 
 const CvPages = dynamic(() => import("../openings/[id]/CvPages"));
+
+// Candidates (who we hold, and any word inside their CVs - one search, owner 14 Nov
+// 2026) or Referees (the references named on those CVs).
+type Mode = "people" | "referees";
 
 type Turn =
   | { id: string; from: "me"; text: string }
@@ -129,7 +135,7 @@ export default function DatabaseView() {
   const gate = useWorkdayGate();
   const [threads, setThreads] = useState(START);
   const [openId, setOpenId] = useState("sap");
-  const [mode, setMode] = useState<"people" | "cvs">("people");
+  const [mode, setMode] = useState<Mode>("people");
   const [thinking, setThinking] = useState(false);
   const [text, setText] = useState("");
   const [expanded, setExpanded] = useState<string[]>([]);
@@ -174,14 +180,18 @@ export default function DatabaseView() {
     { dependencies: [thinking], scope: orb },
   );
 
-  const send = (raw: string) => {
+  // `fresh` starts a new chat whatever is open; `as` searches in that mode (both for a
+  // search arriving in the address, before the screen has caught up).
+  const send = (raw: string, opts: { fresh?: boolean; as?: Mode } = {}) => {
     const t = raw.trim();
     if (!t || thinking) return;
+    const mode_ = opts.as ?? mode;
+    const cur = opts.fresh ? undefined : thread;
     setText("");
     let id = openId;
-    let turns = thread?.turns ?? [];
+    let turns = cur?.turns ?? [];
     // No chat open: this message starts one, named by its first words.
-    if (!thread) {
+    if (!cur) {
       id = nid();
       turns = [];
       setThreads((all) => [
@@ -191,12 +201,19 @@ export default function DatabaseView() {
       setOpenId(id);
     }
     const { chips, last } = contextOf(turns);
-    const answer = reply(t, {
-      chips,
-      last,
-      cvsOnly: mode === "cvs",
-      locked: gate,
-    });
+    // Referees mode reads the sentence into titles and companies; a pasted list of
+    // names is still the people check ("do we have ...").
+    const parts = t.split(/\n|,|;/).filter((x) => x.trim());
+    const names = /do we have/i.test(t) || (parts.length >= 2 && parts.every((x) => /^\s*[A-Z][a-z]+(?:\s+[A-Z][a-z.]+){1,3}\s*$/.test(x)));
+    const answer =
+      mode_ === "referees" && !names
+        ? refereeReply(t, chips)
+        : reply(t, {
+            chips,
+            last,
+            cvsOnly: false,
+            locked: gate,
+          });
     setThreads((all) =>
       all.map((x) =>
         x.id === id
@@ -258,12 +275,17 @@ export default function DatabaseView() {
   // starts a new chat with those words (the old /database/results?for=&q=).
   const asked = useRef(false);
   useEffect(() => {
-    const q = new URLSearchParams(location.search).get("q");
-    if (!q || asked.current) return;
+    const sp = new URLSearchParams(location.search);
+    const q = sp.get("q");
+    // An opening's Referral Search tab arrives in Referees mode.
+    const as: Mode | undefined = sp.get("mode") === "referees" ? "referees" : undefined;
+    if (as) queueMicrotask(() => setMode(as));
+    if (asked.current) return;
     asked.current = true;
     history.replaceState(null, "", location.pathname);
-    setOpenId("");
-    queueMicrotask(() => sendRef.current(q));
+    if (as && !q) queueMicrotask(() => setOpenId(""));
+    if (!q) return;
+    queueMicrotask(() => sendRef.current(q, { fresh: true, as }));
   }, []);
   const newSearch = () => {
     setOpenId("");
@@ -301,36 +323,7 @@ export default function DatabaseView() {
             <PlusIcon />
             New search
           </button>
-          <div
-            role="radiogroup"
-            aria-label="What to search"
-            className="flex items-center gap-[max(0.7rem,6px)] rounded-full border border-border bg-surface px-[max(0.75rem,8px)] py-1.5"
-          >
-            {(
-              [
-                ["people", "Search people", <PeopleIcon key="p" />],
-                ["cvs", "Search inside CVs", <DocsIcon key="d" />],
-              ] as const
-            ).map(([k, label, icon]) => (
-              <button
-                key={k}
-                type="button"
-                role="radio"
-                aria-checked={mode === k}
-                aria-label={label}
-                title={label}
-                onClick={() => setMode(k)}
-                className={
-                  "flex h-[max(1.9rem,26px)] w-[max(2.8rem,38px)] items-center justify-center rounded-full transition-colors " +
-                  (mode === k
-                    ? "bg-ink/70 text-white"
-                    : "text-ink-3 hover:text-ink")
-                }
-              >
-                {icon}
-              </button>
-            ))}
-          </div>
+
           <button
             type="button"
             onClick={() => setShowHistory((v) => !v)}
@@ -339,6 +332,31 @@ export default function DatabaseView() {
           >
             {showHistory ? "Hide chats" : "Chats"}
           </button>
+        </div>
+        {/* What to search (owner 14 Nov 2026: not inside the typing bar, and each one
+            must say what it is for). Picking one starts a fresh search in that mode. */}
+        <div role="radiogroup" aria-label="What to search" className="mt-[max(1.25rem,10px)] flex flex-col gap-1 max-md:flex-row max-md:flex-wrap">
+          <p className="mb-1 text-caption font-medium uppercase text-ink-3 max-md:hidden">Search for</p>
+          {MODES.map(([k, label, icon, hint]) => (
+            <button
+              key={k}
+              type="button"
+              role="radio"
+              aria-checked={mode === k}
+              onClick={() => {
+                if (mode === k) return;
+                setMode(k);
+                newSearch();
+              }}
+              className={"flex items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors max-md:items-center max-md:rounded-full max-md:py-1.5 " + (mode === k ? "bg-brand-soft text-brand" : "text-ink-2 hover:bg-surface-2 hover:text-ink")}
+            >
+              <span className="mt-0.5 shrink-0 max-md:mt-0">{icon}</span>
+              <span className="min-w-0">
+                <span className="block text-small font-medium">{label}</span>
+                <span className={"block text-caption max-md:hidden " + (mode === k ? "text-brand/80" : "text-ink-3")}>{hint}</span>
+              </span>
+            </button>
+          ))}
         </div>
         <nav
           aria-label="Chats"
@@ -427,7 +445,7 @@ export default function DatabaseView() {
                 <p className="text-body text-ink-3">
                   {mode === "people"
                     ? "Looking through the people we hold…"
-                    : "Reading inside the CVs…"}
+                    : "Looking through the referees named on our CVs…"}
                 </p>
               </div>
             )}
@@ -542,13 +560,16 @@ function Welcome({
   mode,
   onTry,
 }: {
-  mode: "people" | "cvs";
+  mode: Mode;
   onTry: (t: string) => void;
 }) {
   const tries =
-    mode === "people"
+    mode === "referees"
+      ? ["HR Managers at Dialog", "General Managers in retail", "Finance Directors at Hemas", "Referees from Cargills"]
+      : mode === "people"
       ? [
           "SAP leads in Colombo, 8+ years",
+          "“S/4HANA” AND manufacturing",
           "Do we have Ruwan Silva and Priya Nair?",
           "Find people like Kasun Perera",
           "(SAP OR ERP) AND Colombo NOT Accenture",
@@ -563,10 +584,11 @@ function Welcome({
         height={48}
         className="size-[max(3rem,40px)] rounded-full"
       />
-      <p className="text-h3 text-ink">Who are you looking for?</p>
+      <p className="text-h3 text-ink">{mode === "referees" ? "Which referees are you after?" : "Who are you looking for?"}</p>
       <p className="max-w-[36rem] text-small text-ink-3">
-        Ask in plain words, paste a Boolean or a JD, or a list of names to
-        check. Then keep talking to narrow it down.
+        {mode === "referees"
+          ? "The people candidates named as references on their CVs. Ask by title, company or both — or paste names to see who we hold."
+          : "Ask in plain words, paste a Boolean or a JD, or a list of names to check. Then keep talking to narrow it down."}
       </p>
       <div className="mt-2 flex flex-wrap justify-center gap-2">
         {tries.map((t) => (
@@ -694,6 +716,7 @@ function Answer({
             ))}
           </ul>
         )}
+        {t.referees && t.referees.length > 0 && <RefereeList list={t.referees} onPick={onPick} />}
         {t.people && t.people.length > 0 && (
           <Results
             people={t.people}
@@ -1000,7 +1023,7 @@ function Composer({
   onSend: () => void;
   busy: boolean;
   box: React.RefObject<HTMLTextAreaElement | null>;
-  mode: "people" | "cvs";
+  mode: Mode;
   centred: boolean;
   onFile: (name: string) => void;
 }) {
@@ -1047,11 +1070,12 @@ function Composer({
         <button
           type="button"
           onClick={() => file.current?.click()}
-          aria-label="Attach a JD"
-          title="Attach a JD"
+          hidden={mode === "referees"}
+          aria-label="Attach a JD to find people for it"
+          title="Attach a JD to find people for it"
           className="flex size-[max(2.75rem,36px)] shrink-0 items-center justify-center rounded-full bg-surface-2 text-ink-2 hover:bg-surface-3 hover:text-ink"
         >
-          <PlusIcon />
+          <ClipIcon />
         </button>
         <input
           ref={file}
@@ -1078,8 +1102,8 @@ function Composer({
           maxLength={2000}
           placeholder={
             mode === "people"
-              ? "Refine — “only open to move”, “add Kandy”, or paste a JD"
-              : "Words to find inside the CVs"
+              ? "Skills, a title, a place, or words from a CV — or paste a JD"
+              : "Title or company — “HR Managers at Dialog”"
           }
           aria-label="Ask AURA"
           className="max-h-32 min-w-0 flex-1 resize-none self-center bg-transparent py-2 text-body text-ink outline-none placeholder:text-ink-3 [field-sizing:content]"
@@ -1158,7 +1182,7 @@ const MicIcon = () => (
     <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3" />
   </svg>
 );
-// The owner's icons (bi people-fill, famicons documents), drawn in the text colour.
+// The owner's icon (bi people-fill), drawn in the text colour.
 const PeopleIcon = (): ReactNode => (
   <svg
     viewBox="0 0 16 16"
@@ -1167,18 +1191,6 @@ const PeopleIcon = (): ReactNode => (
     aria-hidden="true"
   >
     <path d="M7 14s-1 0-1-1 1-4 5-4 5 3 5 4-1 1-1 1H7Zm4-6a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-5.784 6A2.24 2.24 0 0 1 5 13c0-1.355.68-2.75 1.936-3.72A6.3 6.3 0 0 0 5 9c-4 0-5 3-5 4s1 1 1 1h4.216ZM4.5 8a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" />
-  </svg>
-);
-const DocsIcon = (): ReactNode => (
-  <svg
-    viewBox="0 0 16 16"
-    fill="currentColor"
-    className="size-[max(1rem,14px)]"
-    aria-hidden="true"
-  >
-    <path d="M9.32 7.75a.13.13 0 0 0 .09-.21L6.96 5.05a.13.13 0 0 0-.21.08v2.24c0 .21.17.38.38.38h2.19Z" />
-    <path d="M6.16 8.34a1.37 1.37 0 0 1-.41-.97V4.5H3.5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2H8a2 2 0 0 0 2-2V8.75H7.13a1.37 1.37 0 0 1-.97-.41Zm5.47-4.59h2.2a.13.13 0 0 0 .09-.21l-2.45-2.49a.13.13 0 0 0-.22.08v2.25c0 .2.17.37.38.37Z" />
-    <path d="M11.63 4.75a1.38 1.38 0 0 1-1.38-1.38V.5H6.88A1.88 1.88 0 0 0 5 2.38V3.5h1.32c.33 0 .65.14.9.38l3.41 3.47c.24.24.37.57.37.9V12.5h1.66c1.02 0 1.84-.84 1.84-1.88V4.75h-2.87Z" />
   </svg>
 );
 const XIcon = () => (
@@ -1201,5 +1213,126 @@ const SidebarIcon = () => (
   <svg {...ico} className="size-[max(1.25rem,16px)]">
     <rect x="3" y="4" width="18" height="16" rx="3" />
     <path d="M9 4v16" />
+  </svg>
+);
+
+const RefIcon = (): ReactNode => (
+  <svg {...ico} className="size-[max(1rem,14px)]">
+    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM19 8v6M22 11h-6" />
+  </svg>
+);
+// Defined after the icons it draws (a const is not ready before its line).
+const MODES: [Mode, string, ReactNode, string][] = [
+  ["people", "Candidates", <PeopleIcon key="p" />, "People we hold — by skills, title, place or any word in their CV"],
+  ["referees", "Referees", <RefIcon key="r" />, "References named on CVs, with numbers"],
+];
+
+/** Referees named on our CVs: what the CV said (title at company, and when it was
+ *  read), phone and email with copy, who named them, a CV we may hold under the same
+ *  name; tick and export to Excel (old ReferralCard / ExportBar). */
+function RefereeList({ list, onPick }: { list: Referee[]; onPick: (p: Person) => void }) {
+  const [ticked, setTicked] = useState<string[]>([]);
+  const [copied, setCopied] = useState("");
+  const all = ticked.length === list.length;
+  const copy = (v: string) => {
+    void navigator.clipboard?.writeText(v);
+    setCopied(v);
+    setTimeout(() => setCopied((c) => (c === v ? "" : c)), 1400);
+  };
+  const exportNow = () => {
+    const url = URL.createObjectURL(new Blob([toCsv(list.filter((r) => ticked.includes(r.id)))], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `referees-${ticked.length}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  const Copy = ({ v, what }: { v: string; what: string }) => (
+    <button type="button" onClick={() => copy(v)} aria-label={`Copy the ${what}`} title={`Copy the ${what}`} className="rounded-xs px-1 text-caption text-ink-3 hover:bg-surface-2 hover:text-ink">
+      {copied === v ? "Copied" : "Copy"}
+    </button>
+  );
+  return (
+    <div className="flex max-w-[48rem] flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-3 text-small">
+        <label className="flex items-center gap-2 text-ink-2">
+          <input type="checkbox" checked={all} onChange={() => setTicked(all ? [] : list.map((r) => r.id))} className="size-4 accent-[var(--color-brand)]" />
+          Tick all
+        </label>
+        <button type="button" disabled={!ticked.length} onClick={exportNow} className="ml-auto rounded-full bg-ink px-4 py-1.5 text-small font-medium text-white hover:bg-black disabled:opacity-40">
+          {ticked.length ? `Export ${ticked.length} to Excel` : "Tick referees to export"}
+        </button>
+      </div>
+      <ul className="flex flex-col gap-2">
+        {list.map((r) => {
+          const on = ticked.includes(r.id);
+          // A CV we hold under the same name - maybe them (never claimed to be).
+          const cv = POOL.find((p) => p.name.toLowerCase() === r.name.toLowerCase());
+          return (
+            <li key={r.id} className={"rounded-lg border px-4 py-3 transition-colors " + (on ? "border-brand bg-brand-tint" : "border-border bg-surface")}>
+              <div className="flex flex-wrap items-start gap-x-5 gap-y-2">
+                <label className="flex min-w-0 flex-1 cursor-pointer gap-3">
+                  <input type="checkbox" checked={on} onChange={() => setTicked((t) => (on ? t.filter((x) => x !== r.id) : [...t, r.id]))} aria-label={`Tick ${r.name} to export`} className="mt-1 size-4 shrink-0 accent-[var(--color-brand)]" />
+                  <span className="min-w-0">
+                    <span className="block text-body font-medium text-ink">{r.name}</span>
+                    <span className="block text-small text-ink-2">
+                      {r.title ?? <span className="text-ink-3">Title not on the CV</span>}
+                      {r.company && (
+                        <>
+                          <span className="text-ink-3"> at </span>
+                          {r.company}
+                        </>
+                      )}
+                      <span className="text-caption text-ink-3"> · from a CV read {r.read}</span>
+                    </span>
+                  </span>
+                </label>
+                <div className="shrink-0 text-small sm:text-right">
+                  {r.phone ? (
+                    <p className="flex items-center gap-1 sm:justify-end">
+                      <a href={`tel:${r.phone.replace(/[^\d+]/g, "")}`} className="font-mono text-caption font-medium text-brand hover:underline">
+                        {r.phone}
+                      </a>
+                      <Copy v={r.phone} what="phone number" />
+                    </p>
+                  ) : (
+                    <p className="text-caption text-ink-3">No number on file</p>
+                  )}
+                  {r.email ? (
+                    <p className="flex items-center gap-1 sm:justify-end">
+                      <a href={`mailto:${r.email}`} className="break-all text-caption text-brand hover:underline">
+                        {r.email}
+                      </a>
+                      <Copy v={r.email} what="email" />
+                    </p>
+                  ) : (
+                    <p className="text-caption text-ink-3">No email on file</p>
+                  )}
+                </div>
+              </div>
+              {cv && (
+                <p className="mt-2 rounded-md bg-brand-soft px-3 py-2 text-caption text-ink">
+                  We have a CV for{" "}
+                  <button type="button" onClick={() => onPick(cv)} className="font-medium text-brand hover:underline">
+                    {cv.name}
+                  </button>{" "}
+                  ({cv.title} at {cv.company}) — the same name, maybe them. Open it to check.
+                </p>
+              )}
+              <p className="mt-2 border-t border-border pt-2 text-caption text-ink-3">
+                {r.namedBy.length > 1 ? `Named by ${r.namedBy.length} candidates: ` : "Reference for "}
+                {r.namedBy.join(", ")}
+              </p>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+const ClipIcon = () => (
+  <svg {...ico} className="size-[max(1.15rem,15px)]">
+    <path d="m21 12-8.5 8.5a5 5 0 0 1-7-7L14 5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4L15.5 8" />
   </svg>
 );

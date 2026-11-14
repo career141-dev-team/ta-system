@@ -218,6 +218,8 @@ export type Reply = {
   files?: { name: string; url: string }[];
   /** Something was refused or not found. */
   warn?: boolean;
+  /** Referees named on our CVs (Referees mode, ./referees.ts). */
+  referees?: import("./referees").Referee[];
 };
 
 /** Plain-word filters. `test` is kept as text so a chip can be rebuilt later. */
