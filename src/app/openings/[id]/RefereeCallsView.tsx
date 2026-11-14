@@ -106,8 +106,15 @@ export default function RefereeCallsView() {
     r: Math.min(3, rows.length),
     c: 1,
   });
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
+  // What has been typed into the chosen cell since it was chosen; null = untouched.
+  const [typed, setTyped] = useState<string | null>(null);
+  // "nav": arrows move between cells and typing replaces the cell, as in Excel.
+  // "edit" (F2, Enter on a cell, a double-click, a click in the chosen cell):
+  // arrows move the caret inside the text.
+  const [mode, setMode] = useState<"nav" | "edit">("nav");
+  // The grid takes the keyboard only once a person has clicked or typed in it, so
+  // opening the screen does not take the arrows from the bottom bar.
+  const [active, setActive] = useState(false);
   const grid = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
 
@@ -129,83 +136,85 @@ export default function RefereeCallsView() {
       return { ...g, [key]: next };
     });
 
-  const move = (dr: number, dc: number) =>
-    setAt((p) => ({
-      r: Math.max(0, Math.min(shownRows - 1, p.r + dr)),
-      c: Math.max(0, Math.min(3, p.c + dc)),
-    }));
-  const startEdit = (seed?: string) => {
-    if (!canEdit) return;
-    setDraft(seed ?? cell(at.r, at.c));
-    setEditing(true);
-  };
   const commit = () => {
-    if (!editing) return;
-    if (draft !== cell(at.r, at.c)) write([{ r: at.r, c: at.c, v: draft }]);
-    setEditing(false);
+    if (typed !== null && typed !== cell(at.r, at.c))
+      write([{ r: at.r, c: at.c, v: typed }]);
+    setTyped(null);
+    setMode("nav");
   };
+  const go = (r: number, c: number) => {
+    commit();
+    setAt({
+      r: Math.max(0, Math.min(shownRows - 1, r)),
+      c: Math.max(0, Math.min(3, c)),
+    });
+  };
+  const move = (dr: number, dc: number) => go(at.r + dr, at.c + dc);
 
+  // The chosen cell: in view, and (once the grid is in use) holding the keyboard
+  // with its text selected, so the next key replaces it.
   useEffect(() => {
-    if (editing) input.current?.focus();
-    else grid.current?.focus({ preventScroll: true });
-  }, [editing]);
-  // The cell in view as it moves.
-  useEffect(() => {
-    grid.current
-      ?.querySelector(`[data-cell="${at.r}-${at.c}"]`)
-      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [at]);
+    const td = grid.current?.querySelector(`[data-cell="${at.r}-${at.c}"]`);
+    td?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    if (!active) return;
+    if (input.current) {
+      input.current.focus({ preventScroll: true });
+      input.current.select();
+    } else grid.current?.focus({ preventScroll: true });
+  }, [at, active, key]);
 
+  const onCellKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    const k = e.key;
+    const caret = mode === "edit";
+    if (k === "Enter") move(1, 0);
+    else if (k === "Tab") {
+      // At the grid's edge Tab leaves, as a page should.
+      if ((at.c === 3 && !e.shiftKey) || (at.c === 0 && e.shiftKey))
+        return commit();
+      move(0, e.shiftKey ? -1 : 1);
+    } else if (k === "Escape") {
+      setTyped(null);
+      setMode("nav");
+      requestAnimationFrame(() => input.current?.select());
+    } else if (k === "ArrowDown") move(1, 0);
+    else if (k === "ArrowUp") move(-1, 0);
+    else if (k === "ArrowRight" && !caret) move(0, 1);
+    else if (k === "ArrowLeft" && !caret) move(0, -1);
+    else if (k === "F2") {
+      setMode("edit");
+      const t = e.currentTarget;
+      t.setSelectionRange(t.value.length, t.value.length);
+    } else return;
+    e.preventDefault();
+  };
+  // Read only (a past day, a lead, before Start workday): the arrows still move.
   const onGridKey = (e: KeyboardEvent) => {
-    if (editing) return;
+    if (canEdit) return;
     const k = e.key;
     if (k === "ArrowDown") move(1, 0);
     else if (k === "ArrowUp") move(-1, 0);
-    else if (k === "ArrowRight" || (k === "Tab" && !e.shiftKey)) move(0, 1);
-    else if (k === "ArrowLeft" || (k === "Tab" && e.shiftKey)) move(0, -1);
-    else if (k === "Enter" || k === "F2") startEdit();
-    else if ((k === "Delete" || k === "Backspace") && canEdit)
-      write([{ r: at.r, c: at.c, v: "" }]);
-    else if (k.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey)
-      startEdit(k);
+    else if (k === "ArrowRight") move(0, 1);
+    else if (k === "ArrowLeft") move(0, -1);
     else return;
-    // Tab moves inside the grid; at its edge it leaves, as a page should.
-    if (
-      k === "Tab" &&
-      ((at.c === 3 && !e.shiftKey) || (at.c === 0 && e.shiftKey))
-    )
-      return;
     e.preventDefault();
   };
-  const onCellKey = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      commit();
-      move(1, 0);
-    } else if (e.key === "Tab") {
-      e.preventDefault();
-      commit();
-      move(0, e.shiftKey ? -1 : 1);
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      setEditing(false);
-    }
-  };
-  // A block from Excel fills across and down from the chosen cell.
+  // A block from Excel fills across and down from the chosen cell; one value is
+  // typed into the cell like any other text.
   const onPaste = (e: ClipboardEvent) => {
     if (!canEdit) return;
     const text = e.clipboardData.getData("text/plain");
-    if (editing && !/[\t\n]/.test(text.trim())) return; // one value: the box takes it
+    if (!/[\t\n]/.test(text.trim())) return;
     e.preventDefault();
     const lines = text.replace(/\r/g, "").replace(/\n$/, "").split("\n");
-    const changes = lines.flatMap((line, i) =>
-      line
-        .split("\t")
-        .slice(0, 4 - at.c)
-        .map((v, j) => ({ r: at.r + i, c: at.c + j, v: v.trim() })),
+    write(
+      lines.flatMap((line, i) =>
+        line
+          .split("\t")
+          .slice(0, 4 - at.c)
+          .map((v, j) => ({ r: at.r + i, c: at.c + j, v: v.trim() })),
+      ),
     );
-    setEditing(false);
-    write(changes);
+    setTyped(null);
   };
 
   return (
@@ -220,6 +229,7 @@ export default function RefereeCallsView() {
             commit();
             setDay(d);
             setAt({ r: 0, c: 0 });
+            setActive(false);
           }}
           mark="tick"
           title="Work day"
@@ -236,6 +246,7 @@ export default function RefereeCallsView() {
                 commit();
                 setLoc(l);
                 setAt({ r: 0, c: 0 });
+                setActive(false);
               }}
               className={
                 "rounded-full px-[max(1rem,12px)] py-[max(0.45rem,6px)] text-small transition-colors " +
@@ -267,7 +278,6 @@ export default function RefereeCallsView() {
         aria-label={`Referee calls, ${loc}, ${DAYS.find((d) => d.value === day)?.label}`}
         aria-readonly={!canEdit}
         onKeyDown={onGridKey}
-        onPaste={onPaste}
         className="mt-[max(1.4rem,12px)] min-h-0 flex-1 overflow-auto rounded-lg border border-border bg-surface outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
       >
         <table className="w-full min-w-[52rem] table-fixed border-collapse text-left text-small">
@@ -305,13 +315,13 @@ export default function RefereeCallsView() {
                       role="gridcell"
                       aria-selected={on}
                       onMouseDown={(e) => {
-                        if (editing && on) return;
+                        setActive(true);
+                        // A click in the chosen cell places the caret there.
+                        if (on && canEdit) return setMode("edit");
                         e.preventDefault();
-                        commit();
-                        setAt({ r, c: ci });
-                        grid.current?.focus({ preventScroll: true });
+                        go(r, ci);
                       }}
-                      onDoubleClick={() => startEdit()}
+                      onDoubleClick={() => setMode("edit")}
                       className={
                         "relative border-b border-r border-border px-[max(0.9rem,10px)] " +
                         (on
@@ -319,12 +329,13 @@ export default function RefereeCallsView() {
                           : "")
                       }
                     >
-                      {on && editing ? (
+                      {on && canEdit ? (
                         <input
                           ref={input}
-                          value={draft}
-                          onChange={(e) => setDraft(e.target.value)}
+                          value={typed ?? cell(r, ci)}
+                          onChange={(e) => setTyped(e.target.value)}
                           onKeyDown={onCellKey}
+                          onPaste={onPaste}
                           onBlur={commit}
                           maxLength={col.max}
                           aria-label={`${col.label}, row ${r + 1}`}
