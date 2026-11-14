@@ -4,6 +4,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { DUR, EASE, gsap, motionOK } from "@/lib/gsap";
 import Notch from "./openings/[id]/Notch";
+import { counts, useRows } from "./strategy/data";
 
 // One board for the whole app (owner, 14 Nov 2026: "keep the Figma board behind,
 // one common tab, and only the tab changes - one whole page"). The dotted canvas,
@@ -17,6 +18,7 @@ const PAGES: [string, string][] = [
   ["/today", "Today"],
   ["/openings", "Openings"],
   ["/strategy", "Strategy Planner"],
+  ["/strategy/submissions", "New submissions"],
   ["/database", "Database"],
   ["/ta-track", "TA Track"],
   ["/alerts", "Alerts"],
@@ -32,6 +34,8 @@ let last: string | null = null;
 export default function Board({ children }: { children: ReactNode }) {
   const path = usePathname();
   const i = at(path);
+  // The submissions page's tab carries how many are still to read.
+  const unread = counts(useRows()).unread;
   const label = useRef<HTMLSpanElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
@@ -144,7 +148,7 @@ export default function Board({ children }: { children: ReactNode }) {
   if (i < 0) return children;
   return (
     <main className="enter-board relative mx-11 mb-[max(2.125rem,14px)] mt-[clamp(40px,8.7dvh,94px)] flex min-h-0 flex-1 flex-col rounded-lg bg-white shadow-card max-md:mx-3 max-md:mt-12">
-      <Notch label={PAGES[i][1]} wide labelRef={label} />
+      <Notch label={path === "/strategy/submissions" && unread ? `${PAGES[i][1]} · ${unread}` : PAGES[i][1]} wide labelRef={label} />
       {/* The loading bar under the tab, shown while the next page loads. */}
       <div
         ref={bar}

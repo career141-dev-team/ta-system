@@ -19,6 +19,8 @@ import Toast from "./Toast";
 // a lead manages them in the Strategy Planner. Nothing here waits on Start workday,
 // as in the old system.
 const LEAD = "Rashmi";
+// The demo opening this tab sits in (S5 design, 14 Nov 2026).
+const JOB = "Senior Manager — SAP Business Transformation";
 
 type Status = "new" | "open" | "done";
 /** `url` is an uploaded screenshot; without one the sample's grey placeholder shows. */
@@ -65,10 +67,10 @@ const OTHERS = [
 // colours, type, corners and the shadow are DESIGN.md's tokens.
 const BTN =
   "flex items-center gap-2 whitespace-nowrap rounded-full py-[max(0.625rem,7px)] pl-[max(1.25rem,14px)] pr-[max(1.375rem,15px)] text-small font-medium transition-colors";
-const GHOST = BTN + " border border-border-strong bg-surface text-ink hover:bg-surface-2";
-const CARD = "rounded-md border border-border bg-surface px-[max(1.625rem,16px)] py-5 shadow-card";
+const GHOST = "flex items-center gap-2.5 whitespace-nowrap rounded-full bg-surface py-1.5 pl-1.5 pr-4 text-small font-medium text-ink transition-colors hover:bg-surface-2";
+const CARD = "rounded-lg bg-canvas px-[max(1.75rem,16px)] py-[max(1.5rem,14px)]";
 const TITLE = "text-h3 font-medium text-ink";
-const TILE = "h-[max(5rem,60px)] w-[max(6.875rem,84px)] shrink-0 rounded-sm";
+const TILE = "h-[max(5.625rem,64px)] w-[max(7.5rem,88px)] shrink-0 rounded-sm";
 
 const CheckIcon = ({ className }: { className: string }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
@@ -106,7 +108,14 @@ export default function StrategiesView() {
       {/* The column is 1200px (75rem) and centred, under the back arrow's row. It scrolls
           inside itself; the bottom padding keeps the last card clear of Submit. */}
       <div className="mt-[max(3.47rem,50px)] min-h-0 flex-1 overflow-y-auto px-[max(5rem,48px)] pb-[10.5rem] [scrollbar-width:none] max-md:mt-4 max-md:px-[14px]">
-        <div className="mx-auto flex max-w-[75rem] flex-col gap-4">
+        <div className="mx-auto flex max-w-[68.75rem] flex-col gap-[max(1.5rem,12px)]">
+          <header>
+            <h1 className="text-[max(1.75rem,20px)] leading-tight text-ink">Your strategies for {JOB}</h1>
+            <p className="text-small text-ink-3">
+              From {LEAD}
+              {fresh.length ? ` · ${fresh.length} waiting for you to accept` : " · accepted 9 Nov"}
+            </p>
+          </header>
           {SEES_WHOLE_JOB && (
             <p className="text-small text-ink-2">
               You see every TA&apos;s strategies on this job.{" "}
@@ -140,7 +149,7 @@ export default function StrategiesView() {
                 <span className="line-through">{o.title}</span> · Not for this job. Your TA Lead has said it cannot be used here.
               </p>
             ) : (
-              <article key={o.id} className={CARD + " flex items-center gap-3.5 bg-canvas shadow-none"}>
+              <article key={o.id} className={CARD + " flex items-center gap-3.5 border border-border bg-surface"}>
                 <div className="min-w-0">
                   <h3 className={TITLE}>{o.title}</h3>
                   <p className="text-small text-ink-3">{o.who}&apos;s · read only</p>
@@ -155,7 +164,7 @@ export default function StrategiesView() {
       {ready.length > 0 && (
         <div className="absolute bottom-[max(6.5rem,20px)] left-1/2 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-x-4 gap-y-2 rounded-full bg-ink py-2 pl-6 pr-2 max-md:bottom-4">
           <p className="text-small text-white">
-            {ready.length} ready — {LEAD} sees {ready.length === 1 ? "it" : "them"} when you submit
+            {ready.length} {ready.length === 1 ? "strategy" : "strategies"} ready — {LEAD} sees {ready.length === 1 ? "it" : "them"} when you submit
           </p>
           <button type="button" onClick={submit} className="rounded-full bg-surface px-5 py-[max(0.625rem,7px)] text-small font-medium text-ink transition-colors hover:bg-surface-2">
             Submit
@@ -179,14 +188,14 @@ function StrategyCard({ s, patch }: { s: Strategy; patch: (p: Partial<Strategy>)
         <div className="min-w-0">
           <h3 className={TITLE}>{s.title}</h3>
           <p className="text-small text-ink-3">
-            Due {s.due} · from {LEAD}
+            Due {s.due}
           </p>
         </div>
         <div className="ml-auto">
           {s.status === "new" && <span className="text-small text-ink-3">Accept first</span>}
           {s.status === "open" && (
             <button type="button" onClick={() => patch({ status: "done", doneOn: today() })} className={GHOST}>
-              <CheckIcon className="size-[max(1rem,14px)]" />
+              <span className="size-6.5 shrink-0 rounded-full bg-surface-2" />
               Mark as done
             </button>
           )}
@@ -235,7 +244,7 @@ function DoneBody({ s, patch }: { s: Strategy; patch: (p: Partial<Strategy>) => 
   return (
     // A pasted screenshot lands on the card being typed in.
     <div className="flex flex-wrap gap-3.5" onPaste={(e) => e.clipboardData.files.length && add(e.clipboardData.files)}>
-      <label className="relative min-w-[16rem] flex-1 rounded-sm bg-canvas px-4 py-3 focus-within:ring-2 focus-within:ring-brand/15">
+      <label className="relative min-w-[16rem] flex-1 rounded-md bg-surface px-4 py-3 focus-within:ring-2 focus-within:ring-brand/15">
         <textarea
           value={s.note}
           onChange={(e) => edit({ note: e.target.value })}
@@ -293,7 +302,7 @@ function DoneBody({ s, patch }: { s: Strategy; patch: (p: Partial<Strategy>) => 
           <circle cx="9" cy="9" r="1.5" />
           <path d="m21 15-5-5L5 21" />
         </svg>
-        <span className="text-caption font-medium">Paste / drop</span>
+        <span className="text-caption font-medium">Paste or drop</span>
       </button>
       )}
     </div>
@@ -303,7 +312,7 @@ function DoneBody({ s, patch }: { s: Strategy; patch: (p: Partial<Strategy>) => 
 /** The sample proof: a header bar and three grey lines, as drawn in the design. */
 function Placeholder({ tone }: { tone?: "info" | "plain" }) {
   return (
-    <div aria-hidden="true" className={TILE + " relative overflow-hidden border border-border bg-canvas"}>
+    <div aria-hidden="true" className={TILE + " relative overflow-hidden border border-border bg-surface"}>
       <div className={"absolute -left-px -top-px h-[1.125rem] w-[6.875rem] " + (tone === "info" ? "bg-info-soft" : "bg-surface-2")} />
       {["1.8125rem", "2.9375rem", "4.0625rem"].map((top) => (
         <div key={top} style={{ top }} className="absolute left-[0.6875rem] h-1.5 w-[4.125rem] rounded-xs bg-border-strong opacity-60" />
