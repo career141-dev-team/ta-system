@@ -2,14 +2,34 @@
 
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-// Poppins 700 for the card's bold line; the layout loads 300 to 600.
+// The card's six faces, as the old Snippets offered them (owner, 14 Nov: "install
+// properly"). Poppins 700 for the bold line - the layout loads 300 to 600. They come
+// with this view's own download, not the first one.
 import "@fontsource/poppins/700.css";
-// shortcut: the font picker also offers Outfit, Montserrat and Jost, which the app does not
-// load yet. Run `npm i @fontsource/outfit @fontsource/montserrat @fontsource/jost` and import
-// their 300, 400, 500, 600 and 700 css here; until then those three draw in Poppins.
+import "@fontsource/outfit/300.css";
+import "@fontsource/outfit/400.css";
+import "@fontsource/outfit/500.css";
+import "@fontsource/outfit/700.css";
+import "@fontsource/montserrat/300.css";
+import "@fontsource/montserrat/400.css";
+import "@fontsource/montserrat/500.css";
+import "@fontsource/montserrat/700.css";
+import "@fontsource/jost/300.css";
+import "@fontsource/jost/400.css";
+import "@fontsource/jost/500.css";
+import "@fontsource/jost/700.css";
+import "@fontsource/quicksand/300.css";
+import "@fontsource/quicksand/400.css";
+import "@fontsource/quicksand/500.css";
+import "@fontsource/quicksand/700.css";
+import "@fontsource/figtree/300.css";
+import "@fontsource/figtree/400.css";
+import "@fontsource/figtree/500.css";
+import "@fontsource/figtree/700.css";
 import { CAN_SOURCE } from "@/lib/user";
 import { BackButton } from "./PipelineBoard";
 import Toast from "./Toast";
+import { useLiftMenu } from "./liftMenu";
 import { useOpeningView } from "./view";
 
 // The Snippets view (Figma 713:1721): the role as a 1080 x 1080 social card - made
@@ -26,7 +46,7 @@ import { useOpeningView } from "./view";
 /** Placeholder: the opening's JD is approved (same as LinkedIn Job's). */
 const JD_APPROVED: boolean = true;
 
-type Snip = { colour: number; font: string; body: number; underline: boolean; ink: number; version: number; line1: string; line2: string };
+type Snip = { level: number; colour: number; font: string; body: number; underline: boolean; ink: number; version: number; line1: string; line2: string };
 
 const COLOURS = [
   { name: "mint", words: ["mint", "green"], hex: "#01fea3" },
@@ -35,7 +55,26 @@ const COLOURS = [
   { name: "cyan", words: ["cyan", "blue", "aqua", "turquoise", "teal"], hex: "#41f4e3" },
   { name: "orange", words: ["orange"], hex: "#ffaa5b" },
 ];
-const FONTS = ["Poppins", "Outfit", "Montserrat", "Jost"];
+// The job's level sets the card's colour and its badge, as in the old system (owner,
+// 14 Nov: keep that and the free colour, without a busier screen). `colour` is an index
+// into COLOURS; the badge words are the old ones ("level - Executive" read as a typo).
+const LEVELS = [
+  { pill: "Junior Level", short: "Junior", colour: 1 },
+  { pill: "Executive Level", short: "Executive", colour: 0 },
+  { pill: "Mid Level", short: "Mid", colour: 2 },
+  { pill: "Senior Level", short: "Senior", colour: 3 },
+  { pill: "C-Level", short: "C-Level", colour: 4 },
+];
+/** The level read off the title, the old system's levelFromTitle. */
+function levelOf(title: string) {
+  const t = title.toLowerCase();
+  if (/\b(chief|cxo|c-suite|cfo|ceo|coo|chro|cso|cto)\b/.test(t)) return 4;
+  if (/\b(director|head of|group head|general manager|gm)\b/.test(t)) return 3;
+  if (/\b(manager|lead)\b/.test(t)) return 2;
+  if (/\b(intern|trainee|junior|assistant)\b/.test(t)) return 0;
+  return 1;
+}
+const FONTS = ["Poppins", "Outfit", "Montserrat", "Jost", "Quicksand", "Figtree"];
 // The heading in the three versions "Make it punchier with AURA" cycles through; the first is the role as posted.
 const VERSIONS: [string, string][] = [
   ["Executive / Senior Executive", "ACQUISITION"],
@@ -43,10 +82,10 @@ const VERSIONS: [string, string][] = [
   ["Own the numbers.", "FINANCE EXECUTIVE"],
 ];
 const INKS = ["#000000", "#165b42", "#ffffff"];
-const START: Snip = { colour: 0, font: "Poppins", body: 24.5, underline: false, ink: 0, version: 0, line1: VERSIONS[0][0], line2: VERSIONS[0][1] };
+const START_LEVEL = levelOf(VERSIONS[0][0]);
+const START: Snip = { level: START_LEVEL, colour: LEVELS[START_LEVEL].colour, font: "Poppins", body: 24.5, underline: false, ink: 0, version: 0, line1: VERSIONS[0][0], line2: VERSIONS[0][1] };
 
 const ROLE = {
-  level: "LEVEL - EXECUTIVE",
   sector: "Apparel",
   facts: [
     ["Location", "Seethawaka, Sri Lanka"],
@@ -133,7 +172,7 @@ function drawCard(ctx: CanvasRenderingContext2D, s: Snip, logo: HTMLImageElement
   ctx.font = f(500, 18);
   ctx.letterSpacing = "1.7px";
   ctx.textAlign = "center";
-  ctx.fillText(ROLE.level, 519.5, 41);
+  ctx.fillText(LEVELS[s.level].pill.toUpperCase(), 519.5, 41);
   ctx.textAlign = "left";
   ctx.letterSpacing = "0px";
 
@@ -236,7 +275,7 @@ function drawCard(ctx: CanvasRenderingContext2D, s: Snip, logo: HTMLImageElement
 // says what it did. shortcut: no model behind it yet; with the backend the message goes
 // to AURA, which returns the same kind of patch.
 type Msg = { who: "you" | "aura"; text: string };
-const HELP = "I can change the colour, the font, the text size, underline the title, or reword it. Try “make it orange”, “use Montserrat”, “bigger text” or “title to Senior Finance Manager”.";
+const HELP = "I can change the level, the colour, the font, the text size, underline the title, or reword it. Try “make it senior”, “make it orange”, “use Montserrat”, “bigger text” or “title to Senior Finance Manager”.";
 const SUGGESTIONS = ["Make it orange", "Use Montserrat", "Bigger text", "Underline the title"];
 
 // "Bigger" and "smaller" have no number of their own: they are a step from where the text is
@@ -255,6 +294,11 @@ function ask(text: string): { patch: Partial<Snip>; reply: string } {
   // The new title's own words are not instructions ("title to Orange County Lead").
   const title = text.match(/(?:title|heading|headline)\s+(?:to|as)\s+["“']?(.+?)["”']?\s*$/i);
   const rest = title ? t.slice(0, title.index) : t;
+  const lvl = rest.match(/\b(junior|executive|mid|senior|c-?\s?level)\b/);
+  if (lvl) {
+    const level = LEVELS.findIndex((l) => l.short.toLowerCase().replace(/\W/g, "") === lvl[1].replace(/\W/g, ""));
+    if (level >= 0) did(`the level to ${LEVELS[level].pill}`, { level, colour: LEVELS[level].colour });
+  }
   COLOURS.forEach((c, colour) => {
     // "green title" is the title's colour, not the card's.
     if (c.words.some((w) => new RegExp(`\\b${w}\\b(?!\\s+(?:text|title|heading))`).test(rest))) did(`the colour to ${c.name}`, { colour });
@@ -402,22 +446,28 @@ export default function SnippetsView() {
             <span className={CAPTION + " ml-auto"}>{s.version ? `Version ${s.version + 1} of ${VERSIONS.length}` : `${VERSIONS.length} versions`}</span>
           </button>
 
-          <div className="flex items-start gap-2.5">
-            <span className={CAPTION + " uppercase"}>Colour</span>
-            <div className="flex gap-3" role="radiogroup" aria-label="Colour">
-              {COLOURS.map((c, i) => (
+          {/* Level: sets the badge and the colour. The dot at the end picks another colour. */}
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+            <span className={CAPTION}>Level</span>
+            <div role="radiogroup" aria-label="Level" className="flex flex-wrap gap-0.5 rounded-full bg-surface-2 p-1">
+              {LEVELS.map((l, i) => (
                 <button
-                  key={c.name}
+                  key={l.pill}
                   type="button"
                   role="radio"
-                  aria-checked={s.colour === i}
-                  aria-label={c.name}
-                  onClick={() => setS((x) => ({ ...x, colour: i }))}
-                  style={{ background: c.hex }}
-                  className={"size-10 rounded-full border " + (s.colour === i ? "border-ink" : "border-transparent")}
-                />
+                  aria-checked={s.level === i}
+                  onClick={() => setS((x) => ({ ...x, level: i, colour: l.colour }))}
+                  className={
+                    "flex items-center gap-1.5 rounded-full px-3 py-[0.4375rem] text-small font-medium " +
+                    (s.level === i ? "bg-surface text-ink shadow-card" : "text-ink-3 hover:text-ink")
+                  }
+                >
+                  <span aria-hidden="true" style={{ background: COLOURS[l.colour].hex }} className="size-2.5 rounded-full" />
+                  {l.short}
+                </button>
               ))}
             </div>
+            <ColourDot colour={s.colour} levelColour={LEVELS[s.level].colour} onPick={(colour) => setS((x) => ({ ...x, colour }))} />
           </div>
 
           {/* Font row: wraps on a narrow window instead of overlapping. */}
@@ -528,6 +578,51 @@ export default function SnippetsView() {
         </div>
       </div>
       {toast && <Toast key={toast.key} bold={toast.bold} rest={toast.rest} warn={toast.warn} />}
+    </div>
+  );
+}
+
+/** The card's colour when it should not follow the level: one dot that lifts the five
+ *  colours, and "Match the level" to go back. */
+function ColourDot({ colour, levelColour, onPick }: { colour: number; levelColour: number; onPick: (c: number) => void }) {
+  const { open, setOpen, root, panel, shown } = useLiftMenu();
+  const own = colour !== levelColour;
+  return (
+    <div ref={root} className="relative flex items-center gap-2">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-label="Card colour"
+        title={own ? "Card colour - your own" : "Card colour - follows the level"}
+        style={{ background: COLOURS[colour].hex }}
+        className={"size-8 rounded-full ring-offset-2 hover:ring-2 hover:ring-border-strong " + (own ? "ring-2 ring-ink" : "")}
+      />
+      {own && (
+        <button type="button" onClick={() => onPick(levelColour)} className="text-caption font-medium text-brand hover:underline">
+          Match the level
+        </button>
+      )}
+      {shown && (
+        <div ref={panel} role="menu" className="absolute left-0 top-full z-30 mt-2 flex gap-2 rounded-full bg-surface p-2 shadow-float ring-1 ring-border/60">
+          {COLOURS.map((c, i) => (
+            <button
+              key={c.name}
+              type="button"
+              role="menuitem"
+              aria-label={c.name}
+              title={i === levelColour ? `${c.name} - the level's` : c.name}
+              onClick={() => {
+                onPick(i);
+                setOpen(false);
+              }}
+              style={{ background: c.hex }}
+              className={"size-8 rounded-full border-2 " + (colour === i ? "border-ink" : "border-transparent")}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
