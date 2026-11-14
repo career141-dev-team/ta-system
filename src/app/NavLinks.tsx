@@ -85,8 +85,7 @@ export function SearchShortcut() {
   return null;
 }
 
-// The path is only known at request time, so with Cache Components this part
-// must sit inside <Suspense> (TopNav does that) or the whole route blocks.
+// The links with the open page marked, read from the address like Board.tsx.
 export default function ActiveNavLinks() {
   return <NavLinks pathname={usePathname()} />;
 }

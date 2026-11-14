@@ -1,7 +1,6 @@
-import { Suspense } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import ActiveNavLinks, { NavLinks, SearchShortcut } from "./NavLinks";
+import ActiveNavLinks, { SearchShortcut } from "./NavLinks";
 import { Bell, Person } from "./TopMenus";
 
 
@@ -54,9 +53,10 @@ export default function TopNav() {
         />
       </Link>
 
-      <Suspense fallback={<NavLinks />}>
-        <ActiveNavLinks />
-      </Suspense>
+      {/* No <Suspense> here: in the static build that boundary never resolved, so
+          the links stayed plain HTML and every click reloaded the whole site (no
+          page turn, slow pages - 14 Nov 2026). The board reads the path the same way. */}
+      <ActiveNavLinks />
 
       <form
         action="/search"
