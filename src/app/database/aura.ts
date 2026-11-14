@@ -176,6 +176,9 @@ export const JOBS = [
   "Finance Manager · MAS",
 ];
 
+/** People another TA already works (sample): the old collision lock. */
+export const CLAIMED: Record<string, string> = { p3: "Hasini" };
+
 const TAG_WORDS: Record<string, string> = {
   sap: "SAP",
   manufacturing: "manufacturing",
@@ -383,6 +386,30 @@ export type Context = {
 export function reply(raw: string, ctx: Context): Reply {
   const text = raw.trim();
   const { chips: before, last } = ctx;
+
+  // Shortlist from the person panel (D2): into the job AND claimed by this TA, as
+  // the old Shortlist does (claimForTa) - or refused when another TA holds them.
+  const sl = text.match(/^shortlist\s+(.+?)\s+for\s+(.+)$/i);
+  if (sl) {
+    const who = whoOf(sl[1], last)[0];
+    const job = JOBS.find((j) => sl[2].trim() === j) ?? JOBS[0];
+    if (!who) return { text: "Who should be shortlisted? Name them.", warn: true };
+    if (ctx.locked)
+      return { text: `${ctx.locked} Shortlisting waits until then.`, warn: true };
+    if (CLAIMED[who.id])
+      return {
+        text: `${CLAIMED[who.id]} already claimed ${who.name} for ${job}. Nothing changed.`,
+        warn: true,
+      };
+    return {
+      text: `${who.name} is shortlisted for ${job} and yours to work, at TA Follow-up.`,
+      people: [who],
+      actions: [
+        { label: "Undo", prompt: `Take ${who.name} out of ${job}` },
+        { label: `People like ${who.name.split(" ")[0]}`, prompt: `Find people like ${who.name}` },
+      ],
+    };
+  }
 
   // Into a job: name the job, or be asked which.
   const add = text.match(/^add\s+(.+?)\s+to\s+(.+)$/i);

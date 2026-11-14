@@ -177,7 +177,7 @@ export default function CvPreview({
             <CvPages key={src} src={src} fit="width" />
           </div>
         ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto pr-[3%] [scrollbar-color:#fff_transparent] [scrollbar-width:thin]">
+        <div className="min-h-0 flex-1 overflow-y-auto pr-[3%] [scrollbar-color:#fff_transparent]">
           <article
             data-doc
             className="min-h-full rounded-t-[2.6rem] bg-white pb-[max(3rem,24px)] font-[Arial,Helvetica,sans-serif] text-ink"

@@ -240,7 +240,7 @@ export default function Workday({ startedAt }: { startedAt: number }) {
 
       {/* AURA. The talk grows upward from the box, like a chat. */}
       <section className="flex min-h-0 flex-1 flex-col">
-        <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:thin]">
+        <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto flex min-h-full w-full max-w-[max(53.75rem,300px)] flex-col justify-end gap-[max(2rem,18px)] px-[max(1.5rem,14px)] pb-4 pt-8">
             <Say>
               {part}, {first}. {WORDS[things.length] ?? things.length} things need you before we plan.

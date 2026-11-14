@@ -182,8 +182,45 @@ body {
 }
 
 /* Keyboard focus, everywhere (13 Nov 2026: there was none). Only for the keyboard
-   (:focus-visible), so a mouse click draws nothing. */
-:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
-  outline: 2px solid var(--color-brand);
-  outline-offset: 2px;
+   (:focus-visible), so a mouse click draws nothing. In the base layer so a box's
+   own outline-none wins; and not on text boxes - a browser counts a click into one
+   as focus-visible, and the square outline sat inside rounded bars (owner, 14 Nov
+   2026: "a very thick outline as a box"). A text box shows focus by its caret and
+   by its bar's own ring (focus-within / has-[...]). */
+@layer base {
+  :where(a, button, select, summary, [tabindex], input[type="checkbox"], input[type="radio"]):focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+  }
+}
+
+/* Every scrollbar in the app, in AURA's look (owner, 14 Nov 2026: the browser's
+   own bar "does not have the vibe of our page"). Always visible, so a TA can see
+   there is more: a soft round pill on a clear track, darker under the pointer.
+   Lists that hide their bar ([scrollbar-width:none]) keep hiding it. Chrome,
+   Edge and Safari read the ::-webkit-scrollbar rules (only while scrollbar-color
+   is unset, so that one is given to Firefox alone). */
+@layer base {
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background: var(--color-border-strong) padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-ink-3);
+  }
+  @supports (-moz-appearance: none) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--color-border-strong) transparent;
+    }
+  }
 }

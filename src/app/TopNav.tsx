@@ -41,7 +41,7 @@ export default function TopNav() {
   return (
     <header
       id="topnav"
-      className="mx-11 mt-[max(2.125rem,14px)] flex h-[max(5rem,64px)] shrink-0 items-center rounded-full bg-white pl-[max(1.875rem,18px)] pr-[max(1.5rem,14px)] max-lg:h-auto max-lg:flex-wrap max-lg:rounded-lg max-lg:py-2.5 max-md:mx-3 max-md:mt-3 max-md:px-4 shadow-card"
+      className="mx-11 mt-[max(2.125rem,14px)] flex h-[max(4.5rem,58px)] shrink-0 items-center rounded-full bg-white pl-[max(1.875rem,18px)] pr-[max(1.5rem,14px)] max-lg:h-auto max-lg:flex-wrap max-lg:rounded-lg max-lg:py-2.5 max-md:mx-3 max-md:mt-3 max-md:px-4 shadow-card"
     >
       <Link href="/" className="relative -top-1 shrink-0">
         <Image

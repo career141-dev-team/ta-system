@@ -23,8 +23,9 @@ export function NavLinks({ pathname = "" }: { pathname?: string }) {
   // The pill is found from the link itself, so no ref is read while rendering.
   const glide = useGlide();
   const glowOf = (el: Element) => el.closest("nav")?.querySelector<HTMLElement>("[data-glow]");
-  // Every link is its own pill (the open one filled), so the gliding pill takes
-  // the link's own box.
+  // 14 Nov 2026 (owner): every link is its own cell, flush to the bar's top and
+  // bottom edges (the open one filled, with a brand line on the bottom edge); the
+  // bar itself stays the floating rounded one. The gliding fill takes the link's box.
   const moveTo = (el: HTMLElement) => {
     glide.to(glowOf(el), { x: el.offsetLeft, y: el.offsetTop, width: el.offsetWidth, height: el.offsetHeight });
   };
@@ -34,13 +35,13 @@ export function NavLinks({ pathname = "" }: { pathname?: string }) {
     // the logo (TopNav) and slide sideways when they do not fit.
     <nav
       onMouseLeave={(e) => glide.out(glowOf(e.currentTarget))}
-      className="relative ml-[max(2.5rem,16px)] mr-2 flex min-w-0 shrink items-center max-lg:order-last max-lg:mx-0 max-lg:mt-2 max-lg:w-full gap-[max(0.375rem,2px)] overflow-x-auto whitespace-nowrap text-nav [scrollbar-width:none]"
+      className="relative ml-[max(2.5rem,16px)] mr-2 flex min-w-0 shrink items-stretch self-stretch overflow-x-auto whitespace-nowrap border-l border-border text-nav [scrollbar-width:none] max-lg:order-last max-lg:mx-0 max-lg:mt-2 max-lg:h-[44px] max-lg:w-full max-lg:self-auto max-lg:border-l-0"
     >
       <span
         data-glow
         aria-hidden="true"
         style={{ opacity: 0 }}
-        className="pointer-events-none absolute left-0 top-0 rounded-full bg-surface-2"
+        className="pointer-events-none absolute left-0 top-0 bg-surface-2"
       />
       {LINKS.map(([label, href]) => {
         const active = pathname === href || pathname.startsWith(href + "/");
@@ -53,8 +54,12 @@ export function NavLinks({ pathname = "" }: { pathname?: string }) {
             aria-current={active ? "page" : undefined}
             onMouseEnter={(e) => moveTo(e.currentTarget)}
             className={
-              "relative flex h-[max(2.5rem,34px)] items-center rounded-full px-[max(1.125rem,12px)] transition-colors " +
-              (active ? "bg-surface-2 text-ink" : "text-ink-2 hover:text-ink")
+              // Same height, never squeezed, text big enough to read at a glance (owner, 14 Nov).
+              "relative flex shrink-0 items-center border-r border-border px-[max(1.5rem,14px)] text-[max(1rem,14.5px)] transition-colors " +
+              // The open page: filled, with a brand line on the bar's bottom edge.
+              (active
+                ? "bg-surface-2 text-ink shadow-[inset_0_-2px_0_var(--color-brand)]"
+                : "text-ink-2 hover:text-ink")
             }
           >
             {label}

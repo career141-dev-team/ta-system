@@ -187,7 +187,7 @@ export function CandidateTable({
 
   return (
     <div className="mt-[max(0.7rem,6px)] rounded-md border border-border">
-      <div className="overflow-x-auto rounded-t-md [scrollbar-width:thin]">
+      <div className="overflow-x-auto rounded-t-md">
         <table className="w-full border-separate border-spacing-0 text-left text-small">
           <thead>
             <tr className="text-caption font-medium uppercase text-ink-3 [&>th]:border-b [&>th]:border-border [&>th]:bg-surface-2 [&>th]:px-[max(0.8rem,8px)] [&>th]:py-[max(0.55rem,6px)] [&>th]:align-bottom [&>th]:font-medium">

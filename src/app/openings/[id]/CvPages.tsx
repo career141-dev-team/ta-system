@@ -150,7 +150,7 @@ export default function CvPages({ src, fit }: { src: string; fit: "page" | "widt
   }, [doc, size, fit]);
 
   return (
-    <div ref={box} className="h-full w-full overflow-y-auto [scrollbar-width:thin]">
+    <div ref={box} className="h-full w-full overflow-y-auto">
       {failed ? (
         <p className="flex h-full items-center justify-center text-[max(0.85rem,12px)] text-ink-2">This CV could not be opened.</p>
       ) : !doc ? (

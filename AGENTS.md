@@ -57,7 +57,8 @@ Openings ─▶ one opening (/openings/[id])
 | Headhunting Research | `ResearchView.tsx` | built |
 | Headhunting Suggestions | `SuggestionsView.tsx` | built |
 | Headhunting Excel Tables | `ExcelTablesView.tsx`, `FindCvButton.tsx` (shared) | built |
-| Database D1 (search by chatting with AURA) | `src/app/database/DatabaseView.tsx` | built |
+| Database D1 + D2 (chat with AURA; a person opens in a panel beside it, Add to job / Shortlist through the chat) | `src/app/database/DatabaseView.tsx`, `aura.ts` | built |
+| ATS Database CVs (matches for the job, CV beside the list, Shortlist / Not for this job) | `DatabaseCvsView.tsx` | built |
 | Everything else | `src/app/NotBuilt.tsx` pages, `ComingView` in `OpeningView.tsx` | "next to build" |
 
 Sample people and the signed-in user are placeholders (`src/lib/user.ts`); the rules

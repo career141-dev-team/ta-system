@@ -1,5 +1,6 @@
 "use client";
 
+import DatabaseCvsView from "./DatabaseCvsView";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { DUR, EASE, HOVER_IN, HOVER_OUT, gsap, loadFlip, swapIn, useExit, useGSAP, useGlide } from "@/lib/gsap";
@@ -116,6 +117,8 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
                 <ScoopsView />
               ) : v === "midday" ? (
                 <DailyEmailView />
+              ) : v === "database" ? (
+                <DatabaseCvsView />
               ) : v === "linkedin-job" ? (
                 <LinkedInJobView />
               ) : v === "hh-overview" ? (

@@ -3,10 +3,12 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import Image from "next/image";
-import { DUR, EASE, PIN_IN, gsap, motionOK, swapIn, useGSAP } from "@/lib/gsap";
+import { gsap, motionOK, swapIn, useGSAP } from "@/lib/gsap";
 import { useWorkdayGate } from "@/lib/workday";
+import { useLiftMenu } from "../openings/[id]/liftMenu";
 import Notch from "../openings/[id]/Notch";
 import {
+  JOBS,
   fitOf,
   reasonOf,
   reply,
@@ -24,10 +26,13 @@ import {
 // filtering and taking a filter off, Referral Search, people like someone, adding
 // to a job and downloading CVs - each reply ending in one-tap suggestions. The rules
 // live in ./aura.ts.
-// Motion (DESIGN.md): each new turn by the one switch, people cards pin & settle,
-// AURA's mark breathes while it looks (never spins), the send button pops.
+// D2 (owner's design, 14 Nov): a person opens in a panel beside the talk - their
+// CV, "Add to <job>" and "Shortlist" - and the chats fold away behind one icon.
+// Both buttons speak through the chat, so what was done stays in the thread.
+// Motion (DESIGN.md): each new turn and the panel arrive by the one switch; AURA's
+// mark breathes while it looks (never spins).
 
-const CvPreview = dynamic(() => import("../openings/[id]/CvPreview"));
+const CvPages = dynamic(() => import("../openings/[id]/CvPages"));
 
 type Turn =
   | { id: string; from: "me"; text: string }
@@ -131,6 +136,13 @@ export default function DatabaseView() {
   const [expanded, setExpanded] = useState<string[]>([]);
   const [picked, setPicked] = useState<Person | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  // The chats fold away while a person is open; the icon brings them back.
+  const [chatsOpen, setChatsOpen] = useState(true);
+  const pick = (p: Person) => {
+    setPicked(p);
+    setChatsOpen(false);
+  };
+  const chats = !picked || chatsOpen;
   const thread = threads.find((t) => t.id === openId) ?? null;
   const scroller = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLTextAreaElement>(null);
@@ -228,11 +240,7 @@ export default function DatabaseView() {
         return;
       }
       const fresh = turns[turns.length - 1] as HTMLElement;
-      if (lastLen.current > 0) {
-        swapIn(fresh);
-        const cards = fresh.querySelectorAll("[data-card]");
-        if (cards.length && motionOK()) gsap.from(cards, PIN_IN);
-      }
+      if (lastLen.current > 0) swapIn(fresh);
       lastLen.current = turns.length;
       scroller.current?.scrollTo({
         top: scroller.current.scrollHeight,
@@ -242,6 +250,22 @@ export default function DatabaseView() {
     { dependencies: [thread?.turns.length, thinking], revertOnUpdate: false },
   );
 
+  const sendRef = useRef(send);
+  useEffect(() => {
+    sendRef.current = send;
+  });
+
+  // "Search the whole database" on an opening's Database CVs arrives with ?q= and
+  // starts a new chat with those words (the old /database/results?for=&q=).
+  const asked = useRef(false);
+  useEffect(() => {
+    const q = new URLSearchParams(location.search).get("q");
+    if (!q || asked.current) return;
+    asked.current = true;
+    history.replaceState(null, "", location.pathname);
+    setOpenId("");
+    queueMicrotask(() => sendRef.current(q));
+  }, []);
   const newSearch = () => {
     setOpenId("");
     setText("");
@@ -254,10 +278,22 @@ export default function DatabaseView() {
 
   return (
     <div className="relative flex min-h-0 flex-1 max-md:flex-col">
-      <Notch label="Database" />
+      <Notch label="Database" board />
+      {picked && (
+        <button
+          type="button"
+          onClick={() => setChatsOpen((v) => !v)}
+          aria-expanded={chatsOpen}
+          aria-label={chatsOpen ? "Hide the chats" : "Show the chats"}
+          title={chatsOpen ? "Hide the chats" : "Show the chats"}
+          className="absolute left-[max(1.75rem,14px)] top-[max(1.4rem,12px)] z-20 flex size-[max(2.5rem,34px)] items-center justify-center rounded-full text-ink-2 hover:bg-surface-2 hover:text-ink max-md:hidden"
+        >
+          <SidebarIcon />
+        </button>
+      )}
 
       {/* The chats */}
-      <aside className="flex w-[23.4%] min-w-[max(15rem,200px)] shrink-0 flex-col gap-[max(0.6rem,6px)] border-r border-border px-[max(1.75rem,14px)] pb-6 pt-[max(4.7rem,52px)] max-md:w-auto max-md:border-b max-md:border-r-0 max-md:pb-3 max-md:pt-14">
+      <aside className={(chats ? "flex" : "hidden") + " w-[23.4%] min-w-[max(15rem,200px)] shrink-0 flex-col gap-[max(0.6rem,6px)] border-r border-border px-[max(1.75rem,14px)] pb-6 pt-[max(4.7rem,52px)] max-md:w-auto max-md:border-b max-md:border-r-0 max-md:pb-3 max-md:pt-14"}>
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -321,23 +357,20 @@ export default function DatabaseView() {
               {threads
                 .filter((t) => t.when === when)
                 .map((t) => (
-                  <button
+                  <ChatItem
                     key={t.id}
-                    type="button"
-                    onClick={() => {
+                    title={t.title}
+                    on={openId === t.id}
+                    onOpen={() => {
                       setOpenId(t.id);
                       setShowHistory(false);
                     }}
-                    aria-current={openId === t.id ? "true" : undefined}
-                    className={
-                      "truncate rounded-md px-[max(0.9rem,10px)] py-[max(0.6rem,7px)] text-left text-small transition-colors " +
-                      (openId === t.id
-                        ? "bg-surface-2 text-ink"
-                        : "text-ink-2 hover:bg-surface-2/60 hover:text-ink")
+                    onRename={(title) =>
+                      setThreads((all) =>
+                        all.map((x) => (x.id === t.id ? { ...x, title } : x)),
+                      )
                     }
-                  >
-                    {t.title}
-                  </button>
+                  />
                 ))}
             </div>
           ))}
@@ -354,14 +387,14 @@ export default function DatabaseView() {
           ref={scroller}
           className="min-h-0 flex-1 overflow-y-auto px-[max(1.5rem,12px)] pb-6 pt-[max(4.6rem,40px)]"
         >
-          <div className="mx-auto flex max-w-[62.5rem] flex-col gap-[max(2.1rem,18px)]">
+          <div className={(picked ? "mx-auto" : "ml-[7.7rem] mr-auto") + " flex max-w-[62.5rem] max-lg:ml-0 flex-col gap-[max(2.1rem,18px)]"}>
             {!thread ? (
               <Welcome mode={mode} onTry={send} />
             ) : (
               thread.turns.map((t) =>
                 t.from === "me" ? (
                   <div key={t.id} data-turn className="flex justify-end">
-                    <p className="max-w-[80%] whitespace-pre-line rounded-[max(1.4rem,16px)] rounded-br-[6px] bg-surface-2 px-[max(1.25rem,14px)] py-[max(0.75rem,9px)] text-body text-ink">
+                    <p className="max-w-[80%] whitespace-pre-line rounded-lg rounded-br-xs bg-surface-2 px-[max(1.25rem,14px)] py-[max(0.75rem,9px)] text-body text-ink">
                       {t.text}
                     </p>
                   </div>
@@ -379,7 +412,7 @@ export default function DatabaseView() {
                           : [...e, t.id],
                       )
                     }
-                    onPick={setPicked}
+                    onPick={pick}
                     onSend={send}
                     busy={thinking}
                   />
@@ -410,18 +443,98 @@ export default function DatabaseView() {
           busy={thinking}
           box={box}
           mode={mode}
+          centred={!!picked}
           onFile={(name) => send(`Find people for this JD: ${name}`)}
         />
       </section>
 
       {picked && (
-        <CvPreview
-          name={picked.name}
-          title={`${picked.title} · ${picked.company}`}
-          src={picked.cv}
-          onClose={() => setPicked(null)}
+        <PersonPanel
+          p={picked}
+          busy={thinking}
+          onSend={send}
+          onClose={() => {
+            setPicked(null);
+            setChatsOpen(true);
+          }}
         />
       )}
+    </div>
+  );
+}
+
+/** One chat in the list: a click opens it; double-click or the pencil renames it
+ *  in place (Enter keeps, Escape or a blank name undoes). */
+function ChatItem({
+  title,
+  on,
+  onOpen,
+  onRename,
+}: {
+  title: string;
+  on: boolean;
+  onOpen: () => void;
+  onRename: (t: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(title);
+  const keep = () => {
+    setEditing(false);
+    const t = draft.trim();
+    if (t && t !== title) onRename(t.slice(0, 80));
+  };
+  if (editing)
+    return (
+      <input
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onFocus={(e) => e.currentTarget.select()}
+        onBlur={keep}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") keep();
+          if (e.key === "Escape") setEditing(false);
+        }}
+        maxLength={80}
+        aria-label="Chat name"
+        className="rounded-md bg-surface px-[max(0.9rem,10px)] py-[max(0.6rem,7px)] text-small text-ink outline-none ring-2 ring-brand/30"
+      />
+    );
+  return (
+    <div
+      className={
+        "group flex items-center rounded-md transition-colors " +
+        (on ? "bg-surface-2" : "hover:bg-surface-2/60")
+      }
+    >
+      <button
+        type="button"
+        onClick={onOpen}
+        onDoubleClick={() => {
+          setDraft(title);
+          setEditing(true);
+        }}
+        aria-current={on ? "true" : undefined}
+        title={title}
+        className={
+          "min-w-0 flex-1 truncate px-[max(0.9rem,10px)] py-[max(0.6rem,7px)] text-left text-small " +
+          (on ? "text-ink" : "text-ink-2 group-hover:text-ink")
+        }
+      >
+        {title}
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          setDraft(title);
+          setEditing(true);
+        }}
+        aria-label={`Rename "${title}"`}
+        title="Rename"
+        className="mr-1.5 shrink-0 rounded-full p-1.5 text-ink-3 opacity-0 transition-opacity hover:bg-surface hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 max-md:opacity-100"
+      >
+        <PencilIcon />
+      </button>
     </div>
   );
 }
@@ -644,7 +757,7 @@ function Results({
           onClick={() => onPick(p)}
           title={p.cv ? "Open the CV" : "No CV file on record"}
           className={
-            "flex shrink-0 flex-col gap-[max(0.5rem,5px)] rounded-[max(1.4rem,16px)] border-[1.5px] p-[max(1rem,12px)] text-left transition-colors " +
+            "flex shrink-0 flex-col gap-[max(0.5rem,5px)] rounded-lg border-[1.5px] p-[max(1rem,12px)] text-left transition-colors " +
             (open ? "w-auto " : "w-[max(12.3rem,160px)] ") +
             (picked === p.id
               ? "border-ink bg-surface"
@@ -663,7 +776,7 @@ function Results({
             <span
               title={fitOf(p.score)}
               className={
-                "rounded-[10px] px-2 py-0.5 text-small " +
+                "rounded-sm px-2 py-0.5 text-small " +
                 (p.score >= 80
                   ? "bg-brand-soft text-brand"
                   : "bg-surface text-ink-2")
@@ -689,7 +802,7 @@ function Results({
           onClick={onAll}
           aria-expanded={open}
           className={
-            "flex shrink-0 flex-col items-center justify-center gap-1 rounded-[max(1.4rem,16px)] border border-border px-6 py-4 text-ink hover:bg-surface-2 " +
+            "flex shrink-0 flex-col items-center justify-center gap-1 rounded-lg border border-border px-6 py-4 text-ink hover:bg-surface-2 " +
             (open ? "" : "w-[max(6.9rem,90px)]")
           }
         >
@@ -706,6 +819,148 @@ function Results({
         </button>
       )}
     </div>
+  );
+}
+
+/** D2: one person beside the talk - who they are, their CV, and the two things a
+ *  TA does from here. The job menu picks which job both buttons use; each button
+ *  sends its words to the chat, so AURA answers (and refuses) as everywhere else. */
+function PersonPanel({
+  p,
+  busy,
+  onSend,
+  onClose,
+}: {
+  p: Person;
+  busy: boolean;
+  onSend: (text: string) => void;
+  onClose: () => void;
+}) {
+  const [job, setJob] = useState(JOBS[0]);
+  const { open: menuOpen, setOpen: setMenu, root: menuRoot, panel: menuPanel, shown: menuShown } = useLiftMenu();
+  const el = useRef<HTMLElement>(null);
+  const short = (j: string) => j.split(" · ")[0];
+  // On a phone the panel covers the talk: step aside so AURA's answer is seen.
+  const act = (t: string) => {
+    onSend(t);
+    if (matchMedia("(max-width: 767px)").matches) onClose();
+  };
+  useGSAP(
+    () => {
+      if (el.current) swapIn(el.current);
+    },
+    { dependencies: [p.id] },
+  );
+  useEffect(() => {
+    if (menuOpen) return;
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  }, [onClose, menuOpen]);
+  return (
+    <aside
+      ref={el}
+      aria-label={p.name}
+      className="relative flex w-[44%] min-w-[max(26rem,340px)] shrink-0 flex-col border-l border-border bg-surface max-md:absolute max-md:inset-0 max-md:z-30 max-md:w-auto max-md:min-w-0 max-md:border-l-0"
+    >
+      <header className="flex items-center gap-3 border-b border-border px-[max(1.5rem,14px)] py-[max(1rem,10px)]">
+        <span className="flex size-[max(2.75rem,36px)] shrink-0 items-center justify-center rounded-full bg-brand-soft text-small font-medium text-brand">
+          {initials(p.name)}
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-h3 font-medium text-ink">{p.name}</span>
+          <span className="truncate text-small text-ink-3">
+            {p.title} · {p.company} · {p.city} · {p.years} yrs
+          </span>
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          title="Close (Esc)"
+          className="flex size-[max(2.25rem,32px)] shrink-0 items-center justify-center rounded-full text-ink-3 hover:bg-surface-2 hover:text-ink"
+        >
+          <svg {...ico} className="size-[max(1.1rem,15px)]">
+            <path d="M6 6l12 12M18 6 6 18" />
+          </svg>
+        </button>
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto bg-surface-2 px-[max(1.25rem,12px)] pb-[max(6rem,76px)] pt-[max(1.25rem,12px)]">
+        {p.cv ? (
+          <CvPages key={p.cv} src={p.cv} fit="width" />
+        ) : (
+          <p className="pt-[20vh] text-center text-body text-ink-3">
+            No CV file on record for {p.name.split(" ")[0]}.
+          </p>
+        )}
+      </div>
+      <div className="absolute inset-x-0 bottom-[max(1.25rem,12px)] flex justify-center gap-2 px-3">
+        <div
+          ref={menuRoot}
+          className="relative flex rounded-full bg-surface shadow-float ring-1 ring-border/60"
+        >
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => act(`Add ${p.name} to ${job}`)}
+            className="flex h-[max(2.75rem,36px)] items-center rounded-l-full pl-[max(1.2rem,14px)] pr-2 text-body font-medium text-ink hover:bg-surface-2 disabled:opacity-40"
+          >
+            Add to {short(job)}
+          </button>
+          <button
+            type="button"
+            onClick={() => setMenu((v) => !v)}
+            aria-expanded={menuOpen}
+            aria-haspopup="menu"
+            aria-label="Choose the job"
+            title="Choose the job"
+            className="flex items-center rounded-r-full border-l border-border pl-2 pr-[max(0.9rem,10px)] text-ink-2 hover:bg-surface-2 hover:text-ink"
+          >
+            <svg {...ico} className="size-[max(1rem,14px)]">
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+          </button>
+          {menuShown && (
+            <div
+              ref={menuPanel}
+              role="menu"
+              className="absolute bottom-full left-0 mb-2 flex min-w-full flex-col rounded-md bg-surface p-1.5 shadow-float ring-1 ring-border/60"
+            >
+              <p className="px-3 pb-1 pt-1.5 text-caption font-medium uppercase text-ink-3">
+                Which job
+              </p>
+              {JOBS.map((j) => (
+                <button
+                  key={j}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setJob(j);
+                    setMenu(false);
+                  }}
+                  className={
+                    "flex items-center gap-2 whitespace-nowrap rounded-sm px-3 py-2 text-left text-small hover:bg-surface-2 " +
+                    (j === job ? "font-medium text-ink" : "text-ink-2")
+                  }
+                >
+                  <span className="w-3">{j === job && <TickIcon />}</span>
+                  {j}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => act(`Shortlist ${p.name} for ${job}`)}
+          title={`Shortlist for ${job} and claim them`}
+          className="flex h-[max(2.75rem,36px)] items-center rounded-full bg-brand px-[max(1.4rem,16px)] text-body font-medium text-white shadow-float hover:bg-brand-strong disabled:opacity-40"
+        >
+          Shortlist
+        </button>
+      </div>
+    </aside>
   );
 }
 
@@ -739,6 +994,7 @@ function Composer({
   busy,
   box,
   mode,
+  centred,
   onFile,
 }: {
   value: string;
@@ -747,6 +1003,7 @@ function Composer({
   busy: boolean;
   box: React.RefObject<HTMLTextAreaElement | null>;
   mode: "people" | "cvs";
+  centred: boolean;
   onFile: (name: string) => void;
 }) {
   const file = useRef<HTMLInputElement>(null);
@@ -782,20 +1039,13 @@ function Composer({
     rec.current = r;
     queueMicrotask(() => setSpeech(true));
   }, [onChange, box]);
-  const send = useRef<HTMLButtonElement>(null);
   const press = () => {
     if (!value.trim() || busy) return;
-    if (send.current && motionOK())
-      gsap.fromTo(
-        send.current,
-        { scale: 0.88 },
-        { scale: 1, duration: DUR.base, ease: EASE.pop },
-      );
     onSend();
   };
   return (
     <div className="px-[max(1.5rem,12px)] pb-[max(2.4rem,14px)]">
-      <div className="mx-auto flex max-w-[62.5rem] items-end gap-[max(0.9rem,8px)] rounded-[max(2.1rem,24px)] bg-surface p-2.5 shadow-[0_18px_100px_-8px_rgb(15_23_31/0.1)] ring-1 ring-border/60">
+      <div className={(centred ? "mx-auto" : "ml-[7.7rem] mr-auto") + " flex max-w-[62.5rem] max-lg:ml-0 items-end gap-[max(0.9rem,8px)] rounded-xl bg-surface p-2.5 shadow-float ring-1 ring-border/60 transition-shadow focus-within:ring-2 focus-within:ring-brand/30"}>
         <button
           type="button"
           onClick={() => file.current?.click()}
@@ -872,7 +1122,6 @@ function Composer({
           <MicIcon />
         </button>
         <button
-          ref={send}
           type="button"
           onClick={press}
           disabled={!value.trim() || busy}
@@ -942,5 +1191,17 @@ const XIcon = () => (
 const TickIcon = () => (
   <svg {...ico} strokeWidth={3} className="size-3">
     <path d="m5 12.5 4.5 4.5L19 7.5" />
+  </svg>
+);
+const PencilIcon = () => (
+  <svg {...ico} className="size-[max(0.9rem,12px)]">
+    <path d="M4 20h4L19 9l-4-4L4 16v4Z" />
+    <path d="m13.5 6.5 4 4" />
+  </svg>
+);
+const SidebarIcon = () => (
+  <svg {...ico} className="size-[max(1.25rem,16px)]">
+    <rect x="3" y="4" width="18" height="16" rx="3" />
+    <path d="M9 4v16" />
   </svg>
 );

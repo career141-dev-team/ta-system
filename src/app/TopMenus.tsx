@@ -93,7 +93,7 @@ export function Bell() {
                 Mark all read
               </button>
             </div>
-            <ul className="max-h-[min(22rem,60dvh)] overflow-y-auto px-2 [scrollbar-width:thin]">
+            <ul className="max-h-[min(22rem,60dvh)] overflow-y-auto px-2">
               {notes.map((n) => (
                 <li key={n.id}>
                   <Link

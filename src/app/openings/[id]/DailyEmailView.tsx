@@ -853,7 +853,7 @@ export default function DailyEmailView() {
         className="mt-[max(1.3rem,10px)] grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,max(31rem,280px))] gap-[max(1.8rem,14px)] max-lg:flex max-lg:flex-col max-lg:overflow-y-auto"
       >
         {/* The email as the desk will read it. */}
-        <div className="min-h-0 overflow-y-auto rounded-lg border border-border px-[max(2rem,14px)] py-[max(1.5rem,12px)] [scrollbar-width:thin] max-lg:shrink-0 max-lg:overflow-visible">
+        <div className="min-h-0 overflow-y-auto rounded-lg border border-border px-[max(2rem,14px)] py-[max(1.5rem,12px)] max-lg:shrink-0 max-lg:overflow-visible">
           {!mail ? (
             <FirstMidday onAdd={addMidday} closed={eodSent} />
           ) : (

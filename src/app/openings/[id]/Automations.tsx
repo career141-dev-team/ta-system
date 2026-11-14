@@ -207,7 +207,7 @@ export default function Automations({ pillClass, icon }: { pillClass: string; ic
               Standard 4 always asked
             </span>
           </div>
-          <ul className="mt-[max(0.8rem,8px)] max-h-[min(22rem,40vh)] space-y-[max(0.7rem,7px)] overflow-y-auto [scrollbar-width:thin]">
+          <ul className="mt-[max(0.8rem,8px)] max-h-[min(22rem,40vh)] space-y-[max(0.7rem,7px)] overflow-y-auto">
             {qs.map((q, i) => (
               <li
                 key={q.id}

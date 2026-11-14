@@ -1,6 +1,17 @@
 /** A label in a notch cut from the top edge of a white card (the board showing
- *  through). The parent must be `relative`. */
-export default function Notch({ label }: { label: string }) {
+ *  through). The parent must be `relative`.
+ *  `board`: the taller notch of a section board (Database - the owner's notch
+ *  shape, 218.5 x 51.5 at 1920, 14 Nov 2026: "the tab height is very small"). */
+export default function Notch({ label, board = false }: { label: string; board?: boolean }) {
+  if (board)
+    return (
+      <h2 className="absolute left-1/2 top-0 z-10 flex h-[3.22rem] w-[13.66rem] min-w-[150px] -translate-x-1/2 items-start justify-center pt-[max(0.85rem,8px)] text-h3 font-semibold text-ink">
+        <svg viewBox="0 0 218.5 51.5" preserveAspectRatio="none" className="absolute inset-0 size-full fill-background" aria-hidden="true">
+          <path d="M0 0H218.5L196.649 40.9206C193.172 47.433 186.389 51.5 179.007 51.5H39.0965C31.6594 51.5 24.8365 47.3733 21.3832 40.7866L0 0Z" />
+        </svg>
+        <span className="relative">{label}</span>
+      </h2>
+    );
   return (
     <h2 className="absolute left-1/2 top-0 z-10 flex h-10.5 w-52 -translate-x-1/2 items-center justify-center pb-1 text-tab font-semibold">
       <svg

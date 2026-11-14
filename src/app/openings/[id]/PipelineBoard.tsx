@@ -676,7 +676,7 @@ export default function PipelineBoard() {
 
       {mode === "board" ? (
         // Columns side by side; the row scrolls sideways, each column scrolls itself.
-        <div data-board className="flex min-h-0 flex-1 gap-[max(1.1rem,12px)] overflow-x-auto px-[max(1.5rem,14px)] [scrollbar-color:#e3e6ea_transparent] [scrollbar-width:thin]">
+        <div data-board className="flex min-h-0 flex-1 gap-[max(1.1rem,12px)] overflow-x-auto px-[max(1.5rem,14px)] [scrollbar-color:#e3e6ea_transparent]">
           {columns.map(({ s, all, cards }) => (
             <section
               key={s.name}
@@ -1016,7 +1016,7 @@ const CandidateCard = memo(function CandidateCard({
 function ListView({ board, match }: { board: Record<string, Card[]>; match: (p: Card) => boolean }) {
   const rows = STAGES.flatMap((s) => board[s.name].filter(match).map((p) => ({ p, stage: s })));
   return (
-    <div className="min-h-0 flex-1 overflow-auto px-[max(1.5rem,14px)] [scrollbar-width:thin]">
+    <div className="min-h-0 flex-1 overflow-auto px-[max(1.5rem,14px)]">
       <table className="w-full text-left text-card-line">
         <thead className="sticky top-0 bg-white text-ink-2">
           <tr>
