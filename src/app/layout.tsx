@@ -14,6 +14,7 @@ import "./globals.css";
 import TopNav from "./TopNav";
 import Motion from "./Motion";
 import Board from "./Board";
+import { THEME_BOOT } from "@/lib/theme";
 
 export const metadata: Metadata = {
   title: "TA System",
@@ -22,7 +23,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className="antialiased">
+    // suppressHydrationWarning: the theme script below sets data-theme before React loads.
+    <html lang="en" className="antialiased" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
+      </head>
       {/* On every device the page is exactly one window tall, so a screen fits
           itself to the height and anything longer scrolls inside its own card. A
           phone once got a page that grew without end: the board's columns fill

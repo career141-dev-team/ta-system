@@ -8,7 +8,7 @@ import { DUR, EASE, gsap } from "@/lib/gsap";
 import { CardsSkeleton } from "../../Skeleton";
 import Toast from "../../openings/[id]/Toast";
 import { BackButton } from "../../openings/[id]/PipelineBoard";
-import { GROUPS, STRATEGIES, TAS, TODAY, WEEK, WORKED, auraPlan, busy, drafts, job, liveRows, setRows, ta, useRows, whenLabel, type Job, type Row, type TaId } from "../data";
+import { TAS, groupsOf, namesOf, useCatalogue, TODAY, WEEK, WORKED, auraPlan, busy, drafts, job, liveRows, setRows, ta, useRows, whenLabel, type Job, type Row, type TaId } from "../data";
 import { AssignPanel, CalendarIcon, Initials, Toggle, type Assign } from "../ui";
 
 // S3, planning one job (owner's design, 14 Nov 2026): what worked on roles like it,
@@ -53,6 +53,7 @@ function Plan({ j, aura }: { j: Job; aura: boolean }) {
   const rows = useRows();
   const router = useRouter();
   const stored = rows.filter((x) => x.job === j.id);
+  const cat = useCatalogue();
   const [draft, setDraft] = useState<Row[]>(() => drafts.get(j.id) ?? stored);
   const [panel, setPanel] = useState<{ name: string; at: DOMRect } | null>(null);
   const [more, setMore] = useState<Record<string, boolean>>({});
@@ -70,6 +71,8 @@ function Plan({ j, aura }: { j: Job; aura: boolean }) {
     put({ job: j.id, name: n, ta: a.ta, when: a.when, days: a.days, state: cur?.state === "waiting" && cur.ta === a.ta ? "waiting" : "open" });
   };
 
+  const groups = groupsOf(cat, draft);
+  const STRATEGIES = namesOf(groups);
   const same = (a?: Row, b?: Row) => JSON.stringify(a) === JSON.stringify(b);
   const changed = STRATEGIES.filter((n) => !same(get(n), stored.find((x) => x.name === n)));
   const toSend = draft.filter((x) => x.state === "open" && x.ta);
@@ -223,8 +226,8 @@ function Plan({ j, aura }: { j: Job; aura: boolean }) {
               {on} of {STRATEGIES.length} on
             </span>
           </div>
-          {GROUPS.map((g) => {
-            const items = [...g.items];
+          {groups.map((g) => {
+            const items = g.items.map((i) => i.name);
             // Those in use always show; the rest fill the group up to four, then "+ N more".
             const room = Math.max(0, 4 - items.filter((n) => get(n)).length);
             const spare = items.filter((n) => !get(n)).slice(0, room);

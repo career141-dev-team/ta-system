@@ -8,7 +8,7 @@ import { useSwap } from "@/lib/gsap";
 import Count from "../Count";
 import Toast from "../openings/[id]/Toast";
 import { useLiftMenu } from "../openings/[id]/liftMenu";
-import { GROUPS, JOBS, STRATEGIES, TAS, counts, jobStatus, liveRows, saveRow, setRows, ta, useRows, type Job, type Row, type State, type TaId } from "./data";
+import { JOBS, TAS, groupsOf, namesOf, useCatalogue, counts, jobStatus, liveRows, saveRow, setRows, ta, useRows, type Job, type Row, type State, type TaId } from "./data";
 import { AssignPanel, CheckIcon, Initials } from "./ui";
 
 // S1 Board and S2 Matrix (owner's designs, 14 Nov 2026): the TA Lead's Strategy
@@ -81,6 +81,9 @@ export default function Planner() {
               </button>
             ))}
           </div>
+          <Link href="/strategy/manage" className="flex h-[max(3.125rem,38px)] items-center whitespace-nowrap rounded-full bg-surface-2 px-[max(1.25rem,12px)] text-small text-ink transition-colors hover:bg-surface-3">
+            Strategy list
+          </Link>
           <FilterSort who={who} setWho={setWho} p={p} setP={setP} sort={sort} setSort={setSort} on={filtered} />
         </div>
       </div>
@@ -224,6 +227,8 @@ function JobCard({ j, rows, onOpen }: { j: Job; rows: Row[]; onOpen: () => void 
 function Matrix({ jobs, rows, say }: { jobs: Job[]; rows: Row[]; say: (bold: string, rest: string) => void }) {
   const [open, setOpen] = useState<{ job: Job; name: string; at: DOMRect } | null>(null);
   const cell = (j: Job, n: string) => rows.find((x) => x.job === j.id && x.name === n);
+  const groups = groupsOf(useCatalogue(), rows);
+  const STRATEGIES = namesOf(groups);
   const COL = "w-[max(4.25rem,44px)] shrink-0";
   const JOBCOL = "sticky left-0 z-10 w-[max(25rem,200px)] shrink-0 bg-inherit pr-4";
 
@@ -233,7 +238,7 @@ function Matrix({ jobs, rows, say }: { jobs: Job[]; rows: Row[]; say: (bold: str
         {/* The strategy groups, then the strategies' names written up at an angle. */}
         <div className="flex bg-surface">
           <div className={JOBCOL} />
-          {GROUPS.map((g) => (
+          {groups.map((g) => (
             <div key={g.name} style={{ width: `calc(${g.items.length} * max(4.25rem, 44px))` }} className="shrink-0 px-1">
               <p className={"rounded-sm px-2.5 py-1 text-caption font-medium " + g.band}>{g.name}</p>
             </div>

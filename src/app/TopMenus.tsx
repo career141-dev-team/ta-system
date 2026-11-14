@@ -5,6 +5,8 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { DUR, EASE, gsap } from "@/lib/gsap";
 import { USER } from "@/lib/user";
+import { getTheme, setTheme } from "@/lib/theme";
+import { ROLES, setRole, useRole } from "@/lib/role";
 import { markRead, useAlerts, type Alert, type Icon } from "./alerts/data";
 import TellUs from "./feedback/TellUs";
 
@@ -152,11 +154,9 @@ export function Bell() {
 
 const MENU_ICON: Record<string, ReactNode> = {
   feedback: <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z" />,
-  decisions: <path d="M9 11l3 3 8-8M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9" />,
   people: <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4 21a8 8 0 0 1 16 0" />,
   tables: <path d="M3 5h18v14H3zM3 10h18M9 10v9" />,
   bin: <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />,
-  settings: <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2Z" />,
   dark: <path d="M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10Z" />,
   out: <path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10" />,
 };
@@ -191,6 +191,8 @@ function MenuRow({ icon, label, hint, href, onClick }: { icon: string; label: st
 export function Person() {
   const [open, setOpen] = useState<Place | null>(null);
   const [tell, setTell] = useState(false);
+  const role = useRole();
+  // What the page is showing now (read when the menu opens; the boot script set it).
   const [dark, setDark] = useState(false);
   const initials = USER.name
     .split(" ")
@@ -205,7 +207,10 @@ export function Person() {
         aria-haspopup="menu"
         aria-expanded={!!open}
         aria-label={`${USER.name}, ${USER.role}: your menu`}
-        onClick={(e) => setOpen(open ? null : placeUnder(e.currentTarget))}
+        onClick={(e) => {
+          setDark(getTheme() === "dark");
+          setOpen(open ? null : placeUnder(e.currentTarget));
+        }}
         className="flex items-center gap-[max(0.9375rem,9px)] rounded-full text-left"
       >
         <span aria-hidden="true" className={CIRCLE + " bg-ink text-nav font-medium text-white"}>
@@ -232,13 +237,42 @@ export function Person() {
                 setTell(true);
               }}
             />
-            <MenuRow icon="decisions" label="Shortlist decisions" hint="leads" href="/decisions" onClick={close} />
             <MenuRow icon="people" label="People & roles" hint="admin" href="/people" onClick={close} />
             <MenuRow icon="tables" label="Excel Tables" hint="TA Support" href="/excel-tables" onClick={close} />
             <MenuRow icon="bin" label="Bin" hint="7 days" href="/bin" onClick={close} />
-            <MenuRow icon="settings" label="Settings" hint="admin" href="/settings" onClick={close} />
             <li role="separator" className="mx-2.5 my-1.5 h-px bg-border" />
-            <MenuRow icon="dark" label="Dark mode" hint={dark ? "not designed yet" : undefined} onClick={() => setDark(true)} />
+            {/* Until sign-in: see the app as each role (homes, rights). */}
+            <li data-row role="none" className="px-2.5 py-1.5">
+              <p className="mb-1.5 text-caption text-ink-3">View as (until sign-in)</p>
+              <div className="flex flex-wrap gap-1.5">
+                {ROLES.map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={role === r}
+                    onClick={() => {
+                      setRole(r);
+                      close();
+                    }}
+                    className={"rounded-full px-3 py-1 text-caption transition-colors " + (role === r ? "bg-ink text-white" : "bg-surface-2 text-ink-2 hover:bg-surface-3")}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </li>
+            <li role="separator" className="mx-2.5 my-1.5 h-px bg-border" />
+            <MenuRow
+              icon="dark"
+              label="Dark mode"
+              hint={dark ? "On" : "Off"}
+              onClick={() => {
+                const next = getTheme() === "dark" ? "light" : "dark";
+                setTheme(next);
+                setDark(next === "dark");
+              }}
+            />
             <MenuRow icon="out" label="Sign out" href="/signin" onClick={close} />
           </ul>
         </Pop>

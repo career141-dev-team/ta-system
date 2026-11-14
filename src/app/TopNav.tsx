@@ -59,7 +59,7 @@ export default function TopNav() {
       <ActiveNavLinks />
 
       <form
-        action="/search"
+        action="/database"
         role="search"
         className="ml-auto hidden h-[max(2.875rem,36px)] w-[max(21.25rem,180px)] sm:flex min-w-36 shrink items-center gap-[max(0.625rem,6px)] rounded-full bg-surface-2 pl-[max(1.125rem,12px)] pr-[max(0.625rem,6px)] has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-brand/30"
       >
@@ -77,7 +77,7 @@ export default function TopNav() {
         <SearchShortcut />
       </form>
       <Link
-        href="/search"
+        href="/database"
         prefetch={false}
         aria-label="Search or ask AURA"
         className={CIRCLE + " ml-auto bg-surface-2 text-ink sm:hidden"}

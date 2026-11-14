@@ -28,7 +28,9 @@ html {
   --default-transition-timing-function: var(--ease-out);
 }
 
-@theme inline {
+/* A plain @theme (not inline), so every colour utility reads its variable and dark
+   mode below can swap the palette without touching a component (14 Nov 2026). */
+@theme {
   /* ===== The design guidelines (DESIGN.md), from the owner's Figma page
      "Whiteboard - a calm workspace for recruiters", 13 Nov 2026. Every screen
      takes its colours, type, corners and shadows from here - never a hex in a
@@ -147,6 +149,51 @@ html {
   --text-card-line: max(0.8rem, 11.5px);
   --text-chip: max(0.66rem, 10px);
   --text-tool: max(0.78rem, 11px);
+}
+
+/* Dark mode (owner, 14 Nov 2026: "dark mode we can implement"): the same tokens,
+   darker. "White" is the paper of a card and "black" the strongest ink, so a dark
+   button (bg-ink, text-white) turns light with dark words and still reads. Chosen
+   from the person's menu; kept in this browser (src/lib/theme.ts). */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #0e1114;
+  --foreground: #e6e9ec;
+  --board-dot: #20262d;
+  --color-white: #171b20;
+  --color-black: #ffffff;
+  --color-canvas: #12161a;
+  --color-surface: #171b20;
+  --color-surface-2: #1f252b;
+  --color-surface-3: #283037;
+  --color-border: #262d34;
+  --color-border-strong: #39424b;
+  --color-ink: #e6e9ec;
+  --color-ink-2: #aeb7c0;
+  --color-ink-3: #7c8792;
+  --color-marker: #e6e9ec;
+  --color-brand: #34a172;
+  --color-brand-strong: #4dbb8a;
+  --color-brand-soft: #16301f;
+  --color-brand-tint: #121f18;
+  --color-brand-leaf: #5cc46a;
+  --color-info: #57b6e2;
+  --color-info-soft: #10283a;
+  --color-warn: #e2b252;
+  --color-warn-soft: #2d2412;
+  --color-danger: #ee6b62;
+  --color-danger-soft: #3a1b19;
+  --color-success: #4cc27f;
+  --color-success-soft: #13301f;
+  --color-violet: #a28cff;
+  --color-violet-soft: #241e3e;
+  --color-sticky-yellow: #3a3317;
+  --color-sticky-mint: #163226;
+  --color-sticky-sky: #15293a;
+  --color-sticky-pink: #3a1c22;
+  --color-sticky-lilac: #261f3d;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 18px -4px rgba(0, 0, 0, 0.4);
+  --shadow-float: 0 2px 6px rgba(0, 0, 0, 0.4), 0 18px 40px -8px rgba(0, 0, 0, 0.55);
 }
 
 body {

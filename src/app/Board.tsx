@@ -19,16 +19,14 @@ const PAGES: [string, string][] = [
   ["/openings", "Openings"],
   ["/strategy", "Strategy Planner"],
   ["/strategy/submissions", "New submissions"],
+  ["/strategy/manage", "Strategy list"],
   ["/database", "Database"],
   ["/ta-track", "TA Track"],
   ["/alerts", "Alerts"],
-  ["/search", "Search"],
   ["/people", "People and roles"],
   ["/feedback", "Feedback & support"],
-  ["/decisions", "Shortlist decisions"],
   ["/excel-tables", "Excel Tables"],
   ["/bin", "Bin"],
-  ["/settings", "Settings"],
 ];
 const at = (path: string) => PAGES.findIndex(([p]) => p === path);
 

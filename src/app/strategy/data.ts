@@ -23,13 +23,47 @@ export const ta = (id: TaId) => TAS.find((t) => t.id === id)!;
 /** 8 or more in a week is full; the planner says so. */
 export const busy = (t: Ta) => t.week >= 8;
 
-export const GROUPS = [
+const SEED = [
   { name: "LinkedIn", band: "bg-info-soft text-info", items: ["LinkedIn search", "Recruiter search & post", "InMail", "Designation search", "Previous post screening", "L search extraction", "LinkedIn post"] },
   { name: "Headhunting", band: "bg-violet-soft text-violet", items: ["Direct headhunt", "Company extraction", "Referral extraction", "Shortlist – company"] },
   { name: "Database & inbound", band: "bg-warn-soft text-warn", items: ["Repository", "SCOOP", "Smart Ad", "Email campaign"] },
   { name: "AI tools", band: "bg-brand-soft text-brand", items: ["AI search", "Aura", "ChatGPT", "Gemini"] },
 ] as const;
-export const STRATEGIES: string[] = GROUPS.flatMap((g) => [...g.items]);
+
+// The strategy list (old /strategy/manage): leads add, rename, retire and bring back.
+// A retired one leaves the planner's choices; jobs that already use it keep it.
+export type Entry = { name: string; group: string; description: string; active: boolean };
+const BAND: Record<string, string> = Object.fromEntries(SEED.map((g) => [g.name, g.band]));
+export const band = (group: string) => BAND[group] ?? "bg-surface-2 text-ink-2";
+let catalogue: Entry[] = SEED.flatMap((g) => g.items.map((name) => ({ name, group: g.name, description: "", active: true })));
+const catListeners = new Set<() => void>();
+export const useCatalogue = () =>
+  useSyncExternalStore(
+    (f) => {
+      catListeners.add(f);
+      return () => void catListeners.delete(f);
+    },
+    () => catalogue,
+    () => catalogue,
+  );
+export function setCatalogue(next: (c: Entry[]) => Entry[]) {
+  catalogue = next(catalogue);
+  catListeners.forEach((f) => f());
+}
+export type Group = { name: string; band: string; items: { name: string; retired: boolean }[] };
+/** The groups to draw, headings in list order: what is on the list, plus a retired one
+ *  that a job still uses (tagged retired). */
+export function groupsOf(cat: Entry[], used: Row[]): Group[] {
+  const out: Group[] = [];
+  for (const e of cat) {
+    if (!e.active && !used.some((r) => r.name === e.name)) continue;
+    let g = out.find((x) => x.name === e.group);
+    if (!g) out.push((g = { name: e.group, band: band(e.group), items: [] }));
+    g.items.push({ name: e.name, retired: !e.active });
+  }
+  return out;
+}
+export const namesOf = (gs: Group[]) => gs.flatMap((g) => g.items.map((i) => i.name));
 
 export type Job = { id: string; client: string; title: string; p: number; industry: string; assigned: string; tas: TaId[]; day: number; of: number; pipeline: number; shortlist: number };
 

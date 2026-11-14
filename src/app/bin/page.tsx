@@ -1,7 +1,7 @@
-import NotBuilt from "../NotBuilt";
+import Bin from "./Bin";
 
 export const metadata = { title: "Bin - TA System" };
 
 export default function Page() {
-  return <NotBuilt name="Bin" />;
+  return <Bin />;
 }
