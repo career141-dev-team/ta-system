@@ -28,6 +28,7 @@ const ResearchView = dynamic(() => import("./ResearchView"));
 const SuggestionsView = dynamic(() => import("./SuggestionsView"));
 const ExcelTablesView = dynamic(() => import("./ExcelTablesView"));
 const RefereeCallsView = dynamic(() => import("./RefereeCallsView"));
+const StrategiesView = dynamic(() => import("./StrategiesView"));
 
 /** The opening screen and its work views, switched in place (no page change).
  *  The overview (title row + card) arrives from the server as `overview`; a work
@@ -68,6 +69,7 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
     idle(() => {
       void import("./ScoopsView");
       void import("./LinkedInJobView");
+      void import("./StrategiesView");
       void import("./CvPreview");
       void loadFlip();
     });
@@ -119,6 +121,8 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
                 <DailyEmailView />
               ) : v === "database" ? (
                 <DatabaseCvsView />
+              ) : v === "strategies" ? (
+                <StrategiesView />
               ) : v === "linkedin-job" ? (
                 <LinkedInJobView />
               ) : v === "hh-overview" ? (
