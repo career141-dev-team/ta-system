@@ -1,10 +1,11 @@
 "use client";
 
 import Count from "@/app/Count";
-import { Fragment, useRef, useSyncExternalStore } from "react";
+import { Fragment, useRef, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
 import { DUR, EASE, gsap, motionOK, useGSAP } from "@/lib/gsap";
 import { USER } from "@/lib/user";
+import AuraGlow from "./AuraGlow";
 
 // Placeholder until the backend is wired: the waiting line and the three numbers
 // from the design. With the backend they are one small read for this person.
@@ -36,10 +37,19 @@ export default function Today({ onStart }: { onStart: () => void }) {
   const [part, date] = useSyncExternalStore(noop, readNow, () => "morning|").split("|");
   const first = USER.name.split(" ")[0];
   const words = `Good ${part}, ${first}`.split(" ");
+  // Pointing at Start workday gathers AURA's light; pressing it sends a pulse out
+  // first, then the day opens.
+  const [hover, setHover] = useState(false);
+  const [pulse, setPulse] = useState(0);
+  const start = () => {
+    setPulse((n) => n + 1);
+    if (motionOK()) setTimeout(onStart, 380);
+    else onStart();
+  };
 
   // One camera move in: the glow blooms, the date, then the greeting word by word,
   // the line, the button and the numbers last. Transform and opacity only. Then
-  // the glow keeps breathing slowly, so the screen feels awake but never busy.
+  // AURA's light lives on by itself (AuraGlow).
   useGSAP(
     () => {
       const tl = gsap.timeline({ defaults: { ease: EASE.out } });
@@ -50,10 +60,6 @@ export default function Today({ onStart }: { onStart: () => void }) {
         .from("[data-start]", { opacity: 0, y: 16, scale: 0.94, duration: 0.55, ease: EASE.pop }, 0.55)
         .from("[data-caption]", { opacity: 0, duration: DUR.slow }, 0.75)
         .from("[data-stat]", { opacity: 0, y: 10, duration: DUR.slow, stagger: 0.08 }, 0.8);
-      if (motionOK()) {
-        gsap.to("[data-glow-a]", { xPercent: 6, yPercent: -4, duration: 6, ease: "sine.inOut", yoyo: true, repeat: -1 });
-        gsap.to("[data-glow-b]", { xPercent: -5, yPercent: 5, duration: 7, ease: "sine.inOut", yoyo: true, repeat: -1 });
-      }
     },
     { scope: root },
   );
@@ -63,13 +69,8 @@ export default function Today({ onStart }: { onStart: () => void }) {
     // the flow under it, not pinned to the bottom edge, so on a short phone screen
     // they never run into the caption and the card scrolls instead (13 Nov 2026).
     <div ref={root} className="relative flex min-h-0 flex-1 flex-col items-center overflow-y-auto overflow-x-hidden px-6 [scrollbar-width:none]">
-      {/* The glow: a violet, a blue and a green light behind the button, drawn with
-          gradients alone (no blur filter), so it costs the browser almost nothing. */}
-      <div data-glow aria-hidden="true" className="pointer-events-none absolute left-1/2 top-[64%] h-[78%] w-[62%] -translate-x-1/2 -translate-y-1/2">
-        <div data-glow-a className="absolute inset-y-0 left-0 w-[60%] bg-[radial-gradient(closest-side,color-mix(in_srgb,var(--color-aura-1)_30%,transparent),transparent)]" />
-        <div className="absolute inset-y-[8%] left-[25%] w-[50%] bg-[radial-gradient(closest-side,color-mix(in_srgb,var(--color-aura-2)_22%,transparent),transparent)]" />
-        <div data-glow-b className="absolute inset-y-0 right-0 w-[60%] bg-[radial-gradient(closest-side,color-mix(in_srgb,var(--color-aura-3)_28%,transparent),transparent)]" />
-      </div>
+      {/* AURA itself: a living light behind the button (AuraGlow). */}
+      <AuraGlow hover={hover} pulse={pulse} />
 
       <div className="relative my-auto flex flex-col items-center py-6 text-center">
         <p data-date className="min-h-[1.5em] text-[max(0.875rem,12px)] text-ink-3">
@@ -96,7 +97,11 @@ export default function Today({ onStart }: { onStart: () => void }) {
         <button
           type="button"
           data-start
-          onClick={onStart}
+          onClick={start}
+          onPointerEnter={() => setHover(true)}
+          onPointerLeave={() => setHover(false)}
+          onFocus={() => setHover(true)}
+          onBlur={() => setHover(false)}
           className="group mt-[max(4rem,22px)] flex h-[max(4.75rem,52px)] items-center gap-[max(1rem,10px)] rounded-full bg-ink pl-[max(0.625rem,7px)] pr-[max(2.125rem,20px)] text-[max(1.3125rem,16px)] font-medium text-white shadow-[0_18px_40px_-12px_rgba(15,23,31,0.45)] transition-[scale,box-shadow] hover:shadow-[0_22px_48px_-12px_rgba(15,23,31,0.55)]"
         >
           <span className="flex size-[max(3.5rem,38px)] shrink-0 items-center justify-center overflow-hidden rounded-full bg-black">
