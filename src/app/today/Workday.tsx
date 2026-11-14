@@ -6,11 +6,15 @@ import Link from "next/link";
 import { DUR, EASE, gsap, useGSAP } from "@/lib/gsap";
 import { USER } from "@/lib/user";
 import PillMenu, { type MenuOption } from "../openings/[id]/PillMenu";
+import { aboutTheDay, planDay, type Plan } from "./plan";
 
 // T2 · Today, after Start workday (owner's design, 13 Nov 2026): the day's rail on
 // the left, AURA in the middle. Placeholder data until the backend is wired: with
 // it, the positions are this person's assigned openings, the "things" are one small
 // read, and picking positions starts the workday on the server.
+// T3 (14 Nov 2026): say how the day looks and AURA lays it out - the plan card with
+// times, the position each step belongs to, "Start with <position>" and "Change
+// something" (./plan.ts). Anything else AURA still says plainly it cannot answer yet.
 
 type WorkType = "100%" | "Follow-up" | "Add-on";
 type Position = { id: string; title: string; client: string; type: WorkType; progress: number };
@@ -105,7 +109,17 @@ export default function Workday({ startedAt }: { startedAt: number }) {
   const [active, setActive] = useState("sap");
   const [refusal, setRefusal] = useState("");
   const [things, setThings] = useState(THINGS);
-  const [chat, setChat] = useState<{ id: number; text: string }[]>([]);
+  // What the person said, and AURA's answer: a plan, "not yet" for anything that
+  // is not about the day, or nothing while it is still thinking.
+  const [chat, setChat] = useState<{ id: number; text: string; reply?: Plan | "na" }[]>([]);
+  const [hint, setHint] = useState("");
+  const said = useRef("");
+  const box = useRef<HTMLInputElement>(null);
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => {
+    const list = timers.current;
+    return () => list.forEach(clearTimeout);
+  }, []);
   const [draft, setDraft] = useState("");
   const seq = useRef(0);
   const scroller = useRef<HTMLDivElement>(null);
@@ -138,16 +152,33 @@ export default function Workday({ startedAt }: { startedAt: number }) {
 
   const flip = (id: string) => setThings((ts) => ts.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
 
-  // AURA is not wired yet: it says so, plainly, instead of inventing an answer.
+  // About the day (or the first thing said, or a change to the plan): AURA plans it
+  // after a short think. Anything else: it says plainly it is not connected yet.
   const send = (text: string) => {
     const t = text.trim();
     if (!t) return;
-    setChat((c) => [...c, { id: ++seq.current, text: t }]);
+    const id = ++seq.current;
+    const planning = aboutTheDay(t) || !chat.some((m) => m.reply && m.reply !== "na") || hint !== "";
+    if (planning) said.current = `${said.current} ${t}`;
+    setChat((c) => [...c, { id, text: t }]);
     setDraft("");
+    setHint("");
+    // ponytail: a stand-in wait; with the backend this is the model's answer.
+    timers.current.push(
+      setTimeout(() => {
+        const reply: Plan | "na" = planning ? planDay(today.map((p) => ({ ...p, type: picked[p.id] })), said.current) : "na";
+        setChat((c) => c.map((m) => (m.id === id ? { ...m, reply } : m)));
+      }, 800),
+    );
   };
+  const change = () => {
+    setHint("Tell me what to change — e.g. “move the interview to 3:00” or “Finance first”");
+    box.current?.focus();
+  };
+  const latestPlan = [...chat].reverse().find((m) => m.reply && m.reply !== "na")?.id;
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
-  }, [chat.length]);
+  }, [chat]);
 
   // Arrive like the screen is waking up: the rail slides in from the left, AURA's
   // lines rise one after another, then the things, the picks and the box.
@@ -298,8 +329,14 @@ export default function Workday({ startedAt }: { startedAt: number }) {
 
             {chat.map((m) => (
               <Fragment key={m.id}>
-                <p className="self-end rounded-full bg-surface-2 px-4 py-2 text-[max(0.9375rem,13px)] text-ink">{m.text}</p>
-                <Say>I&rsquo;m not connected yet &mdash; this screen is a preview, so I can&rsquo;t answer that today.</Say>
+                <p className="max-w-[80%] self-end rounded-lg rounded-br-xs bg-surface-2 px-[max(1.25rem,14px)] py-[max(0.875rem,9px)] text-[max(1rem,13.5px)] text-ink">{m.text}</p>
+                {!m.reply ? (
+                  <Thinking />
+                ) : m.reply === "na" ? (
+                  <Say>I&rsquo;m not connected yet &mdash; this screen is a preview, so I can&rsquo;t answer that today.</Say>
+                ) : (
+                  <DayPlan plan={m.reply} latest={m.id === latestPlan} onChange={change} />
+                )}
               </Fragment>
             ))}
           </div>
@@ -330,9 +367,10 @@ export default function Workday({ startedAt }: { startedAt: number }) {
               <PlusIcon />
             </button>
             <input
+              ref={box}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              placeholder={"Talk to AURA — plan, ask, or jump to a position"}
+              placeholder={hint || "Talk to AURA — plan, ask, or jump to a position"}
               aria-label="Talk to AURA"
               className="min-w-0 flex-1 bg-transparent text-[max(1rem,13.5px)] text-ink outline-none placeholder:text-ink-2"
             />
@@ -351,6 +389,91 @@ export default function Workday({ startedAt }: { startedAt: number }) {
 
 const ASK =
   "flex h-[max(2.5rem,32px)] items-center rounded-full border border-border bg-white px-[max(1rem,12px)] text-[max(0.875rem,12.5px)] text-ink transition-colors hover:border-border-strong";
+
+/** AURA thinking: its mark breathes (never spins) while it plans. */
+function Thinking() {
+  const glow = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!glow.current) return;
+    const t = gsap.to(glow.current, { scale: 1.35, opacity: 0.15, duration: 0.9, ease: "sine.inOut", repeat: -1, yoyo: true });
+    return () => {
+      t.kill();
+    };
+  }, []);
+  return (
+    <div role="status" className="flex items-center gap-[max(0.875rem,10px)]">
+      <span className="relative flex size-[max(2.5rem,30px)] shrink-0">
+        <span ref={glow} aria-hidden="true" className="absolute inset-0 rounded-full bg-[conic-gradient(from_0deg,var(--color-aura-1),var(--color-aura-2),var(--color-aura-3),var(--color-aura-4),var(--color-aura-1))] opacity-40" />
+        <span className="relative flex size-full items-center justify-center overflow-hidden rounded-full bg-black">
+          <Image src="/aura-mark.png" alt="" width={56} height={56} className="size-full" />
+        </span>
+      </span>
+      <p className="text-[max(1rem,13.5px)] text-ink-3">Planning your day…</p>
+    </div>
+  );
+}
+
+const DOT = { brand: "bg-brand", warn: "bg-warn", info: "bg-info", none: "border-[1.5px] border-border-strong bg-white" } as const;
+
+/** AURA's plan: the headline, then the day step by step - the time, the position's
+ *  colour, the work, and the position to open; Start / Change something on the
+ *  latest plan only. Rows arrive one after another (start states set at once). */
+function DayPlan({ plan, latest, onChange }: { plan: Plan; latest: boolean; onChange: () => void }) {
+  const card = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = card.current;
+    if (!el) return;
+    const rows = el.querySelectorAll("[data-step], [data-plan-act]");
+    gsap.set(el, { opacity: 0, y: 14 });
+    gsap.set(rows, { opacity: 0, x: -10 });
+    const a = gsap.to(el, { opacity: 1, y: 0, duration: DUR.slow, ease: EASE.out, clearProps: "opacity,transform" });
+    const b = gsap.to(rows, { opacity: 1, x: 0, duration: DUR.base, ease: EASE.out, stagger: 0.07, delay: 0.15, clearProps: "opacity,transform" });
+    const done = setTimeout(() => [a, b].forEach((t) => t.progress(1)), 2000);
+    return () => {
+      clearTimeout(done);
+      [a, b].forEach((t) => t.progress(1).kill());
+    };
+  }, []);
+  return (
+    <>
+      <Say>{plan.headline}</Say>
+      {plan.steps.length > 0 && (
+        <div ref={card} className={"rounded-lg border border-border bg-white px-[max(1.5rem,14px)] py-[max(1.25rem,12px)] " + (latest ? "" : "opacity-60")}>
+          <ol className="flex flex-col">
+            {plan.steps.map((s) => (
+              <li key={s.at + s.what} data-step className="flex items-center gap-[max(1.5rem,12px)] py-[max(0.7rem,8px)]">
+                <span className="w-[max(3rem,40px)] shrink-0 font-mono text-[max(0.8125rem,11.5px)] text-ink-3">{s.at}</span>
+                <span aria-hidden="true" className={"size-2.5 shrink-0 rounded-full " + DOT[s.tone]} />
+                <span className="min-w-0 flex-1 text-[max(1rem,13.5px)] text-ink">{s.what}</span>
+                {s.where && s.href && (
+                  <Link href={s.href} className="flex shrink-0 items-center gap-1.5 text-[max(0.875rem,12px)] text-ink-3 hover:text-ink" title={`Open ${s.where}`}>
+                    {s.where}
+                    <svg {...svg} className="size-4" data-nudge>
+                      <path d="M5 12h14M13 6l6 6-6 6" />
+                    </svg>
+                  </Link>
+                )}
+              </li>
+            ))}
+          </ol>
+          {latest && (
+            <div className="mt-[max(0.9rem,10px)] flex flex-wrap gap-[max(0.75rem,8px)]">
+              {plan.first && (
+                <Link data-plan-act href="/openings/demo" className="flex h-[max(2.75rem,36px)] items-center gap-2 rounded-full bg-ink px-[max(1.25rem,14px)] text-[max(0.9375rem,13px)] font-medium text-white hover:bg-black">
+                  Start with {plan.first}
+                  <span aria-hidden="true">→</span>
+                </Link>
+              )}
+              <button type="button" data-plan-act onClick={onChange} className="flex h-[max(2.75rem,36px)] items-center rounded-full border border-border-strong px-[max(1.25rem,14px)] text-[max(0.9375rem,13px)] font-medium text-ink hover:bg-surface-2">
+                Change something
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
 
 /** One line from AURA, with its mark. */
 function Say({ children }: { children: ReactNode }) {
