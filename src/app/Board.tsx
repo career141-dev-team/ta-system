@@ -24,6 +24,11 @@ const PAGES: [string, string][] = [
   ["/alerts", "Alerts"],
   ["/search", "Search"],
   ["/people", "People and roles"],
+  ["/feedback", "Feedback & support"],
+  ["/decisions", "Shortlist decisions"],
+  ["/excel-tables", "Excel Tables"],
+  ["/bin", "Bin"],
+  ["/settings", "Settings"],
 ];
 const at = (path: string) => PAGES.findIndex(([p]) => p === path);
 

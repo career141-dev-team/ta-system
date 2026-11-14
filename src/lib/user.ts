@@ -13,3 +13,8 @@ export const SEES_WHOLE_JOB = USER.role !== "Talent Acquisition";
 /** TA Track: admins and leads see every TA; a TA sees only themself (the Work From
  *  Home Tracker's own rule). Placeholder until sign-in: on, so the team view shows. */
 export const TRACK_VIEW_ALL: boolean = true;
+
+/** Feedback & support: a TA Lead or Director reviews feedback on the board, an Admin
+ *  works the builders' column (old system's FeedbackDesk). Placeholder until sign-in:
+ *  on, so the board and its buttons can be seen. */
+export const REVIEWS_FEEDBACK: boolean = true;
