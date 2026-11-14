@@ -24,6 +24,7 @@ const ScoopsView = dynamic(() => import("./ScoopsView"));
 const JobDescriptionView = dynamic(() => import("./JobDescriptionView"));
 const DailyEmailView = dynamic(() => import("./DailyEmailView"));
 const LinkedInJobView = dynamic(() => import("./LinkedInJobView"));
+const SnippetsView = dynamic(() => import("./SnippetsView"));
 const HhOverview = dynamic(() => import("./HhOverview"));
 const ResearchView = dynamic(() => import("./ResearchView"));
 const SuggestionsView = dynamic(() => import("./SuggestionsView"));
@@ -72,6 +73,7 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
       void import("./JobDescriptionView");
       void import("./LinkedInJobView");
       void import("./StrategiesView");
+      void import("./SnippetsView");
       void import("./CvPreview");
       void loadFlip();
     });
@@ -129,6 +131,8 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
                 <StrategiesView />
               ) : v === "linkedin-job" ? (
                 <LinkedInJobView />
+              ) : v === "snippets" ? (
+                <SnippetsView />
               ) : v === "hh-overview" ? (
                 <HhOverview />
               ) : v === "hh-research" ? (
