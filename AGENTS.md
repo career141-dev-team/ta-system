@@ -57,6 +57,7 @@ Openings ─▶ one opening (/openings/[id])
 | Headhunting Research | `ResearchView.tsx` | built |
 | Headhunting Suggestions | `SuggestionsView.tsx` | built |
 | Headhunting Excel Tables | `ExcelTablesView.tsx`, `FindCvButton.tsx` (shared) | built |
+| Database D1 (search by chatting with AURA) | `src/app/database/DatabaseView.tsx` | built |
 | Everything else | `src/app/NotBuilt.tsx` pages, `ComingView` in `OpeningView.tsx` | "next to build" |
 
 Sample people and the signed-in user are placeholders (`src/lib/user.ts`); the rules
