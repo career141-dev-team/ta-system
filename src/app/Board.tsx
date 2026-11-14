@@ -95,8 +95,16 @@ export default function Board({ children }: { children: ReactNode }) {
       const tl = gsap.timeline({ defaults: { ease: EASE.out } });
       if (stage.current) tl.set(stage.current, { overflow: "hidden" }, 0);
       if (g) tl.to(g, { x: -72 * dir, opacity: 0, duration: DUR.slow, ease: EASE.inOut, onComplete: () => g.remove() }, 0);
-      if (label.current) tl.fromTo(label.current, { x: 28 * dir, opacity: 0 }, { x: 0, opacity: 1, duration: DUR.base, clearProps: "transform,opacity" }, 0.05);
-      if (body.current) tl.fromTo(body.current, { x: 72 * dir, opacity: 0 }, { x: 0, opacity: 1, duration: DUR.slow, clearProps: "transform,opacity" }, 0.06);
+      // Starting points placed at once, before the browser draws - never on the first
+      // tick, or the new page shows, jumps aside and slides back.
+      if (label.current) {
+        gsap.set(label.current, { x: 28 * dir, opacity: 0 });
+        tl.to(label.current, { x: 0, opacity: 1, duration: DUR.base, clearProps: "transform,opacity" }, 0.05);
+      }
+      if (body.current) {
+        gsap.set(body.current, { x: 72 * dir, opacity: 0 });
+        tl.to(body.current, { x: 0, opacity: 1, duration: DUR.slow, clearProps: "transform,opacity" }, 0.06);
+      }
       if (bar.current) tl.to(bar.current, { scaleX: 1, opacity: 0, duration: DUR.base, overwrite: true }, 0);
       if (stage.current) tl.set(stage.current, { clearProps: "overflow" });
       // Gone on a plain timer too: a copy left behind would cover the live page.

@@ -90,8 +90,7 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
   // like one app:
   //   - view to view: the old view slides out as the new one slides in, the way the
   //     bottom bar runs (further along = from the right, back = from the left);
-  //   - into a view from the opening: the board grows in; back to the opening: the
-  //     opening settles back;
+  //   - the opening page is the bar's first stop and slides the same way;
   //   - then the view's parts flow in one after another (the Pipeline's columns,
   //     Scoops' rows, cards) - never the cards inside a column, which move with
   //     their own wheel.
@@ -115,11 +114,19 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
       const panel = view === "overview" ? null : stage.querySelector<HTMLElement>(`[data-panel="${view}"]`);
       const tl = gsap.timeline({ defaults: { ease: EASE.out } });
 
+      // The opening page is the first stop of the bar (the Job button), so to and from
+      // it is the same slide as between views - not a zoom and a drop of its own
+      // (owner, 14 Nov 2026: Headhunting felt smooth and the ATS did not, because
+      // Job -> Pipeline -> back used two other moves).
+      // Nothing slides outside the board's edges while it moves.
+      tl.set(stage, { overflow: "hidden" }, 0);
       if (view === "overview") {
         const parts = stage.querySelectorAll(":scope > .contents > *");
-        tl.fromTo(parts, { opacity: 0, y: -14, scale: 0.985 }, { opacity: 1, y: 0, scale: 1, duration: DUR.slow, stagger: 0.05, clearProps: "opacity,transform" });
+        gsap.set(parts, { opacity: 0, x: -90 });
+        tl.to(parts, { opacity: 1, x: 0, duration: DUR.slow, stagger: 0.04, clearProps: "opacity,transform" }, 0);
       } else if (panel && from === "overview") {
-        tl.fromTo(panel, { opacity: 0, scale: 0.95, y: 18 }, { opacity: 1, scale: 1, y: 0, duration: DUR.slow, ease: EASE.out, clearProps: "opacity,transform" });
+        gsap.set(panel, { opacity: 0, x: 90 });
+        tl.to(panel, { opacity: 1, x: 0, duration: DUR.slow, clearProps: "opacity,transform" }, 0);
       } else if (panel) {
         const dir = ORDER.indexOf(view) >= ORDER.indexOf(from) ? 1 : -1;
         const old = stage.querySelector<HTMLElement>(`[data-panel="${from}"]`);
@@ -127,6 +134,8 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
           const ghost = old.cloneNode(true) as HTMLElement;
           ghost.className = "rounded-lg bg-white";
           ghost.setAttribute("aria-hidden", "true");
+          // Not a view any more: nothing looking for one may find the copy.
+          ghost.removeAttribute("data-panel");
           ghost.inert = true;
           Object.assign(ghost.style, {
             position: "absolute",
@@ -149,11 +158,13 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
           // would cover the live view.
           setTimeout(() => ghost.remove(), 1600);
         }
-        tl.set(stage, { overflow: "hidden" }, 0);
-        tl.fromTo(panel, { x: 90 * dir, opacity: 0 }, { x: 0, opacity: 1, duration: DUR.slow, clearProps: "opacity,transform" }, 0.04);
-        tl.set(stage, { clearProps: "overflow" });
+        gsap.set(panel, { x: 90 * dir, opacity: 0 });
+        tl.to(panel, { x: 0, opacity: 1, duration: DUR.slow, clearProps: "opacity,transform" }, 0.04);
       }
 
+      // Every starting point is placed at once, before the browser draws, never on
+      // the first tick: a fromTo inside a timeline left the new view in its final
+      // place until then, so it showed, jumped aside and slid back (14 Nov 2026).
       // The view's own parts, one after another.
       if (panel) {
         const parts: Element[] = [];
@@ -162,9 +173,13 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
           const r = el.getBoundingClientRect();
           if (r.height && r.top < innerHeight) parts.push(el);
         }
-        if (parts.length)
-          tl.fromTo(parts, { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: DUR.slow, stagger: 0.04, clearProps: "opacity,transform" }, 0.12);
+        if (parts.length) {
+          gsap.set(parts, { opacity: 0, y: 16 });
+          tl.to(parts, { opacity: 1, y: 0, duration: DUR.slow, stagger: 0.04, clearProps: "opacity,transform" }, 0.12);
+        }
       }
+      // Every branch: the board scrolls and overflows normally again at the end.
+      tl.set(stage, { clearProps: "overflow" });
       const done = setTimeout(() => tl.progress(1), 1500);
       return () => clearTimeout(done);
     },

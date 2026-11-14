@@ -133,8 +133,8 @@ animates on a plain redraw.
 
 **Views inside an opening turn like pages (owner, 14 Nov 2026: "inside the pipeline it
 just appears").** View to view, the old view slides out as the new one slides in, in the
-bottom bar's order; from the opening into a view the board grows in, and back to the
-opening it settles back; then the view's parts flow in (Pipeline columns, rows, cards -
+bottom bar's order, with the opening page (the Job button) as the first stop, so the ATS
+moves exactly like Headhunting; then the view's parts flow in (Pipeline columns, rows, cards -
 never the cards inside a column). In `OpeningView.tsx`. Two rules learned the hard way:
 run this in a plain effect, not useGSAP (a view still downloading suspends React, which
 reverts a useGSAP context), and find elements by ref or on-screen only - Next keeps
