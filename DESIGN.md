@@ -125,6 +125,37 @@ animates on a plain redraw.
 | Board slide | moving into a job zooms the card into the full board (shared element, 320 ms) | `MOTION.boardSlide` |
 | AURA breathe | the AURA orb pulses its gradient slowly while thinking; never spins | `motionOK()` loops only |
 | Respect calm | `prefers-reduced-motion` → fades only | handled once in `gsap.ts` |
+| Arrive | a page you open flows in: its on-screen blocks rise 12px and fade in, 35 ms apart (first 24); only when you move to another page (never the first load - styling server HTML before React takes it over breaks hydration), never on a redraw or a view switch; always fully shown 1.5 s later | automatic — `src/app/Motion.tsx` |
+| Press | anything you can press gives (0.96) under the pointer and springs back | automatic — `Motion.tsx` |
+| Hover lift | a card you can open rises 3px while pointed at | automatic for `main a.rounded-lg`, `[data-card]`; opt in with `data-lift` |
+| Nudge | an arrow in a link moves 3px towards where it goes on hover | put `data-nudge` on the arrow's `<svg>` |
+| Count up | a number counts to its value when it shows or changes | `<Count n={…} />` from `src/app/Count.tsx` |
+
+**Views inside an opening turn like pages (owner, 14 Nov 2026: "inside the pipeline it
+just appears").** View to view, the old view slides out as the new one slides in, in the
+bottom bar's order; from the opening into a view the board grows in, and back to the
+opening it settles back; then the view's parts flow in (Pipeline columns, rows, cards -
+never the cards inside a column). In `OpeningView.tsx`. Two rules learned the hard way:
+run this in a plain effect, not useGSAP (a view still downloading suspends React, which
+reverts a useGSAP context), and find elements by ref or on-screen only - Next keeps
+earlier visits of a page in the document, hidden.
+
+**One board for the whole app (owner, 14 Nov 2026: "one common tab... only the tab
+changes").** Today, Openings, Strategy Planner, Database, TA Track (and Alerts, Search,
+People) sit on one white board with one middle tab, drawn once in `src/app/Board.tsx`
+and kept across pages. A page renders only its content - never its own `<main>` or tab.
+Moving between them: the tab's name slides in and the content slides in from the side
+you moved towards (top-bar order), 280-450 ms. An opening (`/openings/<id>`) keeps its
+own layout. A new top-level page: add it to `PAGES` in Board.tsx.
+
+| Tab glide | the highlight behind a row of tabs glides to the chosen tab with a small overshoot | `useTabGlide(rowRef, key)` + one `[data-tab-glide]` span |
+| Icon pop | a button's icon swells a touch on hover and settles | automatic — `Motion.tsx` |
+
+**Every screen gets Arrive, Press and Hover lift without any code (owner, 14 Nov 2026:
+"GSAP for everything, every button… like a modern dashboard").** One motion per kind
+of thing, so the app still moves as one. Opt out with `data-still` on anything GSAP
+already moves (a dragged card: `data-card-id` is skipped already). New numbers on a
+dashboard use `<Count>`; new arrows get `data-nudge`.
 
 ## 5. Sizing
 

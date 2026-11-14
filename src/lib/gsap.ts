@@ -159,6 +159,31 @@ export function useExit(open: boolean, ref: RefObject<HTMLElement | null>, vars:
   return open || leaving;
 }
 
+/** The highlight behind a row of tabs glides to the chosen one instead of jumping
+ *  (owner, 14 Nov 2026: motion that shows what changed). The row is `list`; inside
+ *  it one `[data-tab-glide]` element is the highlight, and the chosen tab carries
+ *  aria-selected="true". It lands with a small overshoot, and follows the row when
+ *  the window changes size. */
+export function useTabGlide(list: RefObject<HTMLElement | null>, key: unknown) {
+  const placed = useRef(false);
+  const place = (animate: boolean) => {
+    const l = list.current;
+    const glide = l?.querySelector<HTMLElement>("[data-tab-glide]");
+    const on = l?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (!glide || !on) return;
+    const box = { x: on.offsetLeft, y: on.offsetTop, width: on.offsetWidth, height: on.offsetHeight, opacity: 1 };
+    if (!animate || !placed.current) gsap.set(glide, box);
+    else gsap.to(glide, { ...box, duration: DUR.slow, ease: "back.out(1.4)", overwrite: true });
+    placed.current = true;
+  };
+  useGSAP(() => place(true), { dependencies: [key], revertOnUpdate: false });
+  useEffect(() => {
+    const again = () => place(false);
+    addEventListener("resize", again);
+    return () => removeEventListener("resize", again);
+  });
+}
+
 /** Flip (the CV preview's frame growing to full view and back, 12 Nov 2026),
  *  fetched and registered the first time a preview opens, so it is not in the
  *  board's first download. */

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useWorkdayGate } from "@/lib/workday";
 import { useSwap } from "@/lib/gsap";
 import { CLAIMED, POOL, reasonOf, type Person } from "../../database/aura";
+import Count from "@/app/Count";
 import { BackButton } from "./PipelineBoard";
 import CvPages, { warmPdf } from "./CvPages";
 import WorkdayBlocked from "./WorkdayBlocked";
@@ -111,7 +112,7 @@ export default function DatabaseCvsView() {
       <div className="flex flex-wrap items-center gap-x-[max(1.25rem,12px)] gap-y-2">
         <BackButton />
         <p className="flex items-baseline gap-2 text-small text-ink-2">
-          <span className="text-h2 text-ink">{rows.length}</span> matched to this job
+          <Count n={rows.length} className="text-h2 text-ink" /> matched to this job
           <span className="text-ink-3">· {open} nobody has claimed</span>
         </p>
         <button

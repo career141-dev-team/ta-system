@@ -2,8 +2,8 @@
 
 import DatabaseCvsView from "./DatabaseCvsView";
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import { DUR, EASE, HOVER_IN, HOVER_OUT, gsap, loadFlip, swapIn, useExit, useGSAP, useGlide } from "@/lib/gsap";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { DUR, EASE, HOVER_IN, HOVER_OUT, gsap, loadFlip, useExit, useGSAP, useGlide } from "@/lib/gsap";
 import { HH_VIEWS, SHOW_TABS, VIEW_TABS, ViewContext, setOf, useOpeningView, viewLabel, type View, type ViewSet } from "./view";
 import Notch from "./Notch";
 import PipelineBoard from "./PipelineBoard";
@@ -35,6 +35,12 @@ const StrategiesView = dynamic(() => import("./StrategiesView"));
 /** The opening screen and its work views, switched in place (no page change).
  *  The overview (title row + card) arrives from the server as `overview`; a work
  *  view replaces it full-window, with the top bar and title row out of the way. */
+/** Every view in the bottom bar's order: the side a view slides in from. */
+const ORDER: View[] = ["overview", ...VIEW_TABS.map(([k]) => k), ...HH_VIEWS.map(([k]) => k)];
+/** The parts of a view that flow in after it arrives. */
+const PARTS = "[data-col], section, article, li, tr, form, aside, [role=row], [role=tablist]";
+const STILL = "[data-card-id], [data-card-id] *, [data-still], [data-still] *";
+
 export default function OpeningView({ overview }: { overview: ReactNode }) {
   const [view, setView] = useState<View>("overview");
   const focus = view !== "overview";
@@ -79,26 +85,99 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
     });
   }, []);
 
-  // Every view arrives the same way - the app's one switch (swapIn in lib/gsap):
-  // the new view fades up 6px, once. The Pipeline used to have its own camera-move
-  // entrance; the owner asked for one transition everywhere (13 Nov 2026: "you made
-  // different for the different things").
-  useGSAP(
+  // Switching views is a page turn (owner, 14 Nov 2026: "inside the pipeline it just
+  // appears, no smooth discovery"). The same moves for every view, so it still feels
+  // like one app:
+  //   - view to view: the old view slides out as the new one slides in, the way the
+  //     bottom bar runs (further along = from the right, back = from the left);
+  //   - into a view from the opening: the board grows in; back to the opening: the
+  //     opening settles back;
+  //   - then the view's parts flow in one after another (the Pipeline's columns,
+  //     Scoops' rows, cards) - never the cards inside a column, which move with
+  //     their own wheel.
+  // The old view is a copy laid over the new one (the real one is already hidden,
+  // kept alive), with its CV pages painted across. Nothing waits on the motion: the
+  // new view is live at once, and 1.5 s of real time later everything is settled.
+  // A plain effect and plain tweens, not useGSAP: a view's code that is still
+  // downloading suspends React for a moment, React then tears down the screen's
+  // layout effects, and a useGSAP context would revert every tween with them - the
+  // view simply appeared and the old view's copy stayed on top of it (14 Nov 2026).
+  const prev = useRef<View>("overview");
+  const stageRef = useRef<HTMLElement>(null);
+  useEffect(
     () => {
-      const stage = document.querySelector<HTMLElement>("[data-view-stage]");
-      if (!stage) return;
-      const panel = view === "overview" ? stage : stage.querySelector<HTMLElement>(`[data-panel="${view}"]`);
-      if (panel) swapIn(panel);
+      // This screen's own stage, by ref: Next keeps earlier visits of this page in
+      // the document, hidden, and a page-wide lookup found one of those (14 Nov 2026).
+      const stage = stageRef.current;
+      const from = prev.current;
+      prev.current = view;
+      if (!stage || from === view) return;
+      const panel = view === "overview" ? null : stage.querySelector<HTMLElement>(`[data-panel="${view}"]`);
+      const tl = gsap.timeline({ defaults: { ease: EASE.out } });
+
+      if (view === "overview") {
+        const parts = stage.querySelectorAll(":scope > .contents > *");
+        tl.fromTo(parts, { opacity: 0, y: -14, scale: 0.985 }, { opacity: 1, y: 0, scale: 1, duration: DUR.slow, stagger: 0.05, clearProps: "opacity,transform" });
+      } else if (panel && from === "overview") {
+        tl.fromTo(panel, { opacity: 0, scale: 0.95, y: 18 }, { opacity: 1, scale: 1, y: 0, duration: DUR.slow, ease: EASE.out, clearProps: "opacity,transform" });
+      } else if (panel) {
+        const dir = ORDER.indexOf(view) >= ORDER.indexOf(from) ? 1 : -1;
+        const old = stage.querySelector<HTMLElement>(`[data-panel="${from}"]`);
+        if (old) {
+          const ghost = old.cloneNode(true) as HTMLElement;
+          ghost.className = "rounded-lg bg-white";
+          ghost.setAttribute("aria-hidden", "true");
+          ghost.inert = true;
+          Object.assign(ghost.style, {
+            position: "absolute",
+            left: `${panel.offsetLeft}px`,
+            top: `${panel.offsetTop}px`,
+            width: `${panel.offsetWidth}px`,
+            height: `${panel.offsetHeight}px`,
+            overflow: "hidden",
+            pointerEvents: "none",
+            zIndex: "5",
+          });
+          // A copied canvas is blank; paint each CV page across.
+          const pages = old.querySelectorAll("canvas");
+          ghost.querySelectorAll("canvas").forEach((c, i) => {
+            if (pages[i]?.width) c.getContext("2d")?.drawImage(pages[i], 0, 0);
+          });
+          stage.appendChild(ghost);
+          tl.to(ghost, { x: -90 * dir, opacity: 0, scale: 0.985, duration: DUR.slow, ease: EASE.inOut, onComplete: () => ghost.remove() }, 0);
+          // And on a plain timer, whatever happens to the tween: a copy left behind
+          // would cover the live view.
+          setTimeout(() => ghost.remove(), 1600);
+        }
+        tl.set(stage, { overflow: "hidden" }, 0);
+        tl.fromTo(panel, { x: 90 * dir, opacity: 0 }, { x: 0, opacity: 1, duration: DUR.slow, clearProps: "opacity,transform" }, 0.04);
+        tl.set(stage, { clearProps: "overflow" });
+      }
+
+      // The view's own parts, one after another.
+      if (panel) {
+        const parts: Element[] = [];
+        for (const el of panel.querySelectorAll<HTMLElement>(PARTS)) {
+          if (parts.length >= 16 || el.matches(STILL) || parts.some((p) => p.contains(el))) continue;
+          const r = el.getBoundingClientRect();
+          if (r.height && r.top < innerHeight) parts.push(el);
+        }
+        if (parts.length)
+          tl.fromTo(parts, { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: DUR.slow, stagger: 0.04, clearProps: "opacity,transform" }, 0.12);
+      }
+      const done = setTimeout(() => tl.progress(1), 1500);
+      return () => clearTimeout(done);
     },
-    { dependencies: [view] },
+    [view],
   );
 
   return (
     <ViewContext.Provider value={ctx}>
       <main
+        ref={stageRef}
         data-view-stage
         className={
-          "flex min-h-0 flex-1 flex-col " +
+          "relative flex min-h-0 flex-1 flex-col " +
           // A phone gets narrow side margins, and the opening's stacked card scrolls
           // inside the page (13 Nov 2026: "responsive for mobile and all devices").
           (focus
@@ -117,6 +196,7 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
             >
               {/* The email view names its own notch: Midday or End of day email. */}
               {v !== "midday" && <Notch label={viewLabel(v)} />}
+              <Suspense fallback={null}>
               {v === "pipeline" ? (
                 <PipelineBoard />
               ) : v === "scoops" ? (
@@ -146,6 +226,7 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
               ) : (
                 <ComingView label={viewLabel(v)} />
               )}
+              </Suspense>
             </div>
           ),
         )}
@@ -383,7 +464,8 @@ function FocusChrome() {
     // plain the bar is on top and the board has not moved (owner, 12 Nov 2026: "no
     // need drag kanban... blur the background and show the top bar as before").
     // Only the veil's opacity is animated; the blur itself never changes.
-    const veil = document.querySelector<HTMLElement>("[data-topnav-veil]");
+    // The veil on screen, not one in a hidden earlier visit of this page.
+    const veil = [...document.querySelectorAll<HTMLElement>("[data-topnav-veil]")].find((v) => v.getClientRects().length > 0) ?? null;
     const show = () => {
       clearTimeout(timer);
       gsap.to(bar, { yPercent: 0, duration: DUR.base, overwrite: true });

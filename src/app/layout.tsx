@@ -12,6 +12,8 @@ import "@fontsource/caveat/700.css";
 import "@fontsource/jetbrains-mono/400.css";
 import "./globals.css";
 import TopNav from "./TopNav";
+import Motion from "./Motion";
+import Board from "./Board";
 
 export const metadata: Metadata = {
   title: "TA System",
@@ -30,7 +32,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           loads; this ignores those attributes only, not the page inside. */}
       <body suppressHydrationWarning className="board flex h-dvh flex-col font-sans text-ink">
         <TopNav />
-        {children}
+        <Board>{children}</Board>
+        <Motion />
       </body>
     </html>
   );

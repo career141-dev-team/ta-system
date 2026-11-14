@@ -176,6 +176,10 @@ const MENU_OUT = { opacity: 0, y: -6, scale: 0.97 };
 const TOOL_PILL =
   "flex h-[max(2.4rem,33px)] items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-white px-[max(1rem,13px)] text-[max(0.85rem,12.5px)] text-ink";
 
+/** The element on screen for `sel`: Next keeps earlier visits of this page in the
+ *  document, hidden, so a page-wide lookup could find a copy nobody sees. */
+const onScreen = (sel: string) => [...document.querySelectorAll<HTMLElement>(sel)].find((el) => el.getClientRects().length > 0) ?? null;
+
 export default function PipelineBoard() {
   const [mode, setMode] = useState<"board" | "list">("board");
   const [q, setQ] = useState("");
@@ -548,7 +552,7 @@ export default function PipelineBoard() {
 
   useEffect(() => {
     if (!undone) return;
-    const card = document.querySelector<HTMLElement>('[data-card-id="' + undone.id + '"]');
+    const card = onScreen('[data-card-id="' + undone.id + '"]');
     if (!card) return;
     card.scrollIntoView({ block: "nearest", behavior: "smooth" });
     gsap.fromTo(card, { scale: 0.9, opacity: 0 }, { scale: 1, opacity: 1, duration: DUR.base, ease: EASE.pop });
@@ -560,7 +564,7 @@ export default function PipelineBoard() {
     const l = landing.current;
     if (!l) return;
     landing.current = null;
-    const card = document.querySelector<HTMLElement>('[data-card-id="' + l.id + '"]');
+    const card = onScreen('[data-card-id="' + l.id + '"]');
     if (!card) {
       l.ghost.remove();
       return;

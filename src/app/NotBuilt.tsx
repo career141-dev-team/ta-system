@@ -3,12 +3,12 @@ import Link from "next/link";
 const BUTTON =
   "flex h-[max(2.75rem,34px)] items-center rounded-full px-[max(1.375rem,14px)] text-[max(0.875rem,12.5px)] font-medium transition-colors";
 
-/** A section whose screen is not built yet: the same white card as Today, its
+/** A section whose screen is not built yet, inside the app's board: its
  *  name, and the way back to the screens that are built, so no link in the top
  *  bar ends on "page not found" (owner, 12 Nov 2026: "properly connect the UI"). */
 export default function NotBuilt({ name }: { name: string }) {
   return (
-    <main className="mx-11 max-md:mx-3 my-[max(2.125rem,14px)] flex min-h-0 flex-1 flex-col items-center justify-center gap-[max(1rem,10px)] rounded-lg bg-white px-6 text-center shadow-card">
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-[max(1rem,10px)] px-6 text-center">
       <h1 className="text-[max(2rem,24px)] font-light tracking-[-0.01em] text-ink">{name}</h1>
       <p className="text-[max(0.9375rem,13px)] text-ink-3">This screen is next to build.</p>
       <div className="mt-[max(0.75rem,6px)] flex flex-wrap justify-center gap-[max(0.75rem,8px)]">
@@ -19,6 +19,6 @@ export default function NotBuilt({ name }: { name: string }) {
           Open the opening
         </Link>
       </div>
-    </main>
+    </div>
   );
 }

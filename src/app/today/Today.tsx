@@ -1,5 +1,6 @@
 "use client";
 
+import Count from "@/app/Count";
 import { Fragment, useRef, useSyncExternalStore } from "react";
 import Image from "next/image";
 import { DUR, EASE, gsap, motionOK, useGSAP } from "@/lib/gsap";
@@ -111,7 +112,10 @@ export default function Today({ onStart }: { onStart: () => void }) {
       <ul className="relative mb-[max(3.5rem,18px)] flex shrink-0 flex-wrap items-baseline justify-center gap-x-[max(2.5rem,18px)] gap-y-1">
         {STATS.map(([n, label]) => (
           <li key={label} data-stat className="flex items-baseline gap-[max(0.5rem,6px)]">
-            <span className="text-[max(1rem,14px)] font-medium text-ink">{n}</span>
+            <span className="text-[max(1rem,14px)] font-medium text-ink">
+              <Count n={parseInt(n)} />
+              {n.replace(/^\d+/, "")}
+            </span>
             <span className="text-[max(0.875rem,12px)] text-ink-3">{label}</span>
           </li>
         ))}

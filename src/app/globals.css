@@ -177,9 +177,7 @@ body {
   transition-duration: var(--dur-fast), var(--dur-fast), var(--dur-fast), var(--dur-fast), var(--dur-fast), var(--dur-tap);
   transition-timing-function: var(--ease-out);
 }
-:where(button, a, [role="button"]):active:not(:disabled) {
-  scale: 0.97;
-}
+/* The press itself is GSAP's now - in and a spring back (src/app/Motion.tsx). */
 
 /* Keyboard focus, everywhere (13 Nov 2026: there was none). Only for the keyboard
    (:focus-visible), so a mouse click draws nothing. In the base layer so a box's

@@ -6,7 +6,6 @@ import Image from "next/image";
 import { gsap, motionOK, swapIn, useGSAP } from "@/lib/gsap";
 import { useWorkdayGate } from "@/lib/workday";
 import { useLiftMenu } from "../openings/[id]/liftMenu";
-import Notch from "../openings/[id]/Notch";
 import {
   JOBS,
   fitOf,
@@ -278,7 +277,6 @@ export default function DatabaseView() {
 
   return (
     <div className="relative flex min-h-0 flex-1 max-md:flex-col">
-      <Notch label="Database" board />
       {picked && (
         <button
           type="button"
@@ -293,7 +291,7 @@ export default function DatabaseView() {
       )}
 
       {/* The chats */}
-      <aside className={(chats ? "flex" : "hidden") + " w-[23.4%] min-w-[max(15rem,200px)] shrink-0 flex-col gap-[max(0.6rem,6px)] border-r border-border px-[max(1.75rem,14px)] pb-6 pt-[max(4.7rem,52px)] max-md:w-auto max-md:border-b max-md:border-r-0 max-md:pb-3 max-md:pt-14"}>
+      <aside className={(chats ? "flex" : "hidden") + " w-[23.4%] min-w-[max(15rem,200px)] shrink-0 flex-col gap-[max(0.6rem,6px)] border-r border-border px-[max(1.75rem,14px)] pb-6 max-md:w-auto max-md:border-b max-md:border-r-0 max-md:pb-3 max-md:pt-4 " + (picked ? "pt-[max(4.7rem,52px)]" : "pt-[max(2.25rem,20px)]")}>
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -385,7 +383,7 @@ export default function DatabaseView() {
         />
         <div
           ref={scroller}
-          className="min-h-0 flex-1 overflow-y-auto px-[max(1.5rem,12px)] pb-6 pt-[max(4.6rem,40px)]"
+          className="min-h-0 flex-1 overflow-y-auto px-[max(1.5rem,12px)] pb-6 pt-[max(2.25rem,20px)]"
         >
           <div className={(picked ? "mx-auto" : "ml-[7.7rem] mr-auto") + " flex max-w-[62.5rem] max-lg:ml-0 flex-col gap-[max(2.1rem,18px)]"}>
             {!thread ? (

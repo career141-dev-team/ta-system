@@ -1,5 +1,6 @@
 "use client";
 
+import Count from "@/app/Count";
 import type { ReactNode } from "react";
 import { SEES_WHOLE_JOB } from "@/lib/user";
 import { BackButton } from "./PipelineBoard";
@@ -72,19 +73,19 @@ export default function HhOverview() {
         {/* The four numbers */}
         <div className="grid grid-cols-4 gap-[max(1.25rem,10px)] max-lg:grid-cols-2">
           <Stat
-            n={SAVED}
+            n={<Count n={SAVED} />}
             tone="text-ink"
             label="LinkedIn profiles saved"
             sub="across L1–L3"
           />
           <Stat
-            n={APPROACHED}
+            n={<Count n={APPROACHED} />}
             tone="text-info"
             label="approached"
             sub={`${pct(APPROACHED, SAVED)}% of saved`}
           />
           <Stat
-            n={CVS}
+            n={<Count n={CVS} />}
             tone="text-brand"
             label="sent a CV"
             sub={`${pct(CVS, APPROACHED)}% of approached`}
