@@ -21,6 +21,7 @@ const PEEK_MS = 1600;
 // their own pieces, fetched while the screen sits idle, so they are ready by the
 // time they are opened.
 const ScoopsView = dynamic(() => import("./ScoopsView"));
+const JobDescriptionView = dynamic(() => import("./JobDescriptionView"));
 const DailyEmailView = dynamic(() => import("./DailyEmailView"));
 const LinkedInJobView = dynamic(() => import("./LinkedInJobView"));
 const HhOverview = dynamic(() => import("./HhOverview"));
@@ -68,6 +69,7 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
     const idle = window.requestIdleCallback?.bind(window) ?? ((f: () => void) => setTimeout(f, 1200));
     idle(() => {
       void import("./ScoopsView");
+      void import("./JobDescriptionView");
       void import("./LinkedInJobView");
       void import("./StrategiesView");
       void import("./CvPreview");
@@ -117,6 +119,8 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
                 <PipelineBoard />
               ) : v === "scoops" ? (
                 <ScoopsView />
+              ) : v === "jd" ? (
+                <JobDescriptionView />
               ) : v === "midday" ? (
                 <DailyEmailView />
               ) : v === "database" ? (
