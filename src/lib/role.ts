@@ -32,3 +32,11 @@ export function setRole(r: Role) {
 }
 /** Desk-wide roles (old system): see every TA, delete from the Bin early. */
 export const deskWide = (r: Role) => r !== "TA";
+
+/** Who the top bar shows for each role, until sign-in (the names in the owner's designs). */
+export const PERSON: Record<Role, { name: string; title: string }> = {
+  TA: { name: "Chathura Sampath", title: "Talent Acquisition" },
+  Lead: { name: "Rashmi Jayawardena", title: "TA Lead" },
+  Director: { name: "Nadeesha Perera", title: "Director" },
+  Ops: { name: "Kavindi Silva", title: "Ops" },
+};

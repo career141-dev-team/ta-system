@@ -4,17 +4,21 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useGlide } from "@/lib/gsap";
+import { ROLES, useRole, type Role } from "@/lib/role";
 
 // The five links of the owner's second top bar (TopNavV2, 12 Nov 2026), on the
 // same routes as the TA System so a link means the same place in both. Alerts
 // moved to the bell; the rest are not in this bar's design.
-const LINKS = [
-  ["Today", "/today"],
-  ["Openings", "/openings"],
-  ["Strategy Planner", "/strategy"],
-  ["Database", "/database"],
-  ["TA Track", "/ta-track"],
-] as const;
+// Each link only for the roles the old TA System showed it to (owner 14 Nov 2026:
+// "links by role"; old TopNav): Strategy Planner for whoever assigns strategies (TA
+// Lead, Director, Admin), TA Track for a TA Lead or Admin. Follows "View as".
+const LINKS: [string, string, Role[]][] = [
+  ["Today", "/today", ROLES],
+  ["Openings", "/openings", ROLES],
+  ["Strategy Planner", "/strategy", ["Lead", "Director"]],
+  ["Database", "/database", ROLES],
+  ["TA Track", "/ta-track", ["Lead"]],
+];
 
 /** The links, with the one for `pathname` marked. Also the Suspense fallback, with no path. */
 export function NavLinks({ pathname = "" }: { pathname?: string }) {
@@ -22,6 +26,7 @@ export function NavLinks({ pathname = "" }: { pathname?: string }) {
   // when it leaves the bar (instead of each link flashing its own background).
   // The pill is found from the link itself, so no ref is read while rendering.
   const glide = useGlide();
+  const role = useRole();
   const glowOf = (el: Element) => el.closest("nav")?.querySelector<HTMLElement>("[data-glow]");
   // 14 Nov 2026 (owner): every link is its own cell, flush to the bar's top and
   // bottom edges (the open one filled, with a brand line on the bottom edge); the
@@ -43,7 +48,7 @@ export function NavLinks({ pathname = "" }: { pathname?: string }) {
         style={{ opacity: 0 }}
         className="pointer-events-none absolute left-0 top-0 bg-surface-2"
       />
-      {LINKS.map(([label, href]) => {
+      {LINKS.filter(([, , who]) => who.includes(role)).map(([label, href]) => {
         const active = pathname === href || pathname.startsWith(href + "/");
         return (
           <Link

@@ -4,9 +4,8 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { DUR, EASE, gsap } from "@/lib/gsap";
-import { USER } from "@/lib/user";
 import { getTheme, setTheme } from "@/lib/theme";
-import { ROLES, setRole, useRole } from "@/lib/role";
+import { PERSON, ROLES, setRole, useRole } from "@/lib/role";
 import { markRead, useAlerts, type Alert, type Icon } from "./alerts/data";
 import TellUs from "./feedback/TellUs";
 
@@ -192,9 +191,10 @@ export function Person() {
   const [open, setOpen] = useState<Place | null>(null);
   const [tell, setTell] = useState(false);
   const role = useRole();
+  const me = PERSON[role];
   // What the page is showing now (read when the menu opens; the boot script set it).
   const [dark, setDark] = useState(false);
-  const initials = USER.name
+  const initials = me.name
     .split(" ")
     .map((w) => w[0])
     .join("");
@@ -206,7 +206,7 @@ export function Person() {
         type="button"
         aria-haspopup="menu"
         aria-expanded={!!open}
-        aria-label={`${USER.name}, ${USER.role}: your menu`}
+        aria-label={`${me.name}, ${me.title}: your menu`}
         onClick={(e) => {
           setDark(getTheme() === "dark");
           setOpen(open ? null : placeUnder(e.currentTarget));
@@ -217,16 +217,16 @@ export function Person() {
           {initials}
         </span>
         <span className="hidden leading-tight min-[1200px]:block">
-          <span className="block text-nav font-semibold">{USER.name}</span>
-          <span className="block text-nav text-ink-2">{USER.role}</span>
+          <span className="block text-nav font-semibold">{me.name}</span>
+          <span className="block text-nav text-ink-2">{me.title}</span>
         </span>
       </button>
 
       {open && (
         <Pop pos={open} onClose={close} label="Your menu" className="w-[max(20rem,260px)] p-[max(0.875rem,8px)] pt-[max(1.375rem,12px)]">
           <p className="px-2.5 pb-3 leading-tight">
-            <span className="block text-body font-medium text-ink">{USER.name}</span>
-            <span className="block text-caption text-ink-3">{USER.role}</span>
+            <span className="block text-body font-medium text-ink">{me.name}</span>
+            <span className="block text-caption text-ink-3">{me.title}</span>
           </p>
           <ul role="menu" className="flex flex-col">
             <MenuRow
