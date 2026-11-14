@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
-import { DUR, EASE, gsap, useGSAP } from "@/lib/gsap";
+import { DUR, EASE, gsap } from "@/lib/gsap";
 import Notch from "./openings/[id]/Notch";
 
 // One board for the whole app (owner, 14 Nov 2026: "keep the Figma board behind,
@@ -75,7 +75,10 @@ export default function Board({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("click", click, true);
   }, []);
 
-  useGSAP(
+  // A plain effect and plain tweens, not useGSAP: a page still loading suspends
+  // React, which reverts a useGSAP context with every tween in it - on the live site
+  // the copy never slid and the new page never moved (14 Nov 2026).
+  useEffect(
     () => {
       const from = last === null ? -1 : at(last);
       const moved = last !== null && last !== path;
@@ -102,7 +105,7 @@ export default function Board({ children }: { children: ReactNode }) {
       const done = setTimeout(() => tl.progress(1), 1500);
       return () => clearTimeout(done);
     },
-    { dependencies: [path] },
+    [path, i],
   );
 
   if (i < 0) return children;
