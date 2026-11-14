@@ -1560,6 +1560,7 @@ function BulkBar({
             </div>
           ) : mode === "outcome" ? (
             <div className="flex w-80 max-w-full flex-col gap-2">
+              <p className="text-small font-medium text-ink">Mark {count} as</p>
               <div className="flex gap-1">
                 {(
                   [
@@ -1594,8 +1595,12 @@ function BulkBar({
                 />
               )}
               <p className="text-caption text-ink-3">
-                Eye-marks stay as they are. People already in the pipeline are
-                left alone.
+                {to === "yes"
+                  ? "They go straight into the pipeline (TA Follow-up). An eye-marked person needs their CV first."
+                  : to === "no"
+                    ? "They stay in the table as not interested, with your reason."
+                    : "They go back to To approach."}{" "}
+                People already in the pipeline are left alone.
               </p>
               <button
                 type="button"
@@ -1603,11 +1608,14 @@ function BulkBar({
                 onClick={() => (onOutcome(to, text.trim()), done())}
                 className="self-end rounded-full bg-brand px-3 py-1 text-small font-medium text-white disabled:opacity-40"
               >
-                Change {count}
+                Mark {count}
               </button>
             </div>
           ) : (
             <div className="flex w-60 flex-col">
+              <p className="px-3 pb-1 pt-1 text-small font-medium text-ink">
+                Work location for {count}
+              </p>
               {LOCATIONS.map((l) => (
                 <button
                   key={l}
@@ -1634,7 +1642,7 @@ function BulkBar({
           onClick={() => setMode(mode === "note" ? "" : "note")}
           className={item(mode === "note")}
         >
-          Add note
+          Add a note
         </button>
         <button
           type="button"
@@ -1642,7 +1650,7 @@ function BulkBar({
           onClick={() => setMode(mode === "outcome" ? "" : "outcome")}
           className={item(mode === "outcome")}
         >
-          Change outcome
+          Mark as…
         </button>
         <button
           type="button"
@@ -1650,21 +1658,28 @@ function BulkBar({
           onClick={() => setMode(mode === "location" ? "" : "location")}
           className={item(mode === "location")}
         >
-          Location
+          Work location…
         </button>
-        <button
-          type="button"
-          disabled={blocked || eligible === 0}
-          title={
-            eligible === 0
-              ? "Only interested people go to the pipeline (an eye-marked one needs a CV first)"
-              : undefined
-          }
-          onClick={onPipeline}
-          className="ml-1 rounded-full bg-white px-4 py-1.5 text-small font-medium text-ink hover:bg-surface-2 disabled:opacity-50"
-        >
-          Add {eligible} to pipeline
-        </button>
+        {/* Only when some of the picked are Interested and not in the pipeline
+            yet - "Add 0 to pipeline" said nothing (owner, 14 Nov 2026). Marking
+            people Interested puts them in the pipeline by itself. */}
+        {eligible > 0 && (
+          <button
+            type="button"
+            disabled={blocked}
+            title={
+              eligible < count
+                ? `${count - eligible} of the picked are not Interested yet, or are eye-marked without a CV`
+                : undefined
+            }
+            onClick={onPipeline}
+            className="ml-1 rounded-full bg-white px-4 py-1.5 text-small font-medium text-ink hover:bg-surface-2 disabled:opacity-50"
+          >
+            {eligible === count
+              ? "Add to pipeline"
+              : `Add ${eligible} of ${count} to pipeline`}
+          </button>
+        )}
         <button
           type="button"
           onClick={onClear}
