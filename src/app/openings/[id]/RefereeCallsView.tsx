@@ -26,7 +26,9 @@ import { FIELD_PILL } from "./filters";
 // Sample data until the backend; a cell is saved when you leave it.
 
 type Cells = [string, string, string, string];
-type Call = { cells: Cells; ta: string };
+type Result = "positive" | "negative";
+/** `result` is set only when a person flips it; otherwise it is read off the feedback. */
+type Call = { cells: Cells; ta: string; result?: Result };
 const COLS = [
   { label: "Company", max: 200, width: "w-[22%]" },
   { label: "Referral", max: 200, width: "w-[19.5%]" },
@@ -88,6 +90,51 @@ const START: Record<string, Call[]> = {
  *  own (Brandix in the design) is a call still being written - not counted. */
 const isCall = (x: Call) => !!(x.cells[1].trim() || x.cells[2].trim());
 
+/** The old system's sorting of a call (src/lib/refereeCalls.ts classifyFeedback):
+ *  pessimistic - until somebody has offered or given a contact, it has not worked. */
+function classify(feedback: string): Result {
+  const t = feedback.trim().toLowerCase();
+  if (
+    /can(?:not|'t)\s+give\b[\s\S]*\b(?:will\s+pass|will\s+call\s+back)\b/.test(
+      t,
+    )
+  )
+    return "positive";
+  const negative = [
+    /\bno\s+contacts?\b/,
+    /\bno\s+(?:phone\s+)?number\b/,
+    /\bno\s+answer\b/,
+    /\bnot\s+respond(?:ing|ed)?\b/,
+    /\bnot\s+answer(?:ing|ed)?\b/,
+    /\bwrong\s+number\b/,
+    /\b(?:overseas|abroad)\b/,
+    /\bnot\s+available\b/,
+    /\bnot\s+interested\b/,
+    /\bno\s+interest\b/,
+    /\bcan(?:not|'t)\s+give\b/,
+    /\b(?:refused|declined)\b/,
+    /\bswitched\s+off\b/,
+    /\bnot\s+reachable\b/,
+  ];
+  if (negative.some((x) => x.test(t))) return "negative";
+  const positive = [
+    /\b(?:have|has)\s+(?:got\s+)?a\s+contact\b/,
+    /\bwill\s+share\b/,
+    /\bwill\s+send\b/,
+    /\bwill\b[\s\S]*\bwhats\s*app\b/,
+    /\bwill\s+call\s+back\b/,
+    /\bwill\s+pass\b/,
+    /\bnumber\s+(?:received|given|shared)\b/,
+    /\binterested\b/,
+  ];
+  return positive.some((x) => x.test(t)) ? "positive" : "negative";
+}
+const resultOf = (x: Call): Result => x.result ?? classify(x.cells[3]);
+const RESULT_LABEL: Record<Result, string> = {
+  positive: "Positive",
+  negative: "Not successful",
+};
+
 export default function RefereeCallsView() {
   const gate = useWorkdayGate();
   const [day, setDay] = useState("today");
@@ -115,11 +162,20 @@ export default function RefereeCallsView() {
   // The grid takes the keyboard only once a person has clicked or typed in it, so
   // opening the screen does not take the arrows from the bottom bar.
   const [active, setActive] = useState(false);
+  // When the last change was kept (shown as "Saved h:mm"), and the row just deleted
+  // with where it was, for Undo.
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const [removed, setRemoved] = useState<{
+    key: string;
+    at: number;
+    row: Call;
+  } | null>(null);
   const grid = useRef<HTMLDivElement>(null);
-  const input = useRef<HTMLInputElement>(null);
+  const input = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
 
   const cell = (r: number, col: number) => rows[r]?.cells[col] ?? "";
-  const write = (changes: { r: number; c: number; v: string }[]) =>
+  const write = (changes: { r: number; c: number; v: string }[]) => {
+    setSavedAt(new Date());
     setGrids((g) => {
       const next = [...(g[key] ?? [])];
       for (const { r, c: col, v } of changes) {
@@ -135,6 +191,46 @@ export default function RefereeCallsView() {
         next.pop();
       return { ...g, [key]: next };
     });
+  };
+  const setRows = (f: (rows: Call[]) => Call[]) => {
+    setSavedAt(new Date());
+    setGrids((g) => ({ ...g, [key]: f(g[key] ?? []) }));
+  };
+  const deleteRow = (r: number) => {
+    const row = rows[r];
+    if (!row) return;
+    setTyped(null);
+    setRows((all) => all.filter((_, i) => i !== r));
+    setRemoved({ key, at: r, row });
+  };
+  const undoDelete = () => {
+    if (!removed) return;
+    const { key: k, at: i, row } = removed;
+    setGrids((g) => {
+      const next = [...(g[k] ?? [])];
+      next.splice(Math.min(i, next.length), 0, row);
+      return { ...g, [k]: next };
+    });
+    setRemoved(null);
+  };
+  // A person's own sort of the call, over the one read off the feedback.
+  const flip = (r: number) =>
+    setRows((all) =>
+      all.map((x, i) =>
+        i === r
+          ? {
+              ...x,
+              result: resultOf(x) === "positive" ? "negative" : "positive",
+            }
+          : x,
+      ),
+    );
+  // The Undo is offered for a short while, as a toast would be.
+  useEffect(() => {
+    if (!removed) return;
+    const t = setTimeout(() => setRemoved(null), 15000);
+    return () => clearTimeout(t);
+  }, [removed]);
 
   const commit = () => {
     if (typed !== null && typed !== cell(at.r, at.c))
@@ -163,9 +259,13 @@ export default function RefereeCallsView() {
     } else grid.current?.focus({ preventScroll: true });
   }, [at, active, key]);
 
-  const onCellKey = (e: KeyboardEvent<HTMLInputElement>) => {
+  const onCellKey = (
+    e: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => {
     const k = e.key;
     const caret = mode === "edit";
+    // Enter keeps and moves down; Shift+Enter is a new line in a long Feedback.
+    if (k === "Enter" && e.shiftKey && at.c === 3) return;
     if (k === "Enter") move(1, 0);
     else if (k === "Tab") {
       // At the grid's edge Tab leaves, as a page should.
@@ -176,8 +276,10 @@ export default function RefereeCallsView() {
       setTyped(null);
       setMode("nav");
       requestAnimationFrame(() => input.current?.select());
-    } else if (k === "ArrowDown") move(1, 0);
-    else if (k === "ArrowUp") move(-1, 0);
+    } else if (k === "ArrowDown" && !caret) move(1, 0);
+    else if (k === "ArrowUp" && !caret) move(-1, 0);
+    else if ((k === "ArrowDown" || k === "ArrowUp") && caret && at.c !== 3)
+      move(k === "ArrowDown" ? 1 : -1, 0);
     else if (k === "ArrowRight" && !caret) move(0, 1);
     else if (k === "ArrowLeft" && !caret) move(0, -1);
     else if (k === "F2") {
@@ -200,7 +302,9 @@ export default function RefereeCallsView() {
   };
   // A block from Excel fills across and down from the chosen cell; one value is
   // typed into the cell like any other text.
-  const onPaste = (e: ClipboardEvent) => {
+  const onPaste = (
+    e: ClipboardEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => {
     if (!canEdit) return;
     const text = e.clipboardData.getData("text/plain");
     if (!/[\t\n]/.test(text.trim())) return;
@@ -264,7 +368,7 @@ export default function RefereeCallsView() {
             ? "A past day - read only"
             : SEES_WHOLE_JOB
               ? "Every TA's calls - each TA writes their own"
-              : "Type anywhere or paste a block from Excel"}
+              : "Type anywhere or paste a block from Excel · Shift+Enter for a new line in Feedback"}
         </p>
       </div>
       {gate && today && !SEES_WHOLE_JOB && (
@@ -303,8 +407,37 @@ export default function RefereeCallsView() {
           <tbody>
             {Array.from({ length: shownRows }, (_, r) => (
               <tr key={r} className="h-[max(3.125rem,40px)]">
-                <td className="border-b border-r border-border bg-canvas text-center font-mono text-mono text-ink-3">
-                  {r + 1}
+                <td className="group/num border-b border-r border-border bg-canvas text-center font-mono text-mono text-ink-3">
+                  {canEdit && rows[r]?.cells.some((x) => x.trim()) ? (
+                    <>
+                      <span className="group-hover/num:hidden group-focus-within/num:hidden">
+                        {r + 1}
+                      </span>
+                      <button
+                        type="button"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={() => deleteRow(r)}
+                        aria-label={`Delete row ${r + 1}`}
+                        title="Delete this row"
+                        className="hidden w-full items-center justify-center text-ink-3 hover:text-danger group-hover/num:flex group-focus-within/num:flex focus-visible:flex"
+                      >
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="size-[max(1rem,13px)]"
+                          aria-hidden="true"
+                        >
+                          <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" />
+                        </svg>
+                      </button>
+                    </>
+                  ) : (
+                    r + 1
+                  )}
                 </td>
                 {COLS.map((col, ci) => {
                   const on = at.r === r && at.c === ci;
@@ -329,7 +462,28 @@ export default function RefereeCallsView() {
                           : "")
                       }
                     >
-                      {on && canEdit ? (
+                      {on && canEdit && ci === 3 ? (
+                        // Feedback runs to 2,000 characters: the box opens over the
+                        // rows below and grows with the text, so all of it can be read.
+                        <textarea
+                          ref={input}
+                          value={typed ?? cell(r, ci)}
+                          onChange={(e) => setTyped(e.target.value)}
+                          onKeyDown={onCellKey}
+                          onPaste={onPaste}
+                          onBlur={commit}
+                          maxLength={col.max}
+                          rows={Math.min(
+                            8,
+                            Math.max(
+                              1,
+                              Math.ceil((typed ?? cell(r, ci)).length / 55),
+                            ),
+                          )}
+                          aria-label={`${col.label}, row ${r + 1}`}
+                          className="absolute inset-x-0 top-0 z-20 min-h-full resize-none rounded-xs border-[1.5px] border-brand bg-surface px-[max(0.9rem,10px)] py-[max(0.85rem,9px)] text-small text-ink shadow-float outline-none"
+                        />
+                      ) : on && canEdit ? (
                         <input
                           ref={input}
                           value={typed ?? cell(r, ci)}
@@ -342,11 +496,38 @@ export default function RefereeCallsView() {
                           className="w-full bg-transparent text-small text-ink outline-none"
                         />
                       ) : (
-                        <span
-                          className="block truncate text-ink"
-                          title={cell(r, ci) || undefined}
-                        >
-                          {cell(r, ci)}
+                        <span className="flex items-center gap-2">
+                          <span
+                            className="block min-w-0 flex-1 truncate text-ink"
+                            title={cell(r, ci) || undefined}
+                          >
+                            {cell(r, ci)}
+                          </span>
+                          {/* Feedback: how the call went, as the EOD email sorts it. */}
+                          {ci === 3 && rows[r] && isCall(rows[r]) && (
+                            <button
+                              type="button"
+                              disabled={!canEdit}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onClick={() => flip(r)}
+                              title={
+                                canEdit
+                                  ? `${rows[r].result ? "Set by you" : "Read from the feedback"} - click to change`
+                                  : undefined
+                              }
+                              className={
+                                "shrink-0 rounded-full px-2 py-0.5 text-caption font-medium transition-colors " +
+                                (resultOf(rows[r]) === "positive"
+                                  ? "bg-success-soft text-success"
+                                  : "bg-surface-2 text-ink-2") +
+                                (canEdit
+                                  ? " hover:ring-1 hover:ring-border-strong"
+                                  : "")
+                              }
+                            >
+                              {RESULT_LABEL[resultOf(rows[r])]}
+                            </button>
+                          )}
                         </span>
                       )}
                     </td>
@@ -373,7 +554,38 @@ export default function RefereeCallsView() {
           {today
             ? "Goes into tonight’s EOD automatically"
             : "Went into that day’s EOD"}
+          {calls > 0 &&
+            ` · ${rows.filter((x) => isCall(x) && resultOf(x) === "positive").length} positive`}
         </span>
+        {removed?.key === key ? (
+          <span
+            role="status"
+            className="ml-auto flex items-center gap-2 text-small text-ink-2 max-md:ml-0"
+          >
+            Row {removed.at + 1} deleted.
+            <button
+              type="button"
+              onClick={undoDelete}
+              className="font-medium text-brand hover:underline"
+            >
+              Undo
+            </button>
+          </span>
+        ) : (
+          canEdit &&
+          savedAt && (
+            <span
+              role="status"
+              className="ml-auto text-small text-ink-3 max-md:ml-0"
+            >
+              Saved{" "}
+              {savedAt.toLocaleTimeString([], {
+                hour: "numeric",
+                minute: "2-digit",
+              })}
+            </span>
+          )
+        )}
       </div>
     </div>
   );
