@@ -281,7 +281,7 @@ export default function LinkedInJobView() {
   const rejected = STAGES.find((s) => s.name === "Rejected")!;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col px-[max(2.3rem,14px)] pb-[max(2.5rem,12px)] pt-[max(2.8rem,40px)] short:pt-[30px] max-md:overflow-y-auto max-md:pt-11">
+    <div className="flex min-h-0 flex-1 flex-col px-[max(1.5rem,14px)] pb-[max(2.5rem,12px)] pt-[max(1.4rem,14px)] max-md:overflow-y-auto max-md:pt-11">
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,27.5rem)_minmax(0,1fr)] gap-x-[max(1.75rem,14px)] max-md:grid-cols-1 max-md:gap-y-6">
         {/* Posts */}
         <aside className="flex min-h-0 flex-col">
@@ -339,7 +339,7 @@ export default function LinkedInJobView() {
         </aside>
 
         {/* The chosen post (or all posts). Its left border is the design's divider. */}
-        <section ref={side} className="mt-[max(0.7rem,0px)] flex min-h-0 flex-col gap-[max(1.25rem,12px)] short:overflow-y-auto short:[scrollbar-width:thin] border-l border-border pl-[max(1.875rem,14px)] max-md:mt-0 max-md:border-l-0 max-md:pl-0">
+        <section ref={side} className="mt-[max(0.7rem,0px)] md:mt-[1.75rem] flex min-h-0 flex-col gap-[max(1.25rem,12px)] short:overflow-y-auto short:[scrollbar-width:thin] border-l border-border pl-[max(1.875rem,14px)] max-md:mt-0 max-md:border-l-0 max-md:pl-0">
           {gate && <WorkdayBlocked what="shortlist applicants" />}
           {post ? (
             <PostHeader

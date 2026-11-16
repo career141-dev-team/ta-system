@@ -374,7 +374,7 @@ export default function SuggestionsView() {
   };
 
   return (
-    <div className="flex min-h-0 flex-1 gap-[max(1.5rem,14px)] overflow-y-auto px-[max(2.3rem,14px)] pb-[max(2rem,16px)] pt-[max(2rem,48px)] short:pt-[30px] max-lg:flex-col max-md:pt-14 lg:overflow-hidden">
+    <div className="flex min-h-0 flex-1 gap-[max(1.5rem,14px)] overflow-y-auto px-[max(1.5rem,14px)] pb-[max(2rem,16px)] pt-[max(1.4rem,14px)] max-lg:flex-col max-md:pt-11 lg:overflow-hidden">
       {/* The people */}
       <div className="flex min-w-0 flex-1 flex-col lg:min-h-0">
         <div className="flex flex-wrap items-center gap-x-[max(1.25rem,10px)] gap-y-3">
@@ -403,7 +403,7 @@ export default function SuggestionsView() {
               </button>
             ))}
           </div>
-          <div className="ml-auto flex items-center gap-[max(1rem,10px)] max-md:ml-0">
+          <div className="ml-auto flex flex-col items-end gap-0.5 max-md:ml-0 max-md:flex-row max-md:items-center max-md:gap-[max(1rem,10px)]">
             {/* People are added by hand in Excel Tables, as in the old system. */}
             <button
               type="button"

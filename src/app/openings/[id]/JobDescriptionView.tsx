@@ -131,7 +131,7 @@ export default function JobDescriptionView() {
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col px-[max(2.3rem,14px)] pb-[max(2.19rem,12px)] pt-[max(2.8rem,40px)] short:pt-[30px] max-md:overflow-y-auto max-md:pt-11">
+    <div className="flex min-h-0 flex-1 flex-col px-[max(1.5rem,14px)] pb-[max(2.19rem,12px)] pt-[max(1.4rem,14px)] max-md:overflow-y-auto max-md:pt-11">
       <div className="flex min-h-0 flex-1 items-start max-md:flex-col max-md:gap-y-6 md:gap-x-[max(1.875rem,14px)]">
         <BackButton />
 

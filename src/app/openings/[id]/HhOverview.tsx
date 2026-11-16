@@ -39,7 +39,7 @@ export default function HhOverview() {
   // Nothing saved yet: say what to do instead of a page of zeros.
   if (SAVED === 0) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col px-[max(2.3rem,14px)] pt-[max(4rem,48px)] short:pt-[30px]">
+      <div className="flex min-h-0 flex-1 flex-col px-[max(1.5rem,14px)] pt-[max(1.4rem,14px)]">
         <BackButton />
         <div className="m-auto flex flex-col items-center gap-[max(1rem,12px)] text-center">
           <p className="text-h3">No profiles saved yet</p>
@@ -60,12 +60,12 @@ export default function HhOverview() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 gap-[max(1.3rem,12px)] overflow-y-auto px-[max(2.3rem,14px)] pb-[max(2rem,16px)] pt-[max(4rem,48px)] short:pt-[30px] max-md:flex-col">
+    <div className="flex min-h-0 flex-1 gap-[max(1.3rem,12px)] overflow-y-auto px-[max(1.5rem,14px)] pb-[max(2rem,16px)] pt-[max(1.4rem,14px)] max-md:flex-col">
       <div className="shrink-0">
         <BackButton />
       </div>
 
-      <div className="flex min-w-0 flex-1 flex-col gap-[max(2.4rem,20px)]">
+      <div className="flex min-w-0 flex-1 flex-col gap-[max(2.4rem,20px)] md:pt-[1.75rem]">
         {/* A lead or admin sees every TA's profiles on the job; a TA their own. */}
         {SEES_WHOLE_JOB && (
           <span className="-mb-[max(1.4rem,12px)] self-start rounded-full bg-surface-2 px-[max(0.8rem,8px)] py-[max(0.2rem,2px)] text-caption text-ink-2">

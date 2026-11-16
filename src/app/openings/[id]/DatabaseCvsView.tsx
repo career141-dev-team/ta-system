@@ -141,7 +141,7 @@ export default function DatabaseCvsView() {
           onClick={rerun}
           disabled={matching}
           title="Run matching again - it reads the approved JD"
-          className="flex items-center gap-2 rounded-full bg-surface-2 px-3 py-1 text-small text-ink-2 hover:bg-surface-3 hover:text-ink disabled:cursor-default"
+          className="flex items-center gap-2 rounded-full bg-surface-2 px-3 py-1 text-small text-ink-2 hover:bg-surface-3 hover:text-ink disabled:cursor-default md:ml-auto"
         >
           <span className={"size-2 rounded-full " + (matching ? "animate-pulse bg-warn" : "bg-success")} />
           {matching ? "Matching…" : `Matching finished ${ranAgo}`}

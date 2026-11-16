@@ -232,9 +232,11 @@ export default function ResearchView() {
   );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[max(2.3rem,14px)] pb-[max(2rem,16px)] pt-[max(2rem,48px)] short:pt-[30px] max-md:pt-14">
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[max(1.5rem,14px)] pb-[max(2rem,16px)] pt-[max(1.4rem,14px)] max-md:pt-11">
       {/* Header: back, when and from what it was researched, the two actions */}
-      <div className="flex flex-wrap items-center gap-x-[max(1.3rem,10px)] gap-y-3">
+      {/* Top-aligned so Back stays in the Pipeline's corner when the actions wrap. */}
+      <div className="flex flex-wrap items-start gap-x-[max(1.3rem,10px)] gap-y-3">
+        <div className="flex items-center gap-x-[max(1.3rem,10px)]">
         <BackButton />
         <Image
           src="/aura-mark.png"
@@ -250,7 +252,8 @@ export default function ResearchView() {
               ? `${CLIENT} has not been researched yet`
               : `Researched ${ranOn} from ${SOURCES.length} sources`}
         </p>
-        <div className="ml-auto flex flex-wrap items-center gap-x-[max(1rem,8px)] gap-y-2 max-md:ml-0">
+        </div>
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-x-[max(1rem,8px)] gap-y-2 max-md:ml-0 md:max-w-[calc(50%-8.5rem)]">
           {run !== "none" && (
             <button
               type="button"

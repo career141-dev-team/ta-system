@@ -108,7 +108,7 @@ export default function StrategiesView() {
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      <div className="absolute left-[max(2.3rem,14px)] top-[max(2.8rem,40px)] max-md:static max-md:px-[14px] max-md:pt-11">
+      <div className="absolute left-[max(1.5rem,14px)] top-[max(1.4rem,14px)] max-md:static max-md:px-[14px] max-md:pt-11">
         <BackButton />
       </div>
 

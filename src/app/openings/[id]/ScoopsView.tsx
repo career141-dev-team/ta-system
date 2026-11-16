@@ -321,7 +321,7 @@ export default function ScoopsView() {
     <div
       ref={root}
       {...(mode === "list" ? dropZone : {})}
-      className="flex min-h-0 flex-1 flex-col px-[max(2.2rem,14px)] pb-[max(1.4rem,12px)] pt-[max(1.6rem,14px)] max-md:pt-11"
+      className="flex min-h-0 flex-1 flex-col px-[max(1.5rem,14px)] pb-[max(1.4rem,12px)] pt-[max(1.4rem,14px)] max-md:pt-11"
     >
       <input
         ref={fileInput}
