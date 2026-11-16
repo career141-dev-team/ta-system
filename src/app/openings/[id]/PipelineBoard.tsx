@@ -12,6 +12,7 @@ import TickList from "./TickList";
 import { warmPdf } from "./CvPages";
 import CardMenu from "./CardMenu";
 import MoveForm from "./MoveForm";
+import AddCandidate from "./AddCandidate";
 import Toast from "./Toast";
 import { STAGES, checkMove, movesFrom, type Needs } from "./pipelineRules";
 import WorkdayBlocked from "./WorkdayBlocked";
@@ -281,6 +282,7 @@ export default function PipelineBoard() {
   const [toast, setToast] = useState<{ bold?: string; rest: string; n: number; warn?: boolean } | null>(null);
   const refuse = useCallback((why: string) => setToast((t) => ({ rest: why, warn: true, n: (t?.n ?? 0) + 1 })), []);
   const tell = (bold: string, rest: string) => setToast((t) => ({ bold, rest, n: (t?.n ?? 0) + 1 }));
+  const [adding, setAdding] = useState(false);
 
   // The workday gate: a TA moves nobody until today's workday is started (6.2).
   // In a ref as well, because the drag handler below is made once.
@@ -679,6 +681,7 @@ export default function PipelineBoard() {
           <Automations pillClass={TOOL_PILL} icon={<SlidersIcon />} />
           <button
             type="button"
+            onClick={() => (gate ? refuse(gate + " Start it on Today, then add candidates.") : setAdding(true))}
             className="flex h-[max(2.6rem,35px)] items-center gap-1.5 whitespace-nowrap rounded-full bg-brand px-[max(1.3rem,16px)] text-[max(0.85rem,12.5px)] font-medium text-white hover:bg-brand-strong"
           >
             <PlusIcon />
@@ -707,9 +710,14 @@ export default function PipelineBoard() {
         <PillMenu options={RECRUITERS} initial={recruiter} onChange={setRecruiter} mark="tick" pillClass={TOOL_PILL} />
         <PillMenu options={PRIORITIES} initial={priority} onChange={setPriority} mark="tick" pillClass={TOOL_PILL} />
         <PillMenu options={SOURCES} initial={source} onChange={setSource} mark="tick" pillClass={TOOL_PILL} />
-        <PillMenu options={EXPERIENCE} initial={exp} onChange={setExp} mark="tick" pillClass={TOOL_PILL} />
-        <PillMenu options={NOTICE} initial={noticeMax} onChange={setNoticeMax} mark="tick" pillClass={TOOL_PILL} />
-        <PillMenu options={MARKS} initial={marks} onChange={setMarks} mark="tick" pillClass={TOOL_PILL} />
+        {/* The Figma list view keeps only the first four filters. */}
+        {mode === "board" && (
+          <>
+            <PillMenu options={EXPERIENCE} initial={exp} onChange={setExp} mark="tick" pillClass={TOOL_PILL} />
+            <PillMenu options={NOTICE} initial={noticeMax} onChange={setNoticeMax} mark="tick" pillClass={TOOL_PILL} />
+            <PillMenu options={MARKS} initial={marks} onChange={setMarks} mark="tick" pillClass={TOOL_PILL} />
+          </>
+        )}
 
         <div className="ml-auto flex items-center rounded-full bg-surface-2 p-[3px] text-[max(0.85rem,12.5px)]">
           {(
@@ -735,7 +743,7 @@ export default function PipelineBoard() {
         </div>
       </div>
 
-      {gate && <WorkdayBlocked what="move candidates" className="mx-[max(1.5rem,14px)] mb-[max(1rem,10px)]" />}
+      {gate && mode === "board" && <WorkdayBlocked what="move candidates" className="mx-[max(1.5rem,14px)] mb-[max(1rem,10px)]" />}
 
       {mode === "board" ? (
         // Columns side by side; the row scrolls sideways, each column scrolls itself.
@@ -769,7 +777,7 @@ export default function PipelineBoard() {
           ))}
         </div>
       ) : (
-        <ListView board={board} match={match} />
+        <ListView board={board} match={match} onOpenCv={openCv} onMenu={openMenu} />
       )}
 
       {cvShown && cvFor && (
@@ -830,6 +838,16 @@ export default function PipelineBoard() {
             // "Add to another job" moves nobody on this board; it only says so.
             if (ask.needs === "job") tell(ask.card.name, ` added to TA Follow-Up on ${note}. They stay on this job too.`);
             else moveCard(ask.card, ask.from, ask.to, { note, pop: true });
+          }}
+        />
+      )}
+
+      {adding && (
+        <AddCandidate
+          onClose={() => setAdding(false)}
+          onAdd={(file) => {
+            setAdding(false);
+            tell(file, " uploaded. Their profile will appear in TA Follow-up once it is read.");
           }}
         />
       )}
@@ -1083,38 +1101,104 @@ const CandidateCard = memo(function CandidateCard({
   );
 });
 
-/** The same candidates as one table. */
-function ListView({ board, match }: { board: Record<string, Card[]>; match: (p: Card) => boolean }) {
-  const rows = STAGES.flatMap((s) => board[s.name].filter(match).map((p) => ({ p, stage: s })));
+/** The same candidates as a stage sidebar (left) and one row card per candidate (right). */
+function ListView({
+  board,
+  match,
+  onOpenCv,
+  onMenu,
+}: {
+  board: Record<string, Card[]>;
+  match: (p: Card) => boolean;
+  onOpenCv: (card: Card) => void;
+  onMenu: (card: Card, stage: string, el: HTMLElement) => void;
+}) {
+  const [stage, setStage] = useState(STAGES[0].name);
+  const rows = board[stage].filter(match);
+  const pill = "shrink-0 rounded-full px-2.5 py-0.5 text-chip font-medium ";
   return (
-    <div className="min-h-0 flex-1 overflow-auto px-[max(1.5rem,14px)]">
-      <table className="w-full text-left text-card-line">
-        <thead className="sticky top-0 bg-white text-ink-2">
-          <tr>
-            {["Name", "Stage", "Company", "Location", "Experience", "Phone", "Email"].map((h) => (
-              <th key={h} className="border-b border-border py-2 pr-4 font-medium">
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(({ p, stage }) => (
-            <tr key={p.id} className="hover:bg-surface-2">
-              <td className="border-b border-border py-2 pr-4 font-medium text-ink">{p.name}</td>
-              <td className="border-b border-border py-2 pr-4">
-                <span className="mr-1.5 inline-block size-2 rounded-full" style={{ background: stage.dot }} />
-                {stage.name}
-              </td>
-              <td className="border-b border-border py-2 pr-4">{p.company}</td>
-              <td className="border-b border-border py-2 pr-4">{p.location}</td>
-              <td className="border-b border-border py-2 pr-4">{p.years}</td>
-              <td className="border-b border-border py-2 pr-4">{p.phone}</td>
-              <td className="border-b border-border py-2 pr-4">{p.email}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="mx-[max(1.5rem,14px)] mb-[max(1.2rem,12px)] flex min-h-0 flex-1 gap-[max(1.2rem,12px)] max-md:flex-col">
+      <nav
+        aria-label="Stages"
+        className="flex w-[max(15rem,200px)] shrink-0 flex-col gap-2.5 overflow-y-auto border-r border-border pr-[max(1.2rem,12px)] max-md:w-full max-md:flex-row max-md:overflow-x-auto max-md:border-r-0 max-md:pb-2 max-md:pr-0"
+      >
+        {STAGES.map((s) => (
+          <button
+            key={s.name}
+            type="button"
+            aria-pressed={stage === s.name}
+            onClick={() => setStage(s.name)}
+            className={
+              "h-[max(2.4rem,33px)] shrink-0 whitespace-nowrap rounded-full px-[max(1rem,13px)] text-left text-col " +
+              (stage === s.name ? "bg-surface-2 text-ink" : "border border-border bg-white text-ink hover:bg-surface-2")
+            }
+          >
+            {s.name}
+          </button>
+        ))}
+      </nav>
+      <div className="min-h-0 min-w-0 flex-1 overflow-auto">
+        {rows.length === 0 && <p className="py-6 text-center text-ink-2">No candidates in {stage}.</p>}
+        {rows.map((p) => {
+          const chip = (label: string) => (
+            <span className={pill + (p.missing.includes(label) ? "bg-warn-soft text-warn" : "bg-surface-2 text-ink")}>{label}</span>
+          );
+          return (
+            <article
+              key={p.id}
+              className="mb-3 flex min-w-max items-center gap-[max(0.9rem,10px)] rounded-full border border-border bg-white px-4 py-2.5 text-card-line text-ink-2"
+            >
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-info-soft text-chip font-semibold text-info">
+                {initials(p.name)}
+              </span>
+              <button
+                type="button"
+                onClick={() => onOpenCv(p)}
+                onPointerEnter={() => warmPdf()}
+                aria-label={`Open the CV of ${p.name}`}
+                className="text-card-name font-semibold text-ink hover:text-brand"
+              >
+                {p.name}
+              </button>
+              <LinkedInIcon />
+              <span className="text-card-sub">{p.title}</span>
+              <span>E : {p.years}</span>
+              <span>C : {p.company}</span>
+              <span>L : {p.location}</span>
+              <span>P : {p.phone}</span>
+              <button
+                type="button"
+                onClick={() => onOpenCv(p)}
+                aria-label={`Open the CV of ${p.name}`}
+                className={pill + "bg-surface-2 text-ink hover:bg-brand hover:text-white"}
+              >
+                CV
+              </button>
+              {chip("Salary")}
+              {chip("Notice Period")}
+              <span className="ml-auto">M : {p.email}</span>
+              <span aria-hidden="true" className="h-[1em] w-px bg-border-strong" />
+              {p.lockedBy ? (
+                <span className="size-[max(0.9rem,12px)]" title={`Shortlisted by ${p.lockedBy}. You cannot contact.`} />
+              ) : (
+                <button
+                  type="button"
+                  aria-label={`Move or mark ${p.name}`}
+                  aria-haspopup="menu"
+                  onClick={(e) => onMenu(p, stage, e.currentTarget)}
+                  className="rounded p-0.5 text-ink hover:bg-surface-2"
+                >
+                  <svg viewBox="0 0 24 24" fill="currentColor" className="size-[max(0.9rem,12px)]" aria-hidden="true">
+                    <circle cx="12" cy="5" r="1.8" />
+                    <circle cx="12" cy="12" r="1.8" />
+                    <circle cx="12" cy="19" r="1.8" />
+                  </svg>
+                </button>
+              )}
+            </article>
+          );
+        })}
+      </div>
     </div>
   );
 }
