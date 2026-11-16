@@ -2,8 +2,10 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
+import Image from "next/image";
 import { DUR, EASE, gsap, loadFlip, useGSAP, type FlipPlugin } from "@/lib/gsap";
-import CvPages from "./CvPages";
+import CvPages, { cvText } from "./CvPages";
+import { boxLines, runAgent, type Box, type BoxContent } from "./cvAgent";
 
 // Placeholder: one sample CV laid out as in the owner's design (12 Nov 2026),
 // with the card's own name and title. With the backend this is the candidate's
@@ -51,6 +53,7 @@ export default function CvPreview({
   name,
   title,
   src,
+  start = NO_DETAILS,
   onClose,
 }: {
   /** The opener's handle on the preview, so it can play the preview's exit (useExit). */
@@ -59,8 +62,12 @@ export default function CvPreview({
   title: string;
   /** The candidate's own CV file; without one the sample layout below is shown. */
   src?: string;
+  /** What the desk holds for the green box (the TA System's CAREER141 box). */
+  start?: BoxContent;
   onClose: () => void;
 }) {
+  // The green box AURA puts on page 1 when asked; dragged by hand too.
+  const [box, setBox] = useState<Box | null>(null);
   const own = useRef<HTMLDivElement>(null);
   const root = ref ?? own;
   const [full, setFull] = useState(false);
@@ -174,7 +181,7 @@ export default function CvPreview({
         {/* The CV scrolls inside the dark frame; the scrollbar sits in the frame's right gutter. */}
         {src ? (
           <div className="min-h-0 flex-1 overflow-hidden rounded-t-[2.6rem] bg-ink max-md:rounded-t-md">
-            <CvPages key={src} src={src} fit="width" />
+            <CvPages key={src} src={src} fit="width" overlay={box && <GreenBox box={box} setBox={setBox} />} />
           </div>
         ) : (
         <div className="min-h-0 flex-1 overflow-y-auto pr-[3%] [scrollbar-color:#fff_transparent]">
@@ -241,9 +248,160 @@ export default function CvPreview({
           </article>
         </div>
         )}
+        <CvAgent src={src} start={start} box={box} setBox={setBox} sampleText={sampleText(name, title)} />
       </section>
     </div>,
     document.body,
+  );
+}
+
+const NO_DETAILS: BoxContent = { notes: [] };
+
+/** The sample CV's words, for asking when there is no file. */
+const sampleText = (name: string, title: string) =>
+  [
+    name,
+    title,
+    SAMPLE.phone,
+    SAMPLE.email,
+    SAMPLE.summary,
+    ...SAMPLE.jobs.flatMap((j) => [`${j.role}, ${j.company}, ${j.dates}.`, ...j.points]),
+    `Skills: ${SAMPLE.skills.join(", ")}.`,
+    ...SAMPLE.education.map((e) => `Education: ${e.degree}, ${e.school}, ${e.dates}.`),
+  ].join(" ");
+
+/** The CAREER141 box on page 1, sized with the page (its type is in % of the page
+ *  width, as the TA System lays it out in points on a 595-point page). Drag it. */
+function GreenBox({ box, setBox }: { box: Box; setBox: (b: Box) => void }) {
+  const drag = (e: React.PointerEvent<HTMLDivElement>) => {
+    const page = e.currentTarget.parentElement!.getBoundingClientRect();
+    const from = { px: e.clientX, py: e.clientY, x: box.x, y: box.y };
+    const move = (m: PointerEvent) =>
+      setBox({
+        ...box,
+        x: Math.min(98 - box.w, Math.max(2, from.x + ((m.clientX - from.px) / page.width) * 100)),
+        y: Math.min(90, Math.max(1, from.y + ((m.clientY - from.py) / page.height) * 100)),
+      });
+    const up = () => {
+      removeEventListener("pointermove", move);
+      removeEventListener("pointerup", up);
+    };
+    addEventListener("pointermove", move);
+    addEventListener("pointerup", up);
+  };
+  return (
+    <div className="pointer-events-none absolute inset-0 [container-type:inline-size]">
+      <div
+        onPointerDown={drag}
+        title="Drag to move"
+        style={{ left: `${box.x}%`, top: `${box.y}%`, width: `${box.w}%` }}
+        className="pointer-events-auto absolute cursor-grab touch-none border-[0.25cqw] border-brand bg-white p-[1.35cqw] font-[Arial,Helvetica,sans-serif] text-brand shadow-card active:cursor-grabbing"
+      >
+        {boxLines(box.content).map((l, i) => (
+          <p key={i} className={i === 0 || l === "NOTE:-" ? "text-[1.6cqw] font-bold leading-[2.1cqw]" : "text-[1.43cqw] leading-[2.1cqw]"}>
+            {l}
+          </p>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** AURA on the CV: say what to do (the green box) or ask about the CV. */
+function CvAgent({
+  src,
+  start,
+  box,
+  setBox,
+  sampleText,
+}: {
+  src?: string;
+  start: BoxContent;
+  box: Box | null;
+  setBox: (b: Box | null) => void;
+  sampleText: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [talk, setTalk] = useState<{ me: string; aura: string }[]>([]);
+  const list = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    list.current?.scrollTo({ top: list.current.scrollHeight });
+  }, [talk]);
+  const send = async (words: string) => {
+    const t = words.trim();
+    if (!t) return;
+    setDraft("");
+    const text = src ? await cvText(src).catch(() => "") : sampleText;
+    const r = runAgent(t, box, start, text);
+    setBox(r.box);
+    setTalk((x) => [...x, { me: t, aura: r.reply }]);
+  };
+  const tries = box
+    ? ["Move it to the top left", "Make it wider", "What are their skills?"]
+    : ["Add the green box", "What are their skills?", "How many years of experience?"];
+  return (
+    <div className="absolute bottom-[max(1.25rem,10px)] right-[max(1.6rem,10px)] z-10 flex w-[min(380px,calc(100%-20px))] flex-col items-end gap-2">
+      {open && (
+        <div className="flex max-h-[min(60dvh,420px)] w-full flex-col rounded-lg bg-surface shadow-float">
+          <div ref={list} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 [scrollbar-width:thin]">
+            {!talk.length && (
+              <p className="text-[max(0.875rem,12px)] text-ink-2">
+                Tell me what to do on this CV, or ask about it. I can add the green box with their details, move it, size it and change what it says.
+              </p>
+            )}
+            {talk.map((m, i) => (
+              <div key={i} className="space-y-1.5">
+                <p className="ml-auto w-fit max-w-[85%] rounded-lg rounded-br-xs bg-surface-2 px-3 py-2 text-[max(0.875rem,12px)] text-ink">{m.me}</p>
+                <p className="whitespace-pre-line text-[max(0.875rem,12px)] text-ink">{m.aura}</p>
+              </div>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-1.5 px-4 pb-2">
+            {tries.map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => send(t)}
+                className="rounded-full border border-border px-2.5 py-1 text-[max(0.75rem,11px)] text-ink-2 hover:border-border-strong hover:text-ink"
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              send(draft);
+            }}
+            className="flex items-center gap-2 border-t border-border p-2"
+          >
+            <input
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="e.g. add the green box with expected salary 550k"
+              aria-label="Tell AURA what to do on this CV"
+              className="min-w-0 flex-1 bg-transparent px-2 text-[max(0.875rem,12px)] text-ink outline-none placeholder:text-ink-3"
+            />
+            <button disabled={!draft.trim()} className="rounded-full bg-brand px-3 py-1.5 text-[max(0.8125rem,11.5px)] font-medium text-white disabled:opacity-40">
+              Send
+            </button>
+          </form>
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex items-center gap-2 rounded-full bg-surface py-1.5 pl-1.5 pr-4 text-[max(0.875rem,12px)] font-medium text-ink shadow-float hover:bg-surface-2"
+      >
+        <span className="flex size-7 overflow-hidden rounded-full bg-black">
+          <Image src="/aura-mark.png" alt="" width={56} height={56} className="size-full" />
+        </span>
+        {open ? "Close" : "Ask AURA"}
+      </button>
+    </div>
   );
 }
 

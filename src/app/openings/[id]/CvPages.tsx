@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
 import { DUR, gsap } from "@/lib/gsap";
 
@@ -35,6 +35,25 @@ export function warmPdf(src?: string) {
   (src ? openPdf(src) : pdfjs()).catch(() => {});
 }
 
+/** The CV's words, read once per file (for "Ask AURA about this CV"). */
+const texts = new Map<string, Promise<string>>();
+export function cvText(src: string) {
+  let t = texts.get(src);
+  if (!t) {
+    t = openPdf(src).then(async (d) => {
+      const out: string[] = [];
+      for (let n = 1; n <= d.numPages; n++) {
+        const c = await (await d.getPage(n)).getTextContent();
+        out.push(c.items.map((i) => ("str" in i ? i.str + (i.hasEOL ? "\n" : " ") : "")).join(""));
+      }
+      return out.join("\n");
+    });
+    texts.set(src, t);
+    t.catch(() => texts.delete(src));
+  }
+  return t;
+}
+
 /**
  * A candidate's real CV file, page by page (owner, 12 Nov 2026: show the
  * candidate's own CV, not a designed stand-in; "the first page need to be showing
@@ -46,7 +65,7 @@ export function warmPdf(src?: string) {
  *
  * Give it `key={src}` so a new file starts clean.
  */
-export default function CvPages({ src, fit }: { src: string; fit: "page" | "width" }) {
+export default function CvPages({ src, fit, overlay }: { src: string; fit: "page" | "width"; /** Laid over page 1 (the green box). */ overlay?: ReactNode }) {
   const box = useRef<HTMLDivElement>(null);
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [failed, setFailed] = useState(false);
@@ -160,16 +179,28 @@ export default function CvPages({ src, fit }: { src: string; fit: "page" | "widt
         </div>
       ) : (
         <div className="flex flex-col items-center gap-3">
-          {Array.from({ length: doc.numPages }, (_, i) => (
-            <canvas
-              key={i}
-              data-page={i + 1}
-              aria-label={`CV page ${i + 1} of ${doc.numPages}`}
-              // Unseen until the first page is drawn; then all fade in together.
-              style={{ opacity: 0 }}
-              className="rounded-sm bg-white shadow-float"
-            />
-          ))}
+          {Array.from({ length: doc.numPages }, (_, i) => {
+            const page = (
+              <canvas
+                key={i}
+                data-page={i + 1}
+                aria-label={`CV page ${i + 1} of ${doc.numPages}`}
+                // Unseen until the first page is drawn; then all fade in together.
+                style={{ opacity: 0 }}
+                className="rounded-sm bg-white shadow-float"
+              />
+            );
+            // Page 1 always sits in its own frame, so the green box coming or going
+            // never rebuilds the drawn page underneath it.
+            return i === 0 ? (
+              <div key={i} className="relative">
+                {page}
+                {overlay}
+              </div>
+            ) : (
+              page
+            );
+          })}
         </div>
       )}
     </div>

@@ -88,7 +88,7 @@ runs on sample data, so this checks that each step **exists**, not that it is wi
 11. Card: name to candidate page, source tag, "Didn't reply", age/education/package ❌
 12. CV preview: Download, new tab, Full view ✅ · Prepared CV ❌
 
-**Candidate page** (old `candidate/[appId]`) ✅ built 16 Nov at `/candidate` (the card's name opens it): header with "N of M", name/contact edit, Save to pipeline, Change stage through the board's rules, Add-on/Backup, lock and workday gate; panels by stage (details for Director review + Replace CV, review notes, interviews, closing, in N openings); tabs CV, Prepared CV, History, Call log (+ Aura card), Chat (follow-up count, Take over / Hand back, Send next, Stop), Reference, Company reference. Still ❌: moving the Prepared CV's green box, interview cards with attendance/feedback/verdict, Aura's real call, upload progress. Old list — CV, Prepared CV, History, Call log, Chat,
+**Candidate page** (old `candidate/[appId]`) 🟦 owner 16 Nov: no separate page - the Pipeline card shows the details and the CV popup has "Ask about this CV". Old page had — CV, Prepared CV, History, Call log, Chat,
 Reference, Company reference, previous/next, name edit, salary/notice, Replace CV, screening
 call, follow-up panel, interviews, closing panel, notes, "In N openings". No new screen.
 
