@@ -3,7 +3,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { DUR, EASE, gsap, loadFlip, motionOK, type FlipPlugin } from "@/lib/gsap";
-import { REVIEWS_FEEDBACK, USER } from "@/lib/user";
+import { USER } from "@/lib/user";
+import { PERSON, useRole, worksADay } from "@/lib/role";
 import Toast from "../openings/[id]/Toast";
 import { pushAlert } from "../alerts/data";
 import { COLUMNS, KIND, meta, setItems, update, useItems, type Item } from "./data";
@@ -20,7 +21,13 @@ type Mode = "answer" | "decline" | "fix" | null;
 const first = USER.name.split(" ")[0];
 
 export default function FeedbackBoard() {
-  const items = useItems();
+  // A TA sees only what they sent, and where each one is (old desk: "My submissions");
+  // a lead, Director or Ops person sees everyone's and moves them on.
+  const role = useRole();
+  const lead = !worksADay(role);
+  const me = PERSON[role].name.split(" ")[0];
+  const all = useItems();
+  const items = lead ? all : all.filter((x) => x.by === me);
   const [open, setOpen] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>(null);
   const [words, setWords] = useState("");
@@ -49,7 +56,7 @@ export default function FeedbackBoard() {
   };
   const close = (x?: Item) => {
     // Opened and left undecided: it is being looked at.
-    if (x?.status === "new") glide(() => update(x.id, { status: "review" }));
+    if (lead && x?.status === "new") glide(() => update(x.id, { status: "review" }));
     setOpen(null);
     setMode(null);
     setWords("");
@@ -89,13 +96,6 @@ export default function FeedbackBoard() {
     return () => removeEventListener("keydown", esc);
   });
 
-  if (!REVIEWS_FEEDBACK)
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
-        <p className="text-h3 font-medium text-ink">The board is for TA Leads</p>
-        <p className="text-small text-ink-3">Your own feedback and where it is are under your name, Feedback &amp; support.</p>
-      </div>
-    );
 
   return (
     <div ref={board} className="grid min-h-0 flex-1 grid-cols-4 gap-[max(1.5rem,10px)] overflow-y-auto p-[max(2.5rem,12px)] pt-[max(2.5rem,16px)] max-lg:grid-cols-2 max-sm:grid-cols-1 max-md:pt-12">
@@ -126,6 +126,7 @@ export default function FeedbackBoard() {
                   }}
                   onFinish={() => finish(x)}
                   onDelete={() => remove(x)}
+                  canAct={lead}
                 />
               ))}
               {!list.length && <li className="px-2 py-6 text-center text-small text-ink-3">{c.status === "new" ? "Nothing new" : "Empty"}</li>}
@@ -151,6 +152,7 @@ function Card(p: {
   onMode: (m: Mode) => void;
   onFinish: () => void;
   onDelete: () => void;
+  canAct: boolean;
 }) {
   const { x, open, mode } = p;
   const body = useRef<HTMLDivElement>(null);
@@ -160,7 +162,7 @@ function Card(p: {
     if (open && body.current) gsap.fromTo(body.current, { height: 0, opacity: 0 }, { height: "auto", opacity: 1, duration: DUR.base, ease: EASE.out, clearProps: "height" });
   }, [open]);
   const deciding = x.status === "new" || x.status === "review";
-  const showActions = open || (deciding && x.blocks);
+  const showActions = p.canAct && (open || (deciding && x.blocks));
   const need = mode === "answer" || mode === "decline";
 
   return (

@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { DUR, EASE, gsap } from "@/lib/gsap";
 import { getTheme, setTheme } from "@/lib/theme";
-import { PERSON, ROLES, setRole, useRole } from "@/lib/role";
+import { PERSON, ROLES, setRole, useRole, worksADay } from "@/lib/role";
 import { markRead, useAlerts, type Alert, type Icon } from "./alerts/data";
 import TellUs from "./feedback/TellUs";
 
@@ -156,6 +156,7 @@ const MENU_ICON: Record<string, ReactNode> = {
   people: <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4 21a8 8 0 0 1 16 0" />,
   tables: <path d="M3 5h18v14H3zM3 10h18M9 10v9" />,
   bin: <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />,
+  board: <path d="M4 4h5v16H4zM10 4h5v10h-5zM16 4h4v7h-4z" />,
   dark: <path d="M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10Z" />,
   out: <path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10" />,
 };
@@ -211,7 +212,8 @@ export function Person() {
           setDark(getTheme() === "dark");
           setOpen(open ? null : placeUnder(e.currentTarget));
         }}
-        className="flex items-center gap-[max(0.9375rem,9px)] rounded-full text-left"
+        title="Your menu: feedback, Bin, dark mode, sign out"
+        className={"flex items-center gap-[max(0.75rem,8px)] rounded-full py-1 pl-1 pr-1 text-left transition-colors hover:bg-surface-2 min-[1200px]:pr-[max(0.875rem,10px)] " + (open ? "bg-surface-2" : "")}
       >
         <span aria-hidden="true" className={CIRCLE + " bg-ink text-nav font-medium text-white"}>
           {initials}
@@ -220,6 +222,10 @@ export function Person() {
           <span className="block text-nav font-semibold">{me.name}</span>
           <span className="block text-nav text-ink-2">{me.title}</span>
         </span>
+        {/* The arrow says it opens a menu; it turns when the menu is open. */}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={"hidden size-[max(1rem,14px)] text-ink-3 transition-transform min-[1200px]:block " + (open ? "rotate-180" : "")}>
+          <path d="m6 9 6 6 6-6" />
+        </svg>
       </button>
 
       {open && (
@@ -229,14 +235,18 @@ export function Person() {
             <span className="block text-caption text-ink-3">{me.title}</span>
           </p>
           <ul role="menu" className="flex flex-col">
+            {/* Feedback lives here, not in the top bar (owner 14 Nov 2026): tell us something,
+                and see where it is - a lead sees everyone's on the board. */}
             <MenuRow
               icon="feedback"
-              label="Feedback & support"
+              label="Tell us something"
               onClick={() => {
                 close();
                 setTell(true);
               }}
             />
+            <MenuRow icon="board" label={worksADay(role) ? "My feedback" : "Feedback board"} hint={worksADay(role) ? "where it is" : "everyone's"} href="/feedback" onClick={close} />
+            <MenuRow icon="bin" label="Bin" hint="7 days" href="/bin" onClick={close} />
             <MenuRow icon="people" label="People & roles" hint="admin" href="/people" onClick={close} />
             <li role="separator" className="mx-2.5 my-1.5 h-px bg-border" />
             {/* Until sign-in: see the app as each role (homes, rights). */}

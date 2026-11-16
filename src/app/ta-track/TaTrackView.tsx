@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import Image from "next/image";
 import { DUR, EASE, MOTION, gsap, useSwap } from "@/lib/gsap";
-import { TRACK_VIEW_ALL, USER } from "@/lib/user";
+import { PERSON, useRole } from "@/lib/role";
 import Count from "../Count";
 import { CardsSkeleton } from "../Skeleton";
 import { useLiftMenu } from "../openings/[id]/liftMenu";
@@ -43,7 +43,6 @@ const RANGES: [Range, string][] = [
   ["month", "This month"],
   ["custom", "Custom"],
 ];
-const ME = USER.name.split(" ")[0];
 
 export default function TaTrackView() {
   // False on the server and while React takes the page over, true after: the sample
@@ -53,18 +52,21 @@ export default function TaTrackView() {
     () => true,
     () => false,
   );
+  // Old system: an Admin or TA Lead sees every TA; anyone else sees only themself
+  // (owner 14 Nov 2026: TA Track was missing from a TA's top bar). Follows "View as".
+  const role = useRole();
   if (!ready) return <CardsSkeleton />;
-  return <Track />;
+  return <Track key={role} viewAll={role === "Lead" || role === "Director"} me={PERSON[role].name.split(" ")[0]} />;
 }
 
-function Track() {
+function Track({ viewAll, me }: { viewAll: boolean; me: string }) {
   const tas = team();
   // The clock read once, for "last upload N min ago" and the 30-day limit.
   const [now] = useState(() => Date.now());
   const [range, setRange] = useState<Range>("week");
   const [custom, setCustom] = useState<[string, string]>(() => [colomboDay(Date.now() - 6 * 86400000), colomboDay()]);
-  const [scope, setScope] = useState<Scope>(TRACK_VIEW_ALL ? "all" : "one");
-  const [personId, setPersonId] = useState(() => (tas.find((t) => t.name === ME) ?? tas[0]).id);
+  const [scope, setScope] = useState<Scope>(viewAll ? "all" : "one");
+  const [personId, setPersonId] = useState(() => (tas.find((t) => t.name === me) ?? tas[0]).id);
   const dates = useMemo(() => datesOf(range, custom), [range, custom]);
   const person = tas.find((t) => t.id === personId) ?? tas[0];
   const body = useRef<HTMLDivElement>(null);
@@ -87,7 +89,7 @@ function Track() {
         {scope === "all" ? (
           <h1 className="text-h1 font-light text-ink">TA Track</h1>
         ) : (
-          <PersonPicker tas={tas} person={person} onPick={setPersonId} locked={!TRACK_VIEW_ALL} />
+          <PersonPicker tas={tas} person={person} onPick={setPersonId} locked={!viewAll} />
         )}
         <div className="flex-1" />
         <Pills
@@ -97,7 +99,7 @@ function Track() {
           onPick={(r) => setRange(r)}
           extra={range === "custom" && <CustomDates value={custom} onChange={setCustom} now={now} />}
         />
-        {TRACK_VIEW_ALL && (
+        {viewAll && (
           <Pills
             label="Who"
             value={scope}
