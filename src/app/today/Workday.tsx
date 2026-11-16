@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import dynamic from "next/dynamic";
 import Image from "next/image";
 import Link from "next/link";
 import { DUR, EASE, gsap, useGSAP } from "@/lib/gsap";
@@ -18,6 +19,8 @@ import { aboutTheDay, planDay, type Plan } from "./plan";
 // T3 (14 Nov 2026): say how the day looks and AURA lays it out - the plan card with
 // times, the position each step belongs to, "Start with <position>" and "Change
 // something" (./plan.ts). Anything else AURA still says plainly it cannot answer yet.
+
+const NewOpening = dynamic(() => import("../openings/NewOpening"));
 
 type WorkType = "100%" | "Follow-up" | "Add-on";
 type Position = { id: string; title: string; client: string; type: WorkType };
@@ -113,6 +116,7 @@ export default function Workday({ startedAt }: { startedAt: number }) {
   const [picked, setPicked] = useState<Record<string, WorkType>>({ sap: "100%", fin: "Follow-up" });
   const [active, setActive] = useState("sap");
   const [refusal, setRefusal] = useState("");
+  const [newOpening, setNewOpening] = useState(false);
   // "Couldn't complete this task" reasons, per position and check.
   const [excuses, setExcuses] = useState<Record<string, string>>({});
   // The day ends by itself at the first 100% End of day email; that position's EOD is in.
@@ -271,12 +275,14 @@ export default function Workday({ startedAt }: { startedAt: number }) {
           ))}
           <button
             type="button"
-            onClick={() => root.current?.querySelector<HTMLElement>("[data-picks] button")?.focus()}
+            onClick={() => setNewOpening(true)}
             className="flex shrink-0 items-center gap-2 px-[max(0.75rem,8px)] py-2 text-left text-[max(0.875rem,12px)] text-ink-2 transition-colors hover:text-ink"
           >
             <span aria-hidden="true" className="text-[1.2em] leading-none">+</span>
             Add a position
           </button>
+          {/* ponytail: the same sheet as Openings; with the backend the new opening joins "Also yours". */}
+          {newOpening && <NewOpening start="" onClose={() => setNewOpening(false)} onCreate={() => setNewOpening(false)} />}
         </div>
 
         {active && picked[active] && (
