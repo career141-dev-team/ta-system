@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import dynamic from "next/dynamic";
 import Automations from "./Automations";
 import { memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
@@ -960,6 +961,20 @@ export function BackButton({ onClick, label }: { onClick?: () => void; label?: s
   );
 }
 
+/** The candidate page's address for a card (sample: who they are rides in the address). */
+const candidateHref = (p: Card, stage: string) =>
+  "/candidate?" +
+  new URLSearchParams({
+    stage,
+    n: p.id.split("-")[1] ?? "0",
+    name: p.name,
+    title: p.title,
+    company: p.company,
+    ...(p.lockedBy ? { locked: p.lockedBy } : {}),
+    ...(p.owned ? {} : { owned: "0" }),
+    ...(p.cv ? { cv: p.cv } : {}),
+  });
+
 // Drawn again only when its own candidate changes: the handlers are the board's
 // stable ones and take the card, so a search or a drop elsewhere skips it.
 const CandidateCard = memo(function CandidateCard({
@@ -1005,7 +1020,15 @@ const CandidateCard = memo(function CandidateCard({
           {initials(p.name)}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-card-name font-semibold leading-tight text-ink">{p.name}</p>
+          {/* The name opens the candidate's own page; the rest of the card opens the CV. */}
+          <Link
+            href={candidateHref(p, stage)}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            className="block truncate text-card-name font-semibold leading-tight text-ink hover:text-brand hover:underline"
+          >
+            {p.name}
+          </Link>
           <p className="truncate text-card-sub text-ink-2">{p.title}</p>
         </div>
         {p.addOn && <span className="shrink-0 rounded-md bg-info-soft px-1.5 py-0.5 text-chip font-medium text-info">Add-on</span>}
