@@ -4,7 +4,10 @@ import { Fragment, useEffect, useRef, useState, useSyncExternalStore, type React
 import Image from "next/image";
 import Link from "next/link";
 import { DUR, EASE, gsap, useGSAP } from "@/lib/gsap";
-import { USER } from "@/lib/user";
+import { PERSON, useMe } from "@/lib/role";
+import { useDayEnd } from "@/lib/workday";
+import ChecksList from "./ChecksList";
+import { checksFor, progress, type CheckKey } from "./checks";
 import PillMenu, { type MenuOption } from "../openings/[id]/PillMenu";
 import { aboutTheDay, planDay, type Plan } from "./plan";
 
@@ -17,14 +20,16 @@ import { aboutTheDay, planDay, type Plan } from "./plan";
 // something" (./plan.ts). Anything else AURA still says plainly it cannot answer yet.
 
 type WorkType = "100%" | "Follow-up" | "Add-on";
-type Position = { id: string; title: string; client: string; type: WorkType; progress: number };
+type Position = { id: string; title: string; client: string; type: WorkType };
 
 const POSITIONS: Position[] = [
-  { id: "sap", title: "SAP Transformation", client: "PGP Glass", type: "100%", progress: 0.72 },
-  { id: "fin", title: "Finance Manager", client: "Hayleys", type: "Follow-up", progress: 0.28 },
-  { id: "prod", title: "Production Executive", client: "MAS Holdings", type: "Follow-up", progress: 0 },
-  { id: "hr", title: "HR Business Partner", client: "Dialog", type: "100%", progress: 0 },
+  { id: "sap", title: "SAP Transformation", client: "PGP Glass", type: "100%" },
+  { id: "fin", title: "Finance Manager", client: "Hayleys", type: "Follow-up" },
+  { id: "prod", title: "Production Executive", client: "MAS Holdings", type: "Follow-up" },
+  { id: "hr", title: "HR Business Partner", client: "Dialog", type: "100%" },
 ];
+// Placeholder evidence: what each position already has done today.
+const DONE: Record<string, CheckKey[]> = { sap: ["jd_review", "linkedin_post", "excel_profiles"], fin: ["chatgpt"], prod: [], hr: [] };
 
 // The old TA System's rules for one day (FLOW-CHECK 6.5): at most 10 positions,
 // at most 5 of them at 100%.
@@ -92,7 +97,7 @@ const minute = (cb: () => void) => {
 
 export default function Workday({ startedAt }: { startedAt: number }) {
   const root = useRef<HTMLDivElement>(null);
-  const first = USER.name.split(" ")[0];
+  const { first } = useMe();
   const part = useSyncExternalStore(
     minute,
     () => {
@@ -108,6 +113,16 @@ export default function Workday({ startedAt }: { startedAt: number }) {
   const [picked, setPicked] = useState<Record<string, WorkType>>({ sap: "100%", fin: "Follow-up" });
   const [active, setActive] = useState("sap");
   const [refusal, setRefusal] = useState("");
+  // "Couldn't complete this task" reasons, per position and check.
+  const [excuses, setExcuses] = useState<Record<string, string>>({});
+  // The day ends by itself at the first 100% End of day email; that position's EOD is in.
+  const dayEnd = useDayEnd();
+  const checksOf = (id: string) => {
+    // ponytail: the demo opening is the SAP one, so its EOD finishing the day is SAP's.
+    const done = [...(DONE[id] ?? []), ...(dayEnd && id === "sap" ? (["daily_email", "midday_email", "chatgpt"] as CheckKey[]) : [])];
+    return checksFor(picked[id] ?? "100%", done).map((c) => ({ ...c, excuse: excuses[`${id}:${c.key}`] }));
+  };
+  const eodSent = (id: string) => checksOf(id).some((c) => c.key === "daily_email" && c.done);
   const [things, setThings] = useState(THINGS);
   // What the person said, and AURA's answer: a plan, "not yet" for anything that
   // is not about the day, or nothing while it is still thinking.
@@ -130,6 +145,10 @@ export default function Workday({ startedAt }: { startedAt: number }) {
   const toggle = (p: Position) => {
     setRefusal("");
     if (picked[p.id]) {
+      if (eodSent(p.id)) return setRefusal("This position's EOD has been sent. It stays on today's workday.");
+      // A day needs at least one position (old Workday: no day without one).
+      if (Object.keys(picked).length === 1)
+        return setRefusal(others.length ? "Keep at least one position on today's workday. Add another first." : "No other assigned positions. Ask your TA Lead.");
       const next = { ...picked };
       delete next[p.id];
       setPicked(next);
@@ -137,11 +156,16 @@ export default function Workday({ startedAt }: { startedAt: number }) {
       return;
     }
     if (Object.keys(picked).length >= MAX_DAY) return setRefusal(`At most ${MAX_DAY} positions a day.`);
-    const type = p.type === "100%" && Object.values(picked).filter((t) => t === "100%").length >= MAX_FULL ? "Follow-up" : p.type;
-    setPicked({ ...picked, [p.id]: type });
+    if (p.type === "100%" && Object.values(picked).filter((t) => t === "100%").length >= MAX_FULL)
+      return setRefusal(`At most ${MAX_FULL} positions at 100% a day. Make another one Follow-up first.`);
+    setPicked({ ...picked, [p.id]: p.type });
     if (!active) setActive(p.id);
   };
   const setType = (id: string, type: WorkType) => {
+    if (eodSent(id)) {
+      setRefusal("This position's EOD has been sent. Its recorded work type cannot change today.");
+      return;
+    }
     if (type === "100%" && picked[id] !== "100%" && Object.values(picked).filter((t) => t === "100%").length >= MAX_FULL) {
       setRefusal(`At most ${MAX_FULL} positions at 100% a day.`);
       return;
@@ -195,7 +219,9 @@ export default function Workday({ startedAt }: { startedAt: number }) {
   );
 
   const startedLabel = new Date(startedAt).toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit" });
-  const mins = now ? Math.max(0, now - Math.floor(startedAt / 60_000)) : 0;
+  // The clock stops at the first 100% EOD.
+  const mins = now ? Math.max(0, (dayEnd ? Math.floor(dayEnd / 60_000) : now) - Math.floor(startedAt / 60_000)) : 0;
+  const endLabel = dayEnd ? new Date(dayEnd).toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit" }) : "";
   const worked = `${Math.floor(mins / 60)}h ${mins % 60}m`;
 
   return (
@@ -203,7 +229,7 @@ export default function Workday({ startedAt }: { startedAt: number }) {
       {/* The day's rail. On a phone it sits on top, the positions in a row. */}
       <aside
         data-rail
-        className="flex w-[max(21.25rem,230px)] shrink-0 flex-col gap-[max(1.75rem,16px)] overflow-y-auto border-r border-border pb-[max(2.25rem,16px)] pl-[max(2.25rem,18px)] pr-[max(1.75rem,14px)] pt-[max(2.5rem,18px)] [scrollbar-width:none] max-md:w-full max-md:gap-3 max-md:border-b max-md:border-r-0 max-md:p-4"
+        className="flex w-[max(21.25rem,230px)] shrink-0 flex-col gap-[max(1.75rem,16px)] overflow-y-auto border-r border-border pb-[max(2.25rem,16px)] pl-[max(2.25rem,18px)] pr-[max(1.75rem,14px)] pt-[max(2.5rem,18px)] [scrollbar-width:thin] max-md:max-h-[42dvh] max-md:w-full max-md:gap-3 max-md:border-b max-md:border-r-0 max-md:p-4"
       >
         <div>
           <h1 className="text-[max(1.75rem,20px)] leading-tight text-ink">Today</h1>
@@ -214,24 +240,34 @@ export default function Workday({ startedAt }: { startedAt: number }) {
 
         <div className="flex flex-col gap-[max(0.5rem,4px)] max-md:flex-row max-md:overflow-x-auto max-md:[scrollbar-width:none]">
           {today.map((p) => (
-            <button
+            <div
               key={p.id}
-              type="button"
+              role="button"
+              tabIndex={0}
               onClick={() => setActive(p.id)}
+              onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && e.target === e.currentTarget && (e.preventDefault(), setActive(p.id))}
               aria-pressed={active === p.id}
               className={
                 "flex shrink-0 items-center gap-[max(0.875rem,10px)] rounded-md px-[max(0.75rem,8px)] py-[max(0.75rem,8px)] text-left transition-colors " +
                 (active === p.id ? "bg-surface-2" : "hover:bg-surface-2/60")
               }
             >
-              <Ring value={p.progress} color={RING[picked[p.id]]} />
+              <Ring value={progress(checksOf(p.id))} color={RING[picked[p.id]]} />
               <span className="min-w-0">
-                <span className="block truncate text-[max(1rem,13.5px)] font-medium text-ink">{p.title}</span>
+                {/* ponytail: every position opens the one built opening until the backend sends ids. */}
+                <Link href="/openings/demo" onClick={(e) => e.stopPropagation()} className="block truncate text-[max(1rem,13.5px)] font-medium text-ink hover:underline">
+                  {p.title}
+                </Link>
                 <span className="block truncate text-[max(0.875rem,12px)] text-ink-3">
                   {p.client} &middot; {picked[p.id]}
                 </span>
+                {eodSent(p.id) && (
+                  <span className="block truncate text-[max(0.8125rem,11px)] text-success">
+                    EOD sent{dayEnd && p.id === "sap" ? ` ${endLabel}` : ""}
+                  </span>
+                )}
               </span>
-            </button>
+            </div>
           ))}
           <button
             type="button"
@@ -242,6 +278,22 @@ export default function Workday({ startedAt }: { startedAt: number }) {
             Add a position
           </button>
         </div>
+
+        {active && picked[active] && (
+          <ChecksList
+            key={active}
+            checks={checksOf(active)}
+            lead={PERSON.Lead.name.split(" ")[0]}
+            onExcuse={(key, reason) =>
+              setExcuses((e) => {
+                const next = { ...e };
+                if (reason) next[`${active}:${key}`] = reason;
+                else delete next[`${active}:${key}`];
+                return next;
+              })
+            }
+          />
+        )}
 
         {others.length > 0 && (
           <div className="max-md:hidden">
@@ -263,10 +315,17 @@ export default function Workday({ startedAt }: { startedAt: number }) {
           </div>
         )}
 
-        <div className="mt-auto rounded-md bg-warn-soft px-4 py-3.5 max-md:mt-0">
-          <p className="text-[max(0.875rem,12px)] font-medium text-warn">EOD due at 6:00</p>
-          <p className="mt-0.5 text-[max(0.8125rem,11.5px)] text-ink-2">AURA will draft it at 5</p>
-        </div>
+        {dayEnd ? (
+          <div className="mt-auto rounded-md bg-brand-soft px-4 py-3.5 max-md:mt-0">
+            <p className="text-[max(0.875rem,12px)] font-medium text-brand">Today&rsquo;s workday is finished &middot; {endLabel}</p>
+            <p className="mt-0.5 text-[max(0.8125rem,11.5px)] text-ink-2">Follow-up and Add-on emails can still go</p>
+          </div>
+        ) : (
+          <div className="mt-auto rounded-md bg-warn-soft px-4 py-3.5 max-md:mt-0">
+            <p className="text-[max(0.875rem,12px)] font-medium text-warn">EOD due at 6:00</p>
+            <p className="mt-0.5 text-[max(0.8125rem,11.5px)] text-ink-2">The day ends with your first 100% EOD</p>
+          </div>
+        )}
       </aside>
 
       {/* AURA. The talk grows upward from the box, like a chat. */}

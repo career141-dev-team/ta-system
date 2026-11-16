@@ -1,7 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { USER } from "./user";
+import { useRole, worksADay } from "./role";
 
 // Today's started workday, shared by Today (which starts it) and by every screen
 // the TA System gates on it: a TA cannot upload a CV, shortlist or move a candidate
@@ -53,6 +53,31 @@ export function startWorkday() {
   window.dispatchEvent(new Event(CHANGED));
 }
 
+// The day ends by itself at the first 100% End of day email (the TA System's
+// autoCompleteWorkday): the clock stops there, Follow-up and Add-on work can still
+// be sent. Kept beside the start, for today only.
+let memoryEnd: number | undefined;
+function readEnd(): number {
+  try {
+    const v = JSON.parse(localStorage.getItem(KEY) ?? "null") as { day?: string; end?: number } | null;
+    if (v?.day === todayKey() && v.end) return v.end;
+  } catch {}
+  return memoryEnd ?? 0;
+}
+/** When today's workday finished (0 = still running). */
+export const useDayEnd = () => useSyncExternalStore(subscribe, readEnd, () => 0);
+
+/** A 100% End of day email went: the first one finishes the day; later ones do not move it. */
+export function endWorkday(at = Date.now()) {
+  if (readEnd()) return;
+  memoryEnd = at;
+  try {
+    const v = JSON.parse(localStorage.getItem(KEY) ?? "null") ?? {};
+    if (v.day === todayKey()) localStorage.setItem(KEY, JSON.stringify({ ...v, end: at }));
+  } catch {}
+  window.dispatchEvent(new Event(CHANGED));
+}
+
 /** The gate, in the TA System's words: empty when work is allowed. Only a TA is
  *  gated; a TA Lead, admin, Director or Ops person works without a started day.
  *  ponytail: "started today" only; whether THIS opening is on today's workday
@@ -60,6 +85,7 @@ export function startWorkday() {
  *  positions from the backend. */
 export function useWorkdayGate(): string {
   const day = useWorkday();
-  if (/lead|admin|director|ops/i.test(USER.role)) return "";
+  const role = useRole();
+  if (!worksADay(role)) return "";
   return day === "none" ? "Your workday has not started today." : "";
 }

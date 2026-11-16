@@ -4,7 +4,7 @@ import Count from "@/app/Count";
 import { Fragment, useRef, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
 import { DUR, EASE, gsap, motionOK, useGSAP } from "@/lib/gsap";
-import { USER } from "@/lib/user";
+import { useMe } from "@/lib/role";
 import AuraGlow from "./AuraGlow";
 
 // Placeholder until the backend is wired: the waiting line and the three numbers
@@ -35,7 +35,7 @@ function readNow() {
 export default function Today({ onStart }: { onStart: () => void }) {
   const root = useRef<HTMLDivElement>(null);
   const [part, date] = useSyncExternalStore(noop, readNow, () => "morning|").split("|");
-  const first = USER.name.split(" ")[0];
+  const { first } = useMe();
   const words = `Good ${part}, ${first}`.split(" ");
   // Pointing at Start workday gathers AURA's light; pressing it sends a pulse out
   // first, then the day opens.
