@@ -43,7 +43,7 @@ export default function AddCandidate({ onClose, onAdd }: { onClose: () => void; 
           e.preventDefault();
           if (file && !error) onAdd(file.name);
         }}
-        className="relative w-[max(28rem,330px)] max-w-[calc(100vw-24px)] rounded-lg bg-white p-[max(1.6rem,20px)] shadow-[0_30px_80px_rgba(17,44,32,0.25)]"
+        className="relative w-[max(28rem,330px)] max-w-[calc(100vw-24px)] rounded-lg bg-white p-[max(1.6rem,20px)] shadow-float"
       >
         <h2 id="add-title" className="text-[max(1.05rem,15px)] font-semibold text-ink">
           Add candidate

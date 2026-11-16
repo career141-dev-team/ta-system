@@ -116,6 +116,9 @@ export default function Workday({ startedAt }: { startedAt: number }) {
   const [picked, setPicked] = useState<Record<string, WorkType>>({ sap: "100%", fin: "Follow-up" });
   const [active, setActive] = useState("sap");
   const [refusal, setRefusal] = useState("");
+  // Openings this TA created from "Add a position" (sample: kept for the visit).
+  const [made, setMade] = useState<Position[]>([]);
+  const positions = [...POSITIONS, ...made];
   const [newOpening, setNewOpening] = useState(false);
   // "Couldn't complete this task" reasons, per position and check.
   const [excuses, setExcuses] = useState<Record<string, string>>({});
@@ -143,8 +146,8 @@ export default function Workday({ startedAt }: { startedAt: number }) {
   const seq = useRef(0);
   const scroller = useRef<HTMLDivElement>(null);
 
-  const today = POSITIONS.filter((p) => picked[p.id]);
-  const others = POSITIONS.filter((p) => !picked[p.id]);
+  const today = positions.filter((p) => picked[p.id]);
+  const others = positions.filter((p) => !picked[p.id]);
 
   const toggle = (p: Position) => {
     setRefusal("");
@@ -281,8 +284,24 @@ export default function Workday({ startedAt }: { startedAt: number }) {
             <span aria-hidden="true" className="text-[1.2em] leading-none">+</span>
             Add a position
           </button>
-          {/* ponytail: the same sheet as Openings; with the backend the new opening joins "Also yours". */}
-          {newOpening && <NewOpening start="" onClose={() => setNewOpening(false)} onCreate={() => setNewOpening(false)} />}
+          {/* The same sheet as Openings. A TA's new opening is theirs (old system:
+              a TA creates self-assigned), so it joins today's workday as Follow-up
+              unless the day is full; then it waits under "Also yours". */}
+          {newOpening && (
+            <NewOpening
+              start=""
+              onClose={() => setNewOpening(false)}
+              onCreate={(o) => {
+                setNewOpening(false);
+                const p: Position = { id: o.id, title: o.title, client: o.client, type: "Follow-up" };
+                setMade((m) => [...m, p]);
+                if (Object.keys(picked).length >= MAX_DAY) return setRefusal(`At most ${MAX_DAY} positions a day. ${o.title} is under Also yours.`);
+                setRefusal("");
+                setPicked({ ...picked, [p.id]: p.type });
+                setActive(p.id);
+              }}
+            />
+          )}
         </div>
 
         {active && picked[active] && (
@@ -349,7 +368,7 @@ export default function Workday({ startedAt }: { startedAt: number }) {
 
             <Say>Which positions are you on today?</Say>
             <div data-picks className="-mt-[max(0.75rem,6px)] flex flex-wrap gap-[max(0.75rem,8px)] pl-[max(3.375rem,0px)] max-md:pl-0">
-              {POSITIONS.map((p) =>
+              {positions.map((p) =>
                 picked[p.id] ? (
                   <span
                     key={p.id}

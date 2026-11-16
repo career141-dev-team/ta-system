@@ -1,6 +1,8 @@
 // Server-side only: the Apify token never reaches the browser (APIFY_TOKEN in .env.local).
 // shortcut: waits for the run (Apify's sync endpoint, 5 min cap) and keeps nothing; for big
 // searches use an async run + webhook and save results by LinkedIn URL.
+// ponytail: no sign-in check yet (the app has none); anyone who reaches this route
+// spends Apify credit, capped at 50 profiles a call. Gate it when sign-in exists.
 const ACTOR = "harvestapi~linkedin-profile-search";
 
 const list = (s: unknown) =>

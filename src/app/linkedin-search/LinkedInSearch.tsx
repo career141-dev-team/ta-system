@@ -41,7 +41,10 @@ export default function LinkedInSearch() {
     setError("");
     try {
       const res = await fetch("/api/linkedin-search", { method: "POST", body: JSON.stringify(f) });
-      const data = await res.json();
+      // The dev link is a static site with no server, so the search route is not there.
+      const data = await res.json().catch(() => {
+        throw new Error("LinkedIn search needs the server. It runs on a local copy with APIFY_TOKEN set, not on the dev link yet.");
+      });
       if (!res.ok) throw new Error(data.error ?? "Search failed");
       setItems(data.items);
     } catch (err) {
