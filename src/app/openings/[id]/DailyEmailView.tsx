@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { DUR, EASE, gsap, motionOK, useGSAP, useSwap } from "@/lib/gsap";
-import { USER } from "@/lib/user";
-import { useWorkdayGate } from "@/lib/workday";
+import { PERSON, useMe } from "@/lib/role";
+import { endWorkday, useWorkdayGate } from "@/lib/workday";
 import { BackButton } from "./PipelineBoard";
 import Notch from "./Notch";
 import Toast from "./Toast";
@@ -46,12 +46,14 @@ type Mail = {
   day: string;
   by: string;
   sentAt?: number;
+  /** What the lead found when they checked the mailbox for an unconfirmed send. */
+  settledWhy?: string;
   savedAt?: number;
   /** A correction of this sent End of day ("REVISED"). */
   revisedOf?: string;
   reviewed?: boolean;
   rebuild?: boolean;
-  /** A missed day's End of day: no checks, no midday rule. */
+  /** A missed day's End of day: the research link, but no checks and no midday rule. */
   missed?: boolean;
   subject: string | null;
   to: string[];
@@ -79,7 +81,9 @@ const WORK_TYPE = "100%" as const;
 // The TA System's switch (dailyEmailPolicy "midday"): when on, the End of day waits
 // for a midday email.
 const MIDDAY_REQUIRED = true;
-const LEAD = /lead|admin|director|ops/i.test(USER.role);
+// Placeholder: the TA whose sample emails these are. Who is LOOKING comes from
+// `useMe()` in each part below: a lead sees everyone's, a TA their own.
+const TA_NAME = PERSON.TA.name;
 
 const cand = (
   id: string,
@@ -221,7 +225,7 @@ const INTRO_CVS =
   "Dear Sir,\n\nPlease find the attached Shortlisted CV for the above-mentioned position";
 const INTRO_ACTIVITY =
   "Dear Sir,\n\nPlease find today's activity for the above-mentioned position.";
-const OUTRO = `Thank You\nBest Regards,\n\n${USER.name.split(" ")[0]}\nExecutive - Talent Acquisition`;
+const OUTRO = `Thank You\nBest Regards,\n\n${TA_NAME.split(" ")[0]}\nExecutive - Talent Acquisition`;
 
 const fmtDay = (d: Date) =>
   d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
@@ -240,7 +244,7 @@ function newMail(kind: Kind, n: number, extra: Partial<Mail> = {}): Mail {
     n,
     status: "draft",
     day: TODAY,
-    by: USER.name,
+    by: TA_NAME,
     subject: null,
     to: [...TO],
     cc: [...CC],
@@ -318,6 +322,7 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export default function DailyEmailView() {
   const { go } = useOpeningView();
   const gate = useWorkdayGate();
+  const me = useMe();
   const [mails, setMails] = useState<Mail[]>(() => [
     newMail("eod", 1),
     ...HISTORY,
@@ -413,9 +418,11 @@ export default function DailyEmailView() {
     if (gate) left.push("start the workday");
     if (mail.revisedOf) {
       if (!mail.reviewed) left.push("tick that you reviewed it");
-    } else if (!mail.missed) {
-      if (!linkOk) left.push("the research link");
-      if (isEod) {
+    } else {
+      // A missed day's End of day still needs the research link; a lead's never does.
+      if (!linkOk && !(me.lead && isEod)) left.push("the research link");
+      // Only a TA is held to the checks and to "midday before End of day".
+      if (isEod && !mail.missed && !me.lead) {
         CHECKS.filter((c) => !c.done).forEach((c) => left.push(c.label));
         if (MIDDAY_REQUIRED && !middaySent) left.push("a midday email first");
       }
@@ -436,7 +443,7 @@ export default function DailyEmailView() {
     if (
       mails.some(
         (m) =>
-          m.by === USER.name &&
+          m.by === me.name &&
           m.id !== mail.id &&
           (m.status === "sending" || m.status === "uncertain"),
       )
@@ -446,11 +453,11 @@ export default function DailyEmailView() {
   }
 
   const steps =
-    mail && !readOnly && !mail.revisedOf && !mail.missed
+    mail && !readOnly && !mail.revisedOf
       ? [
-          ...(isEod ? CHECKS.map((c) => c.done) : []),
-          ...(isEod && MIDDAY_REQUIRED ? [middaySent] : []),
-          linkOk,
+          ...(isEod && !mail.missed && !me.lead ? CHECKS.map((c) => c.done) : []),
+          ...(isEod && !mail.missed && !me.lead && MIDDAY_REQUIRED ? [middaySent] : []),
+          ...(me.lead && isEod ? [] : [linkOk]),
         ]
       : [];
   const stepsDone = steps.filter(Boolean).length;
@@ -622,6 +629,9 @@ export default function DailyEmailView() {
     timers.current.push(
       setTimeout(() => {
         patch(mail.id, { status: "sent", sentAt: Date.now() });
+        // The TA System ends the workday at the first original 100% End of day that
+        // is accepted (not a midday, not a REVISED or a missed day's). Again does nothing.
+        if (isEod && WORK_TYPE === "100%" && !mail.revisedOf && !mail.missed && mail.day === TODAY) endWorkday();
         const what = mail.revisedOf
           ? "Revised End of day email"
           : isEod
@@ -1018,6 +1028,9 @@ export default function DailyEmailView() {
                 isEod={isEod}
                 onRevise={() => reviseOf(mail)}
                 onRetry={() => patch(mail.id, { status: "draft" })}
+                onSettle={(sent, why) =>
+                  patch(mail.id, { status: sent ? "sent" : "failed", sentAt: sent ? (mail.sentAt ?? Date.now()) : undefined, settledWhy: why })
+                }
               />
 
               {!readOnly && mail.revisedOf && (
@@ -1044,11 +1057,11 @@ export default function DailyEmailView() {
                 <p className="rounded-lg bg-surface-2 p-[max(1.4rem,12px)] text-small text-ink-2">
                   The End of day for{" "}
                   <b className="font-medium text-ink">{mail.day}</b>. A missed
-                  day needs no checks and no midday email; up to 7 days back.
+                  day needs the research link, but no checks and no midday email; up to 7 days back.
                 </p>
               )}
 
-              {!readOnly && !mail.revisedOf && !mail.missed && (
+              {!readOnly && !mail.revisedOf && (
                 <div className="rounded-lg bg-surface-2 p-[max(1.4rem,12px)]">
                   <div className="flex items-baseline justify-between gap-3">
                     <h3 className="text-h3 font-medium text-ink">
@@ -1074,7 +1087,7 @@ export default function DailyEmailView() {
                     </span>
                   )}
                   <ul className="mt-[max(0.7rem,6px)] space-y-[max(0.55rem,5px)] text-small">
-                    {isEod &&
+                    {isEod && !mail.missed &&
                       CHECKS.map((c) => (
                         <Check
                           key={c.key}
@@ -1084,7 +1097,7 @@ export default function DailyEmailView() {
                           onFix={() => go(c.view)}
                         />
                       ))}
-                    {isEod && (
+                    {isEod && !mail.missed && (
                       <Check
                         done={rows.length > 0}
                         label="Eligible Director Review candidates"
@@ -1097,7 +1110,7 @@ export default function DailyEmailView() {
                         soft
                       />
                     )}
-                    {isEod && MIDDAY_REQUIRED && (
+                    {isEod && !mail.missed && !me.lead && MIDDAY_REQUIRED && (
                       <Check
                         done={middaySent}
                         label="Midday email sent"
@@ -1317,6 +1330,7 @@ function FirstMidday({
 
 /** Reading an email from another day, a correction or a missed day: says which, and the way back. */
 function HistoryBar({ mail, onBack }: { mail: Mail; onBack: () => void }) {
+  const me = useMe();
   const what = mail.revisedOf
     ? "Correction"
     : mail.missed
@@ -1328,7 +1342,7 @@ function HistoryBar({ mail, onBack }: { mail: Mail; onBack: () => void }) {
     <div className="mb-[max(0.8rem,7px)] flex flex-wrap items-center gap-2 rounded-sm bg-surface-2 px-[max(1rem,10px)] py-[max(0.5rem,5px)] text-small">
       <b className="font-medium text-ink">{what}</b>
       <span className="text-ink-2">· {mail.day}</span>
-      {mail.by !== USER.name && <span className="text-ink-2">· {mail.by}</span>}
+      {mail.by !== me.name && <span className="text-ink-2">· {mail.by}</span>}
       <button
         type="button"
         onClick={onBack}
@@ -1346,12 +1360,18 @@ function StatusCard({
   isEod,
   onRevise,
   onRetry,
+  onSettle,
 }: {
   mail: Mail;
   isEod: boolean;
   onRevise: () => void;
   onRetry: () => void;
+  /** A lead records what the sending mailbox showed: sent, or not sent. */
+  onSettle: (sent: boolean, why: string) => void;
 }) {
+  const me = useMe();
+  const LEAD = me.lead;
+  const [why, setWhy] = useState("");
   if (mail.status === "draft") return null;
   if (mail.status === "sending")
     return (
@@ -1385,9 +1405,38 @@ function StatusCard({
             ? "Check the sending mailbox, then record what you found."
             : "A TA Lead checks the sending mailbox and records it. Nothing more can be sent on this opening until then."}
         </p>
+        {/* The TA System's "Reconcile this email": a reason, then one of two answers. */}
+        {LEAD && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <input
+              value={why}
+              onChange={(e) => setWhy(e.target.value)}
+              maxLength={300}
+              placeholder="What you found in the mailbox"
+              aria-label="What you found in the mailbox"
+              className="h-[max(2.4rem,33px)] min-w-[12rem] flex-1 rounded-md border border-border bg-surface px-3 text-small text-ink outline-none focus-visible:border-brand"
+            />
+            <button
+              type="button"
+              disabled={!why.trim()}
+              onClick={() => onSettle(true, why.trim())}
+              className="h-[max(2.4rem,33px)] rounded-full bg-brand px-4 text-small font-medium text-white hover:bg-brand-strong disabled:opacity-40"
+            >
+              Verified sent
+            </button>
+            <button
+              type="button"
+              disabled={!why.trim()}
+              onClick={() => onSettle(false, why.trim())}
+              className="h-[max(2.4rem,33px)] rounded-full border border-border-strong px-4 text-small font-medium text-ink hover:bg-surface-2 disabled:opacity-40"
+            >
+              Verified not sent
+            </button>
+          </div>
+        )}
       </div>
     );
-  const own = mail.by === USER.name;
+  const own = mail.by === me.name;
   return (
     <div className="rounded-lg bg-success-soft p-[max(1.4rem,12px)] text-small">
       <p className="font-medium text-success">
@@ -1423,20 +1472,26 @@ function SentList({
   onMissed: (day: string) => void;
   onClose: () => void;
 }) {
+  const me = useMe();
+  const LEAD = me.lead;
   const list = mails.filter(
-    (m) => m.status !== "draft" && (LEAD || m.by === USER.name),
+    (m) => m.status !== "draft" && (LEAD || m.by === me.name),
   );
   const eodDays = new Set(
     mails
       .filter(
-        (m) => m.kind === "eod" && m.status !== "draft" && m.by === USER.name,
+        (m) => m.kind === "eod" && m.status !== "draft" && m.by === me.name,
       )
       .map((m) => m.day),
   );
-  const missed = [1, 2, 3, 4, 5, 6, 7]
-    .map(daysAgo)
-    .filter((d) => !eodDays.has(d));
-  const [day, setDay] = useState(missed[0] ?? "");
+  // Only days that had candidates not yet sent (sample: 2 and 5 days back).
+  const UNSENT: Record<number, number> = { 2: 3, 5: 1 };
+  const missed = Object.keys(UNSENT)
+    .map(Number)
+    .map((n) => ({ d: daysAgo(n), cvs: UNSENT[n] }))
+    .filter((x) => !eodDays.has(x.d));
+  const label = (x: { d: string; cvs: number }) => `Missed · ${x.d} · ${x.cvs} CV${x.cvs === 1 ? "" : "s"}`;
+  const [day, setDay] = useState(missed[0]?.d ?? "");
   const chip: Record<Status, string> = {
     draft: "",
     sending: "bg-surface-2 text-ink-2",
@@ -1509,8 +1564,8 @@ function SentList({
               aria-label="Which day"
               className="rounded-full border border-border bg-surface px-3 py-1.5 text-small text-ink outline-none focus:ring-2 focus:ring-brand/30"
             >
-              {missed.map((d) => (
-                <option key={d}>{d}</option>
+              {missed.map((x) => (
+                <option key={x.d} value={x.d}>{label(x)}</option>
               ))}
             </select>
             <button

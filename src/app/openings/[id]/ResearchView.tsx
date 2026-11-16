@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import Image from "next/image";
 import { useWorkdayGate } from "@/lib/workday";
+import { useMe } from "@/lib/role";
 import { BackButton } from "./PipelineBoard";
 import Toast from "./Toast";
 import WorkdayBlocked from "./WorkdayBlocked";
@@ -27,6 +28,12 @@ const RESEARCHED_ON = "12 Nov";
 const HAS_REPORT: boolean = true;
 /** How long the sample run takes; the real one is about a minute. */
 const RUN_MS = 2500;
+/** Sample: the role reads junior, so Research does not benchmark it (old system). */
+const JUNIOR: boolean = false;
+/** Sample: this TA works the job at 100% today (only they review the research). */
+const ON_100 = true;
+/** Sample: who reviewed it, for a lead's eyes. */
+const REVIEWED_BY: string | null = "Chathura Sampath";
 
 type Key =
   | "titles"
@@ -137,6 +144,12 @@ const PRIMARY =
 
 export default function ResearchView() {
   const gate = useWorkdayGate();
+  const me = useMe();
+  // A TA runs Research once and Find them once an opening; after that only a lead.
+  const [researchRuns, setResearchRuns] = useState(HAS_REPORT ? 1 : 0);
+  const [findRuns, setFindRuns] = useState(HAS_REPORT ? 1 : 0);
+  const researchLocked = !me.lead && researchRuns > 0;
+  const findLocked = !me.lead && findRuns > 0;
   const [fields, setFields] = useState(START);
   const [edited, setEdited] = useState<Key[]>([]);
   const [picked, setPicked] = useState<string[]>(["b1"]);
@@ -173,6 +186,7 @@ export default function ResearchView() {
 
   const runResearch = () => {
     if (busy) return;
+    setResearchRuns((n) => n + 1);
     const first = run === "none";
     setRun("running");
     later(() => {
@@ -193,7 +207,8 @@ export default function ResearchView() {
   // Benchmark on its own: looks again for who does this job. Picks on people
   // found again are kept.
   const findPeople = () => {
-    if (finding) return;
+    if (finding || findLocked) return;
+    setFindRuns((n) => n + 1);
     setFinding(true);
     later(() => {
       setPeople(PEOPLE);
@@ -239,13 +254,21 @@ export default function ResearchView() {
           {run !== "none" && (
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || researchLocked}
               onClick={runResearch}
+              title={
+                researchLocked ? "Your TA Lead can run it again" : undefined
+              }
               className={GHOST + " disabled:opacity-60"}
             >
               <RunIcon />
               {busy ? "Running…" : "Run again"}
             </button>
+          )}
+          {run === "done" && researchLocked && (
+            <span className="text-small text-ink-3">
+              Your TA Lead can run it again
+            </span>
           )}
           <CorrectCompany
             first={run === "none"}
@@ -255,7 +278,14 @@ export default function ResearchView() {
               runResearch();
             }}
           />
-          {run !== "none" && (
+          {run !== "none" && me.lead && (
+            <span className="text-small text-ink-3">
+              {reviewed || REVIEWED_BY
+                ? `Reviewed by ${REVIEWED_BY ?? "the TA"}`
+                : "Not reviewed yet by the TA on 100%"}
+            </span>
+          )}
+          {run !== "none" && !me.lead && ON_100 && (
             <Review
               empty={empty}
               reviewed={reviewed}
@@ -345,8 +375,9 @@ export default function ResearchView() {
               <h3 className="text-h3 font-medium">Benchmark</h3>
               <button
                 type="button"
-                disabled={finding}
+                disabled={finding || findLocked}
                 onClick={findPeople}
+                title={findLocked ? "Your TA Lead can run it again" : undefined}
                 className={GHOST + " ml-auto disabled:opacity-60"}
               >
                 <RunIcon />
@@ -354,9 +385,22 @@ export default function ResearchView() {
                   ? "Finding…"
                   : people.length
                     ? "Find them again"
-                    : "Find them"}
+                    : JUNIOR
+                      ? "Find them anyway"
+                      : "Find them"}
               </button>
             </div>
+            {findLocked && !finding && (
+              <p className="mt-1 text-small text-ink-3">
+                Your TA Lead can run it again
+              </p>
+            )}
+            {JUNIOR && (
+              <p className="mt-1.5 rounded-md bg-warn-soft px-3 py-2 text-small text-ink-2">
+                This role reads as junior - Research does not benchmark this
+                level.
+              </p>
+            )}
             <p className="mt-1.5 text-small text-ink-3">
               People doing this job today at similar companies — pick who the
               client should compare against.

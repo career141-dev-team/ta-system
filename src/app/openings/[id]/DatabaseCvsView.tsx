@@ -11,6 +11,8 @@ import { BackButton } from "./PipelineBoard";
 import CvPages, { warmPdf } from "./CvPages";
 import WorkdayBlocked from "./WorkdayBlocked";
 import Toast from "./Toast";
+import { sendToPipeline } from "./pipelineInbox";
+import { useJdApproved } from "./jdState";
 import { useLiftMenu } from "./liftMenu";
 
 // ATS · Database CVs - matches from the whole database (owner's design, 14 Nov 2026).
@@ -28,9 +30,11 @@ const CvPreview = dynamic(() => import("./CvPreview"), { ssr: false });
 type Fit = "any" | "strong";
 type Notice = "any" | "month";
 const JOB_Q = "SAP Business Transformation, manufacturing";
+const JOB_TITLE = "Head of SAP";
 
 export default function DatabaseCvsView() {
   const gate = useWorkdayGate();
+  const jdApproved = useJdApproved();
   const [rows, setRows] = useState<Person[]>(() => [...POOL].sort((a, b) => b.score - a.score));
   const [fit, setFit] = useState<Fit>("strong");
   const [notice, setNotice] = useState<Notice>("month");
@@ -40,6 +44,15 @@ export default function DatabaseCvsView() {
   const [big, setBig] = useState(false);
   const [ranAgo, setRanAgo] = useState("4 min ago");
   const [toast, setToast] = useState<{ bold?: string; rest: string; warn?: boolean; n: number } | null>(null);
+  // ponytail: sample set number; the backend gives the real next set.
+  const [setNo, setSetNo] = useState(3);
+  const [sure, setSure] = useState("");
+  const [undo, setUndo] = useState<Person | null>(null);
+  useEffect(() => {
+    if (!undo) return;
+    const t = setTimeout(() => setUndo(null), 8000);
+    return () => clearTimeout(t);
+  }, [undo]);
   const root = useRef<HTMLDivElement>(null);
   const cv = useRef<HTMLDivElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -66,16 +79,24 @@ export default function DatabaseCvsView() {
   const shortlist = (p: Person) => {
     if (gate) return say(gate, undefined, true);
     if (CLAIMED[p.id]) return say(`${CLAIMED[p.id]} already claimed ${p.name}.`, undefined, true);
+    // They show on the Pipeline board, in TA Follow-Up (source: the database).
+    sendToPipeline({ name: p.name, title: p.title, company: p.company, location: p.city, years: p.years, notice: p.notice, cv: p.cv, channel: "SCOOP" });
     leave(p);
-    say("shortlisted - moved to TA Follow-Up, yours to work", p.name);
+    say(` shortlisted as set ${setNo} - moved to TA Follow-Up`, p.name);
+    setSetNo((n) => n + 1);
   };
   const notFor = (p: Person) => {
     if (gate) return say(gate, undefined, true);
+    // Asks once: the second press takes them off.
+    if (sure !== p.id) return setSure(p.id);
+    setSure("");
     leave(p);
-    say("will not be matched to this job again", p.name);
+    setUndo(p);
   };
   const rerun = () => {
     if (matching) return;
+    // Matching reads the approved JD; the TA System refuses it before approval.
+    if (!jdApproved) return say("Approve the job description first - matching reads it.", undefined, true);
     setMatching(true);
     // ponytail: a stand-in wait; with the backend this is the reverse match.
     timer.current = setTimeout(() => {
@@ -148,7 +169,7 @@ export default function DatabaseCvsView() {
         ))}
         <FiltersMenu fit={fit} setFit={setFit} notice={notice} setNotice={setNotice} city={city} setCity={setCity} cities={[...new Set(POOL.map((p) => p.city))]} />
         <Link
-          href={`/database?q=${encodeURIComponent(JOB_Q)}`}
+          href={`/database?q=${encodeURIComponent(JOB_Q)}&for=${encodeURIComponent(JOB_TITLE)}`}
           className="ml-auto text-small font-medium text-brand hover:underline"
         >
           Search the whole database →
@@ -237,9 +258,13 @@ export default function DatabaseCvsView() {
                     <button
                       type="button"
                       onClick={() => notFor(picked)}
-                      className="flex h-[max(2.75rem,36px)] items-center rounded-full bg-surface px-[max(1.2rem,14px)] text-body font-medium text-ink shadow-float ring-1 ring-border/60 hover:bg-surface-2"
+                      onBlur={() => setSure("")}
+                      className={
+                        "flex h-[max(2.75rem,36px)] items-center rounded-full px-[max(1.2rem,14px)] text-body font-medium shadow-float ring-1 " +
+                        (sure === picked.id ? "bg-danger-soft text-danger ring-danger/40" : "bg-surface text-ink ring-border/60 hover:bg-surface-2")
+                      }
                     >
-                      Not for this job
+                      {sure === picked.id ? "Press again to take them off" : "Not for this job"}
                     </button>
                     <button
                       type="button"
@@ -259,6 +284,24 @@ export default function DatabaseCvsView() {
       </div>
       {big && picked?.cv && (
         <CvPreview name={picked.name} title={`${picked.title} · ${picked.company}`} src={picked.cv} onClose={() => setBig(false)} />
+      )}
+      {undo && (
+        <div role="status" className="fixed bottom-[max(4rem,48px)] left-1/2 z-[90] flex max-w-[calc(100vw-24px)] -translate-x-1/2 items-center gap-3 rounded-full bg-ink px-[max(1.3rem,14px)] py-[max(0.7rem,8px)] text-[max(0.85rem,12.5px)] text-white shadow-float">
+          <span>
+            <b className="font-semibold">{undo.name}</b> will not be matched to this job again
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setRows((r) => [...r, undo].sort((a, b) => b.score - a.score));
+              setPickedId(undo.id);
+              setUndo(null);
+            }}
+            className="font-medium text-brand-leaf hover:underline"
+          >
+            Undo
+          </button>
+        </div>
       )}
       {toast && <Toast key={toast.n} bold={toast.bold} rest={toast.rest} warn={toast.warn} />}
     </div>

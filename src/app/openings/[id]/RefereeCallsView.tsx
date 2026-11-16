@@ -7,7 +7,7 @@ import {
   type ClipboardEvent,
   type KeyboardEvent,
 } from "react";
-import { SEES_WHOLE_JOB } from "@/lib/user";
+import { useMe } from "@/lib/role";
 import { useWorkdayGate } from "@/lib/workday";
 import { BackButton } from "./PipelineBoard";
 import PillMenu, { type MenuOption } from "./PillMenu";
@@ -137,6 +137,9 @@ const RESULT_LABEL: Record<Result, string> = {
 
 export default function RefereeCallsView() {
   const gate = useWorkdayGate();
+  const me = useMe();
+  // TA Support writes their own calls like a TA and sees every TA's rows like a lead.
+  const SEES_WHOLE_JOB = me.lead || me.role === "TA Support";
   const [day, setDay] = useState("today");
   const [loc, setLoc] = useState("Colombo");
   const [grids, setGrids] = useState(START);
@@ -144,7 +147,7 @@ export default function RefereeCallsView() {
   const rows = grids[key] ?? [];
   const today = day === "today";
   // Only a TA writes, only their own rows, only today - and after Start workday.
-  const canEdit = today && !SEES_WHOLE_JOB && !gate;
+  const canEdit = today && !me.lead && !gate;
   const calls = rows.filter(isCall).length;
   // Always room to keep typing: the minimum, or one empty row past the last.
   const shownRows = Math.min(MAX_ROWS, Math.max(MIN_ROWS, rows.length + 1));
@@ -405,142 +408,153 @@ export default function RefereeCallsView() {
             </tr>
           </thead>
           <tbody>
-            {Array.from({ length: shownRows }, (_, r) => (
-              <tr key={r} className="h-[max(3.125rem,40px)]">
-                <td className="group/num border-b border-r border-border bg-canvas text-center font-mono text-mono text-ink-3">
-                  {canEdit && rows[r]?.cells.some((x) => x.trim()) ? (
-                    <>
-                      <span className="group-hover/num:hidden group-focus-within/num:hidden">
-                        {r + 1}
-                      </span>
-                      <button
-                        type="button"
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onClick={() => deleteRow(r)}
-                        aria-label={`Delete row ${r + 1}`}
-                        title="Delete this row"
-                        className="hidden w-full items-center justify-center text-ink-3 hover:text-danger group-hover/num:flex group-focus-within/num:flex focus-visible:flex"
-                      >
-                        <svg
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          className="size-[max(1rem,13px)]"
-                          aria-hidden="true"
-                        >
-                          <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" />
-                        </svg>
-                      </button>
-                    </>
-                  ) : (
-                    r + 1
-                  )}
-                </td>
-                {COLS.map((col, ci) => {
-                  const on = at.r === r && at.c === ci;
-                  return (
-                    <td
-                      key={col.label}
-                      data-cell={`${r}-${ci}`}
-                      role="gridcell"
-                      aria-selected={on}
-                      onMouseDown={(e) => {
-                        setActive(true);
-                        // A click in the chosen cell places the caret there.
-                        if (on && canEdit) return setMode("edit");
-                        e.preventDefault();
-                        go(r, ci);
-                      }}
-                      onDoubleClick={() => setMode("edit")}
-                      className={
-                        "relative border-b border-r border-border px-[max(0.9rem,10px)] " +
-                        (on
-                          ? "outline outline-[1.5px] -outline-offset-1 outline-brand"
-                          : "")
-                      }
-                    >
-                      {on && canEdit && ci === 3 ? (
-                        // Feedback runs to 2,000 characters: the box opens over the
-                        // rows below and grows with the text, so all of it can be read.
-                        <textarea
-                          ref={input}
-                          value={typed ?? cell(r, ci)}
-                          onChange={(e) => setTyped(e.target.value)}
-                          onKeyDown={onCellKey}
-                          onPaste={onPaste}
-                          onBlur={commit}
-                          maxLength={col.max}
-                          rows={Math.min(
-                            8,
-                            Math.max(
-                              1,
-                              Math.ceil((typed ?? cell(r, ci)).length / 55),
-                            ),
-                          )}
-                          aria-label={`${col.label}, row ${r + 1}`}
-                          className="absolute inset-x-0 top-0 z-20 min-h-full resize-none rounded-xs border-[1.5px] border-brand bg-surface px-[max(0.9rem,10px)] py-[max(0.85rem,9px)] text-small text-ink shadow-float outline-none"
-                        />
-                      ) : on && canEdit ? (
-                        <input
-                          ref={input}
-                          value={typed ?? cell(r, ci)}
-                          onChange={(e) => setTyped(e.target.value)}
-                          onKeyDown={onCellKey}
-                          onPaste={onPaste}
-                          onBlur={commit}
-                          maxLength={col.max}
-                          aria-label={`${col.label}, row ${r + 1}`}
-                          className="w-full bg-transparent text-small text-ink outline-none"
-                        />
-                      ) : (
-                        <span className="flex items-center gap-2">
-                          <span
-                            className="block min-w-0 flex-1 truncate text-ink"
-                            title={cell(r, ci) || undefined}
-                          >
-                            {cell(r, ci)}
-                          </span>
-                          {/* Feedback: how the call went, as the EOD email sorts it. */}
-                          {ci === 3 && rows[r] && isCall(rows[r]) && (
-                            <button
-                              type="button"
-                              disabled={!canEdit}
-                              onMouseDown={(e) => e.stopPropagation()}
-                              onClick={() => flip(r)}
-                              title={
-                                canEdit
-                                  ? `${rows[r].result ? "Set by you" : "Read from the feedback"} - click to change`
-                                  : undefined
-                              }
-                              className={
-                                "shrink-0 rounded-full px-2 py-0.5 text-caption font-medium transition-colors " +
-                                (resultOf(rows[r]) === "positive"
-                                  ? "bg-success-soft text-success"
-                                  : "bg-surface-2 text-ink-2") +
-                                (canEdit
-                                  ? " hover:ring-1 hover:ring-border-strong"
-                                  : "")
-                              }
-                            >
-                              {RESULT_LABEL[resultOf(rows[r])]}
-                            </button>
-                          )}
-                        </span>
-                      )}
-                    </td>
-                  );
-                })}
-                <td className="border-b border-border px-[max(0.9rem,10px)] text-ink-3">
-                  {/* Filled when a lead sees every TA's calls. */}
-                  {SEES_WHOLE_JOB && rows[r] && isCall(rows[r])
-                    ? rows[r].ta
-                    : ""}
+            {!today && !rows.some(isCall) && (
+              <tr>
+                <td
+                  colSpan={COLS.length + 2}
+                  className="px-4 py-10 text-center text-small text-ink-3"
+                >
+                  No referee calls were logged for this day
                 </td>
               </tr>
-            ))}
+            )}
+            {(today || rows.some(isCall)) &&
+              Array.from({ length: shownRows }, (_, r) => (
+                <tr key={r} className="h-[max(3.125rem,40px)]">
+                  <td className="group/num border-b border-r border-border bg-canvas text-center font-mono text-mono text-ink-3">
+                    {canEdit && rows[r]?.cells.some((x) => x.trim()) ? (
+                      <>
+                        <span className="group-hover/num:hidden group-focus-within/num:hidden">
+                          {r + 1}
+                        </span>
+                        <button
+                          type="button"
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={() => deleteRow(r)}
+                          aria-label={`Delete row ${r + 1}`}
+                          title="Delete this row"
+                          className="hidden w-full items-center justify-center text-ink-3 hover:text-danger group-hover/num:flex group-focus-within/num:flex focus-visible:flex"
+                        >
+                          <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="size-[max(1rem,13px)]"
+                            aria-hidden="true"
+                          >
+                            <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" />
+                          </svg>
+                        </button>
+                      </>
+                    ) : (
+                      r + 1
+                    )}
+                  </td>
+                  {COLS.map((col, ci) => {
+                    const on = at.r === r && at.c === ci;
+                    return (
+                      <td
+                        key={col.label}
+                        data-cell={`${r}-${ci}`}
+                        role="gridcell"
+                        aria-selected={on}
+                        onMouseDown={(e) => {
+                          setActive(true);
+                          // A click in the chosen cell places the caret there.
+                          if (on && canEdit) return setMode("edit");
+                          e.preventDefault();
+                          go(r, ci);
+                        }}
+                        onDoubleClick={() => setMode("edit")}
+                        className={
+                          "relative border-b border-r border-border px-[max(0.9rem,10px)] " +
+                          (on
+                            ? "outline outline-[1.5px] -outline-offset-1 outline-brand"
+                            : "")
+                        }
+                      >
+                        {on && canEdit && ci === 3 ? (
+                          // Feedback runs to 2,000 characters: the box opens over the
+                          // rows below and grows with the text, so all of it can be read.
+                          <textarea
+                            ref={input}
+                            value={typed ?? cell(r, ci)}
+                            onChange={(e) => setTyped(e.target.value)}
+                            onKeyDown={onCellKey}
+                            onPaste={onPaste}
+                            onBlur={commit}
+                            maxLength={col.max}
+                            rows={Math.min(
+                              8,
+                              Math.max(
+                                1,
+                                Math.ceil((typed ?? cell(r, ci)).length / 55),
+                              ),
+                            )}
+                            aria-label={`${col.label}, row ${r + 1}`}
+                            className="absolute inset-x-0 top-0 z-20 min-h-full resize-none rounded-xs border-[1.5px] border-brand bg-surface px-[max(0.9rem,10px)] py-[max(0.85rem,9px)] text-small text-ink shadow-float outline-none"
+                          />
+                        ) : on && canEdit ? (
+                          <input
+                            ref={input}
+                            value={typed ?? cell(r, ci)}
+                            onChange={(e) => setTyped(e.target.value)}
+                            onKeyDown={onCellKey}
+                            onPaste={onPaste}
+                            onBlur={commit}
+                            maxLength={col.max}
+                            aria-label={`${col.label}, row ${r + 1}`}
+                            className="w-full bg-transparent text-small text-ink outline-none"
+                          />
+                        ) : (
+                          <span className="flex items-center gap-2">
+                            <span
+                              className="block min-w-0 flex-1 truncate text-ink"
+                              title={cell(r, ci) || undefined}
+                            >
+                              {cell(r, ci)}
+                            </span>
+                            {/* Feedback: how the call went, as the EOD email sorts it. */}
+                            {ci === 3 && rows[r] && isCall(rows[r]) && (
+                              <button
+                                type="button"
+                                disabled={!canEdit}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onClick={() => flip(r)}
+                                title={
+                                  canEdit
+                                    ? `${rows[r].result ? "Set by you" : "Read from the feedback"} - click to change`
+                                    : undefined
+                                }
+                                className={
+                                  "shrink-0 rounded-full px-2 py-0.5 text-caption font-medium transition-colors " +
+                                  (resultOf(rows[r]) === "positive"
+                                    ? "bg-success-soft text-success"
+                                    : "bg-surface-2 text-ink-2") +
+                                  (canEdit
+                                    ? " hover:ring-1 hover:ring-border-strong"
+                                    : "")
+                                }
+                              >
+                                {RESULT_LABEL[resultOf(rows[r])]}
+                              </button>
+                            )}
+                          </span>
+                        )}
+                      </td>
+                    );
+                  })}
+                  <td className="border-b border-border px-[max(0.9rem,10px)] text-ink-3">
+                    {/* Filled when a lead sees every TA's calls. */}
+                    {SEES_WHOLE_JOB && rows[r] && isCall(rows[r])
+                      ? rows[r].ta
+                      : ""}
+                  </td>
+                </tr>
+              ))}
           </tbody>
         </table>
       </div>

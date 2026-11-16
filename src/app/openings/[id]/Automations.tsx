@@ -28,6 +28,7 @@ const SAVED = {
 };
 const CAN_MANAGE = true;
 const TEST_MODE = true;
+const IN_FOLLOW_UP = 7; // sample: people in Follow-up on this opening
 
 type Q = { id: number; text: string };
 let seq = 0;
@@ -43,6 +44,11 @@ export default function Automations({ pillClass, icon }: { pillClass: string; ic
   const [qs, setQs] = useState(() => toQs(saved.questions));
   const [problem, setProblem] = useState<string | null>(null);
   const [notice, setNotice] = useState(0);
+  const [msg, setMsg] = useState({ bold: "", rest: "" });
+  const say = (bold: string, rest: string) => {
+    setMsg({ bold, rest });
+    setNotice((n) => n + 1);
+  };
   const root = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const drag = useRef<number | null>(null);
@@ -134,11 +140,12 @@ export default function Automations({ pillClass, icon }: { pillClass: string; ic
       if (seen.has(k)) return setProblem(`"${t}" is asked twice.`);
       seen.add(k);
     }
-    setSaved({ on, questions: texts });
+    const added = texts.filter((t) => !saved.questions.includes(t)).length;
+    setSaved((s) => ({ ...s, questions: texts }));
     setQs(toQs(texts));
     setProblem(null);
     setOpen(false);
-    setNotice((n) => n + 1);
+    say("Questions saved", added ? ` - asked of the ${IN_FOLLOW_UP} people in Follow-up.` : ".");
   };
 
   return (
@@ -191,7 +198,13 @@ export default function Automations({ pillClass, icon }: { pillClass: string; ic
                 aria-checked={on}
                 aria-label="Automatic follow-up"
                 disabled={!CAN_MANAGE}
-                onClick={() => setOn((v) => !v)}
+                // The switch saves at once, as in the old system; the questions wait for Save.
+                onClick={() => {
+                  const v = !on;
+                  setOn(v);
+                  setSaved((s) => ({ ...s, on: v }));
+                  say("Automatic follow-up", v ? " is on." : " is off.");
+                }}
                 className={"relative h-[max(2rem,26px)] w-[max(3.5rem,46px)] shrink-0 rounded-full transition-colors disabled:opacity-50 " + (on ? "bg-brand" : "bg-border-strong")}
               >
                 <span className={"absolute left-[3px] top-[3px] size-[calc(max(2rem,26px)-6px)] rounded-full bg-surface shadow-card transition-transform " + (on ? "translate-x-[calc(max(3.5rem,46px)-max(2rem,26px))]" : "")} />
@@ -284,7 +297,7 @@ export default function Automations({ pillClass, icon }: { pillClass: string; ic
           )}
         </div>
       )}
-      {notice > 0 && <Toast key={notice} bold="Automations" rest={` saved - automatic follow-up is ${saved.on ? "on" : "off"}.`} />}
+      {notice > 0 && <Toast key={notice} bold={msg.bold} rest={msg.rest} />}
     </div>
   );
 }

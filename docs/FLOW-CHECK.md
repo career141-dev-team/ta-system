@@ -177,3 +177,59 @@ old system has End of day as its own row. Waiting on the owner: 1.12 Referral Se
 ATS row breaks the card's 8 equal rows), 7.4 links by role (a TA would lose Strategy Planner
 and TA Track from the design's five), plus the list under "Next" above.
 
+
+---
+
+## 8. Whole-system pass - 16 Nov 2026 (flow-checker chat)
+
+Every built screen compared again with the old TA System (copy at origin/main dc21f6e6),
+after the owner added all the screens. Sample data only, nothing saves.
+
+### Fixed in this pass (tsc, eslint and all five check files clean; walked at 1267x587)
+
+| # | What was wrong | Fix |
+|---|---|---|
+| 8.1 | **"View as" only changed the top bar and the homes.** The Pipeline's rules, the workday gate, whole-job views, New opening, Openings' Bin, Feedback and the email all read a fixed sample TA - a Lead was locked out of the board and could never decide a shortlist | `useMe()` in `src/lib/role.ts`; every screen reads it. `USER` and `SEES_WHOLE_JOB` removed from `src/lib/user.ts`. Checked: as Lead no workday strip on the board and "Move to Director Shortlist" allowed |
+| 8.2 | **A shortlist in Scoops, LinkedIn Job, Database CVs or Excel Tables said "moved to TA Follow-Up", but the board never showed them** | `pipelineInbox.ts`: each shortlist lands at the top of the board's TA Follow-Up, with its CV, source and "needs salary / notice period". Checked: Scoops shortlist -> card on the board (96 -> 97) |
+| 8.3 | **"JD approved" was three separate things**: approving the JD unlocked nothing, LinkedIn Job and Snippets were always approved | `jdState.ts`: one flag for the opening, read by JD, LinkedIn Job (go live), Snippets and Database CVs (run matching again refused before approval). Restoring a version keeps it approved, as the old system does |
+| 8.4 | Renaming a LinkedIn post lost the old title as a matching name | The old title is added to "Also known as" |
+| 8.5 | New opening: follow-up defaulted ON, nationality default "Any", a TA could put other TAs on it and add a new client | Follow-up OFF and local hire by default; a TA is on their own opening only; only a lead adds a new client (a TA picks one of theirs) |
+| 8.6 | Database chat "Add to a job" ignored the collision lock and left people unowned | Adding claims them for this TA; someone another TA claimed is left alone and named |
+| 8.7 | Strategy Planner open to every role | `strategy/PlannerOnly.tsx`: a TA or Ops person sees "Strategies are planned by your TA Lead" and a link to their openings |
+| 8.8 | Feedback board: Ops could review everyone's | Ops sees only their own, as in the old desk |
+| 8.9 | A lead could not settle an email that "could not confirm it was sent" | Reason box + Verified sent / Verified not sent |
+| 8.10 | The workday never ended | DailyEmailView calls `endWorkday()` on the first sent original 100% End of day (Today's side built by the other chat) |
+
+### Small list - FIXED 16 Nov (owner "Yes, fix them"), all items below except where marked
+
+Type-check, lint, five check files and build:static green; spot-checked in the browser (LinkedIn Job, JD). Notes: Database CVs' Undo is its own bar (Toast has no button); Research/Suggestions/Referee files were also reformatted by Prettier.
+
+~~Still open - small, fits the design~~
+
+- LinkedIn Job: a TA sees every post and others' applicants (old: own posts + others locked); post actions not limited to the recruiters on it; links not checked; links not clickable; no "show more" (tab says 14, four rows).
+- JD: no "approved by <name> · <date>" and Copy; Re-read offered before approval.
+- Snippets: card contact must be the signed-in TA's own; chat "title to X" blanks the second line.
+- Research: Run again / Find them again only once per opening for a TA (then lead/Director/admin/Ops); "I reviewed" only for a TA working this job at 100%.
+- Suggestions: no first-round state - with nothing suggested yet, round 1 cannot be started ("Find profiles to headhunt").
+- Excel Tables: no "Shortlisted first by <TA>"; no way back from Not interested; no "All" tab across sheets; "In pipeline" chip not a link; notes not readable on touch.
+- Database CVs: "Not for this job" has no confirm and no way back; the job is dropped when opening the whole database.
+- Strategies (TA side): no "Date done"; note and proofs only after Mark as done; proof refusals silent, no 5 MB limit.
+- Email: only TAs are held to the checks (a lead's End of day link is optional); missed days need the research link and show only days with unsent candidates.
+- Automations: the switch only applies on Save.
+- Openings list: Bin with no confirm and no candidate count.
+- Bin: deleting a client must be refused while its openings are still in the Bin.
+- Today rail: a position row should open the opening and show "EOD sent <time>"; Start with no position should not be allowed.
+- Referee Calls: TA Support writes own calls and sees every TA's.
+
+### Needs the owner (no design, or a choice)
+
+- **Per-candidate follow-up** (WhatsApp / Email / Call conversation, Take over / Hand back, Stop follow-up) - TAs use it all day; it lives on the old candidate page.
+- **The candidate page** (CV, Prepared CV, History, Call log, Chat, Reference) and opening a card's name.
+- **Director replies** on the End of day page: "Waiting on the Director", paste the reply -> "Read it and move them", "A reply came into shortlists@ - place it for me".
+- **Openings list**: a TA sees every opening (old: their own; "My openings" default); Request access + the lead's approve queue; row facts (follow-up, CVs today, sets, JD waiting); status, working stage and Website switch on the row.
+- **Lead view of a TA's day** (checks per position, reasons, "I reviewed this CV as TA Lead").
+- **Excel Tables**: Upload headhunted CV; outcomes Contacted / Responded / CV received / Unreachable (HH Overview counts them); lead's "Work by person" and notes for the TA; work location tabs.
+- **Database CVs / LinkedIn applicants**: bulk tick (Shortlist selected, Download CVs, Remove from this job), filters, row contact details.
+- **Strategies**: several TAs per strategy; a lead taking a TA off after acceptance; submissions readable after "Mark as read".
+- **Pages with no screen**: Clients, Alerts page, Reports, Targets, People, Voice, Extras, Intake (CV queue), Recruiter review, Database scan, one person outside an opening, a stage with its own address.
+- Admin in "View as"; Feedback's admin step (In progress; only admin / Director mark fixed).

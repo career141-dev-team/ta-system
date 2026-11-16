@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { useSwap } from "@/lib/gsap";
-import { SEES_WHOLE_JOB } from "@/lib/user";
+import { useMe } from "@/lib/role";
 import { BackButton } from "./PipelineBoard";
 import Toast from "./Toast";
 
@@ -33,7 +33,7 @@ type Strategy = {
   title: string;
   due: string;
   status: Status;
-  /** "11 Nov" - set when it is marked done. */
+  /** ISO date it was done ("2026-11-11") - today when marked done, changeable, never in the future. */
   doneOn?: string;
   /** Already submitted to the lead. */
   sent?: boolean;
@@ -47,7 +47,7 @@ const STRATEGIES: Strategy[] = [
     title: "Direct headhunt",
     due: "Wed–Thu",
     status: "done",
-    doneOn: "11 Nov",
+    doneOn: "2026-11-11",
     note: "Called 14 SAP leads at Virtusa, IFS and Hayleys. 5 interested, 2 sent CVs.",
     proofs: [
       { id: "p1", tone: "info" },
@@ -78,11 +78,18 @@ const CheckIcon = ({ className }: { className: string }) => (
   </svg>
 );
 
-const today = () => new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+const MAX_MB = 5;
+/** Today as yyyy-mm-dd in the person's own time. */
+const today = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+const shown = (iso?: string) => (iso ? new Date(`${iso}T00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "");
 
 /** The Strategies view: the lead's new strategies to accept, then each one to do,
  *  mark done with a note and proofs, and submit. */
 export default function StrategiesView() {
+  const SEES_WHOLE_JOB = useMe().lead;
   const [list, setList] = useState(STRATEGIES);
   const [toast, setToast] = useState<{ key: number; bold: string; rest: string } | null>(null);
 
@@ -183,7 +190,7 @@ function StrategyCard({ s, patch }: { s: Strategy; patch: (p: Partial<Strategy>)
   useSwap(card, s.status);
   return (
     // A strategy not accepted yet is dimmed, as in the design.
-    <article ref={card} className={CARD + (s.status === "new" ? " opacity-55" : "") + (done ? " flex flex-col gap-3.5" : "")}>
+    <article ref={card} className={CARD + (s.status === "new" ? " opacity-55" : " flex flex-col gap-3.5")}>
       <div className="flex items-center gap-3.5">
         <div className="min-w-0">
           <h3 className={TITLE}>{s.title}</h3>
@@ -211,12 +218,13 @@ function StrategyCard({ s, patch }: { s: Strategy; patch: (p: Partial<Strategy>)
               <span className="flex size-6.5 shrink-0 items-center justify-center rounded-full bg-surface text-brand">
                 <CheckIcon className="size-[0.8125rem]" />
               </span>
-              {s.sent ? "Sent" : "Done"} · {s.doneOn}
+              {s.sent ? "Sent" : "Done"} · {shown(s.doneOn)}
             </button>
           )}
         </div>
       </div>
-      {done && <DoneBody s={s} patch={patch} />}
+      {/* The note and proofs can be added while it is in progress; they go with it when it is submitted. */}
+      {s.status !== "new" && <DoneBody s={s} patch={patch} />}
     </article>
   );
 }
@@ -228,12 +236,21 @@ function DoneBody({ s, patch }: { s: Strategy; patch: (p: Partial<Strategy>) => 
   // until the page closes); upload it with the backend.
   // Any change after submitting makes it ready to submit again (it overwrites).
   const edit = (p: Partial<Strategy>) => patch({ ...p, sent: false });
+  const [refused, setRefused] = useState<string[]>([]);
   const add = (files: Iterable<File>) => {
-    const room = MAX_PROOFS - s.proofs.length;
-    const urls = [...files]
-      .filter((f) => PROOF_TYPES.split(",").includes(f.type))
-      .slice(0, Math.max(0, room))
-      .map((f, i) => ({ id: `${Date.now()}-${i}-${f.name}`, url: URL.createObjectURL(f) }));
+    let room = MAX_PROOFS - s.proofs.length;
+    const out: string[] = [];
+    const urls: Proof[] = [];
+    [...files].forEach((f, i) => {
+      if (!PROOF_TYPES.split(",").includes(f.type)) out.push(`${f.name} - only PNG, JPEG or WebP`);
+      else if (f.size > MAX_MB * 1024 * 1024) out.push(`${f.name} - over ${MAX_MB} MB`);
+      else if (room <= 0) out.push(`${f.name} - ${MAX_PROOFS} proofs at most`);
+      else {
+        room--;
+        urls.push({ id: `${Date.now()}-${i}-${f.name}`, url: URL.createObjectURL(f) });
+      }
+    });
+    setRefused(out);
     if (urls.length) edit({ proofs: [...s.proofs, ...urls] });
   };
   const remove = (p: Proof) => {
@@ -289,7 +306,7 @@ function DoneBody({ s, patch }: { s: Strategy; patch: (p: Partial<Strategy>) => 
       <button
         type="button"
         onClick={() => pick.current?.click()}
-        title="PNG, JPEG or WebP, up to 5"
+        title="PNG, JPEG or WebP, up to 5 MB each, 5 at most"
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => {
           e.preventDefault();
@@ -304,6 +321,23 @@ function DoneBody({ s, patch }: { s: Strategy; patch: (p: Partial<Strategy>) => 
         </svg>
         <span className="text-caption font-medium">Paste or drop</span>
       </button>
+      )}
+      {s.status === "done" && (
+        <label className="flex w-full items-center gap-2 text-small text-ink-2">
+          Date done
+          <input
+            type="date"
+            value={s.doneOn ?? today()}
+            max={today()}
+            onChange={(e) => e.target.value && edit({ doneOn: e.target.value > today() ? today() : e.target.value })}
+            className="rounded-sm border border-border bg-surface px-2 py-1 text-small text-ink"
+          />
+        </label>
+      )}
+      {refused.length > 0 && (
+        <p role="alert" className="w-full text-small text-warn">
+          Left out: {refused.join("; ")}.
+        </p>
       )}
     </div>
   );

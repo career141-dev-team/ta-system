@@ -2,7 +2,7 @@
 
 import Count from "@/app/Count";
 import type { ReactNode } from "react";
-import { SEES_WHOLE_JOB } from "@/lib/user";
+import { useMe } from "@/lib/role";
 import { BackButton } from "./PipelineBoard";
 import { useOpeningView, type View } from "./view";
 
@@ -29,6 +29,8 @@ const BENCHMARK_CHOSEN: boolean = false;
 const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0);
 
 export default function HhOverview() {
+  // A TA sees their own headhunting numbers; a lead sees the whole job's.
+  const SEES_WHOLE_JOB = useMe().lead;
   const { go } = useOpeningView();
   const notApproached = SAVED - APPROACHED;
   const noCvYet = APPROACHED - CVS;

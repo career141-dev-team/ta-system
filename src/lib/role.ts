@@ -43,3 +43,14 @@ export const PERSON: Record<Role, { name: string; title: string }> = {
   Director: { name: "Nadeesha Perera", title: "Director" },
   Ops: { name: "Kavindi Silva", title: "Ops" },
 };
+
+/** Who is looking, and what the old system lets them do, in one place - so every
+ *  screen follows "View as" (16 Nov 2026: the top bar and the homes followed it,
+ *  while the Pipeline's rules, the workday gate and the whole-job views still read
+ *  a fixed sample TA). `lead` is the old `opening.manage` / whole-job view: TA Lead,
+ *  Director, Ops (and admin). */
+export function useMe() {
+  const role = useRole();
+  const { name, title } = PERSON[role];
+  return { role, name, first: name.split(" ")[0], title, lead: deskWide(role) };
+}

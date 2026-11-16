@@ -27,6 +27,8 @@ import "@fontsource/figtree/400.css";
 import "@fontsource/figtree/500.css";
 import "@fontsource/figtree/700.css";
 import { CAN_SOURCE } from "@/lib/user";
+import { useMe } from "@/lib/role";
+import { useJdApproved } from "./jdState";
 import { BackButton } from "./PipelineBoard";
 import Toast from "./Toast";
 import { useLiftMenu } from "./liftMenu";
@@ -36,7 +38,8 @@ import { useOpeningView } from "./view";
 // here, live, so the colour, font, size and underline change it - with the buttons to
 // download it as a PNG or copy its LinkedIn caption, and AURA's chat under them to ask
 // for changes in words. Placeholder data: the role is the design's sample. With the
-// backend the role, its details and the TA's contact are the opening's own.
+// backend the role and its details are the opening's own; the contact is the signed-in
+// person's (their name, with a placeholder email and phone until the backend sends theirs).
 // Reviewed and merged 14 Nov 2026: as in the old Snippets tab (openings skill §10) the
 // card is made only from an approved JD and only by someone with a sourcing seat; the
 // PNG is named after the title and waits for the fonts; the controls are on DESIGN.md
@@ -44,7 +47,6 @@ import { useOpeningView } from "./view";
 // so they stay hex.
 
 /** Placeholder: the opening's JD is approved (same as LinkedIn Job's). */
-const JD_APPROVED: boolean = true;
 
 type Snip = { level: number; colour: number; font: string; body: number; underline: boolean; ink: number; version: number; line1: string; line2: string };
 
@@ -98,11 +100,9 @@ const ROLE = {
     "Minimum 10–12 years of progressive experience in finance, with at least 5 years in a senior leadership role.",
     "Proven experience managing procurement, accounts receivable, and finance operations.",
   ],
-  // Made-up contact: the sample goes on a public link.
-  ta: "Nipuna",
-  email: "nipuna@example.com",
-  phone: "+94 77 000 0000",
 };
+
+type Contact = { ta: string; email: string; phone: string };
 
 // ---- Drawing. One function paints the card, on screen and for the PNG, so what is
 // seen is what is downloaded. Laid out in the design's 660-wide space (the preview's
@@ -146,7 +146,7 @@ function wrap(ctx: CanvasRenderingContext2D, text: string, width: number) {
   return [...lines, line];
 }
 
-function drawCard(ctx: CanvasRenderingContext2D, s: Snip, logo: HTMLImageElement | null) {
+function drawCard(ctx: CanvasRenderingContext2D, s: Snip, logo: HTMLImageElement | null, who: Contact) {
   const k = 1080 / 660;
   const hex = COLOURS[s.colour].hex;
   const f = (w: number, px: number) => `${w} ${px}px "${s.font}", "Poppins", sans-serif`;
@@ -254,7 +254,7 @@ function drawCard(ctx: CanvasRenderingContext2D, s: Snip, logo: HTMLImageElement
   // Laid end to end by their widths (the gaps are the design's at the design's size), and
   // shrunk, if need be, to stay inside the card.
   ctx.fillStyle = "#000";
-  const parts: [string, number, number][] = [["TA :", 700, 11], [`E : ${ROLE.email}`, 500, 7], ["|", 500, 14], [`M : ${ROLE.phone}`, 500, 0]];
+  const parts: [string, number, number][] = [[`TA : ${who.ta}`, 700, 11], [`E : ${who.email}`, 500, 7], ["|", 500, 14], [`M : ${who.phone}`, 500, 0]];
   const span = (sz: number) =>
     parts.reduce((w, [t, wt, gap]) => {
       ctx.font = f(wt, sz);
@@ -317,7 +317,7 @@ function ask(text: string): { patch: Partial<Snip>; reply: string } {
   if (/white (text|title|heading)/.test(t)) did("the title white", { ink: 2 });
   else if (/(black|dark) (text|title|heading)/.test(t)) did("the title black", { ink: 0 });
   else if (/green (text|title|heading)/.test(t)) did("the title green", { ink: 1 });
-  if (title) did("the title", { line1: title[1], line2: "" });
+  if (title) did("the title", { line1: title[1] }); // the bold second line stays, as the old system edits them apart
   return { patch, reply: done.length ? `Done — ${done.join(", ")}.` : HELP };
 }
 
@@ -336,7 +336,12 @@ const Icon = ({ d, className }: { d: string; className: string }) => (
 
 /** The Snippets view: the card, its controls, and the chat that changes it. */
 export default function SnippetsView() {
+  // The card is made from the approved JD: the opening's one flag (jdState).
+  const JD_APPROVED = useJdApproved();
   const [s, setS] = useState(START);
+  const me = useMe();
+  // The signed-in person's own contact; placeholder email and phone (sample on a public link).
+  const who: Contact = { ta: me.first, email: `${me.first.toLowerCase()}@career141.com`, phone: "+94 77 000 0000" };
   const { go } = useOpeningView();
   const [msgs, setMsgs] = useState<Msg[]>([{ who: "aura", text: "Tell me what to change on the card — colour, font, text size, underline or the title." }]);
   const [toast, setToast] = useState<{ key: number; bold?: string; rest: string; warn?: boolean } | null>(null);
@@ -357,18 +362,19 @@ export default function SnippetsView() {
     const ctx = canvas.current?.getContext("2d");
     if (!ctx) return;
     let off = false;
-    Promise.all([300, 400, 500, 700].map((w) => document.fonts.load(`${w} 16px "${s.font}"`))).finally(() => !off && drawCard(ctx, s, logo));
+    Promise.all([300, 400, 500, 700].map((w) => document.fonts.load(`${w} 16px "${s.font}"`))).finally(() => !off && drawCard(ctx, s, logo, who));
     return () => {
       off = true;
     };
-  }, [s, logo]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- who changes only with the person
+  }, [s, logo, me.first]);
 
   useEffect(() => {
     thread.current?.scrollTo({ top: thread.current.scrollHeight });
   }, [msgs]);
 
   const say = (rest: string, bold?: string, warn?: boolean) => setToast({ key: ++toasts.current, bold, rest, warn });
-  const caption = `${s.line1} ${s.line2.toLowerCase()} — ${ROLE.sector}, ${ROLE.facts[0][1]}. Package ${ROLE.facts[2][1]}. Apply: ${ROLE.email} · ${ROLE.phone}`;
+  const caption = `${s.line1} ${s.line2.toLowerCase()} — ${ROLE.sector}, ${ROLE.facts[0][1]}. Package ${ROLE.facts[2][1]}. Apply: ${who.email} · ${who.phone}`;
 
   // Named after the title, as the old system does, and drawn only once the fonts are in.
   const name = `${[s.line1, s.line2].join(" ").trim().replace(/[^\w-]+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "job"}-snippet.png`;
@@ -529,6 +535,19 @@ export default function SnippetsView() {
             <button type="button" onClick={copy} className={GHOST}>
               <Icon d="M9 9h10v10H9zM5 15V5h10" className="size-[max(1rem,14px)]" />
               Copy caption for LinkedIn
+            </button>
+          </div>
+          <div className="-mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <p className="text-caption text-ink-3">Square PNG, 1080 × 1080, for WhatsApp, Facebook and LinkedIn</p>
+            <button
+              type="button"
+              onClick={() => {
+                setS(START);
+                say("The card is back on the design.");
+              }}
+              className="text-caption font-medium text-brand hover:underline"
+            >
+              Put everything back on the design
             </button>
           </div>
 

@@ -3,8 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { DUR, EASE, gsap, loadFlip, motionOK, type FlipPlugin } from "@/lib/gsap";
-import { USER } from "@/lib/user";
-import { PERSON, useRole, worksADay } from "@/lib/role";
+import { PERSON, useRole } from "@/lib/role";
 import Toast from "../openings/[id]/Toast";
 import { pushAlert } from "../alerts/data";
 import { COLUMNS, KIND, meta, setItems, update, useItems, type Item } from "./data";
@@ -18,13 +17,12 @@ import { COLUMNS, KIND, meta, setItems, update, useItems, type Item } from "./da
 // Cards glide to their new column (GSAP Flip).
 
 type Mode = "answer" | "decline" | "fix" | null;
-const first = USER.name.split(" ")[0];
 
 export default function FeedbackBoard() {
   // A TA sees only what they sent, and where each one is (old desk: "My submissions");
   // a lead, Director or Ops person sees everyone's and moves them on.
   const role = useRole();
-  const lead = !worksADay(role);
+  const lead = role === "Lead" || role === "Director";
   const me = PERSON[role].name.split(" ")[0];
   const all = useItems();
   const items = lead ? all : all.filter((x) => x.by === me);
@@ -52,7 +50,7 @@ export default function FeedbackBoard() {
   };
 
   const tell = (x: Item, title: string, body: string) => {
-    if (x.by === first) pushAlert({ icon: "chat", title, body, href: "/today", needs: false });
+    if (x.by === me) pushAlert({ icon: "chat", title, body, href: "/today", needs: false });
   };
   const close = (x?: Item) => {
     // Opened and left undecided: it is being looked at.

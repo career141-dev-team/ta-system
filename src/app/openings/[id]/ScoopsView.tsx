@@ -7,6 +7,7 @@ import { BackButton } from "./PipelineBoard";
 import CvPages, { warmPdf } from "./CvPages";
 import PillMenu, { type MenuOption } from "./PillMenu";
 import Toast from "./Toast";
+import { sendToPipeline } from "./pipelineInbox";
 import { EXPERIENCE, NOTICE, inRange } from "./filters";
 import WorkdayBlocked from "./WorkdayBlocked";
 import { useWorkdayGate } from "@/lib/workday";
@@ -208,6 +209,8 @@ export default function ScoopsView() {
     if (!take.length) return;
     if (gate) return say(gate + " Start it on Today, then shortlist.", undefined, true);
     setList((l) => l.map((s) => (take.includes(s) ? { ...s, mine: true } : s)));
+    // They show on the Pipeline board, in TA Follow-Up.
+    take.forEach((s) => sendToPipeline({ name: s.name, title: s.title, company: s.company, location: s.location, years: s.years, notice: s.notice, cv: s.cv }));
     setPicked((p) => p.filter((x) => !ids.includes(x)));
     const rest = ` shortlisted as set ${OPEN_SET} - moved to TA Follow-Up`;
     if (take.length === 1) say(rest, take[0].name);

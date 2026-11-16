@@ -5,12 +5,14 @@ import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import Image from "next/image";
 import { DUR, EASE, gsap, useExit, useGSAP, useSwap } from "@/lib/gsap";
-import { USER } from "@/lib/user";
+import { useMe } from "@/lib/role";
 import { useWorkdayGate } from "@/lib/workday";
 import { BackButton } from "./PipelineBoard";
 import MoveForm from "./MoveForm";
 import { STAGES } from "./pipelineRules";
 import Toast from "./Toast";
+import { sendToPipeline } from "./pipelineInbox";
+import { useJdApproved } from "./jdState";
 import PillMenu from "./PillMenu";
 import { EXPERIENCE, FIELD_PILL, NOTICE, inRange } from "./filters";
 import WorkdayBlocked from "./WorkdayBlocked";
@@ -70,7 +72,6 @@ type Post = {
 
 // Placeholders: whether the opening's job description is approved (a post goes live
 // only after), the TAs a post can be given to, and the open set a shortlist joins.
-const JD_APPROVED = true;
 const TEAM = ["Chathura", "Dinuka", "Hasini", "Nimal"];
 const OPEN_SET = 3;
 
@@ -142,8 +143,17 @@ const count = (p: Post, t: Tab) => p.applicants[t].length + p.more[t];
 /** The LinkedIn Job view: the opening's posts on the left, the chosen post's (or all
  *  posts') applicants on the right, each to be shortlisted or marked not a fit. */
 export default function LinkedInJobView() {
-  const [posts, setPosts] = useState(POSTS);
+  // A post goes live only with the JD approved: the opening's one flag (jdState).
+  const JD_APPROVED = useJdApproved();
+  const me = useMe();
+  const [allPosts, setPosts] = useState(POSTS);
+  // The TA System's visibility: a lead sees every post, a TA only the posts they own
+  // (plus the All posts pool of those). Other TAs' claimed people still show, locked.
+  const posts = allPosts.filter((p) => me.lead || p.owner === me.first);
+  const canEdit = (p: Post) => me.lead || p.owner === me.first;
   const [chosen, setChosen] = useState<string>(POSTS[0].id);
+  // Eight rows a tab; "Show N more" opens the rest, until the post or tab changes.
+  const [fullKey, setFullKey] = useState("");
   const [tab, setTab] = useState<Tab>("new");
   const [editing, setEditing] = useState<Post | "new" | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -171,6 +181,7 @@ export default function LinkedInJobView() {
 
   const all = chosen === ALL;
   const post = all ? undefined : (posts.find((p) => p.id === chosen) ?? posts[0]);
+  const listKey = `${chosen}-${tab}`;
   const live = posts.filter((p) => p.status === "live");
   // The applicants on show: one post's, or every post's together (one pool).
   const rows: { a: Applicant; postId: string; postTitle: string }[] = (all ? posts : post ? [post] : []).flatMap((p) =>
@@ -194,6 +205,9 @@ export default function LinkedInJobView() {
 
   // An applicant leaves New for the tab it was sent to. A shortlist claims the
   // person for this TA, gives the set number and moves them to TA Follow-Up.
+  // A shortlisted applicant shows on the Pipeline board, in TA Follow-Up.
+  const toBoard = (a: Applicant) =>
+    sendToPipeline({ name: a.name, title: a.title, company: a.company, location: a.location, years: a.years, notice: a.notice, cv: a.cv, channel: "L" });
   const send = (a: Applicant, postId: string, to: Tab, reason?: string) => {
     if (gate) return;
     patch(postId, (p) => ({
@@ -201,17 +215,21 @@ export default function LinkedInJobView() {
       applicants: { ...p.applicants, new: p.applicants.new.filter((x) => x.id !== a.id), [to]: [a, ...p.applicants[to]] },
     }));
     setPicked((p) => p.filter((k) => k !== keyOf(postId, a)));
-    if (to === "shortlisted") say(a.name, ` shortlisted as set ${OPEN_SET} - moved to TA Follow-Up`);
-    else say(a.name, ` marked not a fit: ${reason}`);
+    if (to === "shortlisted") {
+      toBoard(a);
+      say(a.name, ` shortlisted as set ${OPEN_SET} - moved to TA Follow-Up`);
+    } else say(a.name, ` marked not a fit: ${reason}`);
   };
 
   const shortlistPicked = () => {
     if (gate || !pickable.length) return;
-    for (const { a, postId } of pickable)
+    for (const { a, postId } of pickable) {
+      toBoard(a);
       patch(postId, (p) => ({
         ...p,
         applicants: { ...p.applicants, new: p.applicants.new.filter((x) => x.id !== a.id), shortlisted: [a, ...p.applicants.shortlisted] },
       }));
+    }
     setPicked([]);
     say(`${pickable.length} candidate${pickable.length === 1 ? "" : "s"}`, ` shortlisted as set ${OPEN_SET} - moved to TA Follow-Up`);
   };
@@ -327,6 +345,7 @@ export default function LinkedInJobView() {
             <PostHeader
               post={post}
               live={live}
+              canEdit={canEdit(post)}
               onStatus={(s) => setStatus(post, s)}
               onEdit={() => openDialog(post)}
               onDelete={() => remove(post)}
@@ -392,7 +411,7 @@ export default function LinkedInJobView() {
           </div>
 
           <ul className="min-h-0 flex-1 space-y-[max(1.25rem,10px)] overflow-y-auto pb-2 [scrollbar-width:none] short:flex-none short:overflow-visible">
-            {shown.map(({ a, postId, postTitle }) => (
+            {(fullKey === listKey ? shown : shown.slice(0, 8)).map(({ a, postId, postTitle }) => (
               <li key={postId + a.id} className="flex flex-wrap items-center gap-x-[max(1.125rem,10px)] gap-y-3 rounded-md border border-border bg-surface px-[max(1.375rem,12px)] py-4 shadow-card">
                 {/* The initials tick the row for Shortlist selected (as in Scoops). */}
                 <button
@@ -455,6 +474,13 @@ export default function LinkedInJobView() {
                   ))}
               </li>
             ))}
+            {fullKey !== listKey && shown.length > 8 && (
+              <li className="flex justify-center">
+                <button type="button" onClick={() => setFullKey(listKey)} className={GHOST}>
+                  Show {shown.length - 8} more
+                </button>
+              </li>
+            )}
             {shown.length === 0 && <li className="pt-8 text-center text-small text-ink-3">{rows.length ? "No applicant matches these filters." : "No applicants here."}</li>}
           </ul>
         </section>
@@ -462,7 +488,7 @@ export default function LinkedInJobView() {
 
       {notice && <Toast key={notice.n} bold={notice.bold} rest={notice.rest} warn={notice.warn} />}
       {readingShown && reading && <CvPreview ref={cvBox} name={reading.name} title={reading.title} src={reading.cv} onClose={() => setReadingOpen(false)} />}
-      {dialogShown && editing && <PostDialog ref={dialog} post={editing === "new" ? null : editing} onClose={() => setDialogOpen(false)} onSave={savePost} />}
+      {dialogShown && editing && <PostDialog ref={dialog} post={editing === "new" ? null : editing} titles={allPosts.filter((p) => editing === "new" || p.id !== editing.id).map((p) => p.title.toLowerCase())} onClose={() => setDialogOpen(false)} onSave={savePost} />}
       {askShown && ask && (
         <MoveForm
           ref={askBox}
@@ -505,6 +531,7 @@ function PostCard({ on, onClick, dot, title, sub, chip, chipClass, extra }: { on
 function PostHeader({
   post,
   live,
+  canEdit,
   onStatus,
   onEdit,
   onDelete,
@@ -512,6 +539,7 @@ function PostHeader({
 }: {
   post: Post;
   live: Post[];
+  canEdit: boolean;
   onStatus: (s: Status) => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -520,10 +548,14 @@ function PostHeader({
   const applicants = (["new", "shortlisted", "notfit"] as Tab[]).reduce((n, t) => n + count(post, t), 0);
   const targets = live.filter((p) => p.id !== post.id);
   // The TA System's rule: CVs move only from a paused post that has them, into a live post.
+  const noRights = canEdit ? "" : `Only ${post.owner} or a TA Lead can change this post`;
   const moveWhy =
-    post.status !== "paused" ? "Pause this post first" : !applicants ? "This post has no CVs to move" : !targets.length ? "There is no live post to move them to" : "";
+    noRights ||
+    (post.status !== "paused" ? "Pause this post first" : !applicants ? "This post has no CVs to move" : !targets.length ? "There is no live post to move them to" : "");
   const toLive = post.status !== "live";
+  const JD_APPROVED = useJdApproved();
   const liveWhy = toLive && !JD_APPROVED ? "The job description is not approved yet" : "";
+  const statusWhy = noRights || liveWhy;
   return (
     <>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-3">
@@ -535,18 +567,22 @@ function PostHeader({
         <h3 className="text-h2 text-ink">{post.title}</h3>
         <span className={CHIP + " " + STATUS_CHIP[post.status]}>{STATUS_LABEL[post.status]}</span>
         <div className="flex gap-3 sm:ml-auto">
-          <button type="button" disabled={!!liveWhy} title={liveWhy || undefined} onClick={() => onStatus(toLive ? "live" : "paused")} className={GHOST}>
+          <button type="button" disabled={!!statusWhy} title={statusWhy || undefined} onClick={() => onStatus(toLive ? "live" : "paused")} className={GHOST}>
             {post.status === "live" ? "Pause" : post.status === "closed" ? "Reopen" : post.status === "draft" ? "Go live" : "Resume"}
           </button>
           <MoveCvs why={moveWhy} targets={targets} onMove={onMove} />
-          <PostMenu post={post} onEdit={onEdit} onClose={() => onStatus("closed")} onDelete={onDelete} />
+          {canEdit && <PostMenu post={post} onEdit={onEdit} onClose={() => onStatus("closed")} onDelete={onDelete} />}
         </div>
       </div>
-      {liveWhy && <p className="-mt-1 text-small text-warn">{liveWhy}, so this post cannot go live.</p>}
+      {noRights ? (
+        <p className="-mt-1 text-small text-ink-3">{noRights}.</p>
+      ) : (
+        liveWhy && <p className="-mt-1 text-small text-warn">{liveWhy}, so this post cannot go live.</p>
+      )}
 
       <dl className="flex flex-wrap gap-3.5">
-        <Detail label="Recruiter link" value={post.recruiterLink} wide missing={post.channel === "linkedin" ? "No recruiter link · CVs may go to the wrong job" : undefined} />
-        {post.channel === "linkedin" && <Detail label="Public link" value={post.publicLink} wide missing="No public link · candidates get no link on WhatsApp" />}
+        <Detail label="Recruiter link" value={post.recruiterLink} link wide missing={post.channel === "linkedin" ? "No recruiter link · CVs may go to the wrong job" : undefined} />
+        {post.channel === "linkedin" && <Detail label="Public link" value={post.publicLink} link wide missing="No public link · candidates get no link on WhatsApp" />}
         {post.code && <Detail label={post.channel === "facebook" ? "Meta campaign code" : "Email campaign code"} value={post.code} />}
         <Detail label="Also known as" value={post.aliases.join(", ")} />
         <Detail label="City" value={[post.city, post.country].filter(Boolean).join(", ")} />
@@ -557,7 +593,7 @@ function PostHeader({
 }
 
 /** One detail chip; a missing link that matters shows as an amber warning instead. */
-function Detail({ label, value, wide, missing }: { label: string; value: string; wide?: boolean; missing?: string }) {
+function Detail({ label, value, wide, missing, link }: { label: string; value: string; wide?: boolean; missing?: string; link?: boolean }) {
   if (!value && !missing) return null;
   return (
     <div
@@ -568,7 +604,14 @@ function Detail({ label, value, wide, missing }: { label: string; value: string;
       }
     >
       <dt className={CAPTION + (value ? " text-ink-3" : " text-warn")}>{label}</dt>
-      <dd className={"truncate text-small font-medium " + (value ? "text-ink" : "text-warn")}>{value || missing}</dd>
+      <dd className={"truncate text-small font-medium " + (value ? "text-ink" : "text-warn")}>{value && link ? (
+          <a href={/^https?:\/\//i.test(value) ? value : "https://" + value} target="_blank" rel="noreferrer" className="hover:text-brand hover:underline">
+            {value}
+          </a>
+        ) : (
+          value || missing
+        )}
+      </dd>
     </div>
   );
 }
@@ -650,7 +693,7 @@ function PostMenu({ post, onEdit, onClose, onDelete }: { post: Post; onEdit: () 
             </button>
           )}
           <button type="button" role="menuitem" onClick={sure ? pick(onDelete) : () => setSure(true)} className={ITEM + " text-danger"}>
-            {sure ? "Click again to delete" : "Delete post"}
+            {sure ? "Click again to delete · candidates stay on the opening" : "Delete post"}
           </button>
         </div>
       )}
@@ -661,8 +704,10 @@ function PostMenu({ post, onEdit, onClose, onDelete }: { post: Post; onEdit: () 
 /** Add a post (the design's popup, Figma 789:6080) and Edit post, one window: the
  *  title candidates see, where it is posted and whether it is live now (new posts),
  *  the two links, other names, city, country and the recruiter. */
-function PostDialog({ ref: root, post, onClose, onSave }: { ref: RefObject<HTMLDivElement | null>; post: Post | null; onClose: () => void; onSave: (p: Post, isNew: boolean) => void }) {
+function PostDialog({ ref: root, post, titles, onClose, onSave }: { ref: RefObject<HTMLDivElement | null>; post: Post | null; titles: string[]; onClose: () => void; onSave: (p: Post, isNew: boolean) => void }) {
   const isNew = !post;
+  const me = useMe();
+  const JD_APPROVED = useJdApproved();
   const [title, setTitle] = useState(post?.title ?? "");
   const [channel, setChannel] = useState<Channel>(post?.channel ?? "linkedin");
   const [liveNow, setLiveNow] = useState(JD_APPROVED);
@@ -684,8 +729,22 @@ function PostDialog({ ref: root, post, onClose, onSave }: { ref: RefObject<HTMLD
     const f = new FormData(e.currentTarget);
     const v = (k: string) => String(f.get(k) ?? "").trim();
     if (!title.trim()) return;
+    // The TA System's checks, said by the browser on the field itself.
+    const form = e.currentTarget;
+    const check = (name: string, why: string) => (form.elements.namedItem(name) as HTMLInputElement | null)?.setCustomValidity(why);
+    const isUrl = (s: string) => {
+      try {
+        return new URL(/^https?:\/\//i.test(s) ? s : "https://" + s).hostname.includes(".");
+      } catch {
+        return false;
+      }
+    };
+    check("title", titles.includes(title.trim().toLowerCase()) ? "This opening already has a post with this title" : "");
+    check("recruiterLink", v("recruiterLink") && !isUrl(v("recruiterLink")) ? "That is not a link" : "");
+    check("publicLink", v("publicLink") && !/^(https?:\/\/)?(www\.)?linkedin\.com\/jobs\/view\/\S+/i.test(v("publicLink")) ? "A public link looks like linkedin.com/jobs/view/…" : "");
+    if (!form.reportValidity()) return;
     const base: Post = post ?? {
-      id: `p${Date.now()}`, title: "", aliases: [], city: "", country: "", owner: USER.name.split(" ")[0], channel, recruiterLink: "", publicLink: "",
+      id: `p${Date.now()}`, title: "", aliases: [], city: "", country: "", owner: me.first, channel, recruiterLink: "", publicLink: "",
       status: liveNow ? "live" : "draft", today: 0, more: ZERO(), applicants: NONE(),
       // A campaign post is found by its code (the TA System makes one when it is created).
       code: channel === "linkedin" ? undefined : "C141-" + Date.now().toString(36).slice(-4).toUpperCase(),
@@ -696,10 +755,17 @@ function PostDialog({ ref: root, post, onClose, onSave }: { ref: RefObject<HTMLD
         title: title.trim(),
         recruiterLink: v("recruiterLink"),
         publicLink: v("publicLink"),
-        aliases: v("aliases").split(",").map((s) => s.trim()).filter(Boolean),
+        // A renamed post keeps its old title as a matching name, as the TA System
+        // does: applications still arrive under the title people saw.
+        aliases: [
+          ...new Set([
+            ...v("aliases").split(",").map((s) => s.trim()).filter(Boolean),
+            ...(post && post.title && post.title !== title.trim() ? [post.title] : []),
+          ]),
+        ],
         city: v("city"),
         country: v("country"),
-        owner: v("owner") || base.owner,
+        owner: (me.lead && v("owner")) || base.owner,
       },
       isNew,
     );
@@ -708,7 +774,7 @@ function PostDialog({ ref: root, post, onClose, onSave }: { ref: RefObject<HTMLD
   const field = (name: string, label: string, value = "", placeholder = label) => (
     <label className="block">
       <span className={CAPTION + " mb-1 block pl-3 text-ink-3"}>{label}</span>
-      <input name={name} defaultValue={value} placeholder={placeholder} aria-label={label} className={FIELD} />
+      <input name={name} defaultValue={value} onInput={(e) => e.currentTarget.setCustomValidity("")} placeholder={placeholder} aria-label={label} className={FIELD} />
     </label>
   );
 
@@ -729,7 +795,7 @@ function PostDialog({ ref: root, post, onClose, onSave }: { ref: RefObject<HTMLD
         <form className="mt-[max(1.2rem,12px)] flex flex-col gap-3.5" onSubmit={submit}>
           <label className="block">
             <span className={CAPTION + " mb-1 block pl-3 text-ink-3"}>Title candidates will see</span>
-            <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Job Name" aria-label="Job Name" className={FIELD} />
+            <input autoFocus name="title" value={title} onChange={(e) => (e.target.setCustomValidity(""), setTitle(e.target.value))} placeholder="Job Name" aria-label="Job Name" className={FIELD} />
           </label>
           {isNew && (
             <div className="flex flex-wrap items-end gap-3">
@@ -767,7 +833,7 @@ function PostDialog({ ref: root, post, onClose, onSave }: { ref: RefObject<HTMLD
           </div>
           <label className="block">
             <span className={CAPTION + " mb-1 block pl-3 text-ink-3"}>Recruiter</span>
-            <select name="owner" defaultValue={post?.owner ?? USER.name.split(" ")[0]} className={FIELD + " cursor-pointer"}>
+            <select name="owner" defaultValue={post?.owner ?? me.first} disabled={!me.lead} title={me.lead ? undefined : "Only a TA Lead can give a post to another TA"} className={FIELD + " cursor-pointer"}>
               {TEAM.map((t) => (
                 <option key={t}>{t}</option>
               ))}

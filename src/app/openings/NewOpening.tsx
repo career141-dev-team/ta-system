@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import { DUR, EASE, gsap, motionOK, swapIn, useGSAP, useSwap } from "@/lib/gsap";
-import { SEES_WHOLE_JOB, USER } from "@/lib/user";
+import { useMe } from "@/lib/role";
 import { useLiftMenu } from "./[id]/liftMenu";
 import { CITIES, CLIENTS, EMPTY, TARGET_WORDS, TEAM, readBrief, type Loc, type Opening, type Priority, type Read } from "./data";
 
@@ -15,8 +15,6 @@ import { CITIES, CLIENTS, EMPTY, TARGET_WORDS, TEAM, readBrief, type Loc, type O
 // may put any TAs on it and none is allowed (Unassigned); a TA is put on it themself
 // and a lead adds others; the JD is drafted after it is made.
 
-const ME = USER.name.split(" ")[0];
-const LEAD = SEES_WHOLE_JOB;
 const READ_MS = 900;
 
 export default function NewOpening({
@@ -28,6 +26,7 @@ export default function NewOpening({
   onClose: () => void;
   onCreate: (o: Opening) => void;
 }) {
+  const { first: ME, lead: LEAD } = useMe();
   const [step, setStep] = useState<"write" | "check">("write");
   const [text, setText] = useState(start);
   const [file, setFile] = useState("");
@@ -63,7 +62,9 @@ export default function NewOpening({
     return () => document.removeEventListener("keydown", esc);
   }, [onClose]);
 
-  const withMe = (x: Read) => (LEAD ? x : { ...x, team: [ME, ...x.team.filter((n) => n !== ME)] });
+  // A TA is on their own opening and nobody else, whatever the brief names: only a
+  // lead puts other TAs on it.
+  const withMe = (x: Read) => (LEAD ? x : { ...x, team: [ME] });
   const read = () => {
     if (!text.trim() || reading) return;
     setReading(true);
@@ -75,7 +76,7 @@ export default function NewOpening({
       setStep("check");
     }, READ_MS);
   };
-  const missing = !r.role.trim() ? "the role" : !r.client.trim() ? "the client" : "";
+  const missing = !r.role.trim() ? "the role" : !r.client.trim() ? "the client" : !LEAD && !r.clientKnown ? "one of your clients" : "";
   const create = () => {
     if (missing) return;
     onCreate({
@@ -110,9 +111,12 @@ export default function NewOpening({
   else if (!r.clientKnown && !done.includes("newClient"))
     asks.push({
       key: "newClient",
-      say: `“${r.client.trim()}” isn't one of your clients yet. Add it as a new client?`,
+      // Only a TA Lead, the Director or Ops adds a client (client.manage).
+      say: LEAD
+        ? `“${r.client.trim()}” isn't one of your clients yet. Add it as a new client?`
+        : `“${r.client.trim()}” isn't one of your clients. Only a TA Lead, the Director or Ops adds a new client - pick one of yours, or ask your lead.`,
       chips: [
-        { label: "Yes, add it", go: () => skip("newClient") },
+        ...(LEAD ? [{ label: "Yes, add it", go: () => skip("newClient") }] : []),
         { label: "Pick another", go: () => set({ client: "", clientKnown: false }) },
       ],
     });
@@ -274,7 +278,7 @@ export default function NewOpening({
                   </datalist>
                   {r.client.trim() && (
                     <p className={"mt-1 text-small " + (r.clientKnown ? "text-success" : "text-ink-3")}>
-                      {r.clientKnown ? "✓ Matched your existing client" : "A new client - it is added with the opening"}
+                      {r.clientKnown ? "✓ Matched your existing client" : LEAD ? "A new client - it is added with the opening" : "Not one of your clients - only a lead adds a new one"}
                     </p>
                   )}
                 </Field>
@@ -399,6 +403,7 @@ function Field({ label, ai = false, children }: { label: string; ai?: boolean; c
 /** Who works it: chips with an x, and + to add. A TA is on their own opening and only
  *  a lead adds others. */
 function Team({ team, onChange }: { team: string[]; onChange: (t: string[]) => void }) {
+  const { first: ME, lead: LEAD } = useMe();
   const { open, setOpen, root, panel, shown } = useLiftMenu();
   const left = TEAM.filter((n) => !team.includes(n));
   return (

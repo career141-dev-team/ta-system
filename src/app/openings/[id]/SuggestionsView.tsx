@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useSwap } from "@/lib/gsap";
 import { useWorkdayGate } from "@/lib/workday";
 import { BackButton } from "./PipelineBoard";
@@ -25,6 +26,8 @@ const MAX_ROUNDS = 3;
 const RUN_MS = 2500;
 /** How many new people the sample round finds; 0 shows the "found nobody" reason box. */
 const NEXT_ROUND_FINDS: number = 2;
+/** Sample: false shows the first-round state (nothing suggested yet). */
+const SUGGESTED_YET: boolean = true;
 /** People ticked under Benchmark on Research - they steer the search. Sample. */
 const BENCHMARKED = ["Ruwan Gunawardena"];
 /** Cards shown before "Show more"; also when search and sort appear. */
@@ -49,6 +52,8 @@ type Person = {
   why: string[];
   confirm?: string;
   status: Status;
+  /** Which round found them (sample START: 1 if "earlier round", else 2). */
+  round?: number;
   keptBy?: string;
   /** People in our own database who may be this person (Find CV). */
   matches?: { name: string; detail: string }[];
@@ -210,9 +215,9 @@ const PILL =
 export default function SuggestionsView() {
   const { go } = useOpeningView();
   const gate = useWorkdayGate();
-  const [people, setPeople] = useState(START);
+  const [people, setPeople] = useState(SUGGESTED_YET ? START : []);
   const [tab, setTab] = useState<Status>("new");
-  const [round, setRound] = useState(2);
+  const [round, setRound] = useState(SUGGESTED_YET ? 2 : 0);
   const [running, setRunning] = useState(false);
   // Decisions made since the last round: a round with none runs the same search again.
   const [judged, setJudged] = useState(2); // sample: two picked this round, as AURA says
@@ -283,12 +288,24 @@ export default function SuggestionsView() {
     ? "Start your workday first."
     : left <= 0
       ? "Work the list, or widen the brief and start again."
-      : judged === 0
+      : judged === 0 && round > 0
         ? "Select or mark a few as not this one first - a round with no decisions runs the same search again."
         : "";
   const refine = () => {
     if (refineWhy || running) return;
     setRunning(true);
+    if (round === 0) {
+      // Round 1: the first cards.
+      timer.current = setTimeout(() => {
+        setRound(1);
+        setJudged(0);
+        setRunning(false);
+        setPeople(START.map((x) => ({ ...x, round: 1 })));
+        pickTab("new");
+        say(`Round 1 done - ${START.length} people to review`);
+      }, RUN_MS);
+      return;
+    }
     timer.current = setTimeout(() => {
       const next = round + 1;
       setRound(next);
@@ -308,25 +325,27 @@ export default function SuggestionsView() {
       }
       setPeople((all) => [
         ...all,
-        p(
-          `r${next}a`,
-          "Kavisha Mendis",
-          "SAP Programme Manager",
-          "Lanka Walltiles",
-          "Colombo",
-          "strong",
-          ["S/4 at a tile maker, 9 yrs"],
-        ),
-        p(
-          `r${next}b`,
-          "Roshan de Silva",
-          "ERP Lead",
-          "Macksons",
-          "Colombo",
-          "good",
-          ["Plant-floor SAP, 10 yrs"],
-          "Notice period unknown",
-        ),
+        ...[
+          p(
+            `r${next}a`,
+            "Kavisha Mendis",
+            "SAP Programme Manager",
+            "Lanka Walltiles",
+            "Colombo",
+            "strong",
+            ["S/4 at a tile maker, 9 yrs"],
+          ),
+          p(
+            `r${next}b`,
+            "Roshan de Silva",
+            "ERP Lead",
+            "Macksons",
+            "Colombo",
+            "good",
+            ["Plant-floor SAP, 10 yrs"],
+            "Notice period unknown",
+          ),
+        ].map((x) => ({ ...x, round: next })),
       ]);
       pickTab("new");
       setChat((c) => [
@@ -494,7 +513,33 @@ export default function SuggestionsView() {
           ref={grid}
           className="mt-[max(1.4rem,14px)] lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-1"
         >
-          {shown.length === 0 ? (
+          {round === 0 ? (
+            <div className="mx-auto flex max-w-[34rem] flex-col items-center gap-3 py-16 text-center">
+              <p className="text-h3">Nothing suggested yet</p>
+              <p className="text-small text-ink-3">
+                AURA reads the job and Research, then finds LinkedIn profiles to
+                headhunt.
+              </p>
+              <button
+                type="button"
+                onClick={refine}
+                disabled={!!refineWhy || running}
+                title={refineWhy || undefined}
+                className="flex h-[max(3rem,36px)] items-center rounded-full bg-brand px-[max(1.2rem,14px)] text-small font-medium text-white hover:bg-brand-strong disabled:opacity-40"
+              >
+                {running
+                  ? "Finding profiles - a few minutes"
+                  : "Find profiles to headhunt"}
+              </button>
+              <p className="text-caption text-ink-3">
+                Looking for people we already hold? Use{" "}
+                <Link href="/database" className="text-brand hover:underline">
+                  Database search
+                </Link>
+                .
+              </p>
+            </div>
+          ) : shown.length === 0 ? (
             <p className="mx-auto max-w-[34rem] py-16 text-center text-small text-ink-3">
               {q.trim() && inTab.length > 0
                 ? "Nobody here matches that search."
@@ -563,7 +608,9 @@ export default function SuggestionsView() {
           {running
             ? `Running round ${round + 1} - a few minutes`
             : left > 0
-              ? `Refine — run round ${round + 1}`
+              ? round === 0
+                ? "Run round 1"
+                : `Refine — run round ${round + 1}`
               : `All ${MAX_ROUNDS} rounds used`}
         </button>
         {refineWhy && !running && (
@@ -618,8 +665,12 @@ function Card({
             className="size-[max(1.1rem,15px)]"
           />
         </a>
+        <span className="ml-auto shrink-0 text-caption text-ink-3">
+          Round{" "}
+          {x.round ?? (x.why.some((w) => w.includes("earlier round")) ? 1 : 2)}
+        </span>
         <span
-          className={`ml-auto shrink-0 rounded-full px-[max(0.6rem,7px)] py-0.5 text-caption font-medium ${fit.tone}`}
+          className={`shrink-0 rounded-full px-[max(0.6rem,7px)] py-0.5 text-caption font-medium ${fit.tone}`}
         >
           {fit.label}
         </span>

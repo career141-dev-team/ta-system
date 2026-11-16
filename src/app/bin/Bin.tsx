@@ -19,7 +19,14 @@ const SAMPLE: Gone[] = [
   { id: "b2", kind: "opening", name: "Test job", client: "Career141", by: "Rashmi", daysAgo: 3 },
   { id: "b3", kind: "opening", name: "Warehouse Supervisor", client: "Cargills", by: "Dilini", daysAgo: 6 },
   { id: "b4", kind: "client", name: "Ceylon Tea Traders", by: "Rashmi", daysAgo: 2 },
+  { id: "b5", kind: "opening", name: "Tea Taster", client: "Ceylon Tea Traders", by: "Rashmi", daysAgo: 2 },
 ];
+
+const goesOn = (left: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() + Math.max(left, 0));
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+};
 
 export default function Bin() {
   const role = useRole();
@@ -52,11 +59,13 @@ export default function Bin() {
                       {x.client ? `${x.client} · ` : ""}deleted {x.daysAgo === 1 ? "yesterday" : `${x.daysAgo} days ago`} by {x.by}
                     </span>
                   </span>
-                  <span className={"text-caption " + (left <= 1 ? "font-medium text-danger" : "text-ink-3")}>{left <= 0 ? "Gone for good today" : `Gone for good in ${left} ${left === 1 ? "day" : "days"}`}</span>
+                  <span className={"text-caption " + (left <= 1 ? "font-medium text-danger" : "text-ink-3")}>{left <= 0 ? "Gone for good today" : `${left} ${left === 1 ? "day" : "days"} left · Goes for good on ${goesOn(left)}`}</span>
                   <button type="button" onClick={() => gone(x, kind === "opening" ? " restored, with its pipeline" : " restored")} className="rounded-full bg-ink px-4 py-2 text-small font-medium text-white hover:bg-black">
                     Restore
                   </button>
-                  {deskWide(role) && (
+                  {deskWide(role) && kind === "client" && items.some((y) => y.kind === "opening" && y.client === x.name) ? (
+                    <span className="text-caption text-ink-3">Delete now waits: its openings are still in the Bin</span>
+                  ) : deskWide(role) && (
                     <button
                       type="button"
                       onClick={() => (sure === x.id ? gone(x, " deleted for good") : setSure(x.id))}

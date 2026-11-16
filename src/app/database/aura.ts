@@ -444,13 +444,21 @@ export function reply(raw: string, ctx: Context): Reply {
           prompt: `Add ${who.map((p) => p.name).join(", ")} to ${j}`,
         })),
       };
+    // Adding claims: they are this TA's to work, in the open set, and someone
+    // another TA already claimed is left alone (the TA System's collision lock).
+    const taken = who.filter((p) => CLAIMED[p.id]);
+    const free = who.filter((p) => !CLAIMED[p.id]);
+    const heldLine = taken.map((p) => `${CLAIMED[p.id]} already claimed ${p.name}`).join(". ");
+    if (!free.length) return { text: `${heldLine}. Nothing changed.`, warn: true };
     return {
-      text: `${who.map((p) => p.name).join(", ")} ${who.length === 1 ? "is" : "are"} now in ${job}, at TA Follow-up. Whoever shortlists first works them.`,
-      people: who,
+      text:
+        `${free.map((p) => p.name).join(", ")} ${free.length === 1 ? "is" : "are"} now in ${job}, at TA Follow-up, and yours to work.` +
+        (heldLine ? ` ${heldLine} - left as ${taken.length === 1 ? "they were" : "they were"}.` : ""),
+      people: free,
       actions: [
         {
           label: "Undo",
-          prompt: `Take ${who.map((p) => p.name).join(", ")} out of ${job}`,
+          prompt: `Take ${free.map((p) => p.name).join(", ")} out of ${job}`,
         },
       ],
     };

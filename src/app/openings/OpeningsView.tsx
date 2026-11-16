@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useSwap, useTabGlide } from "@/lib/gsap";
-import { SEES_WHOLE_JOB } from "@/lib/user";
+import { useMe } from "@/lib/role";
 import Count from "@/app/Count";
 import Toast from "./[id]/Toast";
 import { useLiftMenu } from "./[id]/liftMenu";
@@ -19,7 +19,6 @@ const Spotlight = dynamic(() => import("./Spotlight"));
 const NewOpening = dynamic(() => import("./NewOpening"));
 
 /** Placeholder for `opening.manage`: a lead or admin may send an opening to the Bin. */
-const CAN_MANAGE = SEES_WHOLE_JOB;
 type Tab = "all" | List;
 // The design's tab order; the lists below keep Active, Unassigned, On hold first.
 const TABS: Tab[] = ["all", "active", "hold", "placed", "lost", "unassigned"];
@@ -31,6 +30,11 @@ const SORTS: [Sort, string][] = [
 ];
 
 export default function OpeningsView() {
+  // opening.manage: who may send an opening to the Bin.
+  // A lead may bin any opening; a TA only one they recruit on.
+  const me = useMe();
+  const canBin = (o: Opening) => me.lead || o.team.includes(me.first);
+  const [arming, setArming] = useState<string | null>(null);
   const [rows, setRows] = useState(OPENINGS);
   const [tab, setTab] = useState<Tab>("all");
   const [show, setShow] = useState<List[]>(ORDER);
@@ -71,9 +75,12 @@ export default function OpeningsView() {
   const of = (l: List) => filtered.filter((o) => inList(o, l));
   const all = filtered.length;
 
+  // First press asks, a second press on the same card bins it.
   const bin = (o: Opening) => {
+    if (arming !== o.id) return setArming(o.id);
+    setArming(null);
     setRows((r) => r.filter((x) => x.id !== o.id));
-    setToast({ bold: o.title, rest: " is in the Bin for 7 days. A lead can put it back from there.", n: ++said.current });
+    setToast({ bold: o.title, rest: " is in the Bin for 7 days. Anyone on the desk can put it back from the Bin.", n: ++said.current });
   };
 
   return (
@@ -162,7 +169,7 @@ export default function OpeningsView() {
                 {shown.length ? (
                   <div className="grid grid-cols-4 gap-[max(1.5rem,12px)] max-lg:grid-cols-2 max-sm:grid-cols-1">
                     {shown.map((o) => (
-                      <Card key={o.id} o={o} canBin={CAN_MANAGE} onBin={() => bin(o)} />
+                      <Card key={o.id} o={o} canBin={canBin(o)} armed={arming === o.id} onBin={() => bin(o)} onDisarm={() => setArming(null)} />
                     ))}
                   </div>
                 ) : (
@@ -208,7 +215,10 @@ export default function OpeningsView() {
 }
 
 /** One opening: client, role, where it stands. A lead sees the Bin on hover. */
-function Card({ o, canBin, onBin }: { o: Opening; canBin: boolean; onBin: () => void }) {
+// ponytail: sample candidate count per opening, the backend sends the real one.
+const kept = (o: Opening) => 6 + ((o.id.length * 7 + o.days * 3) % 30);
+
+function Card({ o, canBin, armed, onBin, onDisarm }: { o: Opening; canBin: boolean; armed: boolean; onBin: () => void; onDisarm: () => void }) {
   const l: List = inList(o, "unassigned") ? "unassigned" : o.status;
   const over = o.status === "active" && o.team.length > 0 && o.days > TARGET[o.priority];
   const right =
@@ -218,6 +228,7 @@ function Card({ o, canBin, onBin }: { o: Opening; canBin: boolean; onBin: () => 
       // ponytail: every card opens the one opening built so far.
       href="/openings/demo"
       prefetch={false}
+      onMouseLeave={armed ? onDisarm : undefined}
       className="group relative flex h-[clamp(116px,15.5dvh,168px)] flex-col gap-[clamp(5px,0.95dvh,10px)] rounded-lg border border-border bg-surface px-[max(1.625rem,16px)] py-[clamp(12px,2dvh,22px)] transition-colors hover:border-border-strong hover:shadow-card"
     >
       <div className="flex items-center gap-2 text-small text-ink-3">
@@ -240,10 +251,14 @@ function Card({ o, canBin, onBin }: { o: Opening; canBin: boolean; onBin: () => 
             e.stopPropagation();
             onBin();
           }}
-          aria-label={`Move ${o.title} to the Bin`}
+          aria-label={armed ? `Press again to move ${o.title} to the Bin` : `Move ${o.title} to the Bin`}
           title="Move to the Bin (7 days)"
-          className="absolute right-4 top-4 flex size-9 items-center justify-center rounded-full bg-danger-soft text-danger opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 max-md:opacity-100"
+          className={
+            "absolute right-4 top-4 flex h-9 min-w-9 items-center justify-center gap-2 rounded-full bg-danger-soft text-danger transition-opacity focus-visible:opacity-100 group-hover:opacity-100 max-md:opacity-100 " +
+            (armed ? "left-4 h-auto py-1.5 px-3 text-left text-caption opacity-100" : "opacity-0")
+          }
         >
+          {armed && <span>Press again · {kept(o)} candidates stay in the database · restore within 7 days</span>}
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-4" aria-hidden="true">
             <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
           </svg>

@@ -5,7 +5,8 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { DUR, EASE, gsap } from "@/lib/gsap";
-import { REVIEWS_FEEDBACK, USER } from "@/lib/user";
+import { REVIEWS_FEEDBACK } from "@/lib/user";
+import { useMe, worksADay } from "@/lib/role";
 import Toast from "../openings/[id]/Toast";
 import { Veil } from "../TopMenus";
 import { KIND, setItems, titleOf, useItems, whereIs, type Kind } from "./data";
@@ -21,7 +22,6 @@ import { KIND, setItems, titleOf, useItems, whereIs, type Kind } from "./data";
 const SHOT_MAX = 3 * 1024 * 1024;
 const VOICE_MAX_S = 180;
 const VOICE_MAX_B = 10 * 1024 * 1024;
-const first = USER.name.split(" ")[0];
 
 /** The page in words, as drawn ("Today · AURA chat"). */
 function pageName(path: string) {
@@ -48,6 +48,10 @@ const KINDS: { kind: Kind; label: string; icon: React.ReactNode }[] = [
 export default function TellUs({ onClose }: { onClose: () => void }) {
   const path = usePathname();
   const items = useItems();
+  // A TA's feedback goes to their lead first; anyone else's straight to the builders.
+  const me = useMe();
+  const first = me.first;
+  const ta = worksADay(me.role);
   const [kind, setKind] = useState<Kind>("broke");
   const [text, setText] = useState("");
   const [shot, setShot] = useState<string | null>(null);
@@ -138,7 +142,7 @@ export default function TellUs({ onClose }: { onClose: () => void }) {
         screenshot: shot ?? undefined,
         voice: voice ?? undefined,
         // A lead's goes straight to the builders, as in the old system.
-        status: REVIEWS_FEEDBACK && USER.role !== "Talent Acquisition" ? "builders" : "new",
+        status: REVIEWS_FEEDBACK && !ta ? "builders" : "new",
       },
       ...all,
     ]);
@@ -146,7 +150,7 @@ export default function TellUs({ onClose }: { onClose: () => void }) {
     setShot(null);
     setVoice(null);
     setBlocks(false);
-    setToast({ key: Date.now(), bold: "Sent", rest: USER.role === "Talent Acquisition" ? " — your lead sees it first" : " — it is with the builders" });
+    setToast({ key: Date.now(), bold: "Sent", rest: ta ? " — your lead sees it first" : " — it is with the builders" });
   };
 
   const mine = items.filter((x) => x.by === first).slice(0, 3);
@@ -178,7 +182,7 @@ export default function TellUs({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         <p className="mt-3 text-small text-ink-3">
-          {USER.role === "Talent Acquisition" ? "Your lead sees it first, then the people who build the system." : "It goes straight to the people who build the system."} The bell tells you when it moves.
+          {ta ? "Your lead sees it first, then the people who build the system." : "It goes straight to the people who build the system."} The bell tells you when it moves.
         </p>
 
         <div role="radiogroup" aria-label="What is it?" className="mt-5 grid grid-cols-3 gap-[max(0.75rem,6px)]">

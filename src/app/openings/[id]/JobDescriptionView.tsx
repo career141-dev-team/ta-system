@@ -1,11 +1,14 @@
 "use client";
 
+import { useJdApproved, setJdApproved } from "./jdState";
+
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { useSwap } from "@/lib/gsap";
 import { BackButton } from "./PipelineBoard";
 import Toast from "./Toast";
 import { useLiftMenu } from "./liftMenu";
+import { useMe } from "@/lib/role";
 
 // The Job Description view (shane123-tech's branch, Figma): the draft on the left; on
 // the right the approval bar, a chat to change the draft, and what candidates are
@@ -68,7 +71,12 @@ type Turn = { me: string; aura: string; failed?: boolean };
 const CHIP = "rounded-full px-3 py-1 text-caption font-medium";
 
 export default function JobDescriptionView() {
-  const [approved, setApproved] = useState(false);
+  // Shared with LinkedIn Job, Snippets and Database CVs (jdState).
+  const approved = useJdApproved();
+  const setApproved = setJdApproved;
+  const me = useMe();
+  // Who approved and when - kept in this view for the visit (sample; the backend keeps it).
+  const [approvedBy, setApprovedBy] = useState("");
   const [version, setVersion] = useState(3);
   const [turns, setTurns] = useState<Turn[]>([
     {
@@ -89,6 +97,7 @@ export default function JobDescriptionView() {
 
   const approve = () => {
     setApproved(true);
+    setApprovedBy(`Approved by ${me.name} · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`);
     setToast({
       bold: "JD approved",
       rest: " - job details re-read, waiting CVs scored, Research and Suggestions started, LinkedIn posts can go live",
@@ -103,8 +112,17 @@ export default function JobDescriptionView() {
     // also leaves the JD as it was.
     setTurns((all) => [...all, { me: t, aura: "I could not change it - this screen is not connected yet. The JD is as it was.", failed: true }]);
   };
+  const copy = async () => {
+    const text = SECTIONS.map((x) => [x.h, x.p, ...(x.lines ?? []), ...(x.list ?? [])].filter(Boolean).join("\n")).join("\n\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      setToast({ bold: "Copied", rest: " - the JD text is on your clipboard", n: Date.now() });
+    } catch {
+      setToast({ rest: "Could not copy - your browser blocked it", n: Date.now() });
+    }
+  };
   const reread = () => {
-    if (reading) return;
+    if (reading || !approved) return;
     setReading(true);
     timer.current = setTimeout(() => {
       setReading(false);
@@ -127,8 +145,7 @@ export default function JobDescriptionView() {
               version={version}
               onRestore={(n) => {
                 setVersion(n);
-                setToast({ bold: `Version ${n}`, rest: " is back. Approve it again when it is right.", n: Date.now() });
-                setApproved(false);
+                setToast({ bold: `Version ${n}`, rest: approved ? " is back. It stays approved." : " is back.", n: Date.now() });
               }}
             />
           </div>
@@ -170,10 +187,15 @@ export default function JobDescriptionView() {
               </p>
               <p className="text-small text-ink-2">
                 {approved
-                  ? "Research, Suggestions and matching are running. You can still change it here."
+                  ? `${approvedBy || "Approved"}. Research, Suggestions and matching are running. You can still change it here.`
                   : "Approving starts Research, Suggestions and matching, and lets LinkedIn posts go live."}
               </p>
             </div>
+            {approved && (
+              <button type="button" onClick={copy} className="whitespace-nowrap rounded-full border border-border bg-surface px-[max(1.1rem,12px)] py-[max(0.5rem,6px)] text-small font-medium text-ink hover:bg-surface-2">
+                Copy
+              </button>
+            )}
             {!approved && CAN_WRITE && (
               <button
                 type="button"
@@ -246,14 +268,14 @@ export default function JobDescriptionView() {
               <button
                 type="button"
                 onClick={reread}
-                disabled={reading || !CAN_WRITE}
-                title="Read the job details from the JD again"
+                disabled={reading || !CAN_WRITE || !approved}
+                title={approved ? "Read the job details from the JD again" : "Approve the JD first"}
                 className="ml-auto flex items-center gap-1.5 text-small text-ink-3 hover:text-ink disabled:hover:text-ink-3"
               >
                 <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={"size-3.5 " + (reading ? "animate-spin" : "")} aria-hidden="true">
                   <path d="M1.75 7a5.25 5.25 0 0 1 9.18-3.65l1.32 1.32M12.25 1.75v2.92H9.33" />
                 </svg>
-                {reading ? "Reading…" : readAt || "Re-read"}
+                {!approved ? "Approve the JD first" : reading ? "Reading…" : readAt || "Re-read"}
               </button>
             </div>
             <ul className="flex flex-wrap gap-2">

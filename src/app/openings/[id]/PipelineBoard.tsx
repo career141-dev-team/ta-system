@@ -5,7 +5,7 @@ import Automations from "./Automations";
 import { memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { DUR, EASE, gsap, useExit, useGSAP } from "@/lib/gsap";
-import { USER } from "@/lib/user";
+import { useRole } from "@/lib/role";
 import { SHOW_TABS } from "./view";
 import PillMenu, { type MenuOption } from "./PillMenu";
 import TickList from "./TickList";
@@ -15,6 +15,7 @@ import MoveForm from "./MoveForm";
 import Toast from "./Toast";
 import { STAGES, checkMove, movesFrom, type Needs } from "./pipelineRules";
 import WorkdayBlocked from "./WorkdayBlocked";
+import { arrivals, onArrival, type Arrival } from "./pipelineInbox";
 import { useWorkdayGate } from "@/lib/workday";
 
 // The CV preview is its own download, fetched while the screen is idle (OpeningView).
@@ -108,7 +109,30 @@ type Card = Person & {
   /** Years of experience and notice period in days, for the two filters. */
   yearsN: number;
   noticeDays: number;
+  /** Their own CV file, when they came from a view that had it. */
+  cv?: string;
 };
+
+/** Someone shortlisted in another view of this opening, as a card: theirs to work,
+ *  with the CV they came with; salary and notice period still to come from the
+ *  follow-up, so Director Review waits for them (the old rule). */
+const fromArrival = (a: Arrival, n: number): Card => ({
+  name: a.name,
+  title: a.title,
+  company: a.company || "Not on record",
+  location: a.location || "Not on record",
+  years: a.years ? a.years + " years" : "Not on record",
+  phone: "+94 77 000 0000",
+  email: "candidate@example.com",
+  id: "in-" + n,
+  mine: true,
+  owned: true,
+  channel: a.channel ?? "",
+  missing: [...(a.cv ? [] : ["CV"]), "Salary", "Notice Period"],
+  yearsN: a.years ?? 0,
+  noticeDays: a.notice ?? 0,
+  cv: a.cv,
+});
 
 /** Placeholder: the person's other open jobs (the same sample ones as Today), and
  *  the set a shortlist joins, until the backend sends them. */
@@ -202,6 +226,31 @@ export default function PipelineBoard() {
   const [board, setBoard] = useState<Record<string, Card[]>>(() =>
     Object.fromEntries(STAGES.map((s, i) => [s.name, cardsFor(i)])),
   );
+  // People shortlisted in the other views land at the top of TA Follow-Up. Each
+  // board keeps its own place in the list (see pipelineInbox).
+  const seenIn = useRef(0);
+  useEffect(() => {
+    const land = () => {
+      const from = seenIn.current;
+      if (arrivals.length <= from) return;
+      seenIn.current = arrivals.length;
+      const cards = arrivals.slice(from).map((a, i) => fromArrival(a, from + i));
+      setBoard((bd) => ({ ...bd, "TA Follow-Up": [...cards.reverse(), ...bd["TA Follow-Up"]] }));
+      // The board is usually hidden while the shortlist happens elsewhere, and a
+      // hidden column cannot scroll; once it shows, bring the column back to the top
+      // so the new card is the first thing seen.
+      // ponytail: checks twice a second for up to a minute, then gives up.
+      let tries = 0;
+      const toTop = () => {
+        const list = document.querySelector<HTMLElement>('[data-panel="pipeline"]:not(.hidden) [data-col][aria-label="TA Follow-Up"] [data-card-id]')?.parentElement;
+        if (list) list.scrollTo({ top: 0, behavior: "smooth" });
+        else if (++tries < 120) setTimeout(toTop, 500);
+      };
+      setTimeout(toTop, 0);
+    };
+    land();
+    return onArrival(land);
+  }, []);
   // A drop waiting to land: the floating copy flies into the card's new place.
   const landing = useRef<{ id: string; ghost: HTMLElement } | null>(null);
   // The move just made, told back to the person AFTER it happens (owner, 12 Nov 2026:
@@ -233,6 +282,14 @@ export default function PipelineBoard() {
 
   // The workday gate: a TA moves nobody until today's workday is started (6.2).
   // In a ref as well, because the drag handler below is made once.
+  // Who is looking decides some moves (a TA does not decide a shortlist; only a
+  // lead moves someone out of Placed). It follows "View as"; in a ref as well,
+  // because the drag handler below is made once.
+  const role = useRole();
+  const roleNow = useRef(role);
+  useEffect(() => {
+    roleNow.current = role;
+  }, [role]);
   const gate = useWorkdayGate();
   const gateNow = useRef(gate);
   useEffect(() => {
@@ -294,7 +351,7 @@ export default function PipelineBoard() {
     if (!menu) return;
     if (gate) return refuse(gate + GATE_HINT);
     const { card, stage } = menu;
-    const v = checkMove(card, stage, to, USER.role);
+    const v = checkMove(card, stage, to, role);
     if (!v.ok) return refuse(v.why);
     closeMenu();
     if (v.needs) openAsk(card, stage, to, v.needs);
@@ -407,7 +464,7 @@ export default function PipelineBoard() {
       const col = document.elementFromPoint(px, py)?.closest("[data-col]");
       const name = col?.getAttribute("aria-label") ?? null;
       const over = name && name !== from ? name : null;
-      const next = over && checkMove(card, from, over, USER.role).ok ? over : null;
+      const next = over && checkMove(card, from, over, roleNow.current).ok ? over : null;
       const no = over && !next ? over : null;
       if (no !== barred) {
         if (barred) colOf(barred)?.removeAttribute("data-no");
@@ -509,7 +566,7 @@ export default function PipelineBoard() {
         gsap.killTweensOf(slot);
         gsap.set(slot, { display: "none", height: 0, opacity: 0 });
       });
-      const v = to ? checkMove(card, from, to, USER.role) : null;
+      const v = to ? checkMove(card, from, to, roleNow.current) : null;
       const shut = gateNow.current;
       if (shut && (to || no)) {
         // Before the day is started nothing moves, whatever the stage rules say.
@@ -526,7 +583,7 @@ export default function PipelineBoard() {
         gsap.to(el, { opacity: 1, scale: 1, duration: DUR.base, delay: 0.1, onComplete: () => delete el.dataset.hold });
         if (to && v?.ok && v.needs) openAsk(card, from, to, v.needs);
         else if (no) {
-          const r = checkMove(card, from, no, USER.role);
+          const r = checkMove(card, from, no, roleNow.current);
           if (!r.ok) refuse(r.why);
         }
       }
@@ -719,7 +776,7 @@ export default function PipelineBoard() {
           name={cvFor.name}
           title={cvFor.title}
           // Sample: the two demo CVs in public/cvs; the real board reads each candidate's own.
-          src={cvFor.name === "Rashini Kaweesha" ? "/cvs/p1.pdf" : "/cvs/p2.pdf"}
+          src={cvFor.cv ?? (cvFor.name === "Rashini Kaweesha" ? "/cvs/p1.pdf" : "/cvs/p2.pdf")}
           onClose={() => setCvOpen(false)}
         />
       )}
@@ -742,7 +799,7 @@ export default function PipelineBoard() {
           at={menu.at}
           name={menu.card.name}
           from={menu.stage}
-          moves={movesFrom(menu.card, menu.stage, USER.role)}
+          moves={movesFrom(menu.card, menu.stage, role)}
           addOn={!!menu.card.addOn}
           backup={!!menu.card.backup}
           onMove={menuMove}

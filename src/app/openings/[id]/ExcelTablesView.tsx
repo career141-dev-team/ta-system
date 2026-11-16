@@ -7,9 +7,11 @@ import { BackButton } from "./PipelineBoard";
 import FindCvButton from "./FindCvButton";
 import PillMenu, { type MenuOption } from "./PillMenu";
 import Toast from "./Toast";
+import { sendToPipeline } from "./pipelineInbox";
 import WorkdayBlocked from "./WorkdayBlocked";
 import { FIELD_PILL } from "./filters";
 import { useLiftMenu } from "./liftMenu";
+import { useOpeningView } from "./view";
 
 // Headhunting > Excel Tables: the LinkedIn people a TA is working, sheet by sheet
 // (owner's design "Excel Tables", 13 Nov 2026). The rules are the old TA System's
@@ -47,6 +49,8 @@ type Row = {
   location?: string;
   notes: string[];
   matches?: { name: string; detail: string }[];
+  /** Another TA shortlisted this person first: nothing to send to the pipeline. */
+  shortlistedBy?: string;
 };
 type Sheet = { n: number; date: string; name?: string };
 
@@ -136,6 +140,10 @@ const START: Row[] = [
     interest: "no",
     why: "salary too low",
   }),
+  r("a9", 3, "Chamara Rajapaksha", "SAP Programme Lead", "Hayleys Fibre", {
+    interest: "yes",
+    shortlistedBy: "Hasini",
+  }),
   // Another TA's rows on this job: theirs to work, seen under "Added by: everyone".
   r("h1", 3, "Tharindu Perera", "S/4HANA Architect", "Lanka Walltiles", {
     addedBy: "Hasini",
@@ -192,7 +200,8 @@ export default function ExcelTablesView() {
   const gate = useWorkdayGate();
   const [rows, setRows] = useState(START);
   const [sheets, setSheets] = useState<Sheet[]>(SHEETS);
-  const [sheet, setSheet] = useState<number | null>(3);
+  // "all" shows every sheet at once.
+  const [sheet, setSheet] = useState<number | null | "all">(3);
   const [interest, setInterest] = useState<Interest | "all">("all");
   const [eyeOnly, setEyeOnly] = useState(false);
   const [addOnsOnly, setAddOnsOnly] = useState(false);
@@ -220,7 +229,7 @@ export default function ExcelTablesView() {
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
   const base = rows.filter(
     (x) =>
-      x.sheet === sheet &&
+      (sheet === "all" || x.sheet === sheet) &&
       (by === "all" || x.addedBy === by) &&
       (added === "any" ||
         x.added === added ||
@@ -237,7 +246,9 @@ export default function ExcelTablesView() {
     (x) => interest === "all" || x.interest === interest,
   );
   const inSheet = rows.filter(
-    (x) => x.sheet === sheet && (by === "all" || x.addedBy === by),
+    (x) =>
+      (sheet === "all" || x.sheet === sheet) &&
+      (by === "all" || x.addedBy === by),
   ).length;
   const sheetCount = (n: number | null) =>
     rows.filter((x) => x.sheet === n && mine(x)).length;
@@ -289,9 +300,11 @@ export default function ExcelTablesView() {
   // ---- Adding people ----
   const addFromPaste = (text: string) => {
     if (gate) return false;
-    if (sheet === null) {
-      say("Pick or start an L-sheet first", undefined, true);
-      return false;
+    // Not in a sheet or All: the link goes to your latest L-sheet, or starts L1.
+    let target = typeof sheet === "number" ? sheet : (sheets.at(-1)?.n ?? 0);
+    if (!target) {
+      target = 1;
+      setSheets([{ n: 1, date: "Today" }]);
     }
     const lines = text.split(/\r?\n/).filter((l) => l.trim());
     const many = lines.length > 1 || text.includes("\t");
@@ -331,7 +344,7 @@ export default function ExcelTablesView() {
       );
       const row = r(
         `n${Date.now()}${fresh.length}`,
-        sheet,
+        target,
         nameFrom(slug),
         "",
         "",
@@ -360,6 +373,7 @@ export default function ExcelTablesView() {
     if (fresh.length) {
       setRows((all) => [...fresh, ...all]);
       setInterest("all");
+      if (sheet !== "all") setSheet(target);
       if (added !== "any" && added !== "today") setAdded("today");
     }
     if (many)
@@ -373,7 +387,7 @@ export default function ExcelTablesView() {
       );
     else if (fresh.length)
       say(
-        ` added to L${sheet} - name guessed from the link, check it`,
+        ` added to L${target} - name guessed from the link, check it`,
         fresh[0].name,
       );
     return fresh.length > 0 || there > 0;
@@ -381,6 +395,10 @@ export default function ExcelTablesView() {
 
   // ---- Row actions ----
   const toPipeline = (x: Row, quiet = false, fromYes = false) => {
+    if (x.shortlistedBy) {
+      if (!quiet) say(` was shortlisted first by ${x.shortlistedBy}`, x.name, true);
+      return false;
+    }
     if (x.eye && !x.hasCv) {
       if (!quiet)
         say(
@@ -390,7 +408,9 @@ export default function ExcelTablesView() {
         );
       return false;
     }
-    edit(x.id, { pipeline: "TA Follow-up", interest: "yes" });
+    edit(x.id, { pipeline: "TA Follow-up", interest: "yes", why: undefined });
+    // They show on the Pipeline board, in TA Follow-Up (source: headhunted).
+    sendToPipeline({ name: x.name, title: x.title, company: x.company, channel: "HH" });
     if (!quiet)
       say(
         fromYes
@@ -401,7 +421,11 @@ export default function ExcelTablesView() {
     return true;
   };
   const canGo = (x: Row) =>
-    mine(x) && x.interest === "yes" && !x.pipeline && !(x.eye && !x.hasCv);
+    mine(x) &&
+    !x.shortlistedBy &&
+    x.interest === "yes" &&
+    !x.pipeline &&
+    !(x.eye && !x.hasCv);
 
   const tickedRows = rows.filter((x) => ticked.includes(x.id));
   const eligible = tickedRows.filter(canGo);
@@ -449,6 +473,23 @@ export default function ExcelTablesView() {
               onDelete={() => deleteSheet(s)}
             />
           ))}
+          <button
+            type="button"
+            onClick={() => {
+              setSheet("all");
+              setTicked([]);
+              setAdded("any");
+            }}
+            className={
+              BTN +
+              " " +
+              (sheet === "all"
+                ? "bg-ink text-white"
+                : "bg-surface-2 font-normal text-ink-2 hover:text-ink")
+            }
+          >
+            All · {rows.filter(mine).length}
+          </button>
           {loose > 0 && (
             <button
               type="button"
@@ -480,7 +521,7 @@ export default function ExcelTablesView() {
           <CaptureChip />
           <ExportMenu
             rows={exportRows}
-            file={`PGP Glass - Head of SAP - ${sheetName ? `L${sheetName.n}` : "Not in a sheet"}.csv`}
+            file={`PGP Glass - Head of SAP - ${sheetName ? `L${sheetName.n}` : sheet === "all" ? "All sheets" : "Not in a sheet"}.csv`}
             onCopied={() => say("Copied - paste it into Excel")}
           />
         </div>
@@ -514,7 +555,7 @@ export default function ExcelTablesView() {
         <WorkdayBlocked what="add or work LinkedIn profiles" className="mt-3" />
       )}
 
-      <PasteBar disabled={!!gate || sheet === null} onAdd={addFromPaste} />
+      <PasteBar disabled={!!gate} onAdd={addFromPaste} />
 
       {/* Filters */}
       <div className="mt-[max(1rem,10px)] flex flex-wrap items-center gap-[max(0.5rem,6px)]">
@@ -561,8 +602,8 @@ export default function ExcelTablesView() {
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search this sheet"
-              aria-label="Search this sheet"
+              placeholder={sheet === "all" ? "Search every sheet" : "Search this sheet"}
+              aria-label={sheet === "all" ? "Search every sheet" : "Search this sheet"}
               className="min-w-0 flex-1 bg-transparent text-small text-ink outline-none placeholder:text-ink-3"
             />
           </label>
@@ -631,6 +672,16 @@ export default function ExcelTablesView() {
                 say={say}
                 onPipeline={() => toPipeline(x)}
                 onYes={() => toPipeline(x, false, true)}
+                onNo={(why) => {
+                  const was = x.pipeline;
+                  edit(x.id, { interest: "no", why, pipeline: undefined });
+                  say(
+                    was
+                      ? " marked not interested - moved to Rejected on the pipeline"
+                      : " marked not interested",
+                    x.name,
+                  );
+                }}
                 onRemove={() => {
                   setRows((all) => all.filter((y) => y.id !== x.id));
                   setTicked((t) => t.filter((i) => i !== x.id));
@@ -682,16 +733,22 @@ export default function ExcelTablesView() {
           onOutcome={(to, why) => {
             if (to === "yes") {
               const go = tickedRows.filter(
-                (x) => mine(x) && !x.pipeline && !(x.eye && !x.hasCv),
+                (x) =>
+                  mine(x) &&
+                  !x.pipeline &&
+                  !x.shortlistedBy &&
+                  !(x.eye && !x.hasCv),
               );
               go.forEach((x) => toPipeline(x, true));
               const left =
-                tickedRows.filter((x) => mine(x) && !x.pipeline).length -
+                tickedRows.filter(
+                  (x) => mine(x) && !x.pipeline && !x.shortlistedBy,
+                ).length -
                 go.length;
               say(
                 `${go.length} interested - added to the pipeline, TA Follow-up` +
                   (left
-                    ? `. ${left} eye-marked without a CV stayed as they were`
+                    ? `. ${left} stayed as they were (eye-marked without a CV, or shortlisted first by another TA)`
                     : ""),
                 undefined,
                 left > 0,
@@ -916,6 +973,7 @@ function TableRow({
   say,
   onPipeline,
   onYes,
+  onNo,
   onRemove,
 }: {
   x: Row;
@@ -927,9 +985,11 @@ function TableRow({
   say: (rest: string, bold?: string, warn?: boolean) => void;
   onPipeline: () => void;
   onYes: () => void;
+  onNo: (why: string) => void;
   onRemove: () => void;
 }) {
   const can = mine && !blocked;
+  const { go } = useOpeningView();
   return (
     <tr
       className={
@@ -965,7 +1025,7 @@ function TableRow({
             />
           </a>
           <div className="min-w-0">
-            <p className="flex items-center gap-1.5 font-medium text-ink">
+            <div className="flex items-center gap-1.5 font-medium text-ink">
               <span className="truncate">{x.name}</span>
               {x.addOn && (
                 <span className="rounded-full bg-violet-soft px-1.5 text-caption font-medium text-violet">
@@ -973,14 +1033,15 @@ function TableRow({
                 </span>
               )}
               {x.notes.length > 0 && (
-                <span
-                  title={x.notes.join("\n")}
-                  className="text-caption font-normal text-ink-3"
-                >
-                  · {x.notes.length} {x.notes.length === 1 ? "note" : "notes"}
-                </span>
+                <NotesList
+                  x={x}
+                  can={can}
+                  onRemove={(i) =>
+                    edit({ notes: x.notes.filter((_, j) => j !== i) })
+                  }
+                />
               )}
-            </p>
+            </div>
             <p className="truncate text-caption text-ink-3">
               {x.title || "Title to check"}
               {x.location ? ` · ${x.location}` : ""}
@@ -1028,22 +1089,60 @@ function TableRow({
             <span className="text-caption text-ink-3">
               {x.addedBy}&apos;s row
             </span>
-          ) : x.pipeline ? (
-            <span className="rounded-full bg-brand-soft px-3 py-1 text-caption font-medium text-brand">
-              In pipeline · {x.pipeline}
+          ) : x.shortlistedBy ? (
+            <span className="text-caption text-ink-3">
+              Shortlisted first by {x.shortlistedBy}
             </span>
-          ) : x.interest === "yes" ? (
+          ) : x.pipeline ? (
+            <>
+              <button
+                type="button"
+                onClick={() => go("pipeline")}
+                title="Open the Pipeline"
+                className="rounded-full bg-brand-soft px-3 py-1 text-caption font-medium text-brand hover:bg-brand-tint"
+              >
+                In pipeline · {x.pipeline} →
+              </button>
+              <NoButton
+                name={x.name}
+                blocked={blocked}
+                label="Not interested"
+                onSave={onNo}
+              />
+            </>
+          ) : x.interest === "no" ? (
             <button
               type="button"
               disabled={blocked}
-              onClick={onPipeline}
+              // Way back: the same rules as Yes - into the pipeline, eye-marked needs a CV.
+              onClick={onYes}
               className={
                 BTN +
-                " bg-brand text-white hover:bg-brand-strong disabled:opacity-40"
+                " border border-border font-normal text-success hover:bg-success-soft disabled:opacity-40"
               }
             >
-              Add to pipeline
+              Interested after all
             </button>
+          ) : x.interest === "yes" ? (
+            <>
+              <button
+                type="button"
+                disabled={blocked}
+                onClick={onPipeline}
+                className={
+                  BTN +
+                  " bg-brand text-white hover:bg-brand-strong disabled:opacity-40"
+                }
+              >
+                Add to pipeline
+              </button>
+              <NoButton
+                name={x.name}
+                blocked={blocked}
+                label="Not interested"
+                onSave={onNo}
+              />
+            </>
           ) : x.interest === "approach" ? (
             <>
               <span className="text-ink-3">Interested?</span>
@@ -1211,10 +1310,12 @@ function Phone({
 function NoButton({
   name,
   blocked,
+  label = "No",
   onSave,
 }: {
   name: string;
   blocked: boolean;
+  label?: string;
   onSave: (why: string) => void;
 }) {
   const { open, setOpen, root, panel, shown } = useLiftMenu();
@@ -1239,7 +1340,7 @@ function NoButton({
           " border border-border font-normal text-danger hover:bg-danger-soft disabled:opacity-40"
         }
       >
-        No
+        {label}
       </button>
       {shown && (
         <div
@@ -1869,3 +1970,57 @@ const SearchIcon = () => (
     <path d="m16 16 4 4" />
   </svg>
 );
+
+/** "· 2 notes": a press opens them (readable on touch), each with a remove ✕. */
+function NotesList({
+  x,
+  can,
+  onRemove,
+}: {
+  x: Row;
+  can: boolean;
+  onRemove: (i: number) => void;
+}) {
+  const { open, setOpen, root, panel, shown } = useLiftMenu();
+  return (
+    <span ref={root} className="relative">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className="text-caption font-normal text-ink-3 hover:text-ink"
+      >
+        · {x.notes.length} {x.notes.length === 1 ? "note" : "notes"}
+      </button>
+      {shown && (
+        <div
+          ref={panel}
+          role="dialog"
+          aria-label={`Notes on ${x.name}`}
+          className={LIFT + " left-0 top-full w-[min(20rem,80vw)] font-normal"}
+        >
+          <ul className="flex flex-col gap-2">
+            {x.notes.map((n, i) => (
+              <li key={i} className="flex items-start gap-2 text-small text-ink">
+                <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{n}</span>
+                {can && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onRemove(i);
+                      if (x.notes.length === 1) setOpen(false);
+                    }}
+                    aria-label="Remove this note"
+                    className="shrink-0 text-ink-3 hover:text-danger"
+                  >
+                    ✕
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </span>
+  );
+}

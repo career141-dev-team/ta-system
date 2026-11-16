@@ -127,9 +127,11 @@ export const EMPTY: Read = {
   priority: 3,
   team: [],
   musts: "",
-  hiringFor: "Any nationality",
+  // The TA System's default is a local hire.
+  hiringFor: "Local",
   gender: "Any",
-  autoFollowUp: true,
+  // Off until someone switches it on, as in the TA System.
+  autoFollowUp: false,
   read: [],
 };
 
