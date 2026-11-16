@@ -199,7 +199,9 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
           // A phone gets narrow side margins, and the opening's stacked card scrolls
           // inside the page (13 Nov 2026: "responsive for mobile and all devices").
           (focus
-            ? "mx-11.25 mb-14 mt-6 max-md:mx-3 max-md:mt-3"
+            ? // The board sits close under the top bar's space (owner, 16 Nov 2026: "the middle card slightly upper").
+              // No bottom margin: the views bar has its own row under the board (TabsBar).
+              "mx-[max(5.5rem,40px)] -mt-3 max-md:mx-3 max-md:mt-3"
             : "mx-26.25 mt-10.25 pb-8 max-md:mx-4 max-md:mt-5 max-md:overflow-y-auto")
         }
       >
@@ -213,7 +215,7 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
               className={v === view ? "relative flex min-h-0 flex-1 flex-col rounded-lg bg-white" : "hidden"}
             >
               {/* The email view names its own notch: Midday or End of day email. */}
-              {v !== "midday" && <Notch label={viewLabel(v)} />}
+              {v !== "midday" && <Notch small label={viewLabel(v)} />}
               <Suspense fallback={<ViewSkeleton />}>
               {v === "pipeline" ? (
                 <PipelineBoard />
@@ -305,11 +307,12 @@ function ComingView({ label }: { label: string }) {
 
 const TABS_OUT = { opacity: 0, y: 16, scale: 0.97 };
 
-/** The bottom bar and everything that raises it. It lives with the opening, not
- *  with one view, so it stays up when the cursor carries the person to Overview -
- *  they can keep moving along the tabs (owner, 12 Nov 2026). The bottom hover edge
- *  and the arrow are only there inside a view; on Overview the bar stays while the
- *  cursor is on it and sinks when it leaves. */
+/** The bottom bar. It lives with the opening, not with one view, so it stays up
+ *  when the cursor carries the person to Overview - they can keep moving along the
+ *  tabs (owner, 12 Nov 2026). Inside a view it is always there, in its own row
+ *  under the board, never a layer over the cards (owner, 16 Nov 2026: "it needs to
+ *  have its own space"; this replaced the bottom hover edge and the arrow). On
+ *  Overview it floats while the cursor is on it and sinks when it leaves. */
 function TabsBar() {
   const { view, go } = useOpeningView();
   const focus = view !== "overview";
@@ -318,14 +321,7 @@ function TabsBar() {
   // The cursor is on the bar: nothing closes it under the cursor (a peek's timer,
   // a view that opened from a tab and peeks).
   const inside = useRef(false);
-  // The bar rises when the pointer rests on the bottom edge or the arrow, like the
-  // top bar does at the top, and goes a moment after the pointer leaves - the grace
-  // lets it travel from the arrow up to the bar. It opens only after HOVER_IN of
-  // rest, so a pointer passing by does not raise it.
-  const openTabs = () => {
-    clearTimeout(tabsTimer.current);
-    tabsTimer.current = setTimeout(() => setTabsOpen(true), HOVER_IN);
-  };
+  // On Overview the bar goes a moment after the pointer leaves it.
   const closeTabsSoon = () => {
     clearTimeout(tabsTimer.current);
     tabsTimer.current = setTimeout(() => setTabsOpen(false), HOVER_OUT);
@@ -385,11 +381,11 @@ function TabsBar() {
   }, [focus, peek]);
   useEffect(() => () => clearTimeout(tabsTimer.current), []);
 
-  // Back raises the bar and keeps it up (no timer): the person chooses where to go,
-  // the Overview tab or another view (owner, 12 Nov 2026). It goes when the pointer
-  // leaves it, on Escape, or with the choice.
+  // Back used to raise the bar (owner, 12 Nov 2026). Inside a view the bar is now
+  // always there, so Back has nothing to raise: it goes to the opening (16 Nov 2026).
   useEffect(() => {
     const show = () => {
+      if (focus) return go("overview");
       clearTimeout(tabsTimer.current);
       setTabsOpen(true);
     };
@@ -400,7 +396,7 @@ function TabsBar() {
       window.removeEventListener(SHOW_TABS, show);
       window.removeEventListener("keydown", esc);
     };
-  }, []);
+  }, [focus, go]);
 
   // Left and right arrow keys move along the tabs of the view's own set, like a
   // click on the next one: inside a view, or on the opening while the bar is up. Not while
@@ -430,58 +426,20 @@ function TabsBar() {
   }, [focus, tabsOpen, view, go, peek]);
 
   // Closing, the bar sinks and fades the way it rose instead of vanishing.
-  const tabsShown = useExit(tabsOpen, tabsNav, TABS_OUT);
+  // Inside a view it is always shown.
+  const tabsShown = useExit(tabsOpen || focus, tabsNav, TABS_OUT);
 
   return (
     <>
-      {tabsShown && <ViewTabs ref={tabsNav} onEnter={enterBar} onLeave={leaveBar} onHold={() => (held.current = true)} />}
-      {focus && (
-        <>
-          {/* The hover zone along the bottom edge that brings the View tabs up. */}
-          <div
-            aria-hidden="true"
-            onMouseEnter={openTabs}
-            onMouseLeave={closeTabsSoon}
-            className="fixed inset-x-0 bottom-0 z-30 h-5"
-          />
-          <div
-            onMouseEnter={openTabs}
-            onMouseLeave={closeTabsSoon}
-            className="fixed bottom-[max(0.75rem,8px)] left-1/2 z-40 -translate-x-1/2"
-          >
-            <button
-              type="button"
-              aria-expanded={tabsOpen}
-              aria-label={tabsOpen ? "Hide the views" : "Show the views"}
-              onClick={() => {
-                // The press decides: a touch also sends a late "pointer arrived".
-                clearTimeout(tabsTimer.current);
-                setTabsOpen((o) => !o);
-              }}
-              className="flex h-[max(1.9rem,24px)] w-[max(3.4rem,44px)] items-center justify-center rounded-full bg-white text-ink shadow-float transition-colors hover:bg-surface-2"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.4"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className={"size-[max(1rem,14px)] transition-transform " + (tabsOpen ? "rotate-180" : "")}
-                aria-hidden="true"
-              >
-                <path d="m6 15 6-6 6 6" />
-              </svg>
-            </button>
-          </div>
-        </>
-      )}
+      {tabsShown && <ViewTabs ref={tabsNav} docked={focus} onEnter={enterBar} onLeave={leaveBar} onHold={() => (held.current = true)} />}
     </>
   );
 }
 
-/** Focus mode: hides the top bar; it slides down over a blurred board when the
- *  pointer reaches the top of the window. */
+/** Focus mode: the top bar keeps its place - its space stays, nothing moves up into
+ *  it - but stays out of sight until the pointer comes to that space; then it shows
+ *  there, as on the opening page, never over the board and with no blur (owner,
+ *  16 Nov 2026: "the space needs to be there... no need to come over"). */
 function FocusChrome() {
   const strip = useRef<HTMLDivElement>(null);
   useGSAP(() => {
@@ -491,35 +449,34 @@ function FocusChrome() {
     // A phone or tablet has no pointer to bring a hidden bar back, so there the
     // top bar simply stays in place (13 Nov 2026).
     if (!window.matchMedia("(hover: hover) and (min-width: 768px)").matches) return;
-    // Set here, in the layout effect, so the bar is already out of the flow and
-    // above the window before the first frame of the view is painted. Inline, so
-    // it does not depend on a stylesheet the dev server may still be caching.
-    gsap.set(bar, {
-      position: "fixed",
-      top: 0,
-      left: 0,
-      right: 0,
-      zIndex: 50,
-      boxShadow: "0 12px 40px rgb(0 0 0 / 0.08)",
-      yPercent: -170,
-    });
+    // Set here, in the layout effect, so the bar is already out of sight before the
+    // first frame of the view is painted. It stays in the flow, so its space stays.
+    // The hover zone covers exactly that space; the bar sits above it once shown.
+    gsap.set(bar, { position: "relative", zIndex: 50, opacity: 0, y: -28, pointerEvents: "none" });
+    // The top bar is exactly as wide as the white board under it, edge to edge
+    // (owner, 16 Nov 2026: "top bar = board width"); it never squeezes below what its
+    // own links need.
+    const board = () => [...document.querySelectorAll<HTMLElement>("[data-view-stage]")].find((n) => n.getClientRects().length > 0);
+    const fit = () => {
+      const w = board()?.getBoundingClientRect().width;
+      if (w) gsap.set(bar, { width: w, minWidth: "min-content", marginLeft: "auto", marginRight: "auto" });
+      zone.style.height = `${Math.ceil(bar.getBoundingClientRect().bottom) + 6}px`;
+    };
+    fit();
+    addEventListener("resize", fit);
+    const follow = new ResizeObserver(fit);
+    const v = board();
+    if (v) follow.observe(v);
 
     let timer: ReturnType<typeof setTimeout> | undefined;
     let intent: ReturnType<typeof setTimeout> | undefined;
-    // The bar slides down OVER the board, and the board behind it blurs, so it is
-    // plain the bar is on top and the board has not moved (owner, 12 Nov 2026: "no
-    // need drag kanban... blur the background and show the top bar as before").
-    // Only the veil's opacity is animated; the blur itself never changes.
-    // The veil on screen, not one in a hidden earlier visit of this page.
-    const veil = [...document.querySelectorAll<HTMLElement>("[data-topnav-veil]")].find((v) => v.getClientRects().length > 0) ?? null;
     const show = () => {
       clearTimeout(timer);
-      gsap.to(bar, { yPercent: 0, duration: DUR.base, overwrite: true });
-      if (veil) gsap.to(veil, { autoAlpha: 1, duration: DUR.fast, overwrite: true });
+      // It settles a little above its usual place (owner, 16 Nov 2026: "slightly more up").
+      gsap.to(bar, { opacity: 1, y: -18, pointerEvents: "auto", duration: DUR.base, overwrite: true });
     };
     const hide = () => {
-      gsap.to(bar, { yPercent: -170, duration: DUR.fast, ease: EASE.in, overwrite: true });
-      if (veil) gsap.to(veil, { autoAlpha: 0, duration: DUR.fast, ease: EASE.in, overwrite: true });
+      gsap.to(bar, { opacity: 0, y: -28, pointerEvents: "none", duration: DUR.fast, ease: EASE.in, overwrite: true });
     };
     const hideSoon = () => {
       clearTimeout(timer);
@@ -545,6 +502,8 @@ function FocusChrome() {
     return () => {
       clearTimeout(timer);
       clearTimeout(intent);
+      removeEventListener("resize", fit);
+      follow.disconnect();
       zone.removeEventListener("mouseenter", showSoon);
       zone.removeEventListener("mouseleave", hideSoon);
       bar.removeEventListener("mouseenter", show);
@@ -552,23 +511,13 @@ function FocusChrome() {
       bar.removeEventListener("focusin", show);
       bar.removeEventListener("focusout", leftBar);
       gsap.killTweensOf(bar);
-      gsap.set(bar, { clearProps: "position,top,left,right,zIndex,boxShadow,transform" });
-      if (veil) gsap.killTweensOf(veil);
+      gsap.set(bar, { clearProps: "position,zIndex,opacity,transform,pointerEvents,width,minWidth,marginLeft,marginRight" });
     };
   });
 
   return (
-    <>
-      {/* The soft blur over the board while the top bar is down (z under the bar's 50). */}
-      <div
-        data-topnav-veil
-        aria-hidden="true"
-        style={{ opacity: 0, visibility: "hidden" }}
-        className="pointer-events-none fixed inset-0 z-[45] bg-white/30 backdrop-blur-[6px]"
-      />
-      {/* The hover zone along the top edge that brings the top bar down. */}
-      <div ref={strip} aria-hidden="true" className="fixed inset-x-0 top-0 z-40 h-5" />
-    </>
+    // The hover zone along the top edge that brings the top bar down.
+    <div ref={strip} aria-hidden="true" className="fixed inset-x-0 top-0 z-40 h-5" />
   );
 }
 
@@ -635,11 +584,14 @@ function keepSet(set: ViewSet) {
  *  set at once. The black pill flows like water to whichever tab is picked. */
 function ViewTabs({
   ref: root,
+  docked,
   onEnter,
   onLeave,
   onHold,
 }: {
   ref: RefObject<HTMLElement | null>;
+  /** Inside a view: its own row under the board. Else it floats in the same place. */
+  docked: boolean;
   onEnter: () => void;
   onLeave: () => void;
   onHold: () => void;
@@ -723,12 +675,32 @@ function ViewTabs({
   );
 
   return (
-    // pb bridges the gap down to the arrow, so moving between them keeps it open.
+    // Same padding both ways, so the bar does not jump when a view opens or closes.
     <div
       onMouseEnter={onEnter}
       onMouseLeave={onLeave}
-      className="fixed bottom-[max(2.6rem,32px)] left-1/2 z-40 -translate-x-1/2 pb-[max(0.8rem,8px)]"
+      className={"py-[max(0.6rem,6px)] " + (docked ? "group relative flex shrink-0 justify-center pb-[max(1.75rem,16px)]" : "fixed bottom-0 left-1/2 z-40 -translate-x-1/2")}
     >
+      {/* Inside a view the bar keeps its space but shows only while the pointer is on
+          that space or its arrow, like the top bar (owner, 16 Nov 2026). Keyboard focus
+          shows it too. */}
+      {docked && (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute left-1/2 top-1/2 flex size-[max(2.25rem,28px)] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-surface text-ink-2 shadow-card transition-opacity duration-200 group-focus-within:opacity-0 group-hover:opacity-0"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="size-1/2">
+            <path d="m6 15 6-6 6 6" />
+          </svg>
+        </span>
+      )}
+      <div
+        className={
+          docked
+            ? "translate-y-2 opacity-0 transition duration-200 group-focus-within:translate-y-0 group-focus-within:opacity-100 group-hover:translate-y-0 group-hover:opacity-100"
+            : "contents"
+        }
+      >
       <nav
         ref={root}
         aria-label="Views of this opening"
@@ -815,6 +787,7 @@ function ViewTabs({
           );
         })}
       </nav>
+      </div>
     </div>
   );
 }

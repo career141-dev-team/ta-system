@@ -758,7 +758,7 @@ export default function DailyEmailView() {
       ref={root}
       className="flex min-h-0 flex-1 flex-col px-[max(2.2rem,14px)] pb-[max(1.4rem,12px)] pt-[max(1.6rem,14px)] max-md:pt-11"
     >
-      <Notch label={isEod ? "End of day email" : "Midday email"} />
+      <Notch small label={isEod ? "End of day email" : "Midday email"} />
 
       {/* Back · Midday | End of day · today's middays and + · draft saved · 31 days */}
       <div className="flex flex-wrap items-center gap-x-[max(1rem,10px)] gap-y-2">

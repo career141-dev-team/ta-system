@@ -68,6 +68,9 @@ export default function CvPreview({
 }) {
   // The green box AURA puts on page 1 when asked; dragged by hand too.
   const [box, setBox] = useState<Box | null>(null);
+  // AURA's round button sits outside the CV's frame (owner, 16 Nov 2026); pressed, its
+  // chat opens across the bottom of the CV, as wide as the CV.
+  const [auraOpen, setAuraOpen] = useState(false);
   const own = useRef<HTMLDivElement>(null);
   const root = ref ?? own;
   const [full, setFull] = useState(false);
@@ -128,7 +131,7 @@ export default function CvPreview({
           "absolute flex flex-col bg-ink pr-[2%] shadow-[0_-20px_80px_rgba(0,0,0,0.25)] " +
           (full
             ? "inset-[max(1rem,8px)] rounded-lg pl-[3%] pt-[max(3.25rem,24px)]"
-            : "bottom-0 left-[12.3%] top-[11%] w-[75.3%] rounded-t-[3.75rem] pl-[5%] pt-[max(4.75rem,28px)] " +
+            : "bottom-0 left-[10%] top-[5%] w-[80%] rounded-t-[3.75rem] pl-[4%] pt-[max(3.75rem,26px)] " +
               // A phone: the sheet takes the whole width.
               "max-md:left-0 max-md:top-[7%] max-md:w-full max-md:rounded-t-lg max-md:px-2 max-md:pt-12")
         }
@@ -178,7 +181,9 @@ export default function CvPreview({
             </a>
           </div>
         )}
-        {/* The CV scrolls inside the dark frame; the scrollbar sits in the frame's right gutter. */}
+        {/* The CV scrolls inside the dark frame; the scrollbar sits in the frame's right gutter.
+            AURA shares the CV's box, so its chat opens exactly as wide as the CV. */}
+        <div className="relative flex min-h-0 flex-1 flex-col">
         {src ? (
           <div className="min-h-0 flex-1 overflow-hidden rounded-t-[2.6rem] bg-ink max-md:rounded-t-md">
             <CvPages key={src} src={src} fit="width" overlay={box && <GreenBox box={box} setBox={setBox} />} />
@@ -248,8 +253,24 @@ export default function CvPreview({
           </article>
         </div>
         )}
-        <CvAgent src={src} start={start} box={box} setBox={setBox} sampleText={sampleText(name, title)} />
+        <CvAgent open={auraOpen} onClose={() => setAuraOpen(false)} src={src} start={start} box={box} setBox={setBox} sampleText={sampleText(name, title)} />
+        </div>
       </section>
+      {!auraOpen && (
+        <button
+          type="button"
+          onClick={() => setAuraOpen(true)}
+          aria-label="Ask AURA - tell it what to do on this CV"
+          title="Ask AURA"
+          className={
+            "absolute bottom-[max(2rem,16px)] z-10 flex size-[max(4.5rem,54px)] items-center justify-center overflow-hidden rounded-full bg-black shadow-float ring-2 ring-white/15 transition-transform hover:scale-105 " +
+            // Beside the frame on its right; over it when the frame fills the window.
+            (full ? "right-[max(2.5rem,20px)]" : "left-[calc(90%+max(1.25rem,10px))] max-md:left-auto max-md:right-3")
+          }
+        >
+          <Image src="/aura-mark.png" alt="" width={56} height={56} className="size-full" />
+        </button>
+      )}
     </div>,
     document.body,
   );
@@ -309,19 +330,22 @@ function GreenBox({ box, setBox }: { box: Box; setBox: (b: Box) => void }) {
 
 /** AURA on the CV: say what to do (the green box) or ask about the CV. */
 function CvAgent({
+  open,
+  onClose,
   src,
   start,
   box,
   setBox,
   sampleText,
 }: {
+  open: boolean;
+  onClose: () => void;
   src?: string;
   start: BoxContent;
   box: Box | null;
   setBox: (b: Box | null) => void;
   sampleText: string;
 }) {
-  const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [talk, setTalk] = useState<{ me: string; aura: string }[]>([]);
   const list = useRef<HTMLDivElement>(null);
@@ -340,67 +364,76 @@ function CvAgent({
   const tries = box
     ? ["Move it to the top left", "Make it wider", "What are their skills?"]
     : ["Add the green box", "What are their skills?", "How many years of experience?"];
+  if (!open) return null;
+  // The same chat as the Database board (DESIGN.md: the AURA chat bar): AURA's lines
+  // beside its mark, the person's in a soft bubble, one-tap chips, the rounded bar.
   return (
-    <div className="absolute bottom-[max(1.25rem,10px)] right-[max(1.6rem,10px)] z-10 flex w-[min(380px,calc(100%-20px))] flex-col items-end gap-2">
-      {open && (
-        <div className="flex max-h-[min(60dvh,420px)] w-full flex-col rounded-lg bg-surface shadow-float">
-          <div ref={list} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 [scrollbar-width:thin]">
-            {!talk.length && (
-              <p className="text-[max(0.875rem,12px)] text-ink-2">
-                Tell me what to do on this CV, or ask about it. I can add the green box with their details, move it, size it and change what it says.
-              </p>
-            )}
-            {talk.map((m, i) => (
-              <div key={i} className="space-y-1.5">
-                <p className="ml-auto w-fit max-w-[85%] rounded-lg rounded-br-xs bg-surface-2 px-3 py-2 text-[max(0.875rem,12px)] text-ink">{m.me}</p>
-                <p className="whitespace-pre-line text-[max(0.875rem,12px)] text-ink">{m.aura}</p>
-              </div>
-            ))}
+    <div className="absolute inset-x-0 bottom-0 z-10 flex max-h-[min(58%,460px)] flex-col rounded-t-lg bg-surface shadow-float">
+      <div className="flex items-center gap-3 px-[max(1.5rem,14px)] pt-[max(1rem,10px)]">
+        <Image src="/aura-mark.png" alt="AURA" width={40} height={40} className="size-[max(2.75rem,34px)] rounded-full bg-black" />
+        <p className="text-body font-medium text-ink">Tell me what to do on this CV, or ask about it</p>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close AURA"
+          className="ml-auto flex size-[max(2.25rem,30px)] items-center justify-center rounded-full text-ink-3 hover:bg-surface-2 hover:text-ink"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="size-1/2" aria-hidden="true">
+            <path d="M6 6l12 12M18 6 6 18" />
+          </svg>
+        </button>
+      </div>
+      <div ref={list} className="min-h-0 flex-1 space-y-[max(1rem,10px)] overflow-y-auto px-[max(1.5rem,14px)] py-[max(1rem,10px)] [scrollbar-width:thin]">
+        {!talk.length && (
+          <p className="text-body text-ink-2">I can add the green box with their details, move it, size it and change what it says - or answer anything from the CV.</p>
+        )}
+        {talk.map((m, i) => (
+          <div key={i} className="flex flex-col gap-[max(0.6rem,6px)]">
+            <p className="max-w-[80%] self-end whitespace-pre-line rounded-lg rounded-br-xs bg-surface-2 px-[max(1.1rem,12px)] py-[max(0.6rem,7px)] text-body text-ink">{m.me}</p>
+            <div className="flex items-start gap-[max(0.75rem,8px)]">
+              <Image src="/aura-mark.png" alt="" width={40} height={40} className="size-[max(2.25rem,30px)] shrink-0 rounded-full bg-black" />
+              <p className="whitespace-pre-line pt-1 text-body text-ink">{m.aura}</p>
+            </div>
           </div>
-          <div className="flex flex-wrap gap-1.5 px-4 pb-2">
-            {tries.map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => send(t)}
-                className="rounded-full border border-border px-2.5 py-1 text-[max(0.75rem,11px)] text-ink-2 hover:border-border-strong hover:text-ink"
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              send(draft);
-            }}
-            className="flex items-center gap-2 border-t border-border p-2"
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-2 px-[max(1.5rem,14px)] pb-[max(0.75rem,8px)]">
+        {tries.map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => send(t)}
+            className="rounded-full border border-border px-3.5 py-1.5 text-small text-ink-2 hover:border-border-strong hover:bg-surface-2 hover:text-ink"
           >
-            <input
-              autoFocus
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder="e.g. add the green box with expected salary 550k"
-              aria-label="Tell AURA what to do on this CV"
-              className="min-w-0 flex-1 bg-transparent px-2 text-[max(0.875rem,12px)] text-ink outline-none placeholder:text-ink-3"
-            />
-            <button disabled={!draft.trim()} className="rounded-full bg-brand px-3 py-1.5 text-[max(0.8125rem,11.5px)] font-medium text-white disabled:opacity-40">
-              Send
-            </button>
-          </form>
-        </div>
-      )}
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className="flex items-center gap-2 rounded-full bg-surface py-1.5 pl-1.5 pr-4 text-[max(0.875rem,12px)] font-medium text-ink shadow-float hover:bg-surface-2"
+            {t}
+          </button>
+        ))}
+      </div>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          send(draft);
+        }}
+        className="mx-[max(1.5rem,14px)] mb-[max(1rem,10px)] flex items-center gap-[max(0.75rem,8px)] rounded-xl bg-surface p-2 shadow-float ring-1 ring-border/60 transition-shadow focus-within:ring-2 focus-within:ring-brand/30"
       >
-        <span className="flex size-7 overflow-hidden rounded-full bg-black">
-          <Image src="/aura-mark.png" alt="" width={56} height={56} className="size-full" />
-        </span>
-        {open ? "Close" : "Ask AURA"}
-      </button>
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="e.g. add the green box with expected salary 550k"
+          aria-label="Tell AURA what to do on this CV"
+          className="min-w-0 flex-1 bg-transparent px-3 text-body text-ink outline-none placeholder:text-ink-3"
+        />
+        <button
+          disabled={!draft.trim()}
+          aria-label="Send"
+          className="flex size-[max(2.5rem,34px)] shrink-0 items-center justify-center rounded-full bg-brand text-white hover:bg-brand-strong disabled:opacity-40"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="size-[45%]" aria-hidden="true">
+            <path d="M12 19V5M6 11l6-6 6 6" />
+          </svg>
+        </button>
+      </form>
     </div>
   );
 }

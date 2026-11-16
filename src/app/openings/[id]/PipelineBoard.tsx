@@ -264,6 +264,8 @@ export default function PipelineBoard() {
   const [movedOpen, setMovedOpen] = useState(false);
   const movedBox = useRef<HTMLDivElement>(null);
   const movedShown = useExit(movedOpen, movedBox, FADE_OUT);
+  const boardRow = useRef<HTMLDivElement>(null);
+  useBoardWheel(boardRow, mode === "board");
   const [undone, setUndone] = useState<{ id: string; n: number } | null>(null);
   // The candidate whose CV is open in the preview, if any.
   const [cvFor, setCvFor] = useState<Card | null>(null);
@@ -737,13 +739,13 @@ export default function PipelineBoard() {
 
       {mode === "board" ? (
         // Columns side by side; the row scrolls sideways, each column scrolls itself.
-        <div data-board className="flex min-h-0 flex-1 gap-[max(1.1rem,12px)] overflow-x-auto px-[max(1.5rem,14px)] [scrollbar-color:#e3e6ea_transparent]">
+        <div ref={boardRow} data-board className="flex min-h-0 flex-1 gap-[max(1.75rem,18px)] overflow-x-auto [container-type:inline-size] px-[max(1.5rem,14px)] [scrollbar-width:none]">
           {columns.map(({ s, all, cards }) => (
             <section
               key={s.name}
               data-col
               aria-label={s.name}
-              className="flex min-h-0 w-[max(22rem,292px)] shrink-0 flex-col rounded-t-md border-[1.8px] border-b-0 border-surface-2 bg-white transition-colors data-[no]:border-danger/30 data-[no]:bg-danger-soft data-[over]:border-brand/40 data-[over]:bg-brand-tint"
+              className="flex min-h-0 w-[max(200px,calc((100cqw-4*max(1.75rem,18px))/4.5))] shrink-0 flex-col rounded-t-md border-[1.8px] border-b-0 border-surface-2 bg-white transition-colors data-[no]:border-danger/30 data-[no]:bg-danger-soft data-[over]:border-brand/40 data-[over]:bg-brand-tint"
             >
               <header className="flex items-center gap-2 px-[max(1rem,11px)] pb-[max(0.8rem,9px)] pt-[max(1rem,11px)]">
                 <span aria-hidden="true" className="size-2 shrink-0 rounded-full" style={{ background: s.dot }} />
@@ -948,7 +950,7 @@ export function BackButton({ onClick, label }: { onClick?: () => void; label?: s
   return (
     <button
       type="button"
-      aria-label={label ?? "Back: choose where to go"}
+      aria-label={label ?? "Back to this opening"}
       onClick={onClick ?? (() => window.dispatchEvent(new Event(SHOW_TABS)))}
       className="flex size-[max(2.6rem,35px)] shrink-0 items-center justify-center rounded-full border-[1.5px] border-brand text-brand transition-colors hover:bg-brand hover:text-white"
     >
@@ -1179,4 +1181,63 @@ function ListIcon() {
       <path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01" />
     </svg>
   );
+}
+
+/**
+ * The board scrolls sideways with the ordinary mouse wheel whenever the pointer is not
+ * over a column's cards - in the gaps between columns, on a column's header, or past
+ * the last card (owner, 16 Nov 2026: "the side scroll needs to be more accurate... I
+ * put my cursor in the gaps and it needs to scroll"; then "if I hover over the
+ * stages it still doesn't work"), so the wheel moves the board sideways anywhere on
+ * it, cards included. Shift+wheel scrolls the column under the pointer up and down.
+ * The move glides, and when the wheel stops the board settles with a column's left
+ * edge exactly at the board's edge. A trackpad's own sideways swipe is left alone.
+ */
+function useBoardWheel(ref: RefObject<HTMLDivElement | null>, on: boolean) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!on || !el) return;
+    let target = el.scrollLeft;
+    let gliding = false;
+    let settle: ReturnType<typeof setTimeout> | undefined;
+    const max = () => el.scrollWidth - el.clientWidth;
+    const glide = (to: number, duration: number) => {
+      target = Math.max(0, Math.min(max(), to));
+      gliding = true;
+      gsap.to(el, { scrollLeft: target, duration, ease: EASE.out, overwrite: true, onComplete: () => void (gliding = false) });
+    };
+    // The nearest column edge to where the board was heading.
+    const snap = () => {
+      const pad = parseFloat(getComputedStyle(el).paddingLeft) || 0;
+      const edges = [...el.querySelectorAll<HTMLElement>("[data-col]")].map((c) => c.offsetLeft - pad);
+      const best = edges.reduce((a, b) => (Math.abs(b - target) < Math.abs(a - target) ? b : a), 0);
+      glide(best, DUR.base);
+    };
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey) return;
+      // Shift+wheel scrolls the column under the pointer up and down (the browser may
+      // turn Shift+wheel into a sideways delta, so read whichever one is set).
+      if (e.shiftKey) {
+        const list = (e.target as HTMLElement).closest<HTMLElement>("[data-col-list]");
+        if (!list) return;
+        e.preventDefault();
+        const dy = e.deltaY || e.deltaX;
+        list.scrollBy({ top: e.deltaMode === 1 ? dy * 40 : dy });
+        return;
+      }
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return; // a trackpad's own sideways swipe
+      e.preventDefault();
+      if (!gliding) target = el.scrollLeft;
+      const step = e.deltaMode === 1 ? e.deltaY * 40 : e.deltaY;
+      glide(target + step * 1.4, 0.32);
+      clearTimeout(settle);
+      settle = setTimeout(snap, 160);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      clearTimeout(settle);
+      gsap.killTweensOf(el);
+      el.removeEventListener("wheel", onWheel);
+    };
+  }, [ref, on]);
 }
