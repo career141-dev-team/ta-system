@@ -1,49 +1,68 @@
-# Career141 TA Platform — stage one
+# Career141 TA System
 
-Standalone build. **Not connected to the live system.** Runs entirely on synthetic
-data, so nothing here can affect real candidates, clients or the production database.
+The talent-acquisition platform Career141 runs its recruiting on: Next.js 16 app
+(`src/`) on a self-hosted Convex backend (`convex/`).
 
-## Run it
+> **This is production.** https://ta-system.career141.com runs on the live database
+> behind api.career141.com (78,000+ real candidates). Read [`AGENTS.md`](AGENTS.md)
+> before changing anything, and [`docs/TEAM-WORKFLOW.md`](docs/TEAM-WORKFLOW.md) for the
+> full playbook.
+
+## What it does
+
+| Area | What it covers | Feature skill |
+| --- | --- | --- |
+| Openings | Client → Opening → Job Posts, status, health, Website switch (lists a job on career141.com), public job link | `openings` |
+| Pipeline | Follow-up → … → Director Review → Placed, plus Rejected and Dropped out | `sets-shortlist` |
+| Shortlist and Sets | Owner lock on shortlist, five CVs in a Colombo day close a set, Director/client reply reading | `sets-shortlist` |
+| CV intake | TA upload, ZIP/folder, mail, WhatsApp, Workable → text/OCR → extraction into a candidate | `cv-extraction`, `email-intake` |
+| Scoops | CVs a Director, Lead or Ops person sent a TA, uploaded on the opening | `scoop` |
+| Follow-up | TA and AI follow-up by WhatsApp/email for CV, salary, notice period; automatic 24-hour reminders; replies answered from one number per opening | `follow-up` |
+| Voice screening | Aura, the AI voice agent (LiveKit): role, current and expected salary | `voice-agent` |
+| Database search | Search across the ~78k-CV database, Referral Search with Excel export of picked referees, lookalike search, per-opening matches | `database-search` |
+| Headhunting | Research, Suggestions, Excel Tables (link vault, L-sheets), Referee Calls | `excel-tables` |
+| Workday | Today's Checks drawer, work modes, per-job evidence, automatic completion, Team checks | `workday` |
+| EOD and Midday email | Daily email to the Director desk with prepared-CV PDFs and workbook, REVISED corrections | `eod-email` |
+| Targets and Strategy | Daily CV and LinkedIn-link targets per TA; Strategy Planner for Leads | `targets`, `strategy-planner` |
+
+Each skill in [`.claude/skills/`](.claude/skills/) describes how that feature works
+**today** (flows, files, tables, guards, quirks). Read it before changing the feature and
+update it in the same pull request (`node .claude/skills/skill-sync/staleness.mjs check`).
+
+## Run it locally
 
 ```bash
 npm install
-npm run dev
+deploy/local/start-app.sh      # local Convex backend on 127.0.0.1 only, dev sign-in
 ```
 
-Then open http://localhost:3100
+`npm run dev` serves the app on http://localhost:3100. A local run must never point at a
+live address.
 
-## What "standalone" means
+## Before you push
 
-- **No Convex, no Clerk, no credentials.** Data lives in `.data/db.json`, generated
-  from `src/data/seed.ts` on first run.
-- **Dev auth** is the user switcher in the top right. Pick any TA, the TA Lead, the
-  Director or Ops to see how the app looks to them.
-- **Reset the data** by deleting `.data/` and reloading.
+```bash
+npm test                    # all suites must pass
+npx tsc --noEmit -p .       # app types
+npx tsc --noEmit -p convex  # backend types
+```
 
-## Synthetic data
+## Ground rules (short form)
 
-Client names (Delmo, CKDL, Apex, Lanka Hospitals), position titles and TA first names
-come from the real workbooks so the app is recognisable.
+- **Never touch the live backend from a laptop.** Live changes go only through the
+  release pipeline ([`.github/workflows/deploy-production.yml`](.github/workflows/deploy-production.yml)).
+- **Branch → pull request → `main`.** Never push straight to `main` or `production`.
+- **No secrets in anything tracked.** `.env*` stays local.
+- **Real candidates are real.** Outbound messages go through `convex/lib/outreachSafety.ts`
+  and `convex/lib/outboundGuard.ts`; data changes are migrations with a `dryRun`.
 
-**Every candidate is invented** — names, emails (`@example.invalid`), phone numbers and
-LinkedIn URLs. No real candidate's data appears anywhere, and none should ever be added.
-This dataset exists so the platform can be tested without touching real people's data.
+## Where things are
 
-## Built so far (spec phase 1)
-
-| Area | State |
+| Path | What |
 | --- | --- |
-| Client → Opening → Job Post | Working — many posts under one Opening, one candidate pool |
-| Pipeline board | Working — Follow-up → … → Placed, plus Rejected and Dropped out |
-| Shortlist collision lock | Working — first to shortlist owns; other TAs see it, locked |
-| Sets | Working — five or more closes a set, per Opening |
-| Alias keywords + routing aliases | Visible on the Jobs tab |
-| Priority tiers P1–P5 | Driving the "day N of target" counters |
-| Link vault | Working — eye-marks and yield |
-| Alerts | Urgent vs routine split |
-| Intake, snippets, prepared CVs, EOD email | Not yet — phases 2–5 |
-
-## Where the connection happens later
-
-Everything reads through `src/data/store.ts`. Phase 8c swaps that file's internals for
-the live Convex deployment; nothing above it changes. See `../docs/BUILD-SPEC.md` §15.
+| `src/` | Next.js app (pages under `src/app`, API routes under `src/app/api`) |
+| `convex/` | Backend: schema, functions, crons, `lib/` guards, `mailIntake/`, `pipeline/` |
+| `deploy/` | Local stack (`local/`) and the production server layout ([`production/README.md`](deploy/production/README.md)) |
+| `docs/` | Plans, runbooks, recovery notes, API docs ([`CI-CD.md`](docs/CI-CD.md), [`HOSTING.md`](docs/HOSTING.md), [`LOAD-REDUCTION-PLAN.md`](docs/LOAD-REDUCTION-PLAN.md)) |
+| `.claude/skills/` | One skill per feature, plus `merge-teammate` and `skill-sync` |
+| `tests/`, `scripts/` | Test suites and tooling |
