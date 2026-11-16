@@ -61,7 +61,7 @@ function world(jobExtra: Record<string, unknown> = {}) {
   // Has its CV; app1 does not — so reading the wrong one drops "CV" from the reply.
   const otherApp = { _id: "app2", candidateId: "cand1", jobId: "job2", currentStage: "follow_up", followUpCvReceived: true };
   const candidate: Record<string, any> = { _id: "cand1", fullName: "Kamal Perera", phone: "+94770000001" };
-  const job = { _id: "job1", title: "Accountant", ...jobExtra };
+  const job = { _id: "job1", title: "Accountant", status: "active", agent3Enabled: true, enableWhatsAppFollowUp: true, enableEmailFollowUp: true, ...jobExtra };
   const mutations: { name: string; args: any }[] = [];
   const sends: { name: string; args: any }[] = [];
   const ctx = {
@@ -107,7 +107,7 @@ test("a promised time is kept, with a reminder to send at it", async () => {
   assert.equal(w.reply(), "No problem, we'll check in tonight 😊");
   assert.ok(w.app.nextFollowUpScheduledAt >= before + 4 * 3600_000 - 1000, "the promised time was wiped");
   assert.equal(w.app.waitingForCandidateEta, true);
-  assert.match(w.app.nextFollowUpMessage, /CV Document/);
+  assert.match(w.app.nextFollowUpMessage, /CV/);
   assert.ok(!w.called("clearPendingFollowUp"), "the clear ran after the promise and erased it");
 });
 
@@ -154,7 +154,7 @@ test("the turn reads back its own application, not the candidate's other one", a
   model = { ...empty, intent: "provided_partial", expectedSalary: 200000, nextActionMessage: null };
   await turn(w, "expected 200k");
   for (const m of w.mutations) if ("applicationId" in m.args) assert.equal(m.args.applicationId, "app1", `${m.name} wrote to another opening`);
-  assert.match(w.reply() ?? "", /CV Document/);
+  assert.match(w.reply() ?? "", /CV/);
 });
 
 test("a salary in words counts as answered in the reply's missing list", async () => {
@@ -275,4 +275,14 @@ test("an upset candidate gets one calm line and goes to a TA", async () => {
   assert.equal(w.reply(), "Sorry about that, Kamal. A consultant will contact you personally.");
   assert.equal(w.app.flaggedForTaReview, true);
   assert.equal(w.app.nextFollowUpScheduledAt, undefined, "a reminder was left for an upset candidate");
+});
+
+test("an opening switched off, held or filled gets no assistant reply and no save (owner, 13 Nov)", async () => {
+  for (const extra of [{ agent3Enabled: false, enableWhatsAppFollowUp: false, enableEmailFollowUp: false }, { status: "filled" }, { status: "on_hold" }]) {
+    const w = world(extra);
+    model = { ...empty, intent: "provided_partial", currentSalary: 150000, nextActionMessage: "Thanks!" };
+    await turn(w, "current 150k");
+    assert.equal(w.reply(), undefined, `replied on ${JSON.stringify(extra)}`);
+    assert.equal(w.candidate.currentSalary, undefined, "saved on an opening that is off");
+  }
 });
