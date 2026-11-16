@@ -21,6 +21,7 @@ const PAGES: [string, string][] = [
   ["/strategy/submissions", "New submissions"],
   ["/strategy/manage", "Strategy list"],
   ["/database", "Database"],
+  ["/linkedin-search", "LinkedIn Search"],
   ["/excel-tables", "Excel Tables"],
   ["/ta-track", "TA Track"],
   ["/feedback", "Feedback & support"],

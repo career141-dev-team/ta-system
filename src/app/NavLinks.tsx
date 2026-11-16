@@ -19,6 +19,7 @@ const LINKS: [string, string, Role[]][] = [
   ["Openings", "/openings", ROLES],
   ["Strategy Planner", "/strategy", ROLES],
   ["Database", "/database", ROLES],
+  ["LinkedIn Search", "/linkedin-search", ROLES],
   ["Excel Tables", "/excel-tables", ["TA Support"]],
   ["TA Track", "/ta-track", ROLES],
 ];
