@@ -64,6 +64,7 @@ import { masterSheetStatusFields, type MasterSheetPositionStatus } from "@/lib/m
 import { BOX } from "@/lib/career141Box";
 import { validateWorkLocations, requireWorkLocation, inWorkLocation } from "@/lib/workLocations";
 import { safeErrorMessage } from "@/lib/userError";
+import { UNCERTAIN_SEND_MESSAGE, plainSendFailure } from "@/lib/sendFailure";
 
 /** A direct Convex write, after which the loaded tables are re-read (primeState.markTablesStale). */
 function freshAfter<A extends unknown[], R>(write: (...args: A) => Promise<R>) {
@@ -4718,16 +4719,21 @@ export async function sendDailyEmail(formData: FormData) {
       regenerateAttachments: formData.get("regenerateAttachments") === "yes",
       workType: submittedMode,
     });
-    if (!result.ok) throw new Error(result.error);
-    sentId = result.dailyEmailId ?? "";
-    message = result.note;
-    // Mail is already recorded atomically. Failure to update an edited profile
-    // must not invite a second send.
-    try { message += await saveEodEdits(rows, baseRows, ids); }
-    catch { message += " Email sent; profile edits could not be saved. Review the candidate records."; }
-    await afterBackendWrite(openingId);
+    if (!result.ok) {
+      // Already in plain words and says whether it may have gone: skip the generic fallback below.
+      if (!result.plain) throw new Error(result.error);
+      message = result.error;
+    } else {
+      sentId = result.dailyEmailId ?? "";
+      message = result.note;
+      // Mail is already recorded atomically. Failure to update an edited profile
+      // must not invite a second send.
+      try { message += await saveEodEdits(rows, baseRows, ids); }
+      catch { message += " Email sent; profile edits could not be saved. Review the candidate records."; }
+      await afterBackendWrite(openingId);
+    }
   } catch (e) {
-    message = sentId ? "Email sent and recorded. Reload to see its saved copy." : backendMessage(e, "Could not confirm the email was sent. Do not send it again yet: ask your TA Lead to check the mailbox and reconcile it in Today's Checks.");
+    message = sentId ? "Email sent and recorded. Reload to see its saved copy." : backendMessage(e, "Nothing was sent: the email could not be prepared. Reload the page and try again, and tell your TA Lead if it keeps happening.");
   }
   revalidatePath(`/openings/${openingId}`, "layout");
   const mail = sentId || draftId || parentId;
@@ -5135,7 +5141,7 @@ async function emailEod(input: {
   regenerateAttachments?: boolean;
   workType?: WorkingStage;
   daily?: { submissionType: SubmissionType; draftId?: string; revision?: number; parentId?: string; forDate?: string; extraTo: string[]; extraCc: string[]; removed: string[]; confirmed: boolean };
-}): Promise<{ ok: true; note: string; workdayMailId?: string | null; dailyEmailId?: string } | { ok: false; error: string }> {
+}): Promise<{ ok: true; note: string; workdayMailId?: string | null; dailyEmailId?: string } | { ok: false; error: string; /** The sentence is final: show it as it is. */ plain?: true }> {
   const { openingId, user } = input;
   if (!input.applicationIds.length && !input.activityOnly) return { ok: false, error: "Include at least one CV or send an activity summary." };
   const opening = repo.opening(openingId);
@@ -5257,6 +5263,8 @@ async function emailEod(input: {
     | { ok: false; error: string };
   let workdayMailId: string | null = null;
   let dailyEmailId: string | undefined;
+  // False while the reservation is still being made: a refusal there means nothing went out.
+  let reachedSender = false;
   try {
     if (input.daily) {
       const snapshot: DailyEmailSnapshot = { subject: input.subject.trim(), html, from: user.email,
@@ -5276,6 +5284,7 @@ async function emailEod(input: {
       const receipt = await convexMutation<{ id: string | null }>("ta/workdays:beginMail", { actorId: user.id, jobId: openingId, applicationIds: input.applicationIds, subject: input.subject, sentTo: to, researchLink: input.researchLink ?? undefined });
       workdayMailId = receipt.id;
     }
+    reachedSender = true;
     result = await convexAction("ta/eodMail:send", {
       from: user.email,
       to,
@@ -5296,9 +5305,11 @@ async function emailEod(input: {
     // The page shows only a generic line for a technical error; keep the real one on the row for the Lead (9 Nov).
     // A no-op unless the email is still sending/uncertain, so it never overrides an answer the backend recorded.
     if (dailyEmailId) await convexMutation("ta/dailyEmails:result", { id: dailyEmailId, status: "uncertain", error: `Web request failed: ${(e instanceof Error ? e.message : String(e))}` }).catch(() => undefined);
+    // Daily emails say what really happened (16 Nov); the older paths keep their own wording.
+    if (input.daily) return { ok: false, error: reachedSender ? UNCERTAIN_SEND_MESSAGE : backendMessage(e, "Nothing was sent. Reload the page and try again."), plain: true };
     return { ok: false, error: backendMessage(e, "The email could not be sent.") };
   }
-  if (!result.ok) return { ok: false, error: result.error };
+  if (!result.ok) return input.daily ? { ok: false, error: plainSendFailure(result.error).message, plain: true } : { ok: false, error: result.error };
   // Everyone it actually went to: the added To were left out of this line, so
   // it read as if only the first address got the email (1 Oct).
   const sentTo = [result.to, ...(result.alsoTo ?? [])].join(", ");
