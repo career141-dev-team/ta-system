@@ -37,7 +37,7 @@ export const PARTNER_READ_TABLES = [
   "mailIntakeMessages", "feedbacks",
   "taWorkdays", "taWorkdayRequests", "taWorkdayCarry", "taWorkdayMail",
   "taWorkdayLeads", "taWorkdayActivity",
-  "taWorkdayCheckNotes", "taWorkdayTaskEvents", "taWorkdayExceptions", "taSourcingRuns", "taWorkdayEvidence",
+  "taWorkdayCheckNotes", "taWorkdayTaskEvents", "taWorkdayExceptions", "taSourcingRuns", "taWorkdayEvidence", "taWorkdayChecklists",
   "taTargets",
 ] as const;
 

@@ -73,6 +73,39 @@ export const handleOnLine = (
   isFollowUpStage: (s: string) => boolean,
 ) => !isTaLine || (!!lineUserId && followUps.some((f) => isFollowUpStage(f.stage) && f.lineUserId === lineUserId));
 
+/**
+ * Which application a WhatsApp reply belongs to (11 Nov). A candidate in
+ * Follow-up on two openings (General Manager - Operations and Chief Operating
+ * Officer) answered the TA's salary question; the reply was filed against the
+ * opening of the last message the SYSTEM had sent - the TA's own flyer and
+ * question from her phone were never seen - so the assistant said "100%
+ * complete for Chief Operating Officer" and moved that opening on.
+ *
+ * Now: only Follow-up applications count; on a TA's own number, only that
+ * line's (the same `lineUserId` handleOnLine reads); exactly one left is the
+ * answer. More than one is `unclear` - the message is filed (against the last
+ * one we wrote about, else the first) but nobody is answered or moved, and the
+ * TAs are told. None in Follow-up returns null and the caller keeps its old
+ * choice, which only records the message.
+ */
+export function pickReplyApplication(o: {
+  apps: { id: string; stage: string; lineUserId?: string | null }[];
+  isTaLine: boolean;
+  lineUserId?: string | null;
+  lastOutboundAppId?: string | null;
+  isFollowUpStage: (s: string) => boolean;
+}): { appId: string; unclear: string[] } | null {
+  let inFollowUp = o.apps.filter((a) => o.isFollowUpStage(a.stage));
+  if (o.isTaLine && o.lineUserId) {
+    const onLine = inFollowUp.filter((a) => a.lineUserId === o.lineUserId);
+    if (onLine.length) inFollowUp = onLine;
+  }
+  if (inFollowUp.length === 0) return null;
+  if (inFollowUp.length === 1) return { appId: inFollowUp[0].id, unclear: [] };
+  const filed = inFollowUp.find((a) => a.id === o.lastOutboundAppId) ?? inFollowUp[0];
+  return { appId: filed.id, unclear: inFollowUp.map((a) => a.id) };
+}
+
 /** What Meta says about one number, as `checkWithMeta` reads it. Any part may be an error message. */
 export interface MetaNumberState {
   phone: { status?: string; platform_type?: string; display_phone_number?: string } | string;

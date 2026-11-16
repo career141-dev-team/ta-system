@@ -832,7 +832,25 @@ async function view(
   // The EOD composer asks for the one position it is sending (10 Nov); the
   // drawer still asks for the day.
   const entries = onlyJobId ? all.filter((j) => j.jobId === onlyJobId) : all;
-  const shared = entries.some((j) => j.workType === "100%")
+  /*
+   * A live view reads each position's STORED checklist when it is fresh
+   * (11 Nov): computed within CHECKLIST_FRESH_MS and not marked stale by a
+   * write since. Anything else is computed here, as before, and named in
+   * `staleChecklists` so the caller can ask for a recompute (the API route
+   * does; a query cannot write). A finished day's snapshot (`live` false)
+   * always computes.
+   */
+  const stored = new Map<string, WorkdayJobView>();
+  const stale: string[] = [];
+  if (live) {
+    for (const j of entries) {
+      const row = await checklistRow(ctx, day._id, j.jobId);
+      if (row?.view && !row.staleAt && now - row.computedAt < CHECKLIST_FRESH_MS) stored.set(j.jobId, row.view as WorkdayJobView);
+      else stale.push(j.jobId);
+    }
+  }
+  const computed = entries.filter((j) => !stored.has(j.jobId));
+  const shared = computed.some((j) => j.workType === "100%")
     ? { secondaryUploads: await secondaryUploadsSince(ctx, colomboDayStart(day.startedAt)) }
     : {};
   const requests = live
@@ -846,7 +864,8 @@ async function view(
     startedAt: day.startedAt,
     finishedAt: day.finishedAt ?? null,
     closureReason: day.closureReason,
-    jobs: await Promise.all(entries.map((j) => jobView(ctx, day, j, now, shared))),
+    jobs: await Promise.all(entries.map((j) => stored.get(j.jobId) ?? jobView(ctx, day, j, now, shared))),
+    ...(live && stale.length ? { staleChecklists: stale } : {}),
     requests: await Promise.all(
       requests.map(async (r) => ({
         id: r._id,
@@ -1008,7 +1027,46 @@ export const recoverOpenWorkdays = internalMutation({
   },
 });
 
-/** Run in the write transaction, never in a dashboard query. */
+/*
+ * Stored checklists (11 Nov; the 29 Oct stability plan's 2.7 and 2.8).
+ *
+ * Every stage move, JD edit, upload and save called refreshWorkdayChecks,
+ * which rebuilt the full checklist (jobView: 40-odd queries and a candidate
+ * row per owned application) for every TA's day holding the job, INSIDE the
+ * caller's own transaction - and the drawer rebuilt the same thing on every
+ * 20 s poll. The live log showed the dashboard at 2.4-6 s and the follow-up
+ * sweep failing, against a 1 s budget. Now a write only marks the position's
+ * row stale and schedules one recompute; the recompute (its own mutation,
+ * one position) rebuilds, writes the task events and stores the view; the
+ * drawer reads the stored view while it is fresh. The EOD send still checks
+ * live (emailPreflight, the send itself).
+ */
+/*
+ * How long a stored checklist is served before a poll recomputes it. Writes
+ * that go through refreshWorkdayChecks mark it at once; this covers the ones
+ * that do not (a CV landing, an application filed by extraction), which the
+ * drawer then shows within two minutes instead of twenty seconds.
+ */
+const CHECKLIST_FRESH_MS = 2 * 60_000;
+
+async function checklistRow(ctx: Ctx, workdayId: Id<"taWorkdays">, jobId: Id<"jobs">) {
+  return ctx.db.query("taWorkdayChecklists").withIndex("by_workday_job", q => q.eq("workdayId", workdayId).eq("jobId", jobId)).first();
+}
+
+/** Mark one position's checklist stale and make sure one recompute is on its way. */
+async function markChecklistStale(ctx: MutationCtx, day: Doc<"taWorkdays">, jobId: Id<"jobs">, actorId?: Id<"users">) {
+  const now = Date.now();
+  const row = await checklistRow(ctx, day._id, jobId);
+  if (row) {
+    await ctx.db.patch(row._id, { staleAt: now, ...(actorId ? { actorId } : {}), ...(row.pendingAt ? {} : { pendingAt: now }) });
+    if (row.pendingAt) return;
+  } else {
+    await ctx.db.insert("taWorkdayChecklists", { workdayId: day._id, jobId, userId: day.userId, computedAt: 0, staleAt: now, pendingAt: now, ...(actorId ? { actorId } : {}) });
+  }
+  await ctx.scheduler.runAfter(0, makeFunctionReference<"mutation">("ta/workdays:recomputeChecklist"), { workdayId: day._id, jobId });
+}
+
+/** Run in the write transaction, never in a dashboard query. Cheap: a mark and a scheduled recompute per day holding the job. */
 export async function refreshWorkdayChecks(ctx: MutationCtx, jobId: Id<"jobs">, actorId?: Id<"users">, onlyDay?: Id<"taWorkdays">) {
   const now = Date.now();
   // Only today's days are refreshed, so only today's are read: every open day
@@ -1019,12 +1077,49 @@ export async function refreshWorkdayChecks(ctx: MutationCtx, jobId: Id<"jobs">, 
         .filter(d => d.finishedAt === undefined || d.closureReason === "eod");
   for (const day of days) {
     if (day.date !== workdayDate(now)) continue;
-    const entry = day.jobs.find(j => j.jobId === jobId);
-    if (!entry) continue;
+    if (!day.jobs.some(j => j.jobId === jobId)) continue;
+    await markChecklistStale(ctx, day, jobId, actorId);
+  }
+}
+
+/** The API route asks for this when a poll found stored checklists missing or past their freshness. */
+export const markChecklistsStale = internalMutation({
+  args: { workdayId: v.id("taWorkdays"), jobIds: v.array(v.id("jobs")) },
+  handler: async (ctx, args) => {
+    const day = await ctx.db.get(args.workdayId);
+    if (!day || !(day.finishedAt === undefined || day.closureReason === "eod") || day.date !== workdayDate(Date.now())) return;
+    for (const jobId of args.jobIds) if (day.jobs.some(j => j.jobId === jobId)) await markChecklistStale(ctx, day, jobId);
+  },
+});
+
+/** One position's checklist, rebuilt in its own mutation: task events written, view stored. */
+export const recomputeChecklist = internalMutation({
+  args: { workdayId: v.id("taWorkdays"), jobId: v.id("jobs") },
+  handler: async (ctx, args) => {
+    const row = await checklistRow(ctx, args.workdayId, args.jobId);
+    const day = await ctx.db.get(args.workdayId);
+    const entry = day?.jobs.find(j => j.jobId === args.jobId);
+    const open = !!day && (day.finishedAt === undefined || day.closureReason === "eod") && day.date === workdayDate(Date.now());
+    if (!row) return;
+    if (!day || !entry || !open) { await ctx.db.patch(row._id, { pendingAt: undefined }); return; }
+    const started = Date.now();
+    const view = await rebuildChecklist(ctx, day, entry, row.actorId);
+    // Mutations are serialised: a mark that lands after this one commits sets
+    // pendingAt again and schedules its own recompute.
+    await ctx.db.patch(row._id, { view, computedAt: started, staleAt: undefined, pendingAt: undefined, actorId: undefined });
+  },
+});
+
+/** The heavy part: jobView, then the task-event log for what changed. */
+async function rebuildChecklist(ctx: MutationCtx, day: Doc<"taWorkdays">, entry: Doc<"taWorkdays">["jobs"][number], actorId?: Id<"users">): Promise<WorkdayJobView> {
+  const now = Date.now();
+  const jobId = entry.jobId;
+  {
     const result = await jobView(ctx, day, entry, now);
     const old = await ctx.db.query("taWorkdayTaskEvents").withIndex("by_workday_job", q => q.eq("workdayId", day._id).eq("jobId", jobId)).collect();
     // The latest event per check, found once rather than a scan per check.
     const latest = new Map(old.map(e => [e.key, e]));
+    let written = false;
     for (const check of result.checks) {
       const previous = latest.get(check.key);
       const status = check.waiting ? "waiting" : check.status ?? "incomplete";
@@ -1037,7 +1132,15 @@ export async function refreshWorkdayChecks(ctx: MutationCtx, jobId: Id<"jobs">, 
         ...(actorId ? { by: actorId } : {}), ...(evidence ? { evidence } : {}),
         ...(completedAt ? { completedAt } : {}), ...(completedBy ? { completedBy } : {}),
         ...(status === "complete" && (!previous || !completedAt) ? { observed: true } : {}) });
+      written = true;
     }
+    // The view was built before these events existed; the stored copy must
+    // carry them, as a live build a moment later would.
+    if (written) {
+      result.checks = await withTaskHistory(ctx, day, jobId, result.checks, entry.workType === "100%");
+      result.eodChecks = await withTaskHistory(ctx, day, jobId, result.eodChecks ?? [], false);
+    }
+    return result;
   }
 }
 

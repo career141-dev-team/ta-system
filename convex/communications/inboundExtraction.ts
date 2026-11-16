@@ -9,7 +9,8 @@ import { isAutomaticReply, latestReplyText } from "../lib/mailParse";
 import { followUpBlockers, isFollowUpStage } from "../ta/stages";
 import { burstToAnswer } from "../lib/followUpWindow";
 import { assistantQuietReason, historyLine } from "../lib/assistantControl";
-import { aboveBudget, jdForQuestions, withHandover } from "../lib/jdFacts";
+import { aboveBudget, doneReply, jdForQuestions, nextAsk, oneLine, reminderAsk, withHandover } from "../lib/jdFacts";
+import { followUpOn } from "../lib/followUpScope";
 
 /**
  * One WhatsApp turn, after the candidate's pause (30 Oct). Each message
@@ -115,6 +116,15 @@ export const extractDetailsFromText = internalAction({
     const job = await ctx.runQuery(internal.jobs.jobs.getJob, { jobId: activeApp.jobId });
     if (!job) {
       console.error(`[Inbound Extraction] Job ${activeApp.jobId} not found.`);
+      return;
+    }
+    // Off means silent (owner, 13 Nov): the TA switched the opening's automatic
+    // follow-up off after placing two interns, and the assistant kept chatting
+    // to candidates already in it. An opening that is off, on hold, filled or
+    // closed gets no assistant reply and no save; the message is recorded and
+    // the TA answers.
+    if (job.status !== "active" || !followUpOn(job as any)) {
+      console.log(`[Inbound Extraction] ${job.title}: automatic follow-up is off or the opening is ${job.status}. Recorded; left to the TA.`);
       return;
     }
 
@@ -241,8 +251,16 @@ INITIAL OUTREACH TEMPLATE:
 SAMPLE FOLLOW-UP TEMPLATE:
 "${(job.followUpSampleTemplate || 'Just checking in on the missing details. Please provide them at your earliest convenience.').substring(0, 300)}"
 
-HOW TO WRITE (a real candidate read the old replies and said they felt forced):
-- WhatsApp, not email. One or two short sentences. No greeting block, no bullet
+OUR QUESTIONS ARE QUESTIONS, NOT FACTS (13 Nov): anything in MISSING DETAILS is
+a question WE ask the candidate. Never present it as something decided or on
+record - no start date, joining date, onboarding, interview, offer or selection
+is decided by you. If the candidate asks about any of these (when to start or
+come in, the interview, onboarding, an offer, whether they are selected), use
+'asked_question' with nextActionMessage null: a person on our team answers.
+
+HOW TO WRITE (a real candidate read the old replies and said they felt forced;
+the owner, 13 Nov: "very crisp and smaller, no need multiple lines"):
+- WhatsApp, not email. ONE short sentence, under 20 words, on one line. No greeting block, no bullet
   lists, no sign-off, no "at your earliest convenience".
 - Mirror them. Short message, short reply. Casual, casual. Their English, their
   register. Never correct their spelling or grammar.
@@ -563,7 +581,7 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
         // being sent below — and the follow-up cron later sent it again word
         // for word, on WhatsApp and by email (2 Oct). The reminder only names
         // what is still missing.
-        const reminderBody = `Hi ${firstName}, a quick reminder about your application for *${job.title}*. To move it forward we still need:\n${remainingMissing.map((m) => `• ${m}`).join("\n")}\n\nPlease reply when you can. Thank you!`;
+        const reminderBody = reminderAsk(remainingMissing, firstName, job.title);
 
         // Above the budget: a person calls, nobody bargains by message (4 Nov).
         // A bell only - the chase and the reply carry on as before.
@@ -611,12 +629,10 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
         // Only claim the move that actually happened: the save advances the
         // application when the checklist closes, and the reply said "advanced
         // to Second Shortlist" whether or not it had been.
-        const completedLine = advanced
-          ? `Your profile is now 100% complete and has been advanced to the next stage.`
-          : `Your profile is now complete — a consultant will review it and be in touch.`;
+        const completedLine = `Our team will review your details and contact you.`;
         const preludeText =
           isCompleted
-            ? `Great news! We have received all your application details for *${job.title}*. ${completedLine}`
+            ? `Thank you, we have your details for *${job.title}*. ${completedLine}`
             : isQuestion
               ? `Thank you for your message regarding your application for *${job.title}*.`
               : `Thank you! We have recorded your update for *${job.title}*:`;
@@ -630,7 +646,7 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
               ? `Thank you for letting us know, ${firstName}. We'll keep you in mind for other roles.`
               : `Thank you, ${firstName}. A consultant will get in touch with you.`);
         } else if (isCompleted) {
-          replyMessage = `Thank you ${updatedCandidate?.fullName || "there"}! We have received all your application details for *${job.title}*. ${completedLine}`;
+          replyMessage = doneReply(firstName);
         } else if (etaPromised) {
           replyMessage = extracted.nextActionMessage || `Got it! We'll follow up with you later.`;
         } else if (extracted.intent === "interested_no_eta") {
@@ -649,7 +665,7 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
             body: `They asked: "${textBody.trim().slice(0, 200)}". The assistant replied: "${aiAnswer}" Please reach out to them.`,
           });
         } else if (remainingMissing.length > 0) {
-          replyMessage = extracted.nextActionMessage || `Hi ${updatedCandidate?.fullName?.split(" ")[0] || "there"},\n\n${preludeText}\n\nWe are still waiting on your ${remainingMissing.join(", ")} to progress your application. Please share these at your convenience. Thank you!`;
+          replyMessage = extracted.nextActionMessage || nextAsk(remainingMissing, firstName);
         }
 
         // A stop pauses the chase whether or not a reply goes out (an opt-out
@@ -660,6 +676,10 @@ If a field is not mentioned, return null for it. Do not invent or infer values.`
             reason: `${stop}: "${textBody.trim().slice(0, 200)}"`,
           });
         }
+
+        // WhatsApp replies are one short line (owner, 13 Nov), whatever the
+        // model wrote. Email keeps its own layout.
+        if (replyMessage && args.channel !== "email") replyMessage = oneLine(replyMessage);
 
         if (replyMessage) {
           const hours = nudgeHoursWithinWindow(extracted.nextActionTimeHours, args.channel);

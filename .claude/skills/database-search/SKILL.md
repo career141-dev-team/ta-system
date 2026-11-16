@@ -202,7 +202,7 @@ Database CVs list: applications at `matched`, or `SCOOP` at `new_cv`, minus anyo
 
 Convex (all internal, reachable only with the admin key the app holds):
 
-- `matching/search`: `searchCandidates` (query), `searchByEmployer` (query), `aiSearch` (action; not called by the app, only by `scripts/e2e/p4-profiles-search.ts`; see quirks), `parseNLQuery`, `semanticSearch`, `bulkAddToPipeline`.
+- `matching/search`: `searchCandidates` (query; 12 Nov: the caller's limit is clamped to `SEARCH_LIMIT_MAX`=300, the CV-text index `search_text` returns at most `RESUME_HITS_MAX`=100 whole resume rows - a resume row carries the CV text and the 1,024-float embedding, and the missing-CV-file rows are read together), `searchByEmployer` (query), `aiSearch` (action; not called by the app, only by `scripts/e2e/p4-profiles-search.ts`; see quirks), `parseNLQuery`, `semanticSearch`, `bulkAddToPipeline`.
 - `matching/agent2`: `embedText` (OpenRouter `openai/text-embedding-3-small`, then `baai/bge-m3`, then NVIDIA models; vectors longer than 1024 are sliced to 1024), `generateAndStoreEmbedding` (called by `cvs/cvExtraction.ts` after extraction; embeds the first 15,000 characters of `rawText`, upserts Qdrant, sets `hasEmbedding`), `generateJobEmbedding`, `runReverseMatch`, `backfillCandidateEmbeddings`, `runEmpiricalVectorBenchmark`.
 - `matching/reindexVectors`: `startReindex` -> `reindexWorker` (`BATCH_SIZE 50`, `BATCHES_PER_WORKER 2`, self-rescheduling), `checkProgress`, `getCandidateCounts`, `getEstimatedUsageCost`. It calls OpenAI directly (`text-embedding-3-small`, `dimensions: 1024`, needs `OPENAI_API_KEY`) on a short profile text (name, title, headline, 30 skills, 500 characters of summary, city, industry), not the CV text.
 - `matching/queries`: batch readers and embedding writers. `ta/matching`: `runsForOpening`, `recordRun`, `exclusionsForOpening`, `reverseMatchResults`, `admitMatches` (stage `matched_candidates`, channel `database`/`SCOOP`; used for tests/legacy, the app adds through the store instead (unverified that nothing else calls it)).
@@ -344,6 +344,7 @@ Repo hard rules that apply: never touch the live backend from a laptop (no `conv
 - 2026-10-29 A failed keyword term is reported, not swallowed; an answer with a route down carries `incomplete`, is shown with a warning and never cached; "too many system operations" is no longer retried (`src/lib/convexResilience.ts`).
 - 2026-11-09 contact discovery for the Brevo clone (flow 14): a rule read once, every candidate checked against it with no model, a labelled meaning pass, its own key and routes.
 - 2026-11-10 contact discovery recall: level from the title's word, else the CV reader's stored level, else years (a bare title was always Mid-level: ~815 senior developers of ~92,000); phrase words in any order; the first email in the field; drop-out counts by reason on every search.
+- 2026-11-12 one keyword search bounded and the burst gone: `searchCandidates` clamps the limit (300) and caps CV-text hits (100 whole resume rows); `keywordSearchMany` runs terms two at a time (a database search ran two six-term passes together, measured 9.2 s live).
 
 ## Model provider (5 Nov 2026)
 
@@ -352,9 +353,9 @@ With `ANTHROPIC_API_KEY` set (and `C141_LLM_PROVIDER` not `openrouter`) the Deep
 **Haiku only, and cached (5 Nov 2026, later):** with the key set, `askClaudeFirst`, `askBridge`, the CLI scoring (`claudeMatch`), CLI web search and the CV vision bridge all step aside (`hasToken()` is false, `haikuOnly()` in `src/lib/claudeSub.ts`), so every answer is `claude-haiku-5-5` on the API. `anthropicModelFor` ignores `C141_MODEL_*`; `C141_RESEARCH_PROVIDER` does not apply; the reference-CV parser drops its OpenRouter/OpenAI fallbacks; the jdParser drops NVIDIA. System prompts carry `cache_control` in both runtimes.
 
 <!-- skill-meta
-verified-commit: ea815f3b
-verified-hash: 1190cb2ab6695de1f98954695644a90f952ac531
-verified-date: 2026-11-09
+verified-commit: 72c916c8
+verified-hash: 369d62ae653a912fd0e968effd6e707204899c4f
+verified-date: 2026-11-12
 sources:
   src/lib/engineSearch.ts
   src/lib/dbMatch.ts

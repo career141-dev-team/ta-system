@@ -7,6 +7,7 @@
  * fabricated profile structurally impossible, because no model in the pipeline
  * is ever asked to produce a URL.
  */
+import { adultHit } from "./adultFilter";
 import { reserve, serperMaxCost, SpendCapError } from "./spend";
 import { keepHit, parseBooleanQuery, toNaturalSearch } from "./websearch";
 import { claudeSearchEnabled, claudeSearchPaused, claudeWebSearch } from "./claudeSub";
@@ -113,6 +114,12 @@ export function serperConfigured(): boolean {
  * no pages.
  */
 export async function search(q: string, num = 10, page = 1): Promise<SearchResult> {
+  // Whoever answered, an adult page is dropped before any caller sees it (12 Nov).
+  const r = await searchUnfiltered(q, num, page);
+  return { ...r, hits: r.hits.filter((h) => !adultHit(h)) };
+}
+
+async function searchUnfiltered(q: string, num: number, page: number): Promise<SearchResult> {
   if (page === 1 && claudeSearchEnabled()) {
     const resting = claudeSearchPaused();
     if (!resting) {
@@ -152,7 +159,7 @@ export async function searchEngine(q: string, num = 10, page = 1): Promise<Searc
     const res = await fetch("https://google.serper.dev/search", {
       method: "POST",
       headers: { "X-API-KEY": key, "Content-Type": "application/json" },
-      body: JSON.stringify({ q, num, ...(page > 1 ? { page } : {}) }),
+      body: JSON.stringify({ q, num, safe: "active", ...(page > 1 ? { page } : {}) }),
     });
     if (!res.ok) return { hits: [], credits: 0, error: `${res.status}` };
     const body = (await res.json()) as {
@@ -442,7 +449,8 @@ async function askSearxng(q: string, num: number, page: number, engine: string):
       q,
       format: "json",
       language: "en",
-      safesearch: "0",
+      // Strict (12 Nov): it was off, and porn sites were listed as Research sources.
+      safesearch: "2",
       ...(page > 1 ? { pageno: String(page) } : {}),
       engines: engine,
     });

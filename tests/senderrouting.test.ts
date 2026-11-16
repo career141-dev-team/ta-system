@@ -82,3 +82,30 @@ test("on a TA's own number only that TA's candidates in follow-up are handled; t
   // A number with no TA (the TA lead's, unmatched) handles nobody.
   assert.equal(handleOnLine(true, undefined, [{ stage: "ta_shortlist", lineUserId: undefined }], followUp), false);
 });
+
+test("a reply goes to one Follow-up opening or to nobody - never a guess (11 Nov)", async () => {
+  const { pickReplyApplication } = await import("../convex/lib/senderRouting");
+  const isFollowUpStage = (s: string) => s === "follow_up" || s === "ta_shortlist";
+  const gm = { id: "a_gm", stage: "follow_up", lineUserId: "u_sanduni" };
+  const coo = { id: "a_coo", stage: "follow_up", lineUserId: "u_sanduni" };
+  // The incident: GM and COO both in Follow-up on Sanduni's line, last system message about COO.
+  // Not answered: both are named, the message is filed on COO.
+  assert.deepEqual(
+    pickReplyApplication({ apps: [gm, coo], isTaLine: true, lineUserId: "u_sanduni", lastOutboundAppId: "a_coo", isFollowUpStage }),
+    { appId: "a_coo", unclear: ["a_gm", "a_coo"] },
+  );
+  // The same on the main line.
+  assert.equal(pickReplyApplication({ apps: [gm, coo], isTaLine: false, isFollowUpStage })?.unclear.length, 2);
+  // Only one in Follow-up: that one, whatever the last message was about.
+  assert.deepEqual(
+    pickReplyApplication({ apps: [gm, { ...coo, stage: "second_shortlist" }], isTaLine: false, lastOutboundAppId: "a_coo", isFollowUpStage }),
+    { appId: "a_gm", unclear: [] },
+  );
+  // Two in Follow-up but only one on the line the message reached: that one.
+  assert.deepEqual(
+    pickReplyApplication({ apps: [gm, { ...coo, lineUserId: "u_priya" }], isTaLine: true, lineUserId: "u_sanduni", isFollowUpStage }),
+    { appId: "a_gm", unclear: [] },
+  );
+  // None in Follow-up: the caller keeps its old choice (record only).
+  assert.equal(pickReplyApplication({ apps: [{ ...gm, stage: "interview" }], isTaLine: false, isFollowUpStage }), null);
+});
