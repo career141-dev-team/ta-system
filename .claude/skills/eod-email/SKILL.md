@@ -104,6 +104,7 @@ Order of work in `emailEod` matters: CV PDFs and the workbook are built **before
 - Large sets (30 Oct): `emailEod` does not pass the saved CV PDFs as action arguments. `ta/eodMail:send` takes `savedIds` (`dailyEmailAttachments` ids), reads the files from storage via `ta/dailyEmails:storedFiles`, and only the Excel workbook travels inline. A 5 MB set (one CV 3.8 MB) passed inline never got a result and blocked Sameera for two days. Every Graph request has a 90 s timeout (`graphFetch`), and the failure text is saved on the row as `sendError` (`result` takes `error`), so a stuck email can be diagnosed from the data.
 - `ta/dailyEmails:reconcile` (UI: `DailyEmailView` form -> `reconcileDailyEmail` action): any `admin`, `ta_lead` or `director` since 2 Nov — it used to be only `admin` or the job's own `taLeadId` lead, which held a TA's whole day whenever that one lead was away ("Only a TA Lead, Director or admin can reconcile the email."); status must be `sending`/`uncertain`/`accepted` with no `finalizedAt`; reason 1-1000 chars ("Record how you verified the sending mailbox and its message reference."); `sending` needs >=5 min old ("Wait five minutes and check the sending mailbox before reconciling."); `accepted` cannot be turned into failed. "Verified sent" -> `accepted` + `acceptedAt` + `finalizeDailyEmail` (no resend); "Verified not sent" -> `failed`. Patches `reconciledBy`, `reconciliationReason` on email and receipt, then `refreshWorkdayChecks`.
 - Auto-settle (9 Nov, Sameera's "Could not confirm the email was sent"): cron `ta-check-uncertain-sends` (every 5 min) runs `ta/eodMail:checkUncertain`, which reads `ta/dailyEmails:uncertainToCheck` (uncertain, no `reconciledBy`/`finalizedAt`/round, `startedAt` older than 11 min so no live action is judged) and asks Graph via `findSentMessage` (graphMail.ts: sender's and the system mailbox's Sent Items, subject match since `startedAt`-1 min). Found -> `ta/dailyEmails:autoReconcile` `sent:true` (accepted + `finalizeDailyEmail`); not found in every mailbox -> `sent:false` (failed, so the TA can send again); any Graph doubt ("unknown": refusal, no token, a full 100-item page without a match) -> left for a person. Never sends. Also `emailEod` writes the web-side error to `sendError` when the action call throws (the page only shows the generic line).
+- What the TA reads after a failed daily send (16 Nov, Shihab's midday): the old catch-all "Could not confirm the email was sent. Do not send it again yet" appeared for every failure, because Graph's own text ("request-id", a URL) is on `userError`'s technical list and was swapped for it. Now `emailEod` (daily path only; the legacy `sendEod`/`resendEod` keep their wording) returns `plain: true` with a final sentence from `plainSendFailure` (src/lib/sendFailure.ts, tests/sendFailure.test.ts): Graph answered 4xx -> "…Nothing was sent." with the reason in words (403/404 mailbox permission, 413 too large, 429 limiting, 401 sign-in, 400 bad address); 5xx or "could not be reached" (same test as `ta/eodMail:send` marks `uncertain`) or the action throwing after reservation -> `UNCERTAIN_SEND_MESSAGE` (do not resend, auto-check within ~15 min); `begin` refused (nothing reserved) -> the guard's own sentence. `sendDailyEmail` shows `plain` text as is; its own catch now only covers failures before anything was reserved ("Nothing was sent: …"). The raw reason is still saved as `sendError`. Keep `isUncertainSend` and the regex in `ta/eodMail:send` in step.
 - Today's Checks also surfaces reconcile (Workday UI; see /workday).
 - Stuck sends (30 Oct): cron `ta-flag-stuck-sends` (every 5 min, `flagStuckSends`, index `dailyEmails.by_status`) turns any `sending` email older than 15 minutes into `uncertain` (and its receipt) so the Lead sees it; before this a dead action left `sending` for days (Sameera 29 Oct, Priya 23 Oct) and blocked that sender. It never resends. It also flips receipts of the older send path (`taWorkdayMail.by_status`, no daily email). An email with no location holds only a job without locations; midday and corrections now check the research link with the sender's real role.
 - Stuck sends are told (2 Nov): every flip inserts a `notifications` row type `eod_stuck` ("Stuck end-of-day email: <TA> · <opening>") for every active admin and the job's `taLeadId` (`tellStuck` in `ta/eodCopies.ts`; `workdayId` from the receipt so the bell opens Today's Checks at that day and job). Before this the TA was blocked on the opening until they asked somebody; the flag itself told no one.
@@ -292,9 +293,9 @@ Short hashes from `git log`; dates are commit dates.
 - 2026-11-02 - nobody was told about end-of-day trouble: a stuck send now bells the admins and the job's lead (`eod_stuck`), a 17:30 reminder bells each TA with a 100% position still without an EOD (`eod_reminder`), an 18:30 digest bells each lead (`eod_lead_digest`), and an expired day bells the lead (`workday_expired`, see /workday). New `convex/ta/eodReminders.ts`, `src/lib/eodReminders.ts`.
 
 <!-- skill-meta
-verified-commit: 1a5d31c5
-verified-hash: ca446ad446f53bfcc7a035a826c6da0e5632e9f5
-verified-date: 2026-11-02
+verified-commit: f99f8ad
+verified-hash: c6f513dd383d364dce51a2f4ad692e16aa2aca32
+verified-date: 2026-11-16
 sources:
   src/app/openings/[id]/eod/page.tsx
   src/app/openings/[id]/midday/page.tsx
@@ -317,6 +318,8 @@ sources:
   convex/ta/eodCopies.ts
   convex/ta/eodReminders.ts
   src/lib/eodReminders.ts
+  src/lib/sendFailure.ts
+  tests/sendFailure.test.ts
   tests/eodReminders.test.ts
   convex/lib/dailyEmail.ts
   convex/lib/graphMail.ts
