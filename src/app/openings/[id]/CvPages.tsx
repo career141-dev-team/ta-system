@@ -35,6 +35,27 @@ export function warmPdf(src?: string) {
   (src ? openPdf(src) : pdfjs()).catch(() => {});
 }
 
+/** Page 1 of a CV drawn ahead, off screen, before anyone asks for it (a hover on its
+ *  card), at about the width the big viewer gives it. The viewer shows it the moment
+ *  it opens, so its opening motion never waits on drawing (owner, 17 Nov 2026: "it
+ *  takes time and gets stuck"). One per file, kept while the page is open. */
+const firsts = new Map<string, Promise<HTMLCanvasElement>>();
+export function warmCv(src: string) {
+  if (firsts.has(src)) return;
+  const p = openPdf(src).then(async (d) => {
+    const page = await d.getPage(1);
+    const base = page.getViewport({ scale: 1 });
+    const vp = page.getViewport({ scale: ((window.innerWidth * 0.76) / base.width) * (window.devicePixelRatio || 1) });
+    const c = document.createElement("canvas");
+    c.width = Math.floor(vp.width);
+    c.height = Math.floor(vp.height);
+    await page.render({ canvas: c, viewport: vp }).promise;
+    return c;
+  });
+  firsts.set(src, p);
+  p.catch(() => firsts.delete(src));
+}
+
 /** The CV's words, read once per file (for "Ask AURA about this CV"). */
 const texts = new Map<string, Promise<string>>();
 export function cvText(src: string) {
@@ -65,7 +86,20 @@ export function cvText(src: string) {
  *
  * Give it `key={src}` so a new file starts clean.
  */
-export default function CvPages({ src, fit, overlay }: { src: string; fit: "page" | "width"; /** Laid over page 1 (the green box). */ overlay?: ReactNode }) {
+export default function CvPages({
+  src,
+  fit,
+  overlay,
+  calm = 0,
+}: {
+  src: string;
+  fit: "page" | "width";
+  /** Laid over page 1 (the green box). */
+  overlay?: ReactNode;
+  /** Milliseconds to keep the page free first (an opening motion is running): page 1
+   *  is shown from the copy drawn ahead if there is one, everything else is drawn after. */
+  calm?: number;
+}) {
   const box = useRef<HTMLDivElement>(null);
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [failed, setFailed] = useState(false);
@@ -108,6 +142,7 @@ export default function CvPages({ src, fit, overlay }: { src: string; fit: "page
   // as pages arrive. The first page is drawn first, then the rest. Each is drawn off screen and copied in whole, so a resize never shows a
   // blank page. Sharp on high-density screens.
   const shown = useRef(false);
+  const calmed = useRef(false);
   useEffect(() => {
     if (!doc || !size.w || !size.h || !box.current) return;
     const root = box.current;
@@ -160,13 +195,33 @@ export default function CvPages({ src, fit, overlay }: { src: string; fit: "page
         canvas.style.width = `${Math.floor(vp.width)}px`;
         canvas.style.height = `${Math.floor(vp.height)}px`;
       }
+      // Page 1 drawn ahead (warmCv): shown at once, scaled to fit. The rest - and a
+      // sharp page 1 - wait until the opening motion is over, so it never stutters.
+      // Only the first drawing waits; a later resize (full view) redraws at once.
+      const wait = calm && !calmed.current ? calm : 0;
+      calmed.current = true;
+      const ready = firsts.get(src);
+      if (wait && ready) {
+        const pre = await ready.catch(() => null);
+        const c1 = canvasOf(1);
+        if (pre && c1 && !off) {
+          c1.width = pre.width;
+          c1.height = pre.height;
+          c1.getContext("2d")?.drawImage(pre, 0, 0);
+          if (!shown.current) {
+            shown.current = true;
+            gsap.set(root.querySelectorAll("canvas"), { opacity: 1 });
+          }
+        }
+      }
+      if (wait) await new Promise((r) => setTimeout(r, wait));
       for (let n = 1; n <= doc.numPages && !off; n++) await draw(n);
     })();
     return () => {
       off = true;
       tasks.forEach((t) => t.cancel());
     };
-  }, [doc, size, fit]);
+  }, [doc, size, fit, src, calm]);
 
   return (
     <div ref={box} className="h-full w-full overflow-y-auto">

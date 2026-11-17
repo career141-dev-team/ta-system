@@ -366,7 +366,7 @@ export default function CvPreview({
           <div className="min-h-0 flex-1 overflow-hidden rounded-t-[2.6rem] bg-ink max-md:rounded-t-md">
             {/* Drawn from the click (owner, 17 Nov 2026: no empty dark box first), so it
                 is ready as the frame lands. */}
-            <CvPages key={src} src={src} fit="width" overlay={box && <GreenBox box={box} setBox={setBox} />} />
+            <CvPages key={src} src={src} fit="width" calm={from ? (EXPAND + OPEN_GROW) * 1000 + 150 : 0} overlay={box && <GreenBox box={box} setBox={setBox} />} />
           </div>
         ) : (
         <div className="min-h-0 flex-1 overflow-y-auto pr-[3%] [scrollbar-color:#fff_transparent]">

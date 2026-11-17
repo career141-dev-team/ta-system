@@ -9,7 +9,7 @@ import { useRole } from "@/lib/role";
 import { SHOW_TABS } from "./view";
 import PillMenu, { type MenuOption } from "./PillMenu";
 import TickList from "./TickList";
-import { warmPdf } from "./CvPages";
+import { warmCv, warmPdf } from "./CvPages";
 import CardMenu from "./CardMenu";
 import MoveForm from "./MoveForm";
 import AddCandidate from "./AddCandidate";
@@ -113,6 +113,10 @@ type Card = Person & {
   /** Their own CV file, when they came from a view that had it. */
   cv?: string;
 };
+
+/** The candidate's CV file. Sample: the two demo CVs in public/cvs; the real board
+ *  reads each candidate's own. */
+const cvFileOf = (c: Card) => c.cv ?? (c.name === "Rashini Kaweesha" ? "/cvs/p1.pdf" : "/cvs/p2.pdf");
 
 /** Someone shortlisted in another view of this opening, as a card: theirs to work,
  *  with the CV they came with; salary and notice period still to come from the
@@ -794,7 +798,7 @@ export default function PipelineBoard() {
           name={cvFor.name}
           title={cvFor.title}
           // Sample: the two demo CVs in public/cvs; the real board reads each candidate's own.
-          src={cvFor.cv ?? (cvFor.name === "Rashini Kaweesha" ? "/cvs/p1.pdf" : "/cvs/p2.pdf")}
+          src={cvFileOf(cvFor)}
           // What the desk holds for the green box; a detail still missing is left out.
           start={{
             designation: cvFor.title,
@@ -1026,8 +1030,9 @@ const CandidateCard = memo(function CandidateCard({
       data-card-id={p.id}
       data-locked={p.lockedBy ? "" : undefined}
       onPointerDown={(e) => onPickUp(e, p, stage)}
-      // A click opens the CV: start pdf.js on the way in, so it opens with no wait.
-      onPointerEnter={() => warmPdf()}
+      // A click opens the CV: on the way in, read this candidate's CV and draw its first
+      // page ahead, so the opening motion never waits on it (owner, 17 Nov 2026).
+      onPointerEnter={() => warmCv(cvFileOf(p))}
       // A click anywhere on the card (name, initials, details) opens the CV
       // (owner, 12 Nov 2026); a drag does not.
       onClick={(e) => {
