@@ -8,8 +8,9 @@ import { isTechnicalMessage } from "./userError";
  * and was swapped for that fallback. A refusal Microsoft answered, where nothing went out, told the
  * TA to wait for a Lead for no reason; the raw reason stays on the row as `sendError` for the Lead.
  *
- * "uncertain" is the same test convex/ta/eodMail.ts uses to mark the row uncertain: Graph did not
- * answer or answered 5xx, so the message may have gone. Keep the two in step.
+ * "uncertain" follows the sender's own `maybeSent` (17 Nov), the same flag convex/ta/eodMail.ts files the row by:
+ * only the request that actually sends can leave an email "maybe gone". The wording test is kept for a caller that
+ * has no flag. A Microsoft fault while the draft or its CVs were still being uploaded sent nothing, and says so.
  */
 export type SendFailure = { state: "not_sent" | "uncertain"; message: string };
 
@@ -18,10 +19,14 @@ export const UNCERTAIN_SEND_MESSAGE =
 
 export const isUncertainSend = (raw: string) => /could not be reached|returned 5\d\d/i.test(raw);
 
-export function plainSendFailure(raw: string): SendFailure {
-  if (isUncertainSend(raw)) return { state: "uncertain", message: UNCERTAIN_SEND_MESSAGE };
+export function plainSendFailure(raw: string, maybeSent?: boolean): SendFailure {
+  if (maybeSent ?? isUncertainSend(raw)) return { state: "uncertain", message: UNCERTAIN_SEND_MESSAGE };
   const lead = "Nothing was sent.";
   const lead2 = (said: string) => ({ state: "not_sent" as const, message: `${said} ${lead}` });
+  if (/did not answer while|could not be reached|returned 5\d\d/i.test(raw))
+    return lead2("Microsoft did not respond while the email was being prepared. Try again in a minute.");
+  if (/Could not load the saved CVs/i.test(raw))
+    return lead2("The saved CVs for this email could not be loaded. Try again; if it repeats, tell your TA Lead.");
   if (/sign-in failed|credentials are not configured|No sending mailbox/i.test(raw))
     return lead2("The system's mail connection is not working. Tell your TA Lead, who can see the reason on the email.");
   const status = Number(/returned (\d{3})/i.exec(raw)?.[1]);
