@@ -191,25 +191,22 @@ export default function CvPreview({
         const b = board.getBoundingClientRect();
         gsap.set(board, { willChange: "transform, filter, opacity", transformOrigin: `${c.left - b.left + c.width / 2}px ${c.top - b.top + c.height / 2}px` });
       }
-      // Two stages, as in the owner's recording (17 Nov 2026: "first the text card lifts
-      // a little and expands, then after 2 or 3 seconds the CV appears big"):
-      // 1. the card lifts and grows into a dark details card near where it was, the board
-      //    zooming soft behind it, and the candidate's lines appear one by one;
-      // 2. a moment later that card expands into the full CV frame.
-      const mid = midShape(c);
-      const lines = briefOf(ghost, name, title, start);
+      // Two stages (owner, 17 Nov 2026, from his recording; then "the pop-up must be the
+      // same design as the card behind, with the same details"):
+      // 1. the card itself - same white card, same details - lifts toward you and grows,
+      //    its rows popping up one after another, the board zooming soft behind it;
+      // 2. a moment later it expands into the full CV.
+      const lift = liftOf(c);
       enter.current = gsap
         .timeline()
-        // 1. Lift and grow into the details card; the card's own details melt away.
-        .to(ghost, { ...mid, duration: LIFT, ease: "back.out(1.3)" }, 0)
-        .to(details, { opacity: 0, filter: "blur(6px)", duration: LIFT * 0.4, ease: EASE.in }, 0)
+        // 1. The same card lifts and grows, evenly (its design is kept, nothing reflows).
+        .to(ghost, { ...lift, duration: LIFT, ease: "back.out(1.4)" }, 0)
+        .fromTo(details, { y: 8 }, { y: 0, duration: 0.35, stagger: 0.06, ease: "back.out(2)" }, LIFT * 0.4)
         .to(board, { ...BOARD_AWAY, duration: LIFT + 0.2, ease: GROW_EASE }, 0)
         .to("[data-veil]", { opacity: 1, duration: LIFT, ease: GROW_EASE }, 0)
-        // The lines come into focus one after another, like the recording's text.
-        .to(lines, { opacity: 1, filter: "blur(0px)", y: 0, duration: 0.4, stagger: 0.2, ease: EASE.out }, LIFT * 0.7)
-        // 2. Then it expands into the full CV.
-        .to(lines, { opacity: 0, filter: "blur(6px)", duration: 0.15, ease: EASE.in }, EXPAND)
-        .to(ghost, { ...shapeOf(frame), duration: GROW, ease: GROW_EASE }, EXPAND)
+        // 2. Then it expands into the full CV: its details melt, it darkens to the frame.
+        .to(details, { opacity: 0, filter: "blur(6px)", duration: 0.18, ease: EASE.in }, EXPAND)
+        .to(ghost, { ...shapeOf(frame), scale: 1, x: 0, y: 0, boxShadow: "none", duration: GROW, ease: GROW_EASE }, EXPAND)
         .to(frame, { opacity: 1, duration: LAND, ease: "none" }, EXPAND + GROW - LAND)
         .set(ghost, { display: "none" }, EXPAND + GROW)
         .to(inside, { opacity: 1, filter: "blur(0px)", duration: 0.3, stagger: 0.05, ease: EASE.out, clearProps: "filter" }, EXPAND + GROW - LAND)
@@ -458,52 +455,19 @@ const LAND = 0.18;
 const LIFT = 0.5;
 const EXPAND = 2.4;
 
-/** The details card the clicked card lifts into: dark, about one and a half cards wide,
- *  a little above where the card was, kept inside the window. */
-function midShape(c: DOMRect): gsap.TweenVars {
+/** How the clicked card lifts: about 1.4 times its size (less if the window is small),
+ *  a little up, shifted only as far as needed to stay inside the window. Scaled evenly,
+ *  so it stays exactly the card behind, only bigger. */
+function liftOf(c: DOMRect): gsap.TweenVars {
   const pad = 16;
-  const w = Math.min(Math.max(c.width * 1.5, 300), 440, window.innerWidth - pad * 2);
-  const h = Math.min(w * 0.62, window.innerHeight - pad * 2);
-  const left = Math.min(Math.max(c.left + c.width / 2 - w / 2, pad), window.innerWidth - w - pad);
-  const top = Math.min(Math.max(c.top + c.height / 2 - h / 2 - 24, pad), window.innerHeight - h - pad);
-  return {
-    left,
-    top,
-    width: w,
-    height: h,
-    backgroundColor: "var(--color-ink)",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    borderBottomRightRadius: 20,
-    borderBottomLeftRadius: 20,
-    boxShadow: "0 24px 60px rgba(0,0,0,0.28)",
-  };
-}
-
-/** The candidate's lines for the details card, laid over the growing copy and hidden
- *  (blurred, a little low) until the timeline brings them in. Text only - textContent,
- *  never HTML. */
-function briefOf(ghost: HTMLElement, name: string, title: string, d: BoxContent): HTMLElement[] {
-  const box = document.createElement("div");
-  box.className = "absolute inset-0 flex flex-col justify-center gap-[max(0.45rem,5px)] px-[max(1.6rem,16px)] text-white";
-  const row = (text: string, cls: string) => {
-    const el = document.createElement("p");
-    el.className = "truncate " + cls;
-    el.textContent = text;
-    box.appendChild(el);
-    return el;
-  };
-  const out = [
-    row(name, "text-h3 font-semibold"),
-    row([title || d.designation, d.company].filter(Boolean).join(" · "), "text-small text-white/70"),
-  ];
-  if (d.notice) out.push(row(`Notice  ${d.notice}`, "text-small text-white/85"));
-  if (d.currentSalary || d.expectedSalary)
-    out.push(row(`Salary  ${[d.currentSalary, d.expectedSalary].filter(Boolean).join(" → ")}`, "text-small text-white/85"));
-  out.push(row("Opening the CV…", "mt-1 text-caption text-white/50"));
-  ghost.appendChild(box);
-  gsap.set(out, { opacity: 0, filter: "blur(8px)", y: 6 });
-  return out;
+  const scale = Math.max(1, Math.min(1.4, (window.innerWidth - pad * 2) / c.width, (window.innerHeight - pad * 2) / c.height));
+  const w = c.width * scale;
+  const h = c.height * scale;
+  const cx = c.left + c.width / 2;
+  const cy = c.top + c.height / 2 - 24;
+  const x = Math.min(Math.max(cx - w / 2, pad), window.innerWidth - w - pad) + w / 2 - (c.left + c.width / 2);
+  const y = Math.min(Math.max(cy - h / 2, pad), window.innerHeight - h - pad) + h / 2 - (c.top + c.height / 2);
+  return { scale, x, y, transformOrigin: "50% 50%", boxShadow: "0 24px 60px rgba(0,0,0,0.18)" };
 }
 const GROW_EASE = "power3.inOut";
 // Owner, 17 Nov 2026: the board must zoom in and out more (1.06 was too little), stay
