@@ -15,6 +15,17 @@ import { COLUMNS, KIND, meta, setItems, update, useItems, type Item } from "./da
 // builders mark it fixed (and in which version) or not doing it. A card the lead opened
 // and left undecided moves to Lead review. The sender's bell rings at every move.
 // Cards glide to their new column (GSAP Flip).
+// Layout (owner's Figma comment, 17 Nov 2026: "Kanban chart Layout follow"): the
+// Pipeline board is the app's Kanban, so the columns, headers, cards and the empty
+// column look like its own (PipelineBoard.tsx, TickList.tsx).
+
+// An empty column: a quiet dashed box where cards would sit.
+const EMPTY: Record<string, string> = {
+  new: "Nothing new",
+  review: "Nothing waiting for review",
+  builders: "Nothing with the builders",
+  done: "Nothing done yet",
+};
 
 type Mode = "answer" | "decline" | "fix" | null;
 
@@ -96,17 +107,19 @@ export default function FeedbackBoard() {
 
 
   return (
-    <div ref={board} className="grid min-h-0 flex-1 grid-cols-4 gap-[max(1.5rem,10px)] overflow-y-auto p-[max(2.5rem,12px)] pt-[max(2.5rem,16px)] max-lg:grid-cols-2 max-sm:grid-cols-1 max-md:pt-12">
+    // As on the Pipeline: columns side by side, each scrolling itself with no bar; on
+    // a narrow screen the row slides sideways inside the board.
+    <div ref={board} className="flex min-h-0 flex-1 gap-[max(1.75rem,18px)] overflow-x-auto px-[max(1.5rem,14px)] pt-[max(2.5rem,16px)] [scrollbar-width:none] max-md:pt-12">
       {COLUMNS.map((c) => {
         const list = items.filter((x) => x.status === c.status);
         return (
-          <section key={c.status} aria-label={c.name} className="flex min-h-[max(20rem,160px)] flex-col rounded-lg bg-canvas p-[max(0.875rem,8px)]">
-            <h2 className="flex items-center gap-2.5 px-2 pb-3 pt-2 text-[max(1.0625rem,14px)] text-ink">
-              <span className={"size-2 rounded-full " + c.dot} />
-              {c.name}
-              <span className="ml-auto text-small text-ink-3">{list.length}</span>
-            </h2>
-            <ul className="flex min-h-0 flex-col gap-[max(0.875rem,8px)] overflow-y-auto [scrollbar-width:thin]">
+          <section key={c.status} aria-label={c.name} className="flex min-h-0 min-w-[max(15rem,250px)] flex-1 basis-0 flex-col rounded-t-md border-[1.8px] border-b-0 border-surface-2 bg-surface">
+            <header className="flex items-center gap-2 px-[max(1rem,11px)] pb-[max(0.8rem,9px)] pt-[max(1rem,11px)]">
+              <span aria-hidden="true" className={"size-2 shrink-0 rounded-full " + c.dot} />
+              <h2 className="min-w-0 flex-1 truncate text-col font-semibold text-ink">{c.name}</h2>
+              <span className="rounded-md bg-surface-3 px-2 py-0.5 text-chip font-medium text-ink-2">{list.length}</span>
+            </header>
+            <ul className="flex min-h-0 flex-1 flex-col gap-[max(1rem,10px)] overflow-y-auto overscroll-contain px-[max(1.25rem,14px)] pb-[max(1rem,10px)] pt-1.5 [scrollbar-width:none]">
               {list.map((x) => (
                 <Card
                   key={x.id}
@@ -127,7 +140,11 @@ export default function FeedbackBoard() {
                   canAct={lead}
                 />
               ))}
-              {!list.length && <li className="px-2 py-6 text-center text-small text-ink-3">{c.status === "new" ? "Nothing new" : "Empty"}</li>}
+              {!list.length && (
+                <li className="flex h-[max(5.5rem,64px)] shrink-0 items-center justify-center rounded-md border-[1.5px] border-dashed border-border-strong px-3 text-center text-small text-ink-3">
+                  {EMPTY[c.status]}
+                </li>
+              )}
             </ul>
           </section>
         );
@@ -137,7 +154,11 @@ export default function FeedbackBoard() {
   );
 }
 
-const BTN = "rounded-full px-[max(0.875rem,10px)] py-[max(0.5rem,6px)] text-small font-medium transition-colors";
+// The app's buttons: green for the main step, outlined for the other, quiet text for the rest.
+const BTN = "rounded-full px-[max(0.875rem,10px)] py-[max(0.45rem,6px)] text-small font-medium transition-colors";
+const MAIN = BTN + " bg-brand text-white hover:bg-brand-strong";
+const OTHER = BTN + " border border-border-strong bg-surface text-ink hover:bg-surface-2";
+const QUIET = BTN + " text-ink-2 hover:text-ink";
 
 function Card(p: {
   x: Item;
@@ -164,19 +185,27 @@ function Card(p: {
   const need = mode === "answer" || mode === "decline";
 
   return (
-    <li data-fb data-flip-id={x.id} className={"rounded-md bg-surface p-[max(1.125rem,10px)] transition-shadow " + (open ? "shadow-float" : "shadow-card hover:shadow-float")}>
+    <li
+      data-fb
+      data-flip-id={x.id}
+      className={"shrink-0 rounded-md border bg-surface p-[max(1rem,12px)] transition-colors " + (open ? "border-brand/40" : "border-border hover:border-border-strong")}
+    >
       <button type="button" aria-expanded={open} onClick={p.onToggle} className="block w-full text-left">
-        <span className="flex flex-wrap gap-1.5">
-          <span className={"rounded-full px-2.5 py-0.5 text-caption font-medium " + KIND[x.kind].chip}>{KIND[x.kind].label}</span>
-          {x.blocks && x.status !== "done" && <span className="rounded-full bg-danger px-2.5 py-0.5 text-caption font-medium text-white">Blocks work</span>}
+        <span className="flex flex-wrap gap-[max(0.35rem,4px)]">
+          <span className={"rounded-md px-1.5 py-0.5 text-chip font-medium " + KIND[x.kind].chip}>{KIND[x.kind].label}</span>
+          {x.blocks && x.status !== "done" && <span className="rounded-md bg-danger px-1.5 py-0.5 text-chip font-medium text-white">Blocks work</span>}
         </span>
-        <span className="mt-2.5 block text-[max(1.0625rem,14px)] leading-snug text-ink">{x.title}</span>
-        <span className="mt-1.5 block text-small text-ink-3">{meta(x)}</span>
+        <span title={x.title} className="mt-[max(0.6rem,7px)] line-clamp-2 text-card-name font-medium leading-snug text-ink">
+          {x.title}
+        </span>
+        <span title={meta(x)} className="mt-1 block truncate text-card-sub text-ink-2">
+          {meta(x)}
+        </span>
       </button>
 
       {open && (
         <div ref={body} className="overflow-hidden">
-          <p className="mt-3 whitespace-pre-line rounded-sm bg-canvas px-3 py-2.5 text-small text-ink">{x.text || "Only a voice note."}</p>
+          <p className="mt-3 whitespace-pre-line break-words rounded-sm bg-surface-2 px-3 py-2.5 text-small text-ink">{x.text || "Only a voice note."}</p>
           {x.screenshot && (
             <a href={x.screenshot} target="_blank" rel="noreferrer" className="mt-2.5 block" title="Open the screenshot full size">
               {/* eslint-disable-next-line @next/next/no-img-element -- the picture the sender attached */}
@@ -185,7 +214,7 @@ function Card(p: {
           )}
           {x.voice && <audio controls preload="none" src={x.voice} className="mt-2.5 h-9 w-full" />}
           {x.page && (
-            <p className="mt-2.5 text-caption text-ink-3">
+            <p className="mt-2.5 truncate text-caption text-ink-3" title={x.page}>
               Sent from{" "}
               {x.href ? (
                 <Link href={x.href} className="font-medium text-brand hover:underline">
@@ -197,7 +226,7 @@ function Card(p: {
             </p>
           )}
           {x.answer && (
-            <p className="mt-2.5 text-small text-ink-2">
+            <p className="mt-2.5 break-words text-small text-ink-2">
               <span className="font-medium text-ink">{x.outcome === "declined" ? "Why not: " : "Answer: "}</span>
               {x.answer}
             </p>
@@ -212,7 +241,7 @@ function Card(p: {
                   onKeyDown={(e) => e.key === "Enter" && p.onFinish()}
                   placeholder="Which version? (e.g. v4.14) - optional"
                   maxLength={20}
-                  className="rounded-sm border border-border px-3 py-2 text-small outline-none focus:border-brand"
+                  className="rounded-sm border border-border bg-surface px-3 py-2 text-small text-ink outline-none focus:border-brand"
                 />
               ) : (
                 <textarea
@@ -223,14 +252,14 @@ function Card(p: {
                   rows={2}
                   maxLength={1000}
                   placeholder={mode === "answer" ? `Your answer to ${x.by}` : `Why not? ${x.by} reads this`}
-                  className="resize-none rounded-sm border border-border px-3 py-2 text-small outline-none [field-sizing:content] focus:border-brand"
+                  className="max-h-40 resize-none rounded-sm border border-border bg-surface px-3 py-2 text-small text-ink outline-none [field-sizing:content] focus:border-brand"
                 />
               )}
               <div className="flex gap-2">
-                <button type="button" disabled={need && !p.words.trim()} onClick={p.onFinish} className={BTN + " bg-ink text-white hover:bg-black disabled:opacity-40"}>
+                <button type="button" disabled={need && !p.words.trim()} onClick={p.onFinish} className={MAIN + " disabled:pointer-events-none disabled:opacity-40"}>
                   {mode === "answer" ? "Send answer" : mode === "fix" ? "Mark fixed" : "Close it"}
                 </button>
-                <button type="button" onClick={() => p.onMode(null)} className={BTN + " text-ink-3 hover:text-ink"}>
+                <button type="button" onClick={() => p.onMode(null)} className={QUIET}>
                   Cancel
                 </button>
               </div>
@@ -243,26 +272,26 @@ function Card(p: {
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {deciding && (
             <>
-              <button type="button" onClick={p.onPass} className={BTN + " bg-ink text-white hover:bg-black"}>
+              <button type="button" onClick={p.onPass} className={MAIN}>
                 Pass to builders
               </button>
-              <button type="button" onClick={() => p.onMode("answer")} className={BTN + " border border-border-strong text-ink hover:bg-surface-2"}>
+              <button type="button" onClick={() => p.onMode("answer")} className={OTHER}>
                 Answer myself
               </button>
             </>
           )}
           {x.status === "builders" && (
-            <button type="button" onClick={() => p.onMode("fix")} className={BTN + " bg-ink text-white hover:bg-black"}>
+            <button type="button" onClick={() => p.onMode("fix")} className={MAIN}>
               Mark fixed
             </button>
           )}
           {open && x.status !== "done" && (
-            <button type="button" onClick={() => p.onMode("decline")} className={BTN + " text-ink-3 hover:text-ink"}>
+            <button type="button" onClick={() => p.onMode("decline")} className={QUIET}>
               Not doing it
             </button>
           )}
           {open && (
-            <button type="button" onClick={() => (sure ? p.onDelete() : setSure(true))} onBlur={() => setSure(false)} className={BTN + " ml-auto " + (sure ? "text-danger" : "text-ink-3 hover:text-danger")}>
+            <button type="button" onClick={() => (sure ? p.onDelete() : setSure(true))} onBlur={() => setSure(false)} className={BTN + " ml-auto " + (sure ? "bg-danger-soft text-danger" : "text-ink-2 hover:text-danger")}>
               {sure ? "Press again to delete" : "Delete"}
             </button>
           )}

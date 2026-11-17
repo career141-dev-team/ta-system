@@ -705,6 +705,9 @@ export function EffortTiles({
   onTarget: (k: EffortKey, n: number | undefined) => void;
 }) {
   const keys = Object.keys(EFFORT_LABEL) as EffortKey[];
+  // The tile whose empty target the TA just chose to set.
+  const [targetFor, setTargetFor] = useState<EffortKey | null>(null);
+  const anyTarget = keys.some((k) => targets[k] !== undefined);
   return (
     <>
       {/* DATE, ASSIGNEE and 100% / FOLLOW UP: the row's first three cells. The work
@@ -722,7 +725,7 @@ export function EffortTiles({
             <div
               key={k}
               title={EFFORT_HINT[k]}
-              className="min-w-[max(5.5rem,72px)] rounded-sm bg-surface-2 px-[max(0.9rem,9px)] py-[max(0.6rem,6px)] focus-within:ring-2 focus-within:ring-brand/30"
+              className="group/tile min-w-[max(5.5rem,72px)] rounded-sm bg-surface-2 px-[max(0.9rem,9px)] py-[max(0.6rem,6px)] focus-within:ring-2 focus-within:ring-brand/30"
             >
               <span className="flex items-baseline gap-1">
                 <Num
@@ -741,18 +744,37 @@ export function EffortTiles({
               <span className="block text-caption font-medium text-ink-3">
                 {label}
               </span>
-              {/* The TARGET row: shown in the email only when a target is set. */}
-              {(!readOnly || targets[k] !== undefined) && (
-                <span className="mt-0.5 flex items-center gap-1 text-caption text-ink-3">
-                  target
-                  <Num
-                    value={targets[k]}
-                    readOnly={readOnly}
-                    label={`${label} target`}
-                    onChange={(n) => onTarget(k, n)}
-                    className="w-[3ch] text-ink-2"
-                    placeholder="—"
-                  />
+              {/* The TARGET row: only when a target is set (owner, 17 Nov 2026: the
+                  empty "target —" lines read as broken). The line keeps its height
+                  so the tiles stay level; with none set, "Set target" shows on
+                  hover, focus or touch. */}
+              {(!readOnly || anyTarget) && (
+                <span className="mt-0.5 flex h-[max(1rem,13px)] items-center gap-1 whitespace-nowrap text-caption text-ink-3">
+                  {targets[k] !== undefined || targetFor === k ? (
+                    <>
+                      Target
+                      <Num
+                        value={targets[k]}
+                        readOnly={readOnly}
+                        label={`${label} target`}
+                        onChange={(n) => onTarget(k, n)}
+                        onBlur={() => setTargetFor(null)}
+                        autoFocus={targetFor === k}
+                        className="w-[3ch] text-ink-2"
+                      />
+                    </>
+                  ) : (
+                    !readOnly && (
+                      <button
+                        type="button"
+                        onClick={() => setTargetFor(k)}
+                        aria-label={`Set a ${label} target`}
+                        className="opacity-0 transition-opacity hover:text-brand focus-visible:opacity-100 group-hover/tile:opacity-100 max-md:opacity-100 [@media(hover:none)]:opacity-100"
+                      >
+                        Set target
+                      </button>
+                    )
+                  )}
                 </span>
               )}
             </div>
@@ -770,6 +792,8 @@ function Num({
   onChange,
   className,
   placeholder,
+  onBlur,
+  autoFocus,
 }: {
   value: number | undefined;
   readOnly: boolean;
@@ -777,6 +801,8 @@ function Num({
   onChange: (n: number | undefined) => void;
   className: string;
   placeholder?: string;
+  onBlur?: () => void;
+  autoFocus?: boolean;
 }) {
   if (readOnly)
     return <span className={className}>{value ?? placeholder ?? ""}</span>;
@@ -786,6 +812,9 @@ function Num({
       value={value ?? ""}
       placeholder={placeholder}
       aria-label={label}
+      onBlur={onBlur}
+      autoFocus={autoFocus}
+      onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
       onChange={(e) => {
         const d = e.target.value.replace(/\D/g, "").slice(0, 3);
         onChange(d === "" ? undefined : Number(d));
@@ -855,33 +884,38 @@ export function RefereeCalls({
         )}
       </div>
       {include ? (
-        // The TA System's two groups, side by side like the effort tiles; a call
-        // crosses to the other group with the small arrows on its card.
-        <div className="mt-[max(0.7rem,6px)] grid grid-cols-2 gap-[max(1rem,10px)] max-md:grid-cols-1">
+        // The TA System's two groups in one quiet box like the candidate table above:
+        // a header row with a small tinted label, then one light row per call. A call
+        // crosses to the other group with the small arrows that show on its row.
+        <div className="mt-[max(0.7rem,6px)] grid grid-cols-2 divide-x divide-border overflow-hidden rounded-md border border-border max-md:grid-cols-1 max-md:divide-x-0 max-md:divide-y">
           {[true, false].map((good) => {
             const group = refs.filter((r) => r.good === good);
             return (
-              <div key={String(good)} className="min-w-0">
-                <span
-                  className={
-                    CHIP +
-                    (good
-                      ? " bg-success-soft text-success"
-                      : " bg-surface-3 text-ink-2")
-                  }
-                >
+              <section key={String(good)} className="min-w-0">
+                <h4 className="flex items-center gap-2 border-b border-border bg-surface-2 px-[max(0.8rem,8px)] py-[max(0.55rem,6px)]">
                   <span
                     className={
-                      "size-1.5 rounded-full " +
-                      (good ? "bg-success" : "bg-ink-3")
+                      CHIP +
+                      (good
+                        ? " bg-success-soft text-success"
+                        : " bg-surface-3 text-ink-2")
                     }
-                  />
-                  {good ? "Positive · contacts available" : "Not successful"}
-                  <span className="font-normal opacity-70">{group.length}</span>
-                </span>
-                <ul className="mt-[max(0.5rem,5px)] space-y-[max(0.5rem,5px)]">
+                  >
+                    <span
+                      className={
+                        "size-1.5 rounded-full " +
+                        (good ? "bg-success" : "bg-ink-3")
+                      }
+                    />
+                    {good ? "Positive · contacts available" : "Not successful"}
+                  </span>
+                  <span className="text-caption text-ink-3">
+                    {group.length}
+                  </span>
+                </h4>
+                <ul className="divide-y divide-border">
                   {group.map((r) => (
-                    <RefCard
+                    <RefRow
                       key={r.id + String(r.good)}
                       r={r}
                       readOnly={readOnly}
@@ -890,17 +924,17 @@ export function RefereeCalls({
                     />
                   ))}
                   {!group.length && (
-                    <li className="rounded-md border border-dashed border-border px-[max(0.9rem,9px)] py-[max(0.7rem,7px)] text-caption text-ink-3">
+                    <li className="px-[max(0.8rem,8px)] py-[max(0.7rem,7px)] text-caption text-ink-3">
                       No calls here
                     </li>
                   )}
                 </ul>
-              </div>
+              </section>
             );
           })}
         </div>
       ) : (
-        <p className="mt-[max(0.7rem,6px)] rounded-md border border-dashed border-border px-[max(0.9rem,9px)] py-[max(0.7rem,7px)] text-small text-ink-3">
+        <p className="mt-[max(0.7rem,6px)] rounded-md border border-dashed border-border px-[max(0.8rem,8px)] py-[max(0.7rem,7px)] text-small text-ink-3">
           {refs.length} call{refs.length === 1 ? "" : "s"} kept, but left out of
           this email.
         </p>
@@ -909,8 +943,8 @@ export function RefereeCalls({
   );
 }
 
-/** One call as a soft card: who, how to reach them, what they said. */
-function RefCard({
+/** One call as a light row: who, how to reach them, what they said. */
+function RefRow({
   r,
   readOnly,
   onMove,
@@ -922,33 +956,49 @@ function RefCard({
   moved: boolean;
 }) {
   const el = useRef<HTMLLIElement>(null);
-  // Only the card you just moved settles into its new group; nothing moves on a plain draw.
-  useGSAP(() => {
-    if (moved) gsap.from(el.current, { ...PIN_IN, stagger: 0 });
-  });
+  const other = r.good ? "Not successful" : "Positive";
+  // Only the row you just moved settles into its new group; nothing moves on a plain
+  // draw (the dependency keeps a later redraw from settling it again).
+  useGSAP(
+    () => {
+      if (moved) gsap.from(el.current, { ...PIN_IN, stagger: 0 });
+    },
+    { dependencies: [moved] },
+  );
   return (
     <li
       ref={el}
-      className="group relative rounded-md bg-surface-2 px-[max(0.9rem,9px)] py-[max(0.7rem,7px)]"
+      className="group/ref px-[max(0.8rem,8px)] py-[max(0.7rem,7px)]"
     >
-      <p className="pr-7 text-small font-medium text-ink">{r.company}</p>
-      <p className="text-caption text-ink-3">
-        {r.referral} · <span className="font-mono">{r.phone}</span>
+      <div className="flex items-center gap-2">
+        <p
+          className="min-w-0 flex-1 truncate text-small font-medium text-ink"
+          title={r.company}
+        >
+          {r.company}
+        </p>
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={onMove}
+            title={`Move to ${other}`}
+            aria-label={`Move ${r.company} to ${other}`}
+            className="flex size-[max(1.5rem,20px)] shrink-0 items-center justify-center rounded-full text-ink-3 opacity-0 transition-opacity hover:bg-surface-3 hover:text-ink focus-visible:opacity-100 group-hover/ref:opacity-100 max-md:opacity-100 [@media(hover:none)]:opacity-100"
+          >
+            <svg {...svg} className="size-[0.95em]">
+              <path d="M7 7h11l-3-3M17 17H6l3 3" />
+            </svg>
+          </button>
+        )}
+      </div>
+      <p className="flex min-w-0 items-baseline gap-1.5 text-caption text-ink-3">
+        <span className="truncate" title={r.referral}>
+          {r.referral}
+        </span>
+        <span aria-hidden>·</span>
+        <span className="shrink-0 whitespace-nowrap font-mono">{r.phone}</span>
       </p>
       <p className="mt-1 text-small text-ink-2">{r.feedback}</p>
-      {!readOnly && (
-        <button
-          type="button"
-          onClick={onMove}
-          title={`Move to ${r.good ? "Not successful" : "Positive"}`}
-          aria-label={`Move ${r.company} to ${r.good ? "Not successful" : "Positive"}`}
-          className="absolute right-[max(0.5rem,5px)] top-[max(0.5rem,5px)] flex size-[max(1.6rem,22px)] items-center justify-center rounded-full text-ink-3 opacity-0 transition-opacity hover:bg-surface-3 hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 max-md:opacity-100"
-        >
-          <svg {...svg} className="size-[0.95em]">
-            <path d="M7 7h11l-3-3M17 17H6l3 3" />
-          </svg>
-        </button>
-      )}
     </li>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Image from "next/image";
+import { useTabGlide } from "@/lib/gsap";
 import { useWorkdayGate } from "@/lib/workday";
 import { BackButton } from "./PipelineBoard";
 import FindCvButton from "./FindCvButton";
@@ -189,10 +190,25 @@ const nameFrom = (slug: string) =>
 const keyOf = (url: string) => (url.match(LI)?.[1] ?? url).toLowerCase();
 const digits = (s: string) => s.replace(/[\s\-().+]/g, "");
 
+// Redesigned 17 Nov 2026 on DESIGN.md (owner: "this section feels like it has a
+// completely different design style"): one row of sheets, one toolbar, a quiet table.
 const BTN =
-  "flex h-[max(2.2rem,30px)] items-center rounded-full px-[max(0.9rem,11px)] text-small font-medium transition-colors";
+  "flex h-[max(2.6rem,34px)] items-center whitespace-nowrap rounded-full px-[max(0.9rem,11px)] text-small font-medium transition-colors";
+/** The small buttons inside a row: Yes, No, Add to pipeline. */
+const ROW_BTN =
+  "flex h-[max(2rem,28px)] shrink-0 items-center whitespace-nowrap rounded-full px-[max(0.8rem,10px)] text-small font-medium transition-colors disabled:opacity-40";
+/** A sheet or interest tab inside its grey track. */
+const TAB =
+  "relative flex h-full shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-[max(0.9rem,10px)] text-small transition-colors";
 const LIFT =
-  "absolute z-40 mt-2 rounded-md border border-border bg-surface p-[max(0.9rem,10px)] shadow-float";
+  "absolute z-40 rounded-md border border-border bg-surface p-[max(0.9rem,10px)] shadow-float";
+/** Rows near the bottom of a long list open their panels upwards. */
+const place = (up?: boolean) => (up ? " bottom-full mb-2" : " top-full mt-2");
+const tabTone = (on: boolean) =>
+  on ? "bg-surface text-ink shadow-card" : "text-ink-2 hover:text-ink";
+const TH =
+  "sticky top-0 z-10 border-b border-border bg-surface py-[max(0.65rem,8px)] pr-4 text-caption font-medium text-ink-3";
+const TD = "border-b border-border py-[max(0.7rem,8px)] pr-4 align-middle";
 const INPUT =
   "w-full rounded-sm border border-border-strong bg-surface px-2.5 py-1.5 text-small outline-none focus:border-brand";
 
@@ -450,13 +466,20 @@ export default function ExcelTablesView() {
     return lines;
   };
   const sheetName = sheets.find((s) => s.n === sheet);
+  const tabsRow = useRef<HTMLDivElement>(null);
+  useTabGlide(tabsRow, interest);
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col px-[max(1.5rem,14px)] pb-[max(1.4rem,12px)] pt-[max(1.4rem,14px)] max-md:pt-11">
-      {/* Sheets, capture, export */}
-      <div className="flex flex-wrap items-center gap-x-[max(0.6rem,6px)] gap-y-2">
+      {/* Sheets, capture, export: one row that never wraps on a laptop; the sheets
+          slide sideways inside their track when there are many. */}
+      <div className="flex items-center gap-[max(0.75rem,8px)] max-md:flex-wrap">
         <BackButton />
-        <div className="ml-[max(0.6rem,4px)] flex flex-wrap items-center gap-[max(0.5rem,6px)]">
+        <div
+          role="tablist"
+          aria-label="L-sheets"
+          className="flex h-[max(2.6rem,34px)] min-w-0 items-center gap-0.5 overflow-x-auto rounded-full bg-surface-2 p-1 [scrollbar-width:none]"
+        >
           {sheets.map((s) => (
             <SheetChip
               key={s.n}
@@ -475,49 +498,45 @@ export default function ExcelTablesView() {
           ))}
           <button
             type="button"
+            role="tab"
+            aria-selected={sheet === "all"}
             onClick={() => {
               setSheet("all");
               setTicked([]);
               setAdded("any");
             }}
-            className={
-              BTN +
-              " " +
-              (sheet === "all"
-                ? "bg-ink text-white"
-                : "bg-surface-2 font-normal text-ink-2 hover:text-ink")
-            }
+            className={TAB + " " + tabTone(sheet === "all")}
           >
-            All · {rows.filter(mine).length}
+            All sheets
+            <span className="text-ink-3">{rows.filter(mine).length}</span>
           </button>
           {loose > 0 && (
             <button
               type="button"
+              role="tab"
+              aria-selected={sheet === null}
               onClick={() => setSheet(null)}
-              className={
-                BTN +
-                " " +
-                (sheet === null
-                  ? "bg-ink text-white"
-                  : "bg-surface-2 font-normal text-ink-2 hover:text-ink")
-              }
+              className={TAB + " " + tabTone(sheet === null)}
             >
-              Not in a sheet · {loose}
+              Not in a sheet
+              <span className="text-ink-3">{loose}</span>
             </button>
           )}
-          <button
-            type="button"
-            onClick={addSheet}
-            disabled={!!gate}
-            className={
-              BTN +
-              " border border-dashed border-border-strong font-normal text-ink-2 hover:border-brand hover:text-brand disabled:opacity-40"
-            }
-          >
-            + L-sheet
-          </button>
         </div>
-        <div className="ml-auto flex flex-wrap items-center gap-2 max-md:ml-0">
+        <button
+          type="button"
+          onClick={addSheet}
+          disabled={!!gate}
+          title="Start a new L-sheet - new people you add go there"
+          className={
+            BTN +
+            " shrink-0 gap-1.5 px-3 font-normal text-ink-2 hover:bg-surface-2 hover:text-brand disabled:opacity-40 disabled:hover:bg-transparent"
+          }
+        >
+          <PlusIcon />
+          L-sheet
+        </button>
+        <div className="ml-auto flex shrink-0 items-center gap-2 max-md:ml-0">
           <CaptureChip />
           <ExportMenu
             rows={exportRows}
@@ -557,29 +576,42 @@ export default function ExcelTablesView() {
 
       <PasteBar disabled={!!gate} onAdd={addFromPaste} />
 
-      {/* Filters */}
-      <div className="mt-[max(1rem,10px)] flex flex-wrap items-center gap-[max(0.5rem,6px)]">
-        {INTEREST_TABS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            aria-pressed={interest === t.key}
-            onClick={() => setInterest(t.key)}
-            className={
-              BTN +
-              " font-normal " +
-              (interest === t.key
-                ? "bg-surface-2 text-ink"
-                : "text-ink-2 hover:text-ink")
-            }
-          >
-            {t.label} ·{" "}
-            {t.key === "all"
-              ? base.length
-              : base.filter((x) => x.interest === t.key).length}
-          </button>
-        ))}
-        <span aria-hidden="true" className="mx-1 h-6 w-px bg-border" />
+      {/* One toolbar: interest tabs, two toggles, then search and the two menus. */}
+      <div className="mt-[max(0.9rem,10px)] flex flex-wrap items-center gap-2">
+        <div
+          ref={tabsRow}
+          role="tablist"
+          aria-label="Interest"
+          className="relative flex h-[max(2.6rem,34px)] max-w-full shrink-0 items-center gap-0.5 overflow-x-auto rounded-full bg-surface-2 p-1 [scrollbar-width:none]"
+        >
+          <span
+            data-tab-glide
+            aria-hidden="true"
+            style={{ opacity: 0 }}
+            className="pointer-events-none absolute left-0 top-0 rounded-full bg-surface shadow-card"
+          />
+          {INTEREST_TABS.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              role="tab"
+              aria-selected={interest === t.key}
+              onClick={() => setInterest(t.key)}
+              className={
+                TAB +
+                " " +
+                (interest === t.key ? "text-ink" : "text-ink-2 hover:text-ink")
+              }
+            >
+              {t.label}
+              <span className="text-ink-3">
+                {t.key === "all"
+                  ? base.length
+                  : base.filter((x) => x.interest === t.key).length}
+              </span>
+            </button>
+          ))}
+        </div>
         <Toggle
           on={eyeOnly}
           onClick={() => setEyeOnly((v) => !v)}
@@ -589,13 +621,14 @@ export default function ExcelTablesView() {
         <Toggle
           on={addOnsOnly}
           onClick={() => setAddOnsOnly((v) => !v)}
-          icon={<span aria-hidden="true">+</span>}
+          icon={<PlusIcon />}
           label="Add-ons"
         />
-        <div className="ml-auto flex items-center gap-2 max-md:ml-0 max-md:flex-wrap">
+        <div className="ml-auto flex items-center gap-2 max-md:ml-0 max-md:w-full max-md:flex-wrap">
           <label
             className={
-              FIELD_PILL + " w-[min(15rem,100%)] min-w-0 shrink text-ink-3"
+              FIELD_PILL +
+              " w-[max(14rem,150px)] min-w-0 text-ink-3 focus-within:ring-2 focus-within:ring-brand/20 max-md:flex-1"
             }
           >
             <SearchIcon />
@@ -614,7 +647,7 @@ export default function ExcelTablesView() {
             onChange={setBy}
             prefix="Added by:"
             mark="tick"
-            pillClass={FIELD_PILL}
+            pillClass={FIELD_PILL + " text-ink-2"}
           />
           <PillMenu
             key={`added-${added}`}
@@ -623,43 +656,51 @@ export default function ExcelTablesView() {
             onChange={setAdded}
             prefix="Added:"
             mark="tick"
-            pillClass={FIELD_PILL}
+            pillClass={FIELD_PILL + " text-ink-2"}
           />
         </div>
       </div>
 
-      {/* The table */}
+      {/* The table: a quiet sticky header, scrolls inside itself. */}
       <div
         className={
-          "mt-[max(1rem,10px)] min-h-0 flex-1 overflow-auto rounded-lg border border-border " +
+          "mt-[max(0.9rem,10px)] min-h-0 flex-1 overflow-auto rounded-md border border-border bg-surface " +
           (ticked.length ? "pb-20" : "")
         }
       >
-        <table className="w-full min-w-[60rem] border-collapse text-left">
-          <thead className="sticky top-0 z-10 bg-surface-2 text-caption text-ink-3">
+        <table className="w-full min-w-[max(64rem,1000px)] table-fixed border-separate border-spacing-0 text-left">
+          <colgroup>
+            <col className="w-[max(3rem,38px)]" />
+            <col className="w-[34%]" />
+            <col className="w-[max(10.5rem,128px)]" />
+            <col className="w-[max(13rem,150px)]" />
+            <col className="w-[max(5.5rem,68px)]" />
+            <col />
+          </colgroup>
+          <thead>
             <tr>
-              <th className="w-12 py-3 pl-4">
+              <th className={TH + " pl-4"}>
                 <span className="sr-only">Pick</span>
               </th>
-              <th className="py-3 font-normal">Person</th>
-              <th className="py-3 font-normal">Company</th>
-              <th className="py-3 font-normal">Phone</th>
-              <th className="py-3 font-normal">Interest</th>
-              <th className="w-10 py-3">
-                <span className="sr-only">Eye-mark</span>
+              <th className={TH}>Person</th>
+              <th className={TH}>Phone</th>
+              <th className={TH}>Interest</th>
+              <th className={TH}>
+                <span className="sr-only">Eye-mark and notes</span>
               </th>
-              <th className="py-3 pr-4">
+              <th className={TH + " pr-4 text-right"}>
                 <span className="sr-only">Actions</span>
               </th>
             </tr>
           </thead>
           <tbody>
-            {shown.map((x) => (
+            {shown.map((x, i) => (
               <TableRow
                 key={x.id}
                 x={x}
                 mine={mine(x)}
                 blocked={!!gate}
+                up={shown.length > 4 && i >= shown.length - 3}
                 ticked={ticked.includes(x.id)}
                 onTick={() =>
                   setTicked((t) =>
@@ -803,7 +844,8 @@ export default function ExcelTablesView() {
   );
 }
 
-/** One L-sheet: pick it; double-click renames (blank brings the date back); ✕ deletes. */
+/** One L-sheet: pick it; double-click (or F2) renames, blank brings the date back;
+ *  the ✕ on the open sheet deletes it. */
 function SheetChip({
   s,
   count,
@@ -821,6 +863,10 @@ function SheetChip({
 }) {
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState("");
+  const rename = () => {
+    setDraft(s.name ?? "");
+    setRenaming(true);
+  };
   if (renaming)
     return (
       <input
@@ -838,41 +884,44 @@ function SheetChip({
         maxLength={40}
         placeholder={s.date}
         aria-label={`Rename L${s.n}`}
-        className="h-[max(2.2rem,30px)] w-36 rounded-full border border-brand bg-surface px-3 text-small outline-none"
+        className="h-full w-[max(10rem,120px)] shrink-0 rounded-full bg-surface px-3 text-small text-ink shadow-card outline-none ring-2 ring-brand/30"
       />
     );
+  const label = s.name ?? s.date;
   return (
-    <span className="group relative">
+    <span
+      className={
+        "flex h-full shrink-0 items-center rounded-full transition-colors " +
+        (on ? "bg-surface shadow-card" : "")
+      }
+    >
       <button
         type="button"
+        role="tab"
+        aria-selected={on}
         onClick={onPick}
-        onDoubleClick={() => {
-          setDraft(s.name ?? "");
-          setRenaming(true);
-        }}
-        title="Double-click to rename"
+        onDoubleClick={rename}
+        onKeyDown={(e) => e.key === "F2" && rename()}
+        title={`L${s.n} · ${label} - double-click to rename`}
         className={
-          BTN +
-          " gap-2 " +
-          (on
-            ? "bg-ink text-white"
-            : "bg-surface-2 font-normal text-ink hover:bg-surface-3")
+          TAB + (on ? " pr-1.5 text-ink" : " text-ink-2 hover:text-ink")
         }
       >
-        <b className="font-medium">L{s.n}</b>
-        <span className={on ? "text-white" : "text-ink-3"}>
-          {s.name ?? s.date} · {count}
-        </span>
+        <b className="font-semibold">L{s.n}</b>
+        <span className="max-w-[max(9rem,90px)] truncate">{label}</span>
+        <span className="text-ink-3">{count}</span>
       </button>
-      <button
-        type="button"
-        onClick={onDelete}
-        aria-label={`Delete L${s.n}`}
-        title="Delete this sheet - its rows stay, under Not in a sheet"
-        className="absolute -right-1 -top-1 hidden size-4 items-center justify-center rounded-full bg-ink-2 text-[10px] leading-none text-white group-hover:flex focus-visible:flex"
-      >
-        ✕
-      </button>
+      {on && (
+        <button
+          type="button"
+          onClick={onDelete}
+          aria-label={`Delete L${s.n}`}
+          title="Delete this sheet - its rows stay, under Not in a sheet"
+          className="mr-1.5 flex size-[max(1.4rem,20px)] shrink-0 items-center justify-center rounded-full text-ink-3 transition-colors hover:bg-danger-soft hover:text-danger"
+        >
+          <CloseIcon />
+        </button>
+      )}
     </span>
   );
 }
@@ -893,13 +942,13 @@ function PasteBar({
     if (onAdd(text)) setText("");
   };
   return (
-    <div className="mt-[max(1.1rem,10px)] flex items-center gap-3 rounded-[max(1.5rem,18px)] bg-canvas py-2 pl-[max(1.1rem,12px)] pr-2">
+    <div className="mt-[max(0.9rem,10px)] flex items-center gap-3 rounded-lg bg-surface-2 py-1 pl-[max(1.1rem,12px)] pr-1 transition-shadow focus-within:ring-2 focus-within:ring-brand/20">
       <Image
         src="/li.svg"
         alt=""
         width={20}
         height={20}
-        className="size-[max(1.25rem,16px)] shrink-0"
+        className="size-[max(1.15rem,15px)] shrink-0"
       />
       <textarea
         ref={box}
@@ -915,7 +964,7 @@ function PasteBar({
         rows={text.includes("\n") ? 3 : 1}
         placeholder="Paste a LinkedIn profile link — or paste many rows straight from Excel"
         aria-label="Paste a LinkedIn profile link or Excel rows"
-        className="min-w-0 flex-1 resize-none bg-transparent py-1.5 text-body outline-none placeholder:text-ink-3 disabled:opacity-50"
+        className="min-w-0 flex-1 resize-none bg-transparent py-1.5 text-small text-ink outline-none placeholder:text-ink-3 disabled:opacity-50"
       />
       <button
         type="button"
@@ -923,10 +972,10 @@ function PasteBar({
         disabled={disabled}
         className={
           BTN +
-          " h-[max(2.6rem,34px)] bg-brand text-white hover:bg-brand-strong disabled:opacity-40"
+          " shrink-0 bg-brand text-white hover:bg-brand-strong disabled:opacity-40"
         }
       >
-        Add to Table
+        Add to table
       </button>
     </div>
   );
@@ -949,11 +998,10 @@ function Toggle({
       aria-pressed={on}
       onClick={onClick}
       className={
-        BTN +
-        " gap-1.5 border font-normal " +
+        "flex h-[max(2.6rem,34px)] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-[max(1rem,11px)] text-small transition-colors " +
         (on
-          ? "border-brand bg-brand-soft text-brand"
-          : "border-border text-ink hover:bg-surface-2")
+          ? "border-brand/30 bg-brand-tint text-brand"
+          : "border-border bg-surface text-ink-2 hover:bg-surface-2 hover:text-ink")
       }
     >
       {icon}
@@ -967,6 +1015,7 @@ function TableRow({
   x,
   mine,
   blocked,
+  up,
   ticked,
   onTick,
   edit,
@@ -979,6 +1028,8 @@ function TableRow({
   x: Row;
   mine: boolean;
   blocked: boolean;
+  /** Near the bottom of the list: panels open upwards. */
+  up: boolean;
   ticked: boolean;
   onTick: () => void;
   edit: (patch: Partial<Row>) => void;
@@ -990,25 +1041,35 @@ function TableRow({
 }) {
   const can = mine && !blocked;
   const { go } = useOpeningView();
+  const sub = [x.title || "Title to check", x.company, x.location]
+    .filter(Boolean)
+    .join(" · ");
+  // Find CV and ⋯ stay quiet until the row is pointed at, focused or picked -
+  // except Find CV on an eye-marked person with no CV: the pipeline waits on it.
+  const needsCv = x.eye && !x.hasCv;
+  const quiet =
+    ticked || needsCv
+      ? ""
+      : " opacity-0 group-hover:opacity-100 focus-within:opacity-100 has-[[aria-expanded=true]]:opacity-100 pointer-coarse:opacity-100";
   return (
     <tr
       className={
-        "border-t border-border text-small " +
+        "group text-small transition-colors " +
         (ticked ? "bg-brand-tint" : "hover:bg-canvas")
       }
     >
-      <td className="py-3 pl-4">
+      <td className={TD + " pl-4"}>
         <input
           type="checkbox"
           checked={ticked}
           disabled={!mine}
           onChange={onTick}
           aria-label={`Pick ${x.name}`}
-          className="size-[max(1.1rem,15px)] accent-[var(--color-brand)]"
+          className="size-[max(1.05rem,15px)] accent-[var(--color-brand)] disabled:opacity-40"
         />
       </td>
-      <td className="py-3 pr-4">
-        <div className="flex items-center gap-2.5">
+      <td className={TD}>
+        <div className="flex min-w-0 items-center gap-3">
           <a
             href={x.url}
             target="_blank"
@@ -1025,72 +1086,79 @@ function TableRow({
             />
           </a>
           <div className="min-w-0">
-            <div className="flex items-center gap-1.5 font-medium text-ink">
-              <span className="truncate">{x.name}</span>
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span className="truncate font-medium text-ink" title={x.name}>
+                {x.name}
+              </span>
               {x.addOn && (
-                <span className="rounded-full bg-violet-soft px-1.5 text-caption font-medium text-violet">
+                <span className="shrink-0 rounded-full bg-violet-soft px-2 text-caption font-medium text-violet">
                   Add-on
                 </span>
               )}
-              {x.notes.length > 0 && (
-                <NotesList
-                  x={x}
-                  can={can}
-                  onRemove={(i) =>
-                    edit({ notes: x.notes.filter((_, j) => j !== i) })
-                  }
-                />
-              )}
             </div>
-            <p className="truncate text-caption text-ink-3">
-              {x.title || "Title to check"}
-              {x.location ? ` · ${x.location}` : ""}
+            <p className="truncate text-caption text-ink-3" title={sub}>
+              {sub}
             </p>
           </div>
         </div>
       </td>
-      <td className="py-3 pr-4 text-ink">
-        {x.company || <span className="text-ink-3">-</span>}
+      <td className={TD}>
+        <Phone
+          x={x}
+          can={can}
+          up={up}
+          onSave={(phone, via) => edit({ phone, via })}
+        />
       </td>
-      <td className="py-3 pr-4">
-        <Phone x={x} can={can} onSave={(phone, via) => edit({ phone, via })} />
-      </td>
-      <td className="py-3 pr-2">
+      <td className={TD}>
         <InterestChip x={x} />
       </td>
-      <td className="py-3">
-        <button
-          type="button"
-          disabled={!can}
-          aria-pressed={x.eye}
-          aria-label={
-            x.eye ? `Remove the eye-mark on ${x.name}` : `Eye-mark ${x.name}`
-          }
-          title="Eye-mark: one of the few that strictly match the brief"
-          onClick={() => {
-            edit({ eye: !x.eye });
-            say(
-              x.eye ? " - eye-mark removed" : " eye-marked - aim for 3 a day",
-              x.name,
-            );
-          }}
-          className={
-            "rounded-full p-1 transition-colors " +
-            (x.eye ? "text-warn" : "text-border-strong hover:text-ink-3") +
-            " disabled:cursor-default"
-          }
-        >
-          <EyeIcon />
-        </button>
+      <td className={TD}>
+        <div className="flex items-center gap-0.5">
+          <button
+            type="button"
+            disabled={!can}
+            aria-pressed={x.eye}
+            aria-label={
+              x.eye ? `Remove the eye-mark on ${x.name}` : `Eye-mark ${x.name}`
+            }
+            title="Eye-mark: one of the few that strictly match the brief"
+            onClick={() => {
+              edit({ eye: !x.eye });
+              say(
+                x.eye ? " - eye-mark removed" : " eye-marked - aim for 3 a day",
+                x.name,
+              );
+            }}
+            className={
+              "flex size-[max(2rem,28px)] items-center justify-center rounded-full transition-colors disabled:cursor-default " +
+              (x.eye
+                ? "bg-warn-soft text-warn"
+                : "text-border-strong hover:bg-surface-2 hover:text-ink-3 disabled:hover:bg-transparent disabled:hover:text-border-strong")
+            }
+          >
+            <EyeIcon />
+          </button>
+          {x.notes.length > 0 && (
+            <NotesList
+              x={x}
+              can={can}
+              up={up}
+              onRemove={(i) => edit({ notes: x.notes.filter((_, j) => j !== i) })}
+            />
+          )}
+        </div>
       </td>
-      <td className="py-3 pr-4">
-        <div className="flex items-center justify-end gap-2.5">
+      <td className={TD + " pr-4"}>
+        <div className="flex items-center justify-end gap-2">
           {!mine ? (
-            <span className="text-caption text-ink-3">
+            <span className="flex items-center gap-1.5 whitespace-nowrap text-caption text-ink-3">
+              <LockIcon />
               {x.addedBy}&apos;s row
             </span>
           ) : x.shortlistedBy ? (
-            <span className="text-caption text-ink-3">
+            <span className="flex items-center gap-1.5 whitespace-nowrap text-caption text-ink-3">
+              <LockIcon />
               Shortlisted first by {x.shortlistedBy}
             </span>
           ) : x.pipeline ? (
@@ -1099,13 +1167,15 @@ function TableRow({
                 type="button"
                 onClick={() => go("pipeline")}
                 title="Open the Pipeline"
-                className="rounded-full bg-brand-soft px-3 py-1 text-caption font-medium text-brand hover:bg-brand-tint"
+                className="flex h-[max(2rem,28px)] min-w-0 items-center gap-1 rounded-full bg-brand-soft px-3 text-caption font-medium text-brand transition-colors hover:bg-brand-tint"
               >
-                In pipeline · {x.pipeline} →
+                <span className="truncate">In pipeline · {x.pipeline}</span>
+                <span aria-hidden="true">→</span>
               </button>
               <NoButton
                 name={x.name}
                 blocked={blocked}
+                up={up}
                 label="Not interested"
                 onSave={onNo}
               />
@@ -1117,8 +1187,8 @@ function TableRow({
               // Way back: the same rules as Yes - into the pipeline, eye-marked needs a CV.
               onClick={onYes}
               className={
-                BTN +
-                " border border-border font-normal text-success hover:bg-success-soft disabled:opacity-40"
+                ROW_BTN +
+                " border border-border font-normal text-success hover:bg-success-soft"
               }
             >
               Interested after all
@@ -1129,32 +1199,33 @@ function TableRow({
                 type="button"
                 disabled={blocked}
                 onClick={onPipeline}
-                className={
-                  BTN +
-                  " bg-brand text-white hover:bg-brand-strong disabled:opacity-40"
-                }
+                className={ROW_BTN + " bg-brand text-white hover:bg-brand-strong"}
               >
                 Add to pipeline
               </button>
               <NoButton
                 name={x.name}
                 blocked={blocked}
+                up={up}
                 label="Not interested"
                 onSave={onNo}
               />
             </>
           ) : x.interest === "approach" ? (
             <>
-              <span className="text-ink-3">Interested?</span>
+              <span className="whitespace-nowrap text-caption text-ink-3">
+                Interested?
+              </span>
               <button
                 type="button"
                 disabled={blocked}
                 // Interested puts them in the pipeline at once, as the old
                 // system does (owner, 13 Nov 2026); refused like Add to pipeline.
                 onClick={onYes}
+                aria-label={`${x.name} is interested`}
                 className={
-                  BTN +
-                  " border border-border font-normal text-success hover:bg-success-soft disabled:opacity-40"
+                  ROW_BTN +
+                  " border border-border font-normal text-success hover:bg-success-soft"
                 }
               >
                 Yes
@@ -1162,6 +1233,7 @@ function TableRow({
               <NoButton
                 name={x.name}
                 blocked={blocked}
+                up={up}
                 onSave={(why) => {
                   edit({ interest: "no", why });
                   say(" marked not interested", x.name);
@@ -1169,27 +1241,33 @@ function TableRow({
               />
             </>
           ) : null}
-          {mine && !x.hasCv && (
-            <FindCvButton
-              name={x.name}
-              matches={x.matches}
-              onLinked={() => {
-                edit({ hasCv: true });
-                say(" - their CV is linked from the database", x.name);
-              }}
-            />
-          )}
-          {mine && x.hasCv && (
-            <span className="text-caption text-brand">CV linked</span>
-          )}
           {mine && (
-            <RowMenu
-              x={x}
-              blocked={blocked}
-              edit={edit}
-              say={say}
-              onRemove={onRemove}
-            />
+            <div className={"flex shrink-0 items-center gap-1.5 transition-opacity" + quiet}>
+              {x.hasCv ? (
+                <span className="whitespace-nowrap text-caption text-brand">
+                  CV linked
+                </span>
+              ) : (
+                <FindCvButton
+                  name={x.name}
+                  matches={x.matches}
+                  up={up}
+                  className="whitespace-nowrap"
+                  onLinked={() => {
+                    edit({ hasCv: true });
+                    say(" - their CV is linked from the database", x.name);
+                  }}
+                />
+              )}
+              <RowMenu
+                x={x}
+                blocked={blocked}
+                up={up}
+                edit={edit}
+                say={say}
+                onRemove={onRemove}
+              />
+            </div>
           )}
         </div>
       </td>
@@ -1209,100 +1287,120 @@ function InterestChip({ x }: { x: Row }) {
         : ["bg-surface-2 text-ink-2", "To approach"];
   return (
     <span
-      className={`inline-block max-w-[16rem] truncate rounded-full px-2.5 py-0.5 text-caption font-medium ${tone}`}
+      title={text}
+      className={`inline-block max-w-full truncate whitespace-nowrap rounded-full px-2.5 py-0.5 align-middle text-caption font-medium ${tone}`}
     >
       {text}
     </span>
   );
 }
 
-/** The phone and where it came from; "+ add number" when there is none. */
+/** The phone and where it came from; "+ add number" when there is none. The
+ *  editor lifts under the cell so the narrow column never overflows. */
 function Phone({
   x,
   can,
+  up,
   onSave,
 }: {
   x: Row;
   can: boolean;
+  up: boolean;
   onSave: (phone: string, via: Via) => void;
 }) {
-  const [editing, setEditing] = useState(false);
+  const { open, setOpen, root, panel, shown } = useLiftMenu();
   const [num, setNum] = useState("");
   const [via, setVia] = useState<Via>("mutual");
   const ok = /^\d{9,15}$/.test(digits(num));
-  if (editing)
-    return (
-      <div className="flex items-center gap-1.5">
-        <input
-          autoFocus
-          value={num}
-          onChange={(e) => setNum(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") setEditing(false);
-            if (e.key === "Enter" && ok) {
-              onSave(num.trim(), via);
-              setEditing(false);
-            }
-          }}
-          inputMode="tel"
-          placeholder="077 123 4567"
-          aria-label={`Phone for ${x.name}`}
-          className="w-28 rounded-sm border border-border-strong px-2 py-1 text-small outline-none focus:border-brand"
-        />
-        <select
-          value={via}
-          onChange={(e) => setVia(e.target.value as Via)}
-          aria-label="Where the number came from"
-          className="rounded-sm border border-border-strong bg-surface px-1 py-1 text-caption"
-        >
-          {VIA.map((v) => (
-            <option key={v} value={v}>
-              via {v}
-            </option>
-          ))}
-        </select>
+  const start = () => {
+    if (open) return setOpen(false);
+    setNum(x.phone ?? "");
+    setVia(x.via ?? (x.phone ? "other" : "mutual"));
+    setOpen(true);
+  };
+  const save = () => {
+    if (!ok) return;
+    onSave(num.trim(), via);
+    setOpen(false);
+  };
+  return (
+    <div ref={root} className="relative">
+      {x.phone ? (
         <button
           type="button"
-          disabled={!ok}
-          onClick={() => {
-            onSave(num.trim(), via);
-            setEditing(false);
-          }}
-          className="rounded-full bg-brand px-2.5 py-1 text-caption font-medium text-white disabled:opacity-40"
+          disabled={!can}
+          aria-expanded={open}
+          onClick={start}
+          title={can ? "Change the number" : x.phone}
+          className="block max-w-full rounded-xs text-left"
         >
-          Save
+          <span className="block truncate font-mono text-mono text-ink">
+            {x.phone}
+          </span>
+          <span className="block truncate text-caption text-ink-3">
+            via {x.via}
+          </span>
         </button>
-      </div>
-    );
-  if (!x.phone)
-    return (
-      <button
-        type="button"
-        disabled={!can}
-        onClick={() => {
-          setNum("");
-          setEditing(true);
-        }}
-        className="text-ink-3 hover:text-brand disabled:hover:text-ink-3"
-      >
-        + add number
-      </button>
-    );
-  return (
-    <button
-      type="button"
-      disabled={!can}
-      onClick={() => {
-        setNum(x.phone ?? "");
-        setVia(x.via ?? "other");
-        setEditing(true);
-      }}
-      title={can ? "Change the number" : undefined}
-      className="text-left"
-    >
-      <span className="block text-ink">{x.phone}</span>
-      <span className="block text-caption text-ink-3">via {x.via}</span>
-    </button>
+      ) : (
+        <button
+          type="button"
+          disabled={!can}
+          aria-expanded={open}
+          onClick={start}
+          className="whitespace-nowrap text-ink-3 transition-colors hover:text-brand disabled:hover:text-ink-3"
+        >
+          + add number
+        </button>
+      )}
+      {shown && (
+        <div
+          ref={panel}
+          role="dialog"
+          aria-label={`Phone for ${x.name}`}
+          className={LIFT + place(up) + " left-0 w-[max(17rem,230px)]"}
+        >
+          <label className="block text-small text-ink">
+            Phone number
+            <input
+              autoFocus
+              value={num}
+              onChange={(e) => setNum(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && save()}
+              inputMode="tel"
+              placeholder="077 000 0000"
+              className={INPUT + " mt-1.5 font-mono"}
+            />
+          </label>
+          <label className="mt-2.5 block text-small text-ink">
+            Where it came from
+            <select
+              value={via}
+              onChange={(e) => setVia(e.target.value as Via)}
+              className={INPUT + " mt-1.5"}
+            >
+              {VIA.map((v) => (
+                <option key={v} value={v}>
+                  via {v}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="mt-2.5 flex items-center justify-between gap-2">
+            <span className="text-caption text-ink-3">
+              {num.trim() && !ok ? "9 to 15 digits" : ""}
+            </span>
+            <button
+              type="button"
+              disabled={!ok}
+              onClick={save}
+              className="rounded-full bg-brand px-3.5 py-1.5 text-small font-medium text-white hover:bg-brand-strong disabled:opacity-40"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1310,11 +1408,13 @@ function Phone({
 function NoButton({
   name,
   blocked,
+  up,
   label = "No",
   onSave,
 }: {
   name: string;
   blocked: boolean;
+  up?: boolean;
   label?: string;
   onSave: (why: string) => void;
 }) {
@@ -1336,8 +1436,8 @@ function NoButton({
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         className={
-          BTN +
-          " border border-border font-normal text-danger hover:bg-danger-soft disabled:opacity-40"
+          ROW_BTN +
+          " border border-border font-normal text-danger hover:bg-danger-soft"
         }
       >
         {label}
@@ -1347,7 +1447,7 @@ function NoButton({
           ref={panel}
           role="dialog"
           aria-label={`Why is ${name} not interested?`}
-          className={LIFT + " right-0 top-full w-72"}
+          className={LIFT + place(up) + " right-0 w-72"}
         >
           <label className="block text-small text-ink">
             Why not?
@@ -1381,12 +1481,14 @@ function NoButton({
 function RowMenu({
   x,
   blocked,
+  up,
   edit,
   say,
   onRemove,
 }: {
   x: Row;
   blocked: boolean;
+  up?: boolean;
   edit: (patch: Partial<Row>) => void;
   say: (rest: string, bold?: string) => void;
   onRemove: () => void;
@@ -1414,7 +1516,7 @@ function RowMenu({
         aria-label={`More for ${x.name}`}
         aria-expanded={open}
         onClick={() => (open ? close() : setOpen(true))}
-        className="rounded-full p-1.5 text-ink-2 hover:bg-surface-2 hover:text-ink"
+        className="flex size-[max(2rem,28px)] items-center justify-center rounded-full text-ink-2 transition-colors hover:bg-surface-2 hover:text-ink"
       >
         <svg
           viewBox="0 0 24 24"
@@ -1431,7 +1533,7 @@ function RowMenu({
         <div
           ref={panel}
           role="menu"
-          className={LIFT + " right-0 top-full w-64 p-1.5"}
+          className={LIFT + place(up) + " right-0 w-64 p-1.5"}
         >
           {mode === "menu" ? (
             <>
@@ -1828,7 +1930,7 @@ function CaptureChip() {
           ref={panel}
           role="dialog"
           aria-label="Chrome capture"
-          className={LIFT + " right-0 top-full w-80 text-small text-ink-2"}
+          className={LIFT + " right-0 top-full mt-2 w-80 text-small text-ink-2"}
         >
           On a LinkedIn profile, press the capture button and the person lands
           in your sheet for today, with what the page shows. It reads only the
@@ -1899,7 +2001,7 @@ function ExportMenu({
         <div
           ref={panel}
           role="menu"
-          className={LIFT + " right-0 top-full w-60 p-1.5"}
+          className={LIFT + " right-0 top-full mt-2 w-60 p-1.5"}
         >
           <button
             role="menuitem"
@@ -1956,6 +2058,62 @@ const EyeIcon = () => (
     <circle cx="12" cy="12" r="3" />
   </svg>
 );
+const PlusIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    className="size-[max(1rem,13px)] shrink-0"
+    aria-hidden="true"
+  >
+    <path d="M12 5v14M5 12h14" />
+  </svg>
+);
+const CloseIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.4"
+    strokeLinecap="round"
+    className="size-[max(0.8rem,11px)]"
+    aria-hidden="true"
+  >
+    <path d="M6 6l12 12M18 6 6 18" />
+  </svg>
+);
+const LockIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="size-[max(0.85rem,12px)] shrink-0"
+    aria-hidden="true"
+  >
+    <rect x="5" y="11" width="14" height="9" rx="2" />
+    <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+  </svg>
+);
+const NoteIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="size-[max(1rem,14px)]"
+    aria-hidden="true"
+  >
+    <path d="M5 4h14v12l-4 4H5z" />
+    <path d="M9 9h6M9 13h4" />
+  </svg>
+);
 const SearchIcon = () => (
   <svg
     viewBox="0 0 24 24"
@@ -1975,29 +2133,38 @@ const SearchIcon = () => (
 function NotesList({
   x,
   can,
+  up,
   onRemove,
 }: {
   x: Row;
   can: boolean;
+  up?: boolean;
   onRemove: (i: number) => void;
 }) {
   const { open, setOpen, root, panel, shown } = useLiftMenu();
+  const label = `${x.notes.length} ${x.notes.length === 1 ? "note" : "notes"}`;
   return (
     <span ref={root} className="relative">
       <button
         type="button"
         aria-expanded={open}
+        aria-label={`${label} on ${x.name}`}
+        title={label}
         onClick={() => setOpen((o) => !o)}
-        className="text-caption font-normal text-ink-3 hover:text-ink"
+        className={
+          "flex h-[max(2rem,28px)] items-center gap-1 rounded-full px-1.5 text-caption transition-colors hover:bg-surface-2 hover:text-ink " +
+          (open ? "bg-surface-2 text-ink" : "text-ink-3")
+        }
       >
-        · {x.notes.length} {x.notes.length === 1 ? "note" : "notes"}
+        <NoteIcon />
+        {x.notes.length}
       </button>
       {shown && (
         <div
           ref={panel}
           role="dialog"
           aria-label={`Notes on ${x.name}`}
-          className={LIFT + " left-0 top-full w-[min(20rem,80vw)] font-normal"}
+          className={LIFT + place(up) + " right-0 w-[min(20rem,80vw)] font-normal"}
         >
           <ul className="flex flex-col gap-2">
             {x.notes.map((n, i) => (

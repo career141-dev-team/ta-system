@@ -1063,12 +1063,16 @@ export default function DailyEmailView() {
 
               {!readOnly && !mail.revisedOf && (
                 <div className="rounded-lg bg-surface-2 p-[max(1.4rem,12px)]">
-                  <div className="flex items-baseline justify-between gap-3">
-                    <h3 className="text-h3 font-medium text-ink">
+                  {/* One line: the heading never wraps into the bar under it. */}
+                  <div className="flex items-center justify-between gap-3">
+                    <h3
+                      className="min-w-0 truncate whitespace-nowrap text-h3 font-medium text-ink"
+                      title="Before you send"
+                    >
                       Before you send
                     </h3>
                     {steps.length > 0 && (
-                      <span className="text-caption text-ink-3">
+                      <span className="shrink-0 whitespace-nowrap text-caption text-ink-3">
                         {stepsDone === steps.length
                           ? "All done"
                           : `${stepsDone} of ${steps.length} done`}
@@ -1076,7 +1080,7 @@ export default function DailyEmailView() {
                     )}
                   </div>
                   {steps.length > 0 && (
-                    <span className="mt-[max(0.6rem,6px)] block h-1 overflow-hidden rounded-full bg-border">
+                    <span className="mt-[max(0.8rem,8px)] block h-1 overflow-hidden rounded-full bg-border">
                       <span
                         ref={bar}
                         className="block h-full rounded-full bg-brand"

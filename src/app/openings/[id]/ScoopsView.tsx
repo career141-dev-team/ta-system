@@ -11,6 +11,7 @@ import { sendToPipeline } from "./pipelineInbox";
 import { EXPERIENCE, NOTICE, inRange } from "./filters";
 import WorkdayBlocked from "./WorkdayBlocked";
 import { useWorkdayGate } from "@/lib/workday";
+import { useLiftMenu } from "./liftMenu";
 
 const CvPreview = dynamic(() => import("./CvPreview"), { ssr: false });
 
@@ -125,11 +126,22 @@ export default function ScoopsView() {
   const [readingOpen, setReadingOpen] = useState(false);
   const cvBox = useRef<HTMLDivElement>(null);
   const readingShown = useExit(readingOpen, cvBox, { opacity: 0 });
+  // Scoops just deleted, kept for Undo a few seconds, with where each stood.
+  const [removed, setRemoved] = useState<{ s: Scoop; at: number }[] | null>(null);
+  useEffect(() => {
+    if (!removed) return;
+    const t = setTimeout(() => setRemoved(null), 8000);
+    return () => clearTimeout(t);
+  }, [removed]);
 
   // The workday gate: a TA uploads and shortlists only once today's workday is
   // started (FLOW-CHECK 4.4). Empty when work is allowed.
   const gate = useWorkdayGate();
-  const say = (rest: string, bold?: string, warn?: boolean) => setNotice((n) => ({ bold, rest, warn, n: (n?.n ?? 0) + 1 }));
+  // A new notice takes the place of the Undo bar (they sit in the same spot).
+  const say = (rest: string, bold?: string, warn?: boolean) => {
+    setRemoved(null);
+    setNotice((n) => ({ bold, rest, warn, n: (n?.n ?? 0) + 1 }));
+  };
   const shown = list.filter((s) => matches(s, applied));
   const current = shown.find((s) => s.id === chosen) ?? shown[0];
   const open = list.filter((s) => !s.mine && !s.lockedBy).length;
@@ -313,6 +325,45 @@ export default function ScoopsView() {
   };
 
   const pick = () => fileInput.current?.click();
+
+  // ⋮ > Upload CVs: the same picker and rules as the upload panel. From the reading
+  // view it goes back to the list, where the reading bar shows.
+  const uploadFromMenu = () => {
+    if (gate) return say(gate + " Start it on Today, then upload scoops.", undefined, true);
+    setMode("list");
+    pick();
+  };
+
+  // ⋮ > Delete: takes scoops off this job's scoops (asked once more in the menu),
+  // with Undo. Another TA's shortlisted scoop stays - their claim (the lock).
+  const remove = (ids: string[]) => {
+    const locked = list.find((s) => ids.includes(s.id) && s.lockedBy);
+    if (locked) return say(` shortlisted ${locked.name} first, so this scoop stays on the job.`, locked.lockedBy, true);
+    if (gate) return say(gate + " Start it on Today, then delete scoops.", undefined, true);
+    const rows = list.flatMap((s, at) => (ids.includes(s.id) ? [{ s, at }] : []));
+    if (!rows.length) return;
+    if (mode === "read" && current && ids.includes(current.id)) {
+      const i = shown.indexOf(current);
+      const next = shown.slice(i + 1).find((s) => !ids.includes(s.id)) ?? shown.slice(0, i).reverse().find((s) => !ids.includes(s.id));
+      if (next) setChosen(next.id);
+    }
+    setList((l) => l.filter((s) => !ids.includes(s.id)));
+    setPicked((p) => p.filter((x) => !ids.includes(x)));
+    setNotice(null);
+    setRemoved(rows);
+  };
+  const undoRemove = () => {
+    if (!removed) return;
+    // Back in the places they stood (ponytail: by old index; uploads landing in
+    // between can shift them by a row).
+    setList((l) => {
+      const next = [...l];
+      removed.forEach(({ s, at }) => next.splice(Math.min(at, next.length), 0, s));
+      return next;
+    });
+    setRemoved(null);
+  };
+
   const failed = uploads.filter((u) => u.state === "failed");
   const mins = Math.max(1, Math.ceil(readingNow / 3));
   const pickable = picked.filter((id) => list.some((s) => s.id === id && free(s)));
@@ -335,20 +386,32 @@ export default function ScoopsView() {
         }}
       />
 
-      {/* Back, the TA System's two counts, and Shortlist selected. */}
-      <div data-scoop-top className="flex flex-wrap items-center gap-x-[max(1.4rem,12px)] gap-y-2">
+      {/* Back, the TA System's two counts (the same in both modes), Shortlist
+          selected and the ⋮ menu (Upload CVs, Delete). z-30: its menu opens over the
+          filter row, which is its own layer. */}
+      <div data-scoop-top className="relative z-30 flex flex-wrap items-center gap-x-[max(1.4rem,12px)] gap-y-2">
         {mode === "list" ? <BackButton /> : <BackButton onClick={() => setMode("list")} label="Back to the scoops list" />}
         <Count n={list.length} label="scoops on this job" />
         <Count n={open} label="not shortlisted yet" />
-        {mode === "list" && CAN_ACT && (
-          <button
-            type="button"
-            disabled={!pickable.length}
-            onClick={() => shortlist(pickable)}
-            className="ml-auto h-[max(2.6rem,34px)] rounded-full border border-border bg-white px-[max(1.3rem,14px)] text-[max(0.9rem,12.5px)] font-medium text-ink transition-colors hover:border-brand hover:bg-brand hover:text-white disabled:pointer-events-none disabled:opacity-50"
-          >
-            Shortlist selected{pickable.length ? ` (${pickable.length})` : ""}
-          </button>
+        {CAN_ACT && (
+          <div className="ml-auto flex items-center gap-[max(0.9rem,8px)]">
+            {mode === "list" && (
+              <button
+                type="button"
+                disabled={!pickable.length}
+                onClick={() => shortlist(pickable)}
+                className="h-[max(2.6rem,34px)] rounded-full border border-border bg-white px-[max(1.3rem,14px)] text-[max(0.9rem,12.5px)] font-medium text-ink transition-colors hover:border-brand hover:bg-brand hover:text-white disabled:pointer-events-none disabled:opacity-50"
+              >
+                Shortlist selected{pickable.length ? ` (${pickable.length})` : ""}
+              </button>
+            )}
+            <MoreMenu
+              what={mode === "read" ? (current ? "this scoop" : "") : pickable.length ? `${pickable.length} ticked scoop${pickable.length === 1 ? "" : "s"}` : ""}
+              refused={mode === "read" && !!current?.lockedBy}
+              onUpload={uploadFromMenu}
+              onDelete={() => remove(mode === "read" ? (current ? [current.id] : []) : pickable)}
+            />
+          </div>
         )}
       </div>
 
@@ -507,88 +570,116 @@ export default function ScoopsView() {
         </>
       ) : (
         // The reading view: the same list on the left, the chosen CV on the right.
-        <div className="mt-[max(1.2rem,10px)] grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-[max(4.6rem,20px)] px-[max(0.6rem,4px)] max-md:grid-cols-1 max-md:grid-rows-[minmax(0,2fr)_minmax(0,3fr)] max-md:gap-4">
-          <ul className="min-h-0 space-y-[max(1.1rem,8px)] overflow-y-auto pb-2 pr-1 [scrollbar-width:none]" aria-label="Scoops">
+        // Owner, 17 Nov 2026 ("this slide design change"): one calm surface - compact
+        // rows on the left (selected = brand stroke and tint, no lifted shadow), the CV
+        // in a framed sheet on the right with Full view and Shortlist in its foot,
+        // where the eye ends.
+        <div className="mt-[max(1.2rem,10px)] grid min-h-0 flex-1 grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-[max(1.6rem,12px)] max-md:grid-cols-1 max-md:grid-rows-[minmax(0,2fr)_minmax(0,3fr)]">
+          <ul className="min-h-0 space-y-[max(0.55rem,6px)] overflow-y-auto pb-2 [scrollbar-width:none]" aria-label="Scoops">
             {shown.map((s) => {
               const on = s.id === current?.id;
+              const about = [s.title, s.company, s.location].join(" · ");
               return (
-                <li
-                  key={s.id}
-                  data-scoop-row={s.id}
-                  className={
-                    "overflow-hidden rounded-md border bg-white transition-[border-color,box-shadow] " +
-                    (on ? "border-brand/30 shadow-float" : "border-border hover:shadow-card")
-                  }
-                >
+                <li key={s.id} data-scoop-row={s.id}>
                   <button
                     type="button"
-                    aria-pressed={on}
+                    aria-current={on || undefined}
                     onClick={() => setChosen(s.id)}
-                    className="grid w-full grid-cols-[auto_minmax(0,1.1fr)_minmax(0,1fr)] items-center gap-x-[max(0.9rem,9px)] px-[max(1.2rem,11px)] py-[max(1.3rem,10px)] text-left"
+                    title={`${s.name} · ${about}`}
+                    className={
+                      "flex w-full items-center gap-[max(0.9rem,9px)] rounded-md border px-[max(1rem,10px)] py-[max(0.75rem,8px)] text-left transition-colors " +
+                      (on ? "border-brand bg-brand-tint" : "border-border bg-surface hover:border-border-strong hover:bg-surface-2")
+                    }
                   >
-                    <span className="flex size-[max(2.75rem,32px)] items-center justify-center rounded-full bg-info-soft text-[max(0.95rem,11px)] font-semibold text-info">{initials(s.name)}</span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-[max(1.2rem,13.5px)] font-semibold text-ink">{s.name}</span>
-                      <span className="block truncate text-[max(0.9rem,11px)] text-ink-2">{s.title}</span>
+                    <span
+                      className={
+                        "flex size-[max(2.5rem,30px)] shrink-0 items-center justify-center rounded-full text-[max(0.85rem,11px)] font-medium " +
+                        (on ? "bg-brand-soft text-brand" : "bg-info-soft text-info")
+                      }
+                    >
+                      {initials(s.name)}
                     </span>
-                    <span className="min-w-0 space-y-1 text-[max(0.8rem,10.5px)] text-ink-2">
-                      <span className="block truncate">L : {s.location}</span>
-                      <span className="block truncate">C : {s.company}</span>
-                      {s.mine && <span className="block truncate font-medium text-brand">Shortlisted by you</span>}
-                      {s.lockedBy && <span className="block truncate font-medium text-warn">Shortlisted by {s.lockedBy}</span>}
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-2">
+                        <span className="min-w-0 truncate text-[max(1.05rem,13.5px)] font-medium text-ink">{s.name}</span>
+                        <span className="ml-auto shrink-0">
+                          <ShortlistedChip s={s} />
+                        </span>
+                      </span>
+                      <span className="block truncate text-[max(0.85rem,11.5px)] text-ink-2">{about}</span>
                     </span>
                   </button>
                 </li>
               );
             })}
+            {shown.length === 0 && <li className="pt-8 text-center text-[max(0.9rem,12px)] text-ink-2">No scoop matches these filters.</li>}
           </ul>
 
-          <div className="flex min-h-0 flex-col">
+          <section aria-label="CV" className="flex min-h-0 flex-col overflow-hidden rounded-md border border-border bg-surface-2">
             {current ? (
-              // The whole first page in one glance, later pages a scroll away (owner,
-              // 12 Nov 2026). Double-click opens it big.
-              <div data-scoop-cv onDoubleClick={() => (setReading(current), setReadingOpen(true))} title="Double-click to open this CV big" className="relative min-h-0 flex-1 overflow-hidden">
-                {current.cv ? <CvPages key={current.cv} src={current.cv} fit="width" /> : <WordWaiting name={current.name} />}
-                <button
-                  type="button"
-                  onClick={() => (setReading(current), setReadingOpen(true))}
-                  aria-label="Open this CV big"
-                  className="absolute right-3 top-3 flex size-[max(2.2rem,28px)] items-center justify-center rounded-full bg-white/90 text-ink shadow-float transition-colors hover:bg-white"
+              <>
+                {/* The whole first page in one glance, later pages a scroll away (owner,
+                    12 Nov 2026). Double-click opens it big. */}
+                <div
+                  data-scoop-cv
+                  onDoubleClick={() => (setReading(current), setReadingOpen(true))}
+                  title="Double-click to open this CV big"
+                  className="min-h-0 flex-1 overflow-hidden p-[max(0.9rem,8px)]"
                 >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-1/2" aria-hidden="true">
-                    <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
-                  </svg>
-                </button>
-              </div>
-            ) : (
-              <div className="flex flex-1 items-center justify-center rounded-lg bg-surface-2 text-ink-2">No CV to show.</div>
-            )}
-            {current && CAN_ACT && (
-              <div className="mt-[max(1.3rem,10px)] flex items-center justify-end gap-[max(1rem,10px)]">
-                {/* Another TA got there first: the TA System's collision lock (4.2). */}
-                {current.lockedBy && (
-                  <p className="text-[max(0.8rem,11.5px)] text-ink-2">
-                    Shortlisted by <b className="font-semibold text-ink">{current.lockedBy}</b>. You cannot contact.
-                  </p>
-                )}
-                {current.mine ? (
-                  <span className={CHIP + " bg-brand-soft text-brand"}>Shortlisted by you</span>
-                ) : (
+                  {current.cv ? <CvPages key={current.cv} src={current.cv} fit="width" /> : <WordWaiting name={current.name} />}
+                </div>
+                <div className="flex items-center gap-[max(0.9rem,8px)] border-t border-border bg-surface px-[max(1.1rem,10px)] py-[max(0.65rem,7px)]">
                   <button
                     type="button"
-                    disabled={!!current.lockedBy}
-                    onClick={shortlistCurrent}
-                    className="h-[max(2.6rem,34px)] rounded-full bg-brand px-[max(3.4rem,26px)] text-[max(0.85rem,12.5px)] font-medium text-white transition-colors hover:bg-brand-strong disabled:opacity-40"
+                    onClick={() => (setReading(current), setReadingOpen(true))}
+                    className="flex h-[max(2.4rem,32px)] shrink-0 items-center gap-2 rounded-full border border-border bg-surface px-[max(1rem,11px)] text-[max(0.85rem,12px)] text-ink transition-colors hover:bg-surface-2"
                   >
-                    Shortlist
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-[1.1em]" aria-hidden="true">
+                      <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+                    </svg>
+                    Full view
                   </button>
-                )}
-              </div>
+                  {CAN_ACT && (
+                    <div className="ml-auto flex min-w-0 items-center gap-[max(1rem,10px)]">
+                      {/* Another TA got there first: the TA System's collision lock (4.2). */}
+                      {current.lockedBy && (
+                        <p className="min-w-0 truncate text-[max(0.8rem,11.5px)] text-ink-2" title={`Shortlisted by ${current.lockedBy}. You cannot contact.`}>
+                          Shortlisted by <b className="font-semibold text-ink">{current.lockedBy}</b>. You cannot contact.
+                        </p>
+                      )}
+                      {current.mine ? (
+                        <span className={CHIP + " bg-brand-soft text-brand"}>Shortlisted by you</span>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={!!current.lockedBy}
+                          onClick={shortlistCurrent}
+                          className="h-[max(2.6rem,34px)] shrink-0 rounded-full bg-brand px-[max(3rem,24px)] text-[max(0.85rem,12.5px)] font-medium text-white transition-colors hover:bg-brand-strong disabled:opacity-40"
+                        >
+                          Shortlist
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <p className="m-auto text-[max(0.9rem,12px)] text-ink-2">No CV to show.</p>
             )}
-          </div>
+          </section>
         </div>
       )}
 
+      {removed && (
+        <div role="status" className="fixed bottom-[max(4rem,48px)] left-1/2 z-[90] flex max-w-[calc(100vw-24px)] -translate-x-1/2 items-center gap-3 rounded-full bg-ink px-[max(1.3rem,14px)] py-[max(0.7rem,8px)] text-[max(0.85rem,12.5px)] text-white shadow-float">
+          <span className="min-w-0 truncate">
+            <b className="font-semibold">{removed.length === 1 ? removed[0].s.name : `${removed.length} scoops`}</b> deleted from this job&rsquo;s scoops
+          </span>
+          <button type="button" onClick={undoRemove} className="shrink-0 font-medium text-brand-leaf hover:underline">
+            Undo
+          </button>
+        </div>
+      )}
       {notice && <Toast key={notice.n} bold={notice.bold} rest={notice.rest} warn={notice.warn} />}
       {readingShown && reading && <CvPreview ref={cvBox} name={reading.name} title={reading.title} src={reading.cv} onClose={() => setReadingOpen(false)} />}
     </div>
@@ -597,8 +688,7 @@ export default function ScoopsView() {
 
 /** Shortlist, or why there is none: mine already, or another TA's (the lock). */
 function RowAction({ s, onShortlist }: { s: Scoop; onShortlist: () => void }) {
-  if (s.mine) return <span className={CHIP + " bg-brand-soft text-brand"}>Shortlisted by you</span>;
-  if (s.lockedBy) return <span className={CHIP + " bg-warn-soft text-warn"}>Shortlisted by {s.lockedBy}</span>;
+  if (s.mine || s.lockedBy) return <ShortlistedChip s={s} />;
   if (!CAN_ACT) return null;
   return (
     <button
@@ -610,6 +700,69 @@ function RowAction({ s, onShortlist }: { s: Scoop; onShortlist: () => void }) {
     </button>
   );
 }
+
+/** "Shortlisted by you" / "Shortlisted by Hasini" (the lock), or nothing. */
+function ShortlistedChip({ s }: { s: Scoop }) {
+  if (s.mine) return <span className={CHIP + " bg-brand-soft text-brand"}>Shortlisted by you</span>;
+  if (s.lockedBy) return <span className={CHIP + " bg-warn-soft text-warn"}>Shortlisted by {s.lockedBy}</span>;
+  return null;
+}
+
+/** The round ⋮ beside the counts: Upload CVs, and Delete (the ticked scoops, or the
+ *  one being read), which asks once more before it goes. `what` names what Delete
+ *  takes; empty = nothing to take yet. `refused` = another TA's scoop: Delete says
+ *  why straight away instead of asking. */
+function MoreMenu({ what, refused, onUpload, onDelete }: { what: string; refused: boolean; onUpload: () => void; onDelete: () => void }) {
+  const { open, setOpen, root, panel, shown } = useLiftMenu();
+  const [sure, setSure] = useState(false);
+  const pick = (fn: () => void) => () => {
+    setOpen(false);
+    fn();
+  };
+  return (
+    <div ref={root} className="relative">
+      <button
+        type="button"
+        aria-label="More for scoops"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => {
+          setSure(false);
+          setOpen((o) => !o);
+        }}
+        className="flex size-[max(2.6rem,35px)] items-center justify-center rounded-full border border-border bg-surface text-ink transition-colors hover:bg-surface-2"
+      >
+        <svg viewBox="0 0 24 24" fill="currentColor" className="size-[1.1em]" aria-hidden="true">
+          <circle cx="12" cy="5" r="1.8" />
+          <circle cx="12" cy="12" r="1.8" />
+          <circle cx="12" cy="19" r="1.8" />
+        </svg>
+      </button>
+      {shown && (
+        <div ref={panel} role="menu" className="absolute right-0 top-full z-30 mt-2 w-[max(16rem,200px)] rounded-md border border-border bg-surface p-1.5 shadow-float">
+          <button type="button" role="menuitem" onClick={pick(onUpload)} className={MENU_ITEM + " text-ink hover:bg-surface-2"}>
+            <UploadIcon className="size-[1.1em] shrink-0" />
+            Upload CVs
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={!what}
+            onClick={refused || sure ? pick(onDelete) : () => setSure(true)}
+            className={MENU_ITEM + (what ? " text-danger hover:bg-danger-soft" : " cursor-default text-ink-3")}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className="size-[1.1em] shrink-0" aria-hidden="true">
+              <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />
+            </svg>
+            {!what ? "Delete · tick scoops first" : sure ? `Press again to delete ${what}` : `Delete ${what}`}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const MENU_ITEM = "flex w-full items-center gap-2.5 rounded-sm px-3 py-2 text-left text-small";
 
 function Count({ n, label }: { n: number; label: string }) {
   return (

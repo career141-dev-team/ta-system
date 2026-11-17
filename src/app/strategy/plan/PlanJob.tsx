@@ -4,12 +4,13 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { DUR, EASE, gsap } from "@/lib/gsap";
+import { DUR, EASE, gsap, useSwap } from "@/lib/gsap";
 import { CardsSkeleton } from "../../Skeleton";
 import Toast from "../../openings/[id]/Toast";
 import { BackButton } from "../../openings/[id]/PipelineBoard";
 import { TAS, groupsOf, namesOf, useCatalogue, TODAY, WEEK, WORKED, auraPlan, busy, drafts, job, liveRows, setRows, ta, useRows, whenLabel, type Job, type Row, type TaId } from "../data";
 import { AssignPanel, CalendarIcon, Initials, Toggle, type Assign } from "../ui";
+import { readPlan } from "./talk";
 
 // S3, planning one job (owner's design, 14 Nov 2026): what worked on roles like it,
 // where the job stands, AURA's suggested plan; every strategy with a switch, who and
@@ -94,6 +95,44 @@ function Plan({ j, aura }: { j: Job; aura: boolean }) {
   const saveDraft = () => {
     drafts.set(j.id, draft);
     say("Draft saved", " — nothing is sent until you press Send");
+  };
+  // A line typed to AURA (owner, 17 Nov 2026: "Add Chat Bar"): the strategies it names
+  // go on, to the TA and day it names, through the same assign as the switches and the
+  // drag. What it cannot place it says, in one line - it never guesses.
+  const talk = (text: string) => {
+    const s = readPlan(text, STRATEGIES, TAS.map((t) => [t.id, t.first]), TODAY);
+    if (!s.picks.length)
+      return s.tas.length
+        ? `Which strategy for ${list(s.tas.map((t) => ta(t as TaId).first))}? Name one from the list, like “Direct headhunt”.`
+        : "I could not find a strategy or a TA in that. The planning model is not connected yet, so try a line like “Put Dilini on Direct headhunt tomorrow”.";
+    const kept = s.picks.filter((p) => locked(get(p.name))).map((p) => p.name);
+    const free = s.picks.filter((p) => !locked(get(p.name)));
+    const out: string[] = [];
+    if (s.off) {
+      free.forEach((p) => drop(p.name));
+      if (free.length) out.push(`Switched off ${list(free.map((p) => p.name))}.`);
+    } else {
+      const by = new Map<string, string[]>();
+      const nobody: string[] = [];
+      for (const p of free) {
+        const cur = get(p.name);
+        const who = (p.ta ?? cur?.ta) as TaId | undefined;
+        if (!who) {
+          if (!cur || cur.state === "na") put({ job: j.id, name: p.name, state: "open" });
+          nobody.push(p.name);
+          continue;
+        }
+        const days: [number, number] = s.day !== undefined ? [s.day, s.day] : (cur?.days ?? [TODAY, TODAY]);
+        assign(p.name, { ta: who, when: whenLabel(...days), days });
+        const key = `${ta(who).first} · ${whenLabel(...days)}`;
+        by.set(key, [...(by.get(key) ?? []), p.name]);
+      }
+      for (const [k, ns] of by) out.push(`${list(ns)} for ${k.replace(" · ", " on ")}.`);
+      if (nobody.length) out.push(`${list(nobody)} on with nobody yet - say who.`);
+    }
+    if (kept.length) out.push(`${list(kept)} ${kept.length > 1 ? "stay" : "stays"} as ${kept.length > 1 ? "they are - a TA has accepted them" : "it is - a TA has accepted it"}.`);
+    if (free.length) out.push("Nothing is sent until you press Send.");
+    return out.join(" ");
   };
   const usePlan = () => {
     const p = auraPlan(j);
@@ -218,43 +257,46 @@ function Plan({ j, aura }: { j: Job; aura: boolean }) {
           </div>
         </section>
 
-        {/* Every strategy, by group, with its switch. */}
-        <section className={CARD}>
-          <div className="mb-[max(1rem,8px)] flex items-baseline">
-            <h2 className="text-h3 font-medium text-ink">Strategies</h2>
-            <span className="ml-auto text-small text-ink-3">
-              {on} of {STRATEGIES.length} on
-            </span>
+        {/* Every strategy, by group, with its switch; AURA's bar pinned under them. */}
+        <section className="flex min-h-0 flex-col overflow-hidden rounded-lg bg-surface shadow-card">
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-[max(1.75rem,16px)] pb-[max(1rem,8px)] [scrollbar-width:thin]">
+            <div className="mb-[max(1rem,8px)] flex items-baseline">
+              <h2 className="text-h3 font-medium text-ink">Strategies</h2>
+              <span className="ml-auto text-small text-ink-3">
+                {on} of {STRATEGIES.length} on
+              </span>
+            </div>
+            {groups.map((g) => {
+              const items = g.items.map((i) => i.name);
+              // Those in use always show; the rest fill the group up to four, then "+ N more".
+              const room = Math.max(0, 4 - items.filter((n) => get(n)).length);
+              const spare = items.filter((n) => !get(n)).slice(0, room);
+              const shown = more[g.name] ? items : items.filter((n) => get(n) || spare.includes(n));
+              const hidden = items.length - shown.length;
+              return (
+                <div key={g.name} className="mt-[max(0.75rem,6px)]">
+                  <p className="mb-1.5 text-caption font-medium uppercase text-ink-3">{g.name}</p>
+                  {shown.map((n) => (
+                    <StrategyRow
+                      key={n}
+                      name={n}
+                      row={get(n)}
+                      onToggle={(v) => (v ? put({ job: j.id, name: n, state: "open" }) : drop(n))}
+                      onOpen={(at) => setPanel({ name: n, at })}
+                      onDrag={(e) => startDrag(n, e)}
+                      onUnstrike={() => drop(n)}
+                    />
+                  ))}
+                  {hidden > 0 && (
+                    <button type="button" onClick={() => setMore({ ...more, [g.name]: true })} className="ml-10 mt-1 text-small text-ink-3 hover:text-ink">
+                      + {hidden} more {g.name} {hidden === 1 ? "strategy" : "strategies"}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
-          {groups.map((g) => {
-            const items = g.items.map((i) => i.name);
-            // Those in use always show; the rest fill the group up to four, then "+ N more".
-            const room = Math.max(0, 4 - items.filter((n) => get(n)).length);
-            const spare = items.filter((n) => !get(n)).slice(0, room);
-            const shown = more[g.name] ? items : items.filter((n) => get(n) || spare.includes(n));
-            const hidden = items.length - shown.length;
-            return (
-              <div key={g.name} className="mt-[max(0.75rem,6px)]">
-                <p className="mb-1.5 text-caption font-medium uppercase text-ink-3">{g.name}</p>
-                {shown.map((n) => (
-                  <StrategyRow
-                    key={n}
-                    name={n}
-                    row={get(n)}
-                    onToggle={(v) => (v ? put({ job: j.id, name: n, state: "open" }) : drop(n))}
-                    onOpen={(at) => setPanel({ name: n, at })}
-                    onDrag={(e) => startDrag(n, e)}
-                    onUnstrike={() => drop(n)}
-                  />
-                ))}
-                {hidden > 0 && (
-                  <button type="button" onClick={() => setMore({ ...more, [g.name]: true })} className="ml-10 mt-1 text-small text-ink-3 hover:text-ink">
-                    + {hidden} more {g.name} {hidden === 1 ? "strategy" : "strategies"}
-                  </button>
-                )}
-              </div>
-            );
-          })}
+          <PlanChat onSend={talk} />
         </section>
 
         {/* The team's week: drop a strategy on a person and a day. */}
@@ -307,6 +349,62 @@ function Plan({ j, aura }: { j: Job; aura: boolean }) {
       )}
       {toast && <Toast key={toast.key} bold={toast.bold} rest={toast.rest} />}
     </main>
+  );
+}
+
+/** "A", "A and B", "A, B and C". */
+const list = (a: string[]) => (a.length < 2 ? (a[0] ?? "") : `${a.slice(0, -1).join(", ")} and ${a[a.length - 1]}`);
+
+/** AURA's bar at the foot of the Strategies column: one line in, AURA's one-line
+ *  answer above it (the latest only), arriving by the one switch. */
+function PlanChat({ onSend }: { onSend: (text: string) => string }) {
+  const [text, setText] = useState("");
+  const [reply, setReply] = useState<{ n: number; said: string } | null>(null);
+  const line = useRef<HTMLParagraphElement>(null);
+  useSwap(line, reply?.n);
+  const send = () => {
+    const t = text.trim();
+    if (!t) return;
+    // The plan changes here, in the event, not inside a state updater (that runs during render).
+    const said = onSend(t);
+    setReply((r) => ({ n: (r?.n ?? 0) + 1, said }));
+    setText("");
+  };
+  return (
+    <div className="flex shrink-0 flex-col gap-2 px-[max(1.25rem,12px)] pb-[max(1.25rem,12px)] pt-[max(0.5rem,4px)]">
+      {reply && (
+        <p ref={line} role="status" title={reply.said} className="flex items-start gap-2 px-1 text-small text-ink-2">
+          <Image src="/aura-mark.png" alt="" width={24} height={24} className="mt-0.5 size-[max(1.25rem,16px)] shrink-0 rounded-full" />
+          <span className="line-clamp-2">{reply.said}</span>
+        </p>
+      )}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          send();
+        }}
+        className="flex items-center gap-2 rounded-full border border-border bg-surface py-[max(0.375rem,4px)] pl-[max(1.25rem,12px)] pr-[max(0.375rem,4px)] shadow-float has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-brand/30"
+      >
+        <input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          maxLength={300}
+          placeholder="Tell AURA the plan — e.g. Put Dilini on Direct headhunt tomorrow"
+          aria-label="Tell AURA the plan"
+          className="min-w-0 flex-1 truncate bg-transparent text-[max(1rem,13px)] text-ink outline-none placeholder:text-ink-3"
+        />
+        <button
+          type="submit"
+          disabled={!text.trim()}
+          aria-label="Send to AURA"
+          className="flex size-[max(2.5rem,32px)] shrink-0 items-center justify-center rounded-full bg-brand text-white transition-colors hover:bg-brand-strong disabled:opacity-40"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="size-[max(1.1rem,15px)]" aria-hidden="true">
+            <path d="M12 19V5M6 11l6-6 6 6" />
+          </svg>
+        </button>
+      </form>
+    </div>
   );
 }
 

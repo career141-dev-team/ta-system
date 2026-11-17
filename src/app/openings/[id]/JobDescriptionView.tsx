@@ -22,7 +22,10 @@ import { useMe } from "@/lib/role";
 const CAN_WRITE: boolean = true;
 const ASK_MAX = 2000;
 
-type Section = { h: string; p?: string; lines?: string[]; list?: string[] };
+type Section = { h: string; p?: string; list?: string[] };
+const TITLE = "Senior Manager — SAP Business Transformation";
+/** Client · place · type · reports to - the quiet line under the title. */
+const META = ["PGP Glass", "Colombo · hybrid", "Full-time", "Reports to the Group CIO"];
 const SECTIONS: Section[] = [
   {
     h: "About the role",
@@ -30,7 +33,7 @@ const SECTIONS: Section[] = [
   },
   {
     h: "Responsibilities",
-    lines: [
+    list: [
       "Own the S/4HANA roadmap, budget and partner relationships",
       "Lead a team of 12 across finance, supply chain and manufacturing streams",
       "Run cut-over and data migration for six plants",
@@ -39,7 +42,7 @@ const SECTIONS: Section[] = [
   },
   {
     h: "Requirements",
-    lines: [
+    list: [
       "10+ years in SAP, with at least one manufacturing rollout led end to end",
       "Strong FI/CO, MM and PP knowledge",
       "Experience managing system integrators",
@@ -47,14 +50,21 @@ const SECTIONS: Section[] = [
   },
   {
     h: "Qualifications",
-    list: ["A degree in engineering, IT or accounting.", "SAP certification is an advantage."],
+    list: ["A degree in engineering, IT or accounting", "SAP S/4HANA certification is an advantage", "PMP or PRINCE2 is an advantage"],
   },
   {
     h: "Skills",
     list: [
-      "Programme planning, budgeting and vendor management.",
-      "Clear written and spoken English; Sinhala or Tamil an advantage.",
-      "Leading cross-functional teams through change.",
+      "Programme planning, budgeting and vendor management",
+      "Clear written and spoken English; Sinhala or Tamil an advantage",
+      "Leading cross-functional teams through change",
+    ],
+  },
+  {
+    h: "Experience",
+    list: [
+      "At least 5 years leading SAP programmes or delivery teams",
+      "Manufacturing, FMCG or supply chain businesses preferred",
     ],
   },
   { h: "Package", p: "Around LKR 1.2M a month, plus performance bonus and medical cover" },
@@ -90,10 +100,13 @@ export default function JobDescriptionView() {
   const [toast, setToast] = useState<{ bold?: string; rest: string; n: number } | null>(null);
   const bar = useRef<HTMLDivElement>(null);
   const talk = useRef<HTMLDivElement>(null);
+  const doc = useRef<HTMLDivElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
   useSwap(bar, approved);
   useSwap(talk, turns.length);
+  // A restored version switches in like any changed content.
+  useSwap(doc, version);
 
   const approve = () => {
     setApproved(true);
@@ -113,7 +126,7 @@ export default function JobDescriptionView() {
     setTurns((all) => [...all, { me: t, aura: "I could not change it - this screen is not connected yet. The JD is as it was.", failed: true }]);
   };
   const copy = async () => {
-    const text = SECTIONS.map((x) => [x.h, x.p, ...(x.lines ?? []), ...(x.list ?? [])].filter(Boolean).join("\n")).join("\n\n");
+    const text = [TITLE, META.join(" · "), ...SECTIONS.map((x) => [x.h, x.p, ...(x.list ?? []).map((l) => `• ${l}`)].filter(Boolean).join("\n"))].join("\n\n");
     try {
       await navigator.clipboard.writeText(text);
       setToast({ bold: "Copied", rest: " - the JD text is on your clipboard", n: Date.now() });
@@ -135,44 +148,55 @@ export default function JobDescriptionView() {
       <div className="flex min-h-0 flex-1 items-start max-md:flex-col max-md:gap-y-6 md:gap-x-[max(1.875rem,14px)]">
         <BackButton />
 
-        {/* The document: scrolls inside itself when the text is longer. */}
-        <article className="flex min-w-0 flex-col gap-1.5 rounded-lg border border-border bg-surface px-[max(3rem,18px)] py-[max(2.5rem,18px)] shadow-card max-md:w-full md:mt-[max(1.03rem,0px)] md:flex-1 md:self-stretch md:overflow-y-auto">
-          <div className="flex items-center gap-3">
-            <span className={CHIP + (approved ? " bg-success-soft text-success" : " bg-warn-soft text-warn")}>
-              {approved ? `Approved · version ${version}` : `Draft · version ${version}`}
-            </span>
-            <History
-              version={version}
-              onRestore={(n) => {
-                setVersion(n);
-                setToast({ bold: `Version ${n}`, rest: approved ? " is back. It stays approved." : " is back.", n: Date.now() });
-              }}
-            />
+        {/* The document: scrolls inside itself when the text is longer. Set like a page
+            (owner's Figma comment, 17 Nov 2026: "this section fully design change"): a
+            header with the state, the title and a quiet meta line, then every section
+            under the same quiet heading, at a readable line length. */}
+        <article className="flex min-w-0 flex-col rounded-lg border border-border bg-surface px-[max(3rem,18px)] py-[max(2.25rem,18px)] shadow-card max-md:w-full md:mt-[max(1.03rem,0px)] md:flex-1 md:self-stretch md:overflow-y-auto">
+          <header className="flex flex-col gap-[max(0.75rem,8px)] border-b border-border pb-[max(1.5rem,14px)]">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+              <span className={CHIP + (approved ? " bg-success-soft text-success" : " bg-warn-soft text-warn")}>
+                {approved ? `Approved · version ${version}` : `Draft · version ${version}`}
+              </span>
+              <span className="truncate text-caption text-ink-3" title={approved ? approvedBy : undefined}>
+                {approved ? approvedBy || "Approved" : `Saved ${VERSIONS.find((v) => v.n === version)?.when ?? ""}`}
+              </span>
+              <History
+                version={version}
+                onRestore={(n) => {
+                  setVersion(n);
+                  setToast({ bold: `Version ${n}`, rest: approved ? " is back. It stays approved." : " is back.", n: Date.now() });
+                }}
+              />
+            </div>
+            <h2 className="text-h1 font-light text-ink">{TITLE}</h2>
+            <ul aria-label="About this job" className="flex flex-wrap gap-2">
+              {META.map((m) => (
+                <li key={m} className={CHIP + " bg-surface-2 text-ink-2"}>
+                  {m}
+                </li>
+              ))}
+            </ul>
+          </header>
+
+          <div ref={doc} className="flex max-w-[70ch] flex-col gap-[max(1.5rem,14px)] pt-[max(1.5rem,14px)]">
+            {SECTIONS.map((s) => (
+              <section key={s.h} className="flex flex-col gap-2">
+                <h3 className="text-caption font-medium uppercase text-ink-3">{s.h}</h3>
+                {s.p && <p className="text-body text-ink-2">{s.p}</p>}
+                {s.list && (
+                  <ul className="flex flex-col gap-1.5 text-body text-ink-2">
+                    {s.list.map((l) => (
+                      <li key={l} className="flex gap-3">
+                        <span aria-hidden="true" className="mt-[0.7em] size-1.5 shrink-0 rounded-full bg-ink-3" />
+                        {l}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            ))}
           </div>
-          <h3 className="text-h2 font-semibold text-brand">Senior Manager — SAP Business Transformation</h3>
-          <p className="text-small text-ink-3">PGP Glass · Colombo · Full-time · Reports to the Group CIO</p>
-          {SECTIONS.map((s) => (
-            <section key={s.h} className="contents">
-              <h4 className="mt-2 text-body font-semibold text-brand">{s.h}</h4>
-              {s.p && <p className="text-small text-ink-2">{s.p}</p>}
-              {s.lines && (
-                <div className="text-small text-ink-2">
-                  {s.lines.map((l) => (
-                    <p key={l}>• {l}</p>
-                  ))}
-                </div>
-              )}
-              {s.list && (
-                <ul className="list-disc text-small text-ink-2">
-                  {s.list.map((l) => (
-                    <li key={l} className="ms-5">
-                      {l}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          ))}
         </article>
 
         <aside className="flex min-w-0 flex-col gap-[max(1.125rem,10px)] max-md:w-full md:mt-[max(0.7rem,0px)] md:flex-[0_1_40.5rem]">
@@ -303,13 +327,13 @@ function History({ version, onRestore }: { version: number; onRestore: (n: numbe
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-haspopup="menu"
-        aria-label="Version history"
-        title="Version history"
-        className="flex size-8 items-center justify-center rounded-full text-ink-3 hover:bg-surface-2 hover:text-ink"
+        title="Earlier versions of this JD"
+        className="flex items-center gap-1.5 rounded-full px-3 py-1 text-small text-ink-2 hover:bg-surface-2 hover:text-ink aria-expanded:bg-surface-2 aria-expanded:text-ink"
       >
-        <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-[1.1rem]" aria-hidden="true">
+        <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-[max(0.95rem,13px)]" aria-hidden="true">
           <path d="M2.25 9a6.75 6.75 0 1 0 1.7-4.5L2.25 6M2.25 2.25V6H6" />
         </svg>
+        History
       </button>
       {shown && (
         <div ref={panel} role="menu" className="absolute right-0 top-full z-30 mt-2 flex w-[max(20rem,260px)] flex-col rounded-md bg-surface p-1.5 shadow-float ring-1 ring-border/60">

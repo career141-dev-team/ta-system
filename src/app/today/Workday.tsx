@@ -356,7 +356,7 @@ export default function Workday({ startedAt }: { startedAt: number }) {
       {/* AURA. The talk grows upward from the box, like a chat. */}
       <section className="flex min-h-0 flex-1 flex-col">
         <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto flex min-h-full w-full max-w-[max(53.75rem,300px)] flex-col justify-end gap-[max(2rem,18px)] px-[max(1.5rem,14px)] pb-4 pt-8">
+          <div className="mx-auto flex min-h-full w-full max-w-[max(53.75rem,300px)] flex-col justify-end gap-[max(2rem,18px)] px-[max(1.5rem,14px)] pb-[max(1.5rem,14px)] pt-8">
             <Say>
               {part}, {first}. {WORDS[things.length] ?? things.length} things need you before we plan.
             </Say>
@@ -427,7 +427,8 @@ export default function Workday({ startedAt }: { startedAt: number }) {
         </div>
 
         <div className="mx-auto w-full max-w-[max(53.75rem,300px)] px-[max(1.5rem,14px)] pb-[max(2.25rem,14px)]">
-          <div className="mb-[max(0.875rem,8px)] flex flex-wrap gap-[max(0.75rem,6px)]">
+          {/* Suggestions: the same clear gap above (the chips) and below (the box), 17 Nov 2026. */}
+          <div className="mb-[max(1.5rem,14px)] flex flex-wrap gap-[max(0.75rem,6px)]">
             {SUGGESTIONS.map((s) => (
               <button key={s} type="button" data-ask onClick={() => send(s)} className={ASK}>
                 {s}

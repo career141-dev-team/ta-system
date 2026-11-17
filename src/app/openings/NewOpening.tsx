@@ -17,6 +17,14 @@ import { CITIES, CLIENTS, EMPTY, TARGET_WORDS, TEAM, readBrief, type Loc, type O
 
 const READ_MS = 900;
 
+// One-tap starts under the box (owner, 17 Nov 2026: "Add Chat suggestions"): the short
+// label is the chip, the whole brief goes into the box to edit, then Read it.
+const STARTS: [string, string][] = [
+  ["Senior accountant for John Keells, Colombo, P2", "John Keells want a Senior Accountant in Colombo - 5+ years, CIMA qualified. Treat it as P2."],
+  ["Two sales executives in Kandy and Galle", "Cargills need a Sales Executive for Kandy and Galle - 1 in Kandy and 1 in Galle, 2+ years in FMCG sales."],
+  ["HR business partner for Dialog, urgent", "Dialog Axiata need an HR Business Partner in Colombo, 8+ years in HR. Urgent - treat it as P1."],
+];
+
 export default function NewOpening({
   start,
   onClose,
@@ -34,6 +42,7 @@ export default function NewOpening({
   const [r, setR] = useState<Read>(EMPTY);
   const root = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLDivElement>(null);
+  const brief = useRef<HTMLTextAreaElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
 
@@ -201,6 +210,7 @@ export default function NewOpening({
                 }}
               >
                 <textarea
+                  ref={brief}
                   autoFocus
                   value={text}
                   onChange={(e) => setText(e.target.value)}
@@ -234,6 +244,28 @@ export default function NewOpening({
                     {reading ? "Reading…" : "Read it"}
                   </button>
                 </div>
+              </div>
+              {/* Hidden, not removed, once there are words: the line under it stays put. */}
+              <div className={"-mt-3 flex flex-wrap items-center gap-2 " + (text.trim() ? "invisible" : "")} aria-hidden={!!text.trim()}>
+                <span className="text-small text-ink-3">Try</span>
+                {STARTS.map(([label, full]) => (
+                  <button
+                    key={label}
+                    type="button"
+                    title={full}
+                    onClick={() => {
+                      setText(full);
+                      // Into the box with the caret at the end, ready to change.
+                      requestAnimationFrame(() => {
+                        brief.current?.focus();
+                        brief.current?.setSelectionRange(full.length, full.length);
+                      });
+                    }}
+                    className="max-w-full truncate rounded-full border border-border bg-surface px-3.5 py-1.5 text-small text-ink-2 transition-colors hover:border-brand hover:text-brand"
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
               <p className="text-small text-ink-3">
                 Prefer a form?{" "}

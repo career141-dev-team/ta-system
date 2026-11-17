@@ -3,11 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useSwap, useTabGlide } from "@/lib/gsap";
+import { DUR, EASE, gsap, useExit, useSwap, useTabGlide } from "@/lib/gsap";
 import { useMe } from "@/lib/role";
 import Count from "@/app/Count";
 import Toast from "./[id]/Toast";
-import { useLiftMenu } from "./[id]/liftMenu";
+import { LIFT_OUT, useLiftMenu } from "./[id]/liftMenu";
 import { OPENINGS, ORDER, STATUS, TARGET, inList, type List, type Opening } from "./data";
 
 // O1 · Openings by category (owner's design, 14 Nov 2026): tabs with counts, then one
@@ -75,9 +75,8 @@ export default function OpeningsView() {
   const of = (l: List) => filtered.filter((o) => inList(o, l));
   const all = filtered.length;
 
-  // First press asks, a second press on the same card bins it.
+  // The Bin button asks first (a box over the card); "Move to Bin" there bins it.
   const bin = (o: Opening) => {
-    if (arming !== o.id) return setArming(o.id);
     setArming(null);
     setRows((r) => r.filter((x) => x.id !== o.id));
     setToast({ bold: o.title, rest: " is in the Bin for 7 days. Anyone on the desk can put it back from the Bin.", n: ++said.current });
@@ -169,7 +168,7 @@ export default function OpeningsView() {
                 {shown.length ? (
                   <div className="grid grid-cols-4 gap-[max(1.5rem,12px)] max-lg:grid-cols-2 max-sm:grid-cols-1">
                     {shown.map((o) => (
-                      <Card key={o.id} o={o} canBin={canBin(o)} armed={arming === o.id} onBin={() => bin(o)} onDisarm={() => setArming(null)} />
+                      <Card key={o.id} o={o} canBin={canBin(o)} armed={arming === o.id} onArm={() => setArming(o.id)} onBin={() => bin(o)} onDisarm={() => setArming(null)} />
                     ))}
                   </div>
                 ) : (
@@ -218,11 +217,31 @@ export default function OpeningsView() {
 // ponytail: sample candidate count per opening, the backend sends the real one.
 const kept = (o: Opening) => 6 + ((o.id.length * 7 + o.days * 3) % 30);
 
-function Card({ o, canBin, armed, onBin, onDisarm }: { o: Opening; canBin: boolean; armed: boolean; onBin: () => void; onDisarm: () => void }) {
+function Card({ o, canBin, armed, onArm, onBin, onDisarm }: { o: Opening; canBin: boolean; armed: boolean; onArm: () => void; onBin: () => void; onDisarm: () => void }) {
   const l: List = inList(o, "unassigned") ? "unassigned" : o.status;
   const over = o.status === "active" && o.team.length > 0 && o.days > TARGET[o.priority];
   const right =
     l === "unassigned" ? "Needs a TA" : o.status === "active" ? `Day ${o.days} of ${TARGET[o.priority]}` : (o.note ?? "");
+  const ask = useRef<HTMLDivElement>(null);
+  const binBtn = useRef<HTMLButtonElement>(null);
+  const asking = useExit(armed, ask, LIFT_OUT);
+  // The box lifts in over the card (lift, like a menu), and the safe choice takes focus.
+  useEffect(() => {
+    if (!armed || !ask.current) return;
+    gsap.set(ask.current, LIFT_OUT);
+    gsap.to(ask.current, { opacity: 1, y: 0, scale: 1, duration: DUR.fast, ease: EASE.out, overwrite: true });
+    ask.current.querySelector<HTMLButtonElement>("[data-cancel]")?.focus({ preventScroll: true });
+  }, [armed]);
+  const cancel = () => {
+    onDisarm();
+    // Back to the Bin button once it shows again (next frame).
+    requestAnimationFrame(() => binBtn.current?.focus({ preventScroll: true }));
+  };
+  // Buttons sit inside the card's link: they must never open the opening.
+  const hold = (e: React.SyntheticEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
   return (
     <Link
       // ponytail: every card opens the one opening built so far.
@@ -245,28 +264,80 @@ function Card({ o, canBin, armed, onBin, onDisarm }: { o: Opening; canBin: boole
       </div>
       {canBin && (
         <button
+          ref={binBtn}
           type="button"
           onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onBin();
+            hold(e);
+            onArm();
           }}
-          aria-label={armed ? `Press again to move ${o.title} to the Bin` : `Move ${o.title} to the Bin`}
+          aria-label={`Move ${o.title} to the Bin`}
           title="Move to the Bin (7 days)"
           className={
-            "absolute right-4 top-4 flex h-9 min-w-9 items-center justify-center gap-2 rounded-full bg-danger-soft text-danger transition-opacity focus-visible:opacity-100 group-hover:opacity-100 max-md:opacity-100 " +
-            (armed ? "left-4 h-auto py-1.5 px-3 text-left text-caption opacity-100" : "opacity-0")
+            "absolute right-4 top-4 flex size-9 items-center justify-center rounded-full bg-danger-soft text-danger opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 max-md:opacity-100 " +
+            (armed ? "invisible" : "")
           }
         >
-          {armed && <span>Press again · {kept(o)} candidates stay in the database · restore within 7 days</span>}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-4" aria-hidden="true">
-            <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
-          </svg>
+          <BinIcon />
         </button>
+      )}
+      {/* The question sits over the card (absolute), so nothing around it moves. */}
+      {canBin && asking && (
+        <div
+          ref={ask}
+          role="alertdialog"
+          aria-label={`Move ${o.title} to the Bin?`}
+          onClick={hold}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              hold(e);
+              cancel();
+            }
+          }}
+          className="absolute inset-[max(0.375rem,4px)] z-10 flex cursor-default flex-col justify-between gap-1 rounded-md border-[1.5px] border-danger/40 bg-danger-soft px-[max(1rem,10px)] py-[max(0.75rem,8px)] shadow-float"
+        >
+          <div className="min-w-0">
+            <p className="flex items-center gap-1.5 text-small font-medium text-danger">
+              <BinIcon />
+              Move to the Bin?
+            </p>
+            <p className="truncate text-caption text-ink-2" title={`${kept(o)} candidates stay in the database. Anyone can restore it within 7 days.`}>
+              {kept(o)} candidates stay · restore within 7 days
+            </p>
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              data-cancel
+              onClick={(e) => {
+                hold(e);
+                cancel();
+              }}
+              className="h-[max(2rem,28px)] rounded-full border border-border-strong bg-surface px-[max(0.875rem,10px)] text-caption font-medium text-ink hover:bg-surface-2"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                hold(e);
+                onBin();
+              }}
+              className="h-[max(2rem,28px)] rounded-full bg-danger px-[max(0.875rem,10px)] text-caption font-medium text-white transition-opacity hover:opacity-90"
+            >
+              Move to Bin
+            </button>
+          </div>
+        </div>
       )}
     </Link>
   );
 }
+
+const BinIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-4 shrink-0" aria-hidden="true">
+    <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
+  </svg>
+);
 
 /** "Show" which lists, then client, TA and sort (owner's popover). */
 function Filters(p: {

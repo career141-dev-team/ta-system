@@ -2,6 +2,7 @@ import RowLink from "./RowLink";
 import PillMenu, { type MenuOption } from "./PillMenu";
 import Notch from "./Notch";
 import OpeningView from "./OpeningView";
+import OverviewCharts, { type OverviewNumbers } from "./OverviewCharts";
 import type { WorkView } from "./view";
 import { CAN_SOURCE } from "@/lib/user";
 
@@ -14,6 +15,22 @@ const OPENING = {
   stage: "100%",
   targetLinkedIn: 15,
   targetCvs: 20,
+};
+
+// Sample numbers under the lists, agreeing with the page: the targets above, the
+// Openings list (P1, day 9 of 14) and the Strategies view (4 on this job, one struck
+// off not counted).
+const NUMBERS: OverviewNumbers = {
+  cvsToday: 4,
+  cvsDayTarget: 5,
+  cvsOnJob: 14,
+  cvsTarget: OPENING.targetCvs,
+  linkedInToday: 6,
+  linkedInTarget: OPENING.targetLinkedIn,
+  daysOpen: 9,
+  priority: 1,
+  priorityDays: 14,
+  strategies: { done: 1, working: 2, notStarted: 1 },
 };
 
 // Every row opens its work view in place (OpeningView), ATS and Headhunting alike.
@@ -142,8 +159,12 @@ export default async function OpeningPage({ params }: PageProps<"/openings/[id]"
         </div>
       </div>
 
-      {/* Takes the height left in the window, up to the design's own 706px. */}
-      <div className="relative mt-12.5 grid min-h-0 flex-1 rounded-lg bg-white max-md:flex-none md:max-h-[44.125rem] md:grid-cols-2">
+      {/* One view, no scrolling (owner, 17 Nov 2026): the lists take the height left
+          after the slim numbers strip, up to the design's 706px; their text keeps its
+          size and only the rows get a little shorter. Not positioned, so the Status /
+          Stage menus above open over it. */}
+      <div className="mt-12.5 flex flex-col md:min-h-0 md:flex-1">
+      <div className="relative grid rounded-lg bg-white max-md:flex-none md:max-h-[44.125rem] md:min-h-0 md:flex-1 md:grid-cols-2">
         <Column name="ATS" items={ATS} base={base} first inPlace />
         {CAN_SOURCE && <Column name="Headhunting" items={HEADHUNTING} base={base} inPlace />}
         {CAN_SOURCE && (
@@ -152,6 +173,8 @@ export default async function OpeningPage({ params }: PageProps<"/openings/[id]"
             className="absolute bottom-11.25 left-1/2 top-6.5 hidden w-px bg-border md:block"
           />
         )}
+      </div>
+      <OverviewCharts data={NUMBERS} />
       </div>
         </>
       }
