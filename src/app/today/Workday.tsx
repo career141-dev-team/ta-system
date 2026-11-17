@@ -11,6 +11,8 @@ import ChecksList from "./ChecksList";
 import { checksFor, progress, type CheckKey } from "./checks";
 import PillMenu, { type MenuOption } from "../openings/[id]/PillMenu";
 import { aboutTheDay, planDay, type Plan } from "./plan";
+import { answer, DESK, rank, startLine, type Answer, type Desk, type Tone } from "./desk";
+import { saveRow, TAS, useRows, type Row } from "../strategy/data";
 
 // T2 · Today, after Start workday (owner's design, 13 Nov 2026): the day's rail on
 // the left, AURA in the middle. Placeholder data until the backend is wired: with
@@ -19,18 +21,24 @@ import { aboutTheDay, planDay, type Plan } from "./plan";
 // T3 (14 Nov 2026): say how the day looks and AURA lays it out - the plan card with
 // times, the position each step belongs to, "Start with <position>" and "Change
 // something" (./plan.ts). Anything else AURA still says plainly it cannot answer yet.
+// 17 Nov 2026 (owner): every open position the TA is on shows in the chat as a card,
+// in the order AURA would work them, with what the position already holds - Rashmi's
+// strategies, the requirements, priority and target, the pipeline and its gaps
+// (./desk.ts) - kept out of sight (owner: "too much, keep the old chat"): the chips
+// stay, one line says where to start, and AURA answers when the TA asks about a
+// position, its strategies or what first. The plan puts strategies due today first.
 
 const NewOpening = dynamic(() => import("../openings/NewOpening"));
 
 type WorkType = "100%" | "Follow-up" | "Add-on";
-type Position = { id: string; title: string; client: string; type: WorkType };
+type Position = Desk;
 
-const POSITIONS: Position[] = [
-  { id: "sap", title: "SAP Transformation", client: "PGP Glass", type: "100%" },
-  { id: "fin", title: "Finance Manager", client: "Hayleys", type: "Follow-up" },
-  { id: "prod", title: "Production Executive", client: "MAS Holdings", type: "Follow-up" },
-  { id: "hr", title: "HR Business Partner", client: "Dialog", type: "100%" },
-];
+const POSITIONS: Position[] = DESK;
+/** A position made from "Add a position" today: nothing worked on it yet. */
+const fresh = (id: string, title: string, client: string): Position => ({
+  id, title, client, type: "Follow-up", p: 3, day: 0, of: 30, skills: [], years: [0, 0], salary: "", where: "", hiring: "",
+  pipeline: 0, cvsToday: 0, director: 0, jd: false, linkedin: false,
+});
 // Placeholder evidence: what each position already has done today.
 const DONE: Record<string, CheckKey[]> = { sap: ["jd_review", "linkedin_post", "excel_profiles"], fin: ["chatgpt"], prod: [], hr: [] };
 
@@ -89,7 +97,7 @@ const THINGS: Thing[] = [
   },
 ];
 
-const SUGGESTIONS = ["What’s late?", "Who replied?", "Draft my EOD"] as const;
+const SUGGESTIONS = ["Plan my day", "What first?", "My strategies today", "Draft my EOD"] as const;
 const WORDS = ["No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten"];
 
 // The clock in the rail, one tick a minute; the server draws nothing for it.
@@ -101,6 +109,9 @@ const minute = (cb: () => void) => {
 export default function Workday({ startedAt }: { startedAt: number }) {
   const root = useRef<HTMLDivElement>(null);
   const { first } = useMe();
+  // Rashmi's strategies, from the Strategy Planner's store: accepting one here is seen there.
+  const rows = useRows();
+  const me = TAS.find((t) => t.first === first)?.id;
   const part = useSyncExternalStore(
     minute,
     () => {
@@ -133,7 +144,7 @@ export default function Workday({ startedAt }: { startedAt: number }) {
   const [things, setThings] = useState(THINGS);
   // What the person said, and AURA's answer: a plan, "not yet" for anything that
   // is not about the day, or nothing while it is still thinking.
-  const [chat, setChat] = useState<{ id: number; text: string; reply?: Plan | "na" }[]>([]);
+  const [chat, setChat] = useState<{ id: number; text: string; reply?: Plan | Answer | "na" }[]>([]);
   const [hint, setHint] = useState("");
   const said = useRef("");
   const box = useRef<HTMLInputElement>(null);
@@ -148,6 +159,7 @@ export default function Workday({ startedAt }: { startedAt: number }) {
 
   const today = positions.filter((p) => picked[p.id]);
   const others = positions.filter((p) => !picked[p.id]);
+  const ranked = rank(positions, (d) => picked[d.id] ?? d.type, rows, me);
 
   const toggle = (p: Position) => {
     setRefusal("");
@@ -189,7 +201,8 @@ export default function Workday({ startedAt }: { startedAt: number }) {
     const t = text.trim();
     if (!t) return;
     const id = ++seq.current;
-    const planning = aboutTheDay(t) || !chat.some((m) => m.reply && m.reply !== "na") || hint !== "";
+    const told = answer(t, ranked.filter((r) => picked[r.d.id]), ranked, rows, me);
+    const planning = !told && (aboutTheDay(t) || !chat.some((m) => m.reply && m.reply !== "na" && "steps" in m.reply) || hint !== "");
     if (planning) said.current = `${said.current} ${t}`;
     setChat((c) => [...c, { id, text: t }]);
     setDraft("");
@@ -197,7 +210,9 @@ export default function Workday({ startedAt }: { startedAt: number }) {
     // ponytail: a stand-in wait; with the backend this is the model's answer.
     timers.current.push(
       setTimeout(() => {
-        const reply: Plan | "na" = planning ? planDay(today.map((p) => ({ ...p, type: picked[p.id] })), said.current) : "na";
+        // Today's positions in AURA's order, each with its strategies due today.
+        const day = ranked.filter((r) => picked[r.d.id]).map((r) => ({ ...r.d, type: picked[r.d.id], todo: r.due.map((x) => x.name) }));
+        const reply: Plan | Answer | "na" = told ?? (planning ? planDay(day, said.current) : "na");
         setChat((c) => c.map((m) => (m.id === id ? { ...m, reply } : m)));
       }, 800),
     );
@@ -206,7 +221,7 @@ export default function Workday({ startedAt }: { startedAt: number }) {
     setHint("Tell me what to change — e.g. “move the interview to 3:00” or “Finance first”");
     box.current?.focus();
   };
-  const latestPlan = [...chat].reverse().find((m) => m.reply && m.reply !== "na")?.id;
+  const latestPlan = [...chat].reverse().find((m) => m.reply && m.reply !== "na" && "steps" in m.reply)?.id;
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
   }, [chat]);
@@ -293,7 +308,7 @@ export default function Workday({ startedAt }: { startedAt: number }) {
               onClose={() => setNewOpening(false)}
               onCreate={(o) => {
                 setNewOpening(false);
-                const p: Position = { id: o.id, title: o.title, client: o.client, type: "Follow-up" };
+                const p = fresh(o.id, o.title, o.client);
                 setMade((m) => [...m, p]);
                 if (Object.keys(picked).length >= MAX_DAY) return setRefusal(`At most ${MAX_DAY} positions a day. ${o.title} is under Also yours.`);
                 setRefusal("");
@@ -367,13 +382,13 @@ export default function Workday({ startedAt }: { startedAt: number }) {
             </div>
 
             <Say>Which positions are you on today?</Say>
-            <div data-picks className="-mt-[max(0.75rem,6px)] flex flex-wrap gap-[max(0.75rem,8px)] pl-[max(3.375rem,0px)] max-md:pl-0">
-              {positions.map((p) =>
+            <div data-picks className="relative z-10 -mt-[max(0.75rem,6px)] flex flex-wrap gap-[max(0.75rem,8px)] pl-[max(3.375rem,0px)] max-md:pl-0">
+              {ranked.map(({ d: p, suggested }) =>
                 picked[p.id] ? (
                   <span
                     key={p.id}
                     data-chip
-                    className="flex h-[max(2.625rem,36px)] items-center gap-[max(0.625rem,6px)] rounded-full bg-brand-soft pl-[max(0.5rem,5px)] pr-[max(0.375rem,4px)]"
+                    className="relative flex h-[max(2.625rem,36px)] items-center gap-[max(0.625rem,6px)] rounded-full bg-brand-soft hover:z-10 focus-within:z-10 pl-[max(0.5rem,5px)] pr-[max(0.375rem,4px)]"
                   >
                     <button
                       type="button"
@@ -402,13 +417,18 @@ export default function Workday({ startedAt }: { startedAt: number }) {
                     data-chip
                     onClick={() => toggle(p)}
                     aria-pressed="false"
-                    className="flex h-[max(2.625rem,36px)] items-center rounded-full border border-border bg-white px-[max(1.125rem,12px)] text-[max(0.9375rem,13px)] text-ink transition-colors hover:border-brand/40"
+                    title={suggested ? "AURA suggests this one today" : "Add to today"}
+                    className="flex h-[max(2.625rem,36px)] items-center gap-2 rounded-full border border-border bg-white px-[max(1.125rem,12px)] text-[max(0.9375rem,13px)] text-ink transition-colors hover:border-brand/40"
                   >
                     {p.title}
+                    {suggested && <span aria-label="suggested" className="size-1.5 rounded-full bg-violet" />}
                   </button>
                 ),
               )}
             </div>
+            <p data-say className="-mt-[max(1rem,8px)] pl-[max(3.375rem,0px)] text-[max(0.875rem,12px)] text-ink-3 max-md:pl-0">
+              {startLine(ranked.filter((r) => picked[r.d.id]))}
+            </p>
             {refusal && <p className="-mt-[max(1rem,8px)] pl-[max(3.375rem,0px)] text-[max(0.8125rem,11.5px)] text-warn max-md:pl-0">{refusal}</p>}
 
             {chat.map((m) => (
@@ -418,8 +438,10 @@ export default function Workday({ startedAt }: { startedAt: number }) {
                   <Thinking />
                 ) : m.reply === "na" ? (
                   <Say>I&rsquo;m not connected yet &mdash; this screen is a preview, so I can&rsquo;t answer that today.</Say>
-                ) : (
+                ) : "steps" in m.reply ? (
                   <DayPlan plan={m.reply} latest={m.id === latestPlan} onChange={change} />
+                ) : (
+                  <Told a={m.reply} live={rows} onAccept={(row) => saveRow({ ...row, state: "working", accepted: "Today" })} />
                 )}
               </Fragment>
             ))}
@@ -434,11 +456,6 @@ export default function Workday({ startedAt }: { startedAt: number }) {
                 {s}
               </button>
             ))}
-            {today.find((p) => p.id === "fin") && (
-              <Link data-ask href="/openings/demo" className={ASK}>
-                Open Finance Manager
-              </Link>
-            )}
           </div>
           <form
             data-ask
@@ -556,6 +573,117 @@ function DayPlan({ plan, latest, onChange }: { plan: Plan; latest: boolean; onCh
           )}
         </div>
       )}
+    </>
+  );
+}
+
+const TONE: Record<Tone, string> = {
+  brand: "bg-brand-soft text-brand",
+  warn: "bg-warn-soft text-warn",
+  danger: "bg-danger-soft text-danger",
+  muted: "bg-surface-2 text-ink-3",
+};
+const PILL = "shrink-0 rounded-full px-[max(0.625rem,7px)] py-0.5 text-[max(0.8125rem,11.5px)] font-medium";
+
+/** AURA's answer about the desk, in the plan card's style: the sentence, then any
+ *  numbers, skill chips, what is missing, and rows - a strategy still to accept gets
+ *  its Accept button (read live, so it turns to Working once pressed). */
+function Told({ a, live, onAccept }: { a: Answer; live: Row[]; onAccept: (r: Row) => void }) {
+  const card = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = card.current;
+    if (!el) return;
+    const parts = el.querySelectorAll("[data-part]");
+    gsap.set(el, { opacity: 0, y: 10 });
+    gsap.set(parts, { opacity: 0, x: -8 });
+    const x = gsap.to(el, { opacity: 1, y: 0, duration: DUR.base, ease: EASE.out, clearProps: "opacity,transform" });
+    const y = gsap.to(parts, { opacity: 1, x: 0, duration: DUR.base, ease: EASE.out, stagger: 0.05, delay: 0.1, clearProps: "opacity,transform" });
+    const done = setTimeout(() => [x, y].forEach((t) => t.progress(1)), 1500);
+    return () => {
+      clearTimeout(done);
+      [x, y].forEach((t) => t.progress(1).kill());
+    };
+  }, []);
+  const body = a.stats || a.chips?.length || a.warn?.length || a.rows?.length;
+  return (
+    <>
+      <Say>{a.say}</Say>
+      {body ? (
+        <div ref={card} className="rounded-lg border border-border bg-white px-[max(1.5rem,14px)] py-[max(1rem,10px)]">
+          {a.stats && (
+            <div data-part className="flex flex-wrap gap-x-[max(2.5rem,18px)] gap-y-2 pb-[max(0.75rem,8px)]">
+              {a.stats.map(([v, l]) => (
+                <p key={l} className="flex items-baseline gap-1.5">
+                  <span className="text-[max(1.5rem,18px)] font-semibold text-ink">{v}</span>
+                  <span className="text-[max(0.875rem,12px)] text-ink-3">{l}</span>
+                </p>
+              ))}
+            </div>
+          )}
+          {(a.chips?.length || a.warn?.length) ? (
+            <div data-part className="flex flex-wrap gap-1.5 pb-[max(0.75rem,8px)]">
+              {a.chips?.map((c) => (
+                <span key={c} className={PILL + " bg-surface-2 font-normal text-ink-2"}>
+                  {c}
+                </span>
+              ))}
+              {a.warn?.map((w) => (
+                <span key={w} className={PILL + " bg-warn-soft text-warn"}>
+                  {w}
+                </span>
+              ))}
+            </div>
+          ) : null}
+          {a.rows && a.rows.length > 0 && (
+            <ol className="divide-y divide-border">
+              {a.rows.map((l) => {
+                const now = l.accept && live.find((r) => r.job === l.accept!.job && r.name === l.accept!.name);
+                const row = (
+                  <>
+                    {l.n !== undefined && (
+                      <span className="flex size-[max(1.75rem,22px)] shrink-0 items-center justify-center rounded-full bg-surface-2 font-mono text-[max(0.8125rem,11px)] text-ink-2">{l.n}</span>
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[max(1rem,13.5px)] font-medium text-ink">{l.main}</span>
+                      {l.meta && <span className="block truncate text-[max(0.8125rem,11.5px)] text-ink-3">{l.meta}</span>}
+                    </span>
+                    {now && now.state === "waiting" ? (
+                      <button
+                        type="button"
+                        onClick={() => onAccept(now)}
+                        className="shrink-0 rounded-full bg-ink px-[max(1rem,11px)] py-[max(0.375rem,4px)] text-[max(0.8125rem,11.5px)] font-medium text-white hover:bg-black"
+                      >
+                        Accept
+                      </button>
+                    ) : now ? (
+                      <span className={PILL + " bg-brand-soft text-brand"}>Working</span>
+                    ) : (
+                      l.tag && <span className={PILL + " " + TONE[l.tag.tone]}>{l.tag.text}</span>
+                    )}
+                    {l.href && (
+                      <svg {...svg} className="size-4 shrink-0 text-ink-3" data-nudge>
+                        <path d="M5 12h14M13 6l6 6-6 6" />
+                      </svg>
+                    )}
+                  </>
+                );
+                const cls = "flex items-center gap-[max(1rem,10px)] py-[max(0.7rem,8px)]";
+                return (
+                  <li key={l.main + (l.meta ?? "")} data-part>
+                    {l.href ? (
+                      <Link href={l.href} className={cls + " -mx-2 rounded-md px-2 transition-colors hover:bg-surface-2/60"}>
+                        {row}
+                      </Link>
+                    ) : (
+                      <div className={cls}>{row}</div>
+                    )}
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+        </div>
+      ) : null}
     </>
   );
 }

@@ -24,6 +24,22 @@ export type OverviewNumbers = {
   strategies: { done: number; working: number; notStarted: number };
 };
 
+/** Sample numbers, shared by the ATS and Headhunting overviews so they agree: the
+ *  targets on the title row (15 on LinkedIn, 20 CVs), P1 day 9 of 14, and the
+ *  Strategies view (4 on this job). */
+export const DEMO_NUMBERS: OverviewNumbers = {
+  cvsToday: 4,
+  cvsDayTarget: 5,
+  cvsOnJob: 14,
+  cvsTarget: 20,
+  linkedInToday: 6,
+  linkedInTarget: 15,
+  daysOpen: 9,
+  priority: 1,
+  priorityDays: 14,
+  strategies: { done: 1, working: 2, notStarted: 1 },
+};
+
 /** Under half of a target is behind (warn); the target met is reached. */
 const stateOf = (n: number, target: number) => (n >= target ? "reached" : n < target / 2 ? "behind" : "on");
 const pct = (n: number, target: number) => (target > 0 ? Math.min(100, Math.round((n / target) * 100)) : 0);

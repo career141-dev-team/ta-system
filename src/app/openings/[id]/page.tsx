@@ -2,7 +2,7 @@ import RowLink from "./RowLink";
 import PillMenu, { type MenuOption } from "./PillMenu";
 import Notch from "./Notch";
 import OpeningView from "./OpeningView";
-import OverviewCharts, { type OverviewNumbers } from "./OverviewCharts";
+import OverviewCharts, { DEMO_NUMBERS } from "./OverviewCharts";
 import type { WorkView } from "./view";
 import { CAN_SOURCE } from "@/lib/user";
 import RefereeBadge from "./RefereeBadge";
@@ -17,23 +17,6 @@ const OPENING = {
   targetLinkedIn: 15,
   targetCvs: 20,
 };
-
-// Sample numbers under the lists, agreeing with the page: the targets above, the
-// Openings list (P1, day 9 of 14) and the Strategies view (4 on this job, one struck
-// off not counted).
-const NUMBERS: OverviewNumbers = {
-  cvsToday: 4,
-  cvsDayTarget: 5,
-  cvsOnJob: 14,
-  cvsTarget: OPENING.targetCvs,
-  linkedInToday: 6,
-  linkedInTarget: OPENING.targetLinkedIn,
-  daysOpen: 9,
-  priority: 1,
-  priorityDays: 14,
-  strategies: { done: 1, working: 2, notStarted: 1 },
-};
-
 // Every row opens its work view in place (OpeningView), ATS and Headhunting alike.
 const ATS: readonly (readonly [string, WorkView])[] = [
   ["Pipeline", "pipeline"],
@@ -176,7 +159,7 @@ export default async function OpeningPage({ params }: PageProps<"/openings/[id]"
           />
         )}
       </div>
-      <OverviewCharts data={NUMBERS} />
+      <OverviewCharts data={DEMO_NUMBERS} />
       </div>
         </>
       }

@@ -4,6 +4,7 @@ import Count from "@/app/Count";
 import type { ReactNode } from "react";
 import { useMe } from "@/lib/role";
 import { BackButton } from "./PipelineBoard";
+import OverviewCharts, { DEMO_NUMBERS } from "./OverviewCharts";
 import { useOpeningView, type View } from "./view";
 
 // Headhunting > Overview: how headhunting is going on this opening (owner's design,
@@ -168,6 +169,7 @@ export default function HhOverview() {
             )}
           </div>
         </section>
+        <OverviewCharts data={DEMO_NUMBERS} />
       </div>
     </div>
   );

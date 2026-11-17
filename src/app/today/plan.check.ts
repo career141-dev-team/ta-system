@@ -31,4 +31,9 @@ assert.equal(moved.steps.find((st) => st.what.startsWith("Interview"))?.at, "3:0
 assert.equal(aboutTheDay("What’s late?"), false);
 assert.equal(aboutTheDay("keep the afternoon light"), true);
 assert.equal(planDay([], "plan my day").steps.length, 0);
+// Strategies due today come first on their position and the headline says so.
+const withS = planDay([{ ...sap, todo: ["LinkedIn search", "Direct headhunt"] }, fin], "plan my day");
+assert.deepEqual(withS.steps.slice(0, 2).map((st) => st.what), ["LinkedIn search — Rashmi’s strategy", "Direct headhunt — Rashmi’s strategy"]);
+assert.match(withS.headline, /Rashmi’s 2 strategies for today are in it\./);
+assert.equal(withS.steps.filter((st) => st.tone === "brand").length, 4);
 console.log("day plan: ok");

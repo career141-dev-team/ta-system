@@ -7,7 +7,8 @@
 // over the person's real queue (suggestions, replies waiting, CVs ready, interviews).
 
 export type WorkType = "100%" | "Follow-up" | "Add-on";
-export type DayPosition = { id: string; title: string; client: string; type: WorkType };
+/** `todo`: Rashmi's strategies on it due today (17 Nov 2026), worked first on that position. */
+export type DayPosition = { id: string; title: string; client: string; type: WorkType; todo?: string[] };
 export type Step = { at: string; minutes: number; what: string; tone: "brand" | "warn" | "info" | "none"; where?: string; href?: string };
 export type Plan = { headline: string; steps: Step[]; first?: string };
 
@@ -46,16 +47,25 @@ export function planDay(positions: DayPosition[], said: string): Plan {
 
   // The work, in the order it should be done.
   const work: Omit<Step, "at" | "minutes">[] = [];
+  const strategies = (p: DayPosition, tone: Step["tone"]) =>
+    (p.todo ?? []).forEach((name) => work.push({ what: `${name} — Rashmi’s strategy`, tone, where: short(p), href: "/openings/demo" }));
   for (const p of hunt) {
+    strategies(p, "brand");
     work.push({ what: "Review 6 headhunting suggestions", tone: "brand", where: short(p), href: "/openings/demo" });
     work.push({ what: "Chase 2 candidates for salary and notice", tone: "brand", where: short(p), href: "/openings/demo" });
   }
-  for (const p of follow) work.push({ what: p.type === "Add-on" ? "Source 3 add-on profiles" : "Send Nimali to Director Review", tone: "warn", where: short(p), href: "/openings/demo" });
+  for (const p of follow) {
+    strategies(p, "warn");
+    work.push({ what: p.type === "Add-on" ? "Source 3 add-on profiles" : "Send Nimali to Director Review", tone: "warn", where: short(p), href: "/openings/demo" });
+  }
 
   // Slots: a light afternoon packs the work into the morning; otherwise it spreads.
+  // A fuller day (strategies on top) gets 45-minute blocks.
   const morning = [9 * 60, 10 * 60 + 30, 12 * 60];
   const later = [13 * 60 + 30, 15 * 60, 16 * 60];
-  const slots = light ? [...morning, 11 * 60 + 15, 12 * 60 + 30] : [...morning, ...later];
+  const tight = [9 * 60, 9 * 60 + 45, 10 * 60 + 30, 11 * 60 + 15, 12 * 60, 13 * 60 + 30, 14 * 60 + 15, 15 * 60, 15 * 60 + 45, 16 * 60 + 30];
+  const slots =
+    work.length > 6 ? (light ? tight.slice(0, 6) : tight) : light ? [...morning, 11 * 60 + 15, 12 * 60 + 30] : [...morning, ...later];
   const steps: Step[] = work.slice(0, slots.length).map((w, i) => ({ ...w, minutes: slots[i], at: "" }));
   if (interviewAt !== null) steps.push({ minutes: interviewAt, at: "", what: "Interview — Dilini Perera", tone: "info", where: lead ? lead.client.split(" ")[0] : undefined, href: "/openings/demo" });
   steps.push({ minutes: 17 * 60, at: "", what: "Check AURA’s EOD drafts and send", tone: "none" });
@@ -64,6 +74,11 @@ export function planDay(positions: DayPosition[], said: string): Plan {
 
   const lastHunt = Math.max(...steps.filter((s) => s.tone === "brand").map((s) => s.minutes), 0);
   const by = lastHunt && lastHunt <= 12 * 60 + 30 ? "by lunch" : lastHunt ? `by ${clock(lastHunt + 60)}` : "";
-  const headline = hunt.length && by ? `Here’s your day. You’ll close today’s ${short(hunt[0])} set ${by}.` : positions.length ? "Here’s your day." : "Pick a position first, and I’ll plan the day around it.";
+  const n = positions.reduce((a, p) => a + (p.todo?.length ?? 0), 0);
+  const left = Math.max(0, work.length - slots.length);
+  const extra = (n ? ` Rashmi’s ${n} strateg${n === 1 ? "y" : "ies"} for today ${n === 1 ? "is" : "are"} in it.` : "") + (left > 0 ? ` ${left} more for tomorrow.` : "");
+  const headline =
+    (hunt.length && by ? `Here’s your day. You’ll close today’s ${short(hunt[0])} set ${by}.` : positions.length ? "Here’s your day." : "Pick a position first, and I’ll plan the day around it.") +
+    (positions.length ? extra : "");
   return { headline, steps: positions.length ? steps : [], first: lead ? short(lead) : undefined };
 }

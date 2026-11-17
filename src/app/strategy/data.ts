@@ -126,7 +126,8 @@ let rows: Row[] = [
     note: "Called 14 finance managers at Brandix, MAS and Hirdaramani. 5 interested, 2 sent CVs (both now in TA Follow-up). Two asked to talk again in January.",
   }),
   r("j4", "Aura", "waiting", "DR", { assigned: "12 Nov", when: "Fri", days: [4, 4] }),
-  r("j4", "Company extraction", "waiting", "CS", { assigned: "12 Nov", when: "Wed", days: [2, 2] }),
+  // Today, so Chathura's desk on Today has a strategy due (17 Nov 2026).
+  r("j4", "Company extraction", "waiting", "CS", { assigned: "12 Nov", when: "Today", days: [1, 1] }),
   r("j5", "LinkedIn search", "done", "SP", DONE),
   r("j5", "Recruiter search & post", "na"),
   r("j5", "Designation search", "done", "SP", { ...DONE, read: false, ago: "1 h ago", note: "Searched Senior Accountant and Finance Executive titles in Colombo; 11 approached, 4 interested." }),

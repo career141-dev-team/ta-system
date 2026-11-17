@@ -109,10 +109,19 @@ export default function PillMenu({
       wrap.style.left = "0px";
       const over = wrap.getBoundingClientRect().right - (document.documentElement.clientWidth - 8);
       if (over > 0) wrap.style.left = -over + "px";
+      // No room below (the bottom of a scrolling box, or of the window): open upward
+      // instead (owner, 17 Nov 2026: the Today work-type menu hid under the chat's
+      // suggestions).
+      Object.assign(wrap.style, { top: "", bottom: "", paddingTop: "", paddingBottom: "" });
+      let clip: HTMLElement | null = wrap.parentElement;
+      while (clip && !/(auto|scroll|hidden)/.test(getComputedStyle(clip).overflowY)) clip = clip.parentElement;
+      const limit = Math.min(clip ? clip.getBoundingClientRect().bottom : innerHeight, innerHeight);
+      const up = wrap.getBoundingClientRect().bottom > limit - 4;
+      if (up) Object.assign(wrap.style, { top: "auto", bottom: "100%", paddingTop: "0", paddingBottom: "0.5rem" });
       gsap.fromTo(
         panel.current,
-        { opacity: 0, y: -6, scale: 0.97 },
-        { opacity: 1, y: 0, scale: 1, duration: DUR.fast, transformOrigin: "top left" },
+        { opacity: 0, y: up ? 6 : -6, scale: 0.97 },
+        { opacity: 1, y: 0, scale: 1, duration: DUR.fast, transformOrigin: up ? "bottom left" : "top left" },
       );
       gsap.from(panel.current.querySelectorAll("[role=menuitem]"), {
         opacity: 0,
