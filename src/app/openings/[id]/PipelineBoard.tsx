@@ -1130,7 +1130,7 @@ function ListView({
     <div className="mx-[max(1.5rem,14px)] mb-[max(1.2rem,12px)] mt-[max(1.25rem,10px)] flex min-h-0 flex-1 max-md:flex-col">
       <nav
         aria-label="Stages"
-        className="flex w-[max(14.75rem,190px)] shrink-0 flex-col gap-[max(0.75rem,8px)] overflow-y-auto border-r border-border pr-[max(1.5rem,14px)] [scrollbar-width:none] max-md:w-full max-md:flex-row max-md:overflow-x-auto max-md:border-r-0 max-md:pb-2 max-md:pr-0"
+        className="flex w-[max(14.75rem,190px)] shrink-0 flex-col gap-[max(0.45rem,6px)] border-r border-border pr-[max(1.5rem,14px)] [scrollbar-width:none] max-md:w-full max-md:flex-row max-md:overflow-x-auto max-md:border-r-0 max-md:pb-2 max-md:pr-0"
       >
         {STAGES.map((s) => (
           <button
@@ -1139,15 +1139,15 @@ function ListView({
             aria-pressed={stage === s.name}
             onClick={() => setStage(s.name)}
             className={
-              "h-[max(2.25rem,30px)] shrink-0 whitespace-nowrap rounded-sm border px-[max(0.875rem,11px)] text-left text-[max(0.9375rem,12.5px)] text-ink transition-colors " +
-              (stage === s.name ? "border-transparent bg-surface-2" : "border-border bg-surface hover:bg-surface-2")
+              "flex flex-1 min-h-[max(2rem,28px)] items-center whitespace-nowrap rounded-sm border px-[max(0.875rem,11px)] text-left text-[max(0.9375rem,12.5px)] text-ink transition-colors max-md:h-[max(2.25rem,30px)] max-md:flex-initial max-md:shrink-0 " +
+              (stage === s.name ? "border-transparent bg-surface-2 font-medium" : "border-border bg-surface hover:bg-surface-2")
             }
           >
-            {s.name}
+            <span className="truncate">{s.name}</span>
           </button>
         ))}
       </nav>
-      <div className="min-h-0 min-w-0 flex-1 overflow-auto pl-[max(1.5rem,14px)] [scrollbar-width:thin] max-md:pl-0">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-[max(0.6rem,7px)] overflow-y-auto pl-[max(1.5rem,14px)] [scrollbar-width:thin] max-md:pl-0">
         {rows.length === 0 && <p className="py-6 text-center text-ink-2">No candidates in {stage}.</p>}
         {rows.map((p) => {
           const chip = (label: string) => (
@@ -1162,7 +1162,12 @@ function ListView({
             <article
               key={p.id}
               title={all}
-              className="mb-[max(1.5625rem,12px)] flex h-[max(3.625rem,46px)] min-w-0 items-center justify-between gap-[max(0.875rem,8px)] whitespace-nowrap rounded-sm border border-border bg-surface pl-[max(0.75rem,8px)] pr-[max(1.5rem,12px)] text-[max(0.8125rem,11px)] text-ink-2 transition-colors hover:border-border-strong"
+              className={
+                "flex min-w-0 items-center justify-between gap-[max(0.875rem,8px)] whitespace-nowrap rounded-sm border border-border bg-surface pl-[max(0.75rem,8px)] pr-[max(1.5rem,12px)] text-[max(0.8125rem,11px)] text-ink-2 transition-colors hover:border-border-strong " +
+                (rows.length <= 3
+                  ? "h-[max(3.875rem,50px)] shrink-0"
+                  : "flex-1 min-h-[max(3.25rem,42px)] max-h-[max(5.75rem,88px)]")
+              }
             >
               <span className="flex size-[max(2.5rem,32px)] shrink-0 items-center justify-center rounded-full bg-info-soft text-[max(0.9375rem,12px)] font-semibold text-info">
                 {initials(p.name)}

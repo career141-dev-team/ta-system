@@ -906,7 +906,7 @@ function PersonPanel({
           </svg>
         </button>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto bg-surface-2 px-[max(1.25rem,12px)] pb-[max(6rem,76px)] pt-[max(1.25rem,12px)]">
+      <div className="min-h-0 flex-1 overflow-y-auto px-[max(1.25rem,12px)] pb-[max(6rem,76px)] pt-[max(1.25rem,12px)]">
         {p.cv ? (
           <CvPages key={p.cv} src={p.cv} fit="width" />
         ) : (
