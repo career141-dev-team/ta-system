@@ -198,22 +198,28 @@ export default function CvPreview({
       // 2. a moment later it expands into the full CV.
       const lift = liftOf(c);
       const typing = typeIn(ghost);
+      const end = EXPAND + OPEN_GROW;
+      // One flow, like a video (owner, 17 Nov 2026: "no break, go with the flow", "too
+      // quick"): every move overlaps the next, nothing stops and nothing bounces. The
+      // card keeps lifting slowly while its words type, and is still moving when it
+      // starts to open into the CV; the board behind is one long camera move.
       enter.current = gsap
         .timeline()
-        // 1. The same card lifts and grows, evenly (its design is kept, nothing reflows).
-        .to(ghost, { ...lift, duration: LIFT, ease: "back.out(1.4)" }, 0)
-        .fromTo(details, { y: 8 }, { y: 0, duration: 0.35, stagger: 0.06, ease: "back.out(2)" }, LIFT * 0.4)
-        // Its words type themselves in, as in the recording (owner, 17 Nov 2026).
-        .to(typing.state, { n: typing.total, duration: TYPE, ease: "none", onUpdate: typing.draw }, LIFT * 0.3)
-        .to(board, { ...BOARD_AWAY, duration: LIFT + 0.2, ease: GROW_EASE }, 0)
-        .to("[data-veil]", { opacity: 1, duration: LIFT, ease: GROW_EASE }, 0)
-        // 2. Then it expands into the full CV: its details melt, it darkens to the frame.
-        .to(details, { opacity: 0, filter: "blur(6px)", duration: 0.18, ease: EASE.in }, EXPAND)
-        .to(ghost, { ...shapeOf(frame), scale: 1, x: 0, y: 0, boxShadow: "none", duration: GROW, ease: GROW_EASE }, EXPAND)
-        .to(frame, { opacity: 1, duration: LAND, ease: "none" }, EXPAND + GROW - LAND)
-        .set(ghost, { display: "none" }, EXPAND + GROW)
-        .to(inside, { opacity: 1, filter: "blur(0px)", duration: 0.3, stagger: 0.05, ease: EASE.out, clearProps: "filter" }, EXPAND + GROW - LAND)
-        .to(doc, { opacity: 1, filter: "blur(0px)", duration: 0.3, stagger: 0.04, ease: EASE.out, clearProps: "filter" }, EXPAND + GROW - LAND);
+        .to(board, { ...BOARD_AWAY, duration: end, ease: "power2.inOut" }, 0)
+        .to("[data-veil]", { opacity: 1, duration: end * 0.6, ease: "sine.inOut" }, 0)
+        // 1. The same card lifts and grows, easing all the way to the moment it opens.
+        .to(ghost, { ...lift, duration: EXPAND, ease: "power2.out" }, 0)
+        .fromTo(details, { y: 6 }, { y: 0, duration: 0.6, stagger: 0.08, ease: "power2.out" }, 0.1)
+        // Its words type themselves in, a character at a time.
+        .to(typing.state, { n: typing.total, duration: TYPE, ease: "sine.inOut", onUpdate: typing.draw }, 0.15)
+        // 2. Without a pause it opens into the CV: details soften away as it grows and
+        //    darkens, and the frame with the CV fades in as it lands.
+        .to(details, { opacity: 0, filter: "blur(6px)", duration: OPEN_GROW * 0.45, ease: "sine.in" }, EXPAND)
+        .to(ghost, { ...shapeOf(frame), scale: 1, x: 0, y: 0, boxShadow: "none", duration: OPEN_GROW, ease: "power3.inOut" }, EXPAND)
+        .to(frame, { opacity: 1, duration: OPEN_LAND, ease: "sine.inOut" }, end - OPEN_LAND)
+        .set(ghost, { display: "none" }, end)
+        .to(inside, { opacity: 1, filter: "blur(0px)", duration: 0.4, stagger: 0.06, ease: "sine.out", clearProps: "filter" }, end - OPEN_LAND)
+        .to(doc, { opacity: 1, filter: "blur(0px)", duration: 0.4, stagger: 0.05, ease: "sine.out", clearProps: "filter" }, end - OPEN_LAND);
       return () => {
         ghost.remove();
         // The close hands over on a timer, which can beat the tween's last frame:
@@ -451,15 +457,13 @@ const NO_DETAILS: BoxContent = { notes: [] };
 /** The grow from a card (seconds), its curve, and where the board goes meanwhile:
  *  it zooms toward you, goes soft and fades back, as the video's diagram does. */
 const GROW = 0.55;
-/** The last stretch of the grow, where the frame fades in over the growing copy. */
-const LAND = 0.18;
-/** Stage 1: how long the card takes to lift into the details card; when (from the click)
- *  the details card expands into the full CV. */
-const LIFT = 0.4;
-/** How long the card's words take to type in, and when (from the click) the card
- *  expands into the CV - short, so the CV opens quickly (owner, 17 Nov 2026). */
-const TYPE = 0.55;
-const EXPAND = 1.05;
+/** The opening's timing, one flow from click to CV (owner, 17 Nov 2026: slower, so the
+ *  motion reads like a video): the card lifts until EXPAND while its words type in over
+ *  TYPE, then grows into the CV over OPEN_GROW, the frame fading in over OPEN_LAND. */
+const TYPE = 1.0;
+const EXPAND = 1.3;
+const OPEN_GROW = 0.85;
+const OPEN_LAND = 0.3;
 
 /** The copy's words, emptied and typed back in by one tween of a character count:
  *  every text in the card fills in order, a character at a time. Text nodes only. */
