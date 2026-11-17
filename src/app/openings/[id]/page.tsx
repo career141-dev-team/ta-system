@@ -3,6 +3,7 @@ import RowLink from "./RowLink";
 import PillMenu, { type MenuOption } from "./PillMenu";
 import Notch from "./Notch";
 import OpeningView from "./OpeningView";
+import { ATS_ROWS, HH_ROWS } from "./rows";
 import type { WorkView } from "./view";
 import { CAN_SOURCE } from "@/lib/user";
 import RefereeBadge from "./RefereeBadge";
@@ -18,23 +19,9 @@ const OPENING = {
   targetCvs: 20,
 };
 // Every row opens its work view in place (OpeningView), ATS and Headhunting alike.
-const ATS: readonly (readonly [string, WorkView])[] = [
-  ["Pipeline", "pipeline"],
-  ["LinkedIn Job", "linkedin-job"],
-  ["Database CVs", "database"],
-  ["Strategies", "strategies"],
-  ["Scoops", "scoops"],
-  ["Job Description", "jd"],
-  ["Snippets", "snippets"],
-  ["Midday Email", "midday"],
-];
+const ATS = ATS_ROWS;
 
-const HEADHUNTING: readonly (readonly [string, WorkView])[] = [
-  ["Research", "hh-research"],
-  ["Suggestions", "hh-suggestions"],
-  ["Excel Tables", "hh-tables"],
-  ["Referee Calls", "hh-referees"],
-];
+const HEADHUNTING = HH_ROWS;
 
 // Sizes are on Tailwind's rem scale (2.125rem = 34px at 1920) so they follow
 // the window width; see globals.css. The px floors keep them usable on a laptop.

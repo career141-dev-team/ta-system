@@ -46,31 +46,38 @@ function labelOf(path: string, main: HTMLElement) {
   return view ? `${title} · ${view}` : title;
 }
 
+/** An inert copy of `el`'s contents in a fresh div with `className`: canvases painted
+ *  (a copied canvas comes out blank), ids and the page's own lookups stripped, and
+ *  where its scrolled parts stood. Shared with the opening's board of tabs. */
+export function copyOf(el: HTMLElement, className: string) {
+  const node = document.createElement("div");
+  node.className = className;
+  for (const c of el.childNodes) node.appendChild(c.cloneNode(true));
+  const from = el.querySelectorAll<HTMLElement>("*");
+  const to = node.querySelectorAll<HTMLElement>("*");
+  const scrolls: Snap["scrolls"] = [];
+  from.forEach((x, i) => {
+    const c = to[i];
+    if (!c) return;
+    if (x.scrollTop || x.scrollLeft) scrolls.push([i, x.scrollTop, x.scrollLeft]);
+    if (x instanceof HTMLCanvasElement && x.width) (c as HTMLCanvasElement).getContext("2d")?.drawImage(x, 0, 0);
+    // Ids kept inside an SVG (its gradients point at them); everywhere else a copy
+    // must not answer to the page's own lookups.
+    if (!x.closest("svg")) c.removeAttribute("id");
+    for (const n of ["data-card-id", "data-panel", "data-board-body", "data-view-stage"]) c.removeAttribute(n);
+  });
+  node.setAttribute("aria-hidden", "true");
+  node.inert = true;
+  return { node, scrolls };
+}
+
 /** A picture of the page on screen, kept under its address. */
 function take() {
   const main = visibleMain();
   if (!main) return;
   const path = location.pathname;
-  const node = document.createElement("div");
   // The board's own look, without its first-load rise (a CSS animation would replay).
-  node.className = main.className.replace(/\benter-board\b/g, "");
-  for (const c of main.childNodes) node.appendChild(c.cloneNode(true));
-  const from = main.querySelectorAll<HTMLElement>("*");
-  const to = node.querySelectorAll<HTMLElement>("*");
-  const scrolls: Snap["scrolls"] = [];
-  from.forEach((el, i) => {
-    const c = to[i];
-    if (!c) return;
-    if (el.scrollTop || el.scrollLeft) scrolls.push([i, el.scrollTop, el.scrollLeft]);
-    // A copied canvas comes out blank (the CV pages): paint it, as CvPreview does.
-    if (el instanceof HTMLCanvasElement && el.width) (c as HTMLCanvasElement).getContext("2d")?.drawImage(el, 0, 0);
-    // Ids kept inside an SVG (its gradients point at them); everywhere else a copy
-    // must not answer to the page's own lookups.
-    if (!el.closest("svg")) c.removeAttribute("id");
-    for (const a of ["data-card-id", "data-panel", "data-board-body", "data-view-stage"]) c.removeAttribute(a);
-  });
-  node.setAttribute("aria-hidden", "true");
-  node.inert = true;
+  const { node, scrolls } = copyOf(main, main.className.replace(/\benter-board\b/g, ""));
   snaps.delete(path);
   snaps.set(path, { path, href: location.pathname + location.search, label: labelOf(path, main), node, rect: rectOf(main), scrolls });
   while (snaps.size > KEEP) snaps.delete(snaps.keys().next().value!);
@@ -125,6 +132,18 @@ function flyer(root: HTMLElement, node: HTMLElement, at: Rect) {
 const toward = (from: Rect, at: Rect) => ({ x: from.left - at.left, y: from.top - at.top, scale: from.width / at.width });
 
 const OPEN = "overview:open";
+const BOARD = "overview:board";
+
+/** One tab on a board of tabs: its picture (`copyOf`) at the size it is shown. */
+export type BoardTile = { key: string; label: string; node: HTMLElement; rect: Rect; scrolls?: Snap["scrolls"] };
+type BoardOpen = { title: string; tiles: BoardTile[]; cur: number; onPick: (key: string) => void };
+/** The same zoomed-out board for the tabs of one place - an opening's ATS or
+ *  Headhunting tabs (owner, 18 Nov 2026: "inside the ATS show all the tabs of ATS,
+ *  inside Headhunting all its tabs"). `cur` is the tab you are in; picking one calls
+ *  `onPick` with its key, which switches to it under the zoom. */
+export function openBoard(d: BoardOpen) {
+  dispatchEvent(new CustomEvent(BOARD, { detail: d }));
+}
 
 /** The top bar's button: every page at once. */
 export function OverviewButton() {
@@ -146,7 +165,7 @@ export function OverviewButton() {
   );
 }
 
-type State = { tiles: Tile[]; held: boolean; home: Rect; W: number; H: number };
+type State = { tiles: Tile[]; held: boolean; home: Rect; W: number; H: number; cur: number; title: string; onPick?: (key: string) => void };
 
 export default function Overview() {
   const path = usePathname();
@@ -201,12 +220,26 @@ export default function Overview() {
     if (tiles[0]?.path !== location.pathname) return;
     mouse.current = "";
     setSel(held && tiles.length > 1 ? 1 : 0);
-    setOpen({ tiles, held, home: rectOf(main), W: innerWidth, H: innerHeight });
+    setOpen({ tiles, held, home: rectOf(main), W: innerWidth, H: innerHeight, cur: 0, title: "Your recent pages" });
+  };
+
+  const showBoard = (d: BoardOpen) => {
+    if (live.current.open || leaving.current || !d.tiles[d.cur]) return;
+    const tiles: Tile[] = d.tiles.map((t) => ({
+      path: t.key,
+      href: "",
+      label: t.label,
+      snap: { path: t.key, href: "", label: t.label, node: t.node, rect: t.rect, scrolls: t.scrolls ?? [] },
+    }));
+    mouse.current = "";
+    setSel(d.cur);
+    setOpen({ tiles, held: false, home: d.tiles[d.cur].rect, W: innerWidth, H: innerHeight, cur: d.cur, title: d.title, onPick: d.onPick });
   };
 
   // The keys and the button.
   useEffect(() => {
     const onOpen = () => show(false);
+    const onBoard = (e: Event) => showBoard((e as CustomEvent<BoardOpen>).detail);
     const down = (e: KeyboardEvent) => {
       const o = live.current.open;
       if (e.altKey && e.code === "Backquote") {
@@ -234,7 +267,7 @@ export default function Overview() {
         pick(selNow.current);
       } else if (e.key === "Escape") {
         e.preventDefault();
-        pick(0);
+        pick(o.cur);
       }
     };
     // Letting Alt go opens the one picked, as Alt + Tab does.
@@ -245,10 +278,12 @@ export default function Overview() {
       }
     };
     addEventListener(OPEN, onOpen);
+    addEventListener(BOARD, onBoard);
     addEventListener("keydown", down, true);
     addEventListener("keyup", up, true);
     return () => {
       removeEventListener(OPEN, onOpen);
+      removeEventListener(BOARD, onBoard);
       removeEventListener("keydown", down, true);
       removeEventListener("keyup", up, true);
     };
@@ -288,18 +323,18 @@ export default function Overview() {
     const back = el.querySelector("[data-backdrop]");
     const head = el.querySelector("[data-head]");
     // Where the page you are on lands: its picture's place in its tile.
-    const slot0 = tiles[0].querySelector<HTMLElement>("[data-slot]")!;
+    const slot0 = tiles[open.cur].querySelector<HTMLElement>("[data-slot]")!;
     const land = rectOf(slot0);
-    const snap0 = open.tiles[0].snap!;
+    const snap0 = open.tiles[open.cur].snap!;
     const fly = flyer(el, snap0.node, snap0.rect);
     gsap.set(labels, { opacity: 0, y: 10, filter: "blur(4px)" });
     gsap.set(head, { opacity: 0, y: -8 });
     gsap.set(ring.current, { ...ringBox(s0), opacity: 0, scale: 1.04, transformOrigin: "50% 50%" });
     gsap.set(back, { opacity: 0, scale: 1.5, transformOrigin: "50% 45%" });
     // The others wait just off to their side of the page you are on, a little small.
-    const c0 = grid.cells[0];
+    const c0 = grid.cells[open.cur];
     tiles.forEach((t, i) => {
-      if (!i) return;
+      if (i === open.cur) return;
       const c = grid.cells[i];
       gsap.set(t, { opacity: 0, scale: 0.9, x: Math.sign(c.left - c0.left) * 60, y: Math.sign(c.top - c0.top) * 40, transformOrigin: "50% 50%" });
     });
@@ -318,7 +353,7 @@ export default function Overview() {
     const tl = gsap.timeline({ defaults: { ease: EASE.out } });
     tl.to(back, { opacity: 1, scale: 1, duration: ZOOM + 0.1, ease: EASE.inOut }, 0)
       .to(fly, { ...toward(land, snap0.rect), duration: ZOOM, ease: EASE.inOut, onComplete: home }, 0)
-      .to(tiles.slice(1), { opacity: 1, scale: 1, x: 0, y: 0, duration: DUR.slow + 0.1, stagger: 0.05 }, ZOOM * 0.45)
+      .to(tiles.filter((_, i) => i !== open.cur), { opacity: 1, scale: 1, x: 0, y: 0, duration: DUR.slow + 0.1, stagger: 0.05 }, ZOOM * 0.45)
       .to(labels, { opacity: 1, y: 0, filter: "blur(0px)", duration: DUR.base, stagger: 0.04 }, ZOOM * 0.7)
       .to(head, { opacity: 1, y: 0, duration: DUR.base }, ZOOM * 0.6)
       .to(ring.current, { opacity: 1, scale: 1, duration: DUR.base }, ZOOM * 0.85);
@@ -366,8 +401,9 @@ export default function Overview() {
     const el = root.current;
     if (!o || !el || leaving.current || !grid) return;
     const t = o.tiles[i];
-    const moved = t.path !== location.pathname;
-    leaving.current = { to: t.path, moved, arrived: !moved };
+    // A board of tabs switches in place, at once; a page waits for its address.
+    const moved = o.onPick ? i !== o.cur : t.path !== location.pathname;
+    leaving.current = { to: t.path, moved, arrived: !moved || !!o.onPick };
     setSel(i);
     const tiles = [...el.querySelectorAll<HTMLElement>("[data-tile]")];
     const slot = tiles[i].querySelector<HTMLElement>("[data-slot]")!;
@@ -404,7 +440,11 @@ export default function Overview() {
     };
     tl.eventCallback("onComplete", land);
     setTimeout(land, 1000);
-    if (moved) {
+    if (moved && o.onPick) {
+      // The view's own switch stands aside: this zoom is the move.
+      turn.quietUntil = performance.now() + 2500;
+      o.onPick(t.path);
+    } else if (moved) {
       // The board's slide and the arrival motion stand aside: this is the move.
       turn.quietUntil = performance.now() + 2500;
       router.push(t.href);
@@ -447,15 +487,15 @@ export default function Overview() {
       data-overview
       role="dialog"
       aria-modal="true"
-      aria-label="All pages"
+      aria-label={open.title}
       className="fixed inset-0 z-[90] overflow-hidden"
       onClick={(e) => {
-        if (e.target === e.currentTarget || (e.target as Element).hasAttribute("data-backdrop")) pick(0);
+        if (e.target === e.currentTarget || (e.target as Element).hasAttribute("data-backdrop")) pick(open.cur);
       }}
     >
       <div data-backdrop className="board absolute inset-0" />
       <div data-head className="pointer-events-none absolute inset-x-0 top-0 flex flex-col items-center gap-1 pt-[max(1.25rem,12px)] text-center">
-        <p className="text-h3 font-semibold text-ink">Your recent pages</p>
+        <p className="text-h3 font-semibold text-ink">{open.title}</p>
         <p className="text-caption text-ink-3 max-md:hidden">Click a page to open it · arrows move · Esc goes back</p>
       </div>
       <div
@@ -472,7 +512,7 @@ export default function Overview() {
             type="button"
             data-tile
             data-still
-            aria-label={i === 0 ? `${t.label}, this page` : t.label}
+            aria-label={i === open.cur ? `${t.label}, where you are` : t.label}
             aria-current={i === sel ? "true" : undefined}
             onPointerMove={(e) => {
               const at = `${e.clientX},${e.clientY}`;
@@ -496,7 +536,7 @@ export default function Overview() {
               }
             >
               <span className="truncate">{t.label}</span>
-              {i === 0 && <span className="shrink-0 rounded-pill bg-brand-tint px-2.5 py-0.5 text-caption font-medium text-brand-strong">Now</span>}
+              {i === open.cur && <span className="shrink-0 rounded-pill bg-brand-tint px-2.5 py-0.5 text-caption font-medium text-brand-strong">Now</span>}
             </span>
             <span
               data-slot={t.path}

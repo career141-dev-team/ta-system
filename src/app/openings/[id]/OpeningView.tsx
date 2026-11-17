@@ -8,6 +8,9 @@ import dynamic from "next/dynamic";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { DUR, EASE, HOVER_IN, HOVER_OUT, gsap, loadFlip, useExit, useGSAP, useGlide } from "@/lib/gsap";
 import { HH_VIEWS, SHOW_TABS, VIEW_TABS, ViewContext, setOf, useOpeningView, viewLabel, type View, type ViewSet } from "./view";
+import { ATS_ROWS, HH_ROWS } from "./rows";
+import { copyOf, openBoard } from "../../Overview";
+import { turn } from "../../Board";
 import Notch from "./Notch";
 import PipelineBoard from "./PipelineBoard";
 import { BackButton } from "./PipelineBoard";
@@ -52,6 +55,8 @@ function viewIn(search: string): View | null {
   const v = new URLSearchParams(search).get("view") as View | null;
   return v && v !== "overview" && ORDER.includes(v) ? v : null;
 }
+/** The bar's Job button: to the opening page (Back buttons open the board of tabs). */
+const LIST = "opening:list";
 /** The parts of a view that flow in after it arrives. */
 const PARTS = "[data-col], section, article, li, tr, form, aside, [role=row], [role=tablist]";
 const STILL = "[data-card-id], [data-card-id] *, [data-still], [data-still] *";
@@ -92,7 +97,7 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
     (next: View) => {
       if (next === current.current) return;
       if (!CAN_SOURCE && setOf(next) === "hh") return;
-      if (next === "overview") return void window.dispatchEvent(new Event(SHOW_TABS));
+      if (next === "overview") return void window.dispatchEvent(new Event(LIST));
       if (current.current === "overview") {
         window.history.pushState(window.history.state, "", addressFor(next));
         pushed.current = true;
@@ -116,9 +121,9 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
       setFrom(left);
       show("overview");
     };
-    // The Back buttons: the browser's Back when the view added a step (the address
-    // and history stay true), else straight to the list.
-    const back = () => {
+    // The list itself (the bar's Job button): the browser's Back when the view added a
+    // step (the address and history stay true), else straight to the list.
+    const list = () => {
       if (current.current === "overview") return;
       if (pushed.current) {
         pushed.current = false;
@@ -146,13 +151,55 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
       // After the page has taken over, like any other switch.
       queueMicrotask(() => show(first));
     }
+    // The Back buttons inside a view: zoom out to a board of every tab of this view's
+    // set - all the ATS tabs from an ATS view, all the Headhunting tabs from a
+    // Headhunting one - each a picture of its own screen (owner, 18 Nov 2026: "show the
+    // Figma board with all the tabs like our previous implementation... inside the ATS
+    // show all the tabs of ATS, inside Headhunting all its tabs"). Pick one and it opens;
+    // Esc goes back into the view you were in. Every view of the set is mounted first,
+    // hidden, so each has a real picture; they stay mounted, so opening one is instant.
+    const back = () => {
+      const left = current.current;
+      const stage = stageRef.current;
+      if (left === "overview" || !stage) return;
+      const rows = setOf(left) === "hh" ? HH_ROWS : ATS_ROWS;
+      const keys = rows.some(([, v]) => v === left) ? rows.map(([, v]) => v) : [left, ...rows.map(([, v]) => v)];
+      setOpened((o) => [...o, ...keys.filter((k) => !o.includes(k))]);
+      // The pictures wait until every tab has drawn - a view opening for the first time
+      // shows its loading skeleton while its code arrives - for at most 1.2 s.
+      const began = performance.now();
+      const drawn = () => keys.every((k) => !stage.querySelector(`[data-panel="${k}"] .shimmer`) && stage.querySelector(`[data-panel="${k}"]`));
+      const snap = () => {
+        if (current.current !== left) return;
+        const here = stage.querySelector<HTMLElement>(`[data-panel="${left}"]`);
+        if (!here) return;
+        const rect = here.getBoundingClientRect();
+        const box = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+        const tiles = keys.flatMap((k) => {
+          const p = stage.querySelector<HTMLElement>(`[data-panel="${k}"]`);
+          if (!p) return [];
+          const label = rows.find(([, v]) => v === k)?.[0] ?? viewLabel(k);
+          return [{ key: k, label, rect: box, ...copyOf(p, here.className) }];
+        });
+        openBoard({
+          title: setOf(left) === "hh" ? "Headhunting" : "ATS",
+          tiles,
+          cur: Math.max(0, tiles.findIndex((t) => t.key === left)),
+          onPick: (k) => go(k as View),
+        });
+      };
+      const wait = () => (drawn() || performance.now() - began > 1200 ? snap() : void setTimeout(wait, 80));
+      requestAnimationFrame(() => requestAnimationFrame(wait));
+    };
+    window.addEventListener(LIST, list);
     window.addEventListener(SHOW_TABS, back);
     window.addEventListener("popstate", pop);
     return () => {
+      window.removeEventListener(LIST, list);
       window.removeEventListener(SHOW_TABS, back);
       window.removeEventListener("popstate", pop);
     };
-  }, [show]);
+  }, [show, go]);
   // One value per view, so the rows and back buttons that only need `go` do not
   // re-render on every render of this screen.
   const ctx = useMemo(() => ({ view, go, from }), [view, go, from]);
@@ -197,6 +244,8 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
       const from = prev.current;
       prev.current = view;
       if (!stage || from === view) return;
+      // The board of tabs zoomed into this view itself: no slide on top of it.
+      if (performance.now() < turn.quietUntil) return;
       const panel = view === "overview" ? null : stage.querySelector<HTMLElement>(`[data-panel="${view}"]`);
       const tl = gsap.timeline({ defaults: { ease: EASE.out } });
 
