@@ -14,8 +14,6 @@ const OPENING = {
   client: "PGP",
   status: "Active",
   stage: "100%",
-  targetLinkedIn: 15,
-  targetCvs: 20,
 };
 // Every row opens its work view in place (OpeningView), ATS and Headhunting alike.
 const ATS: readonly (readonly [string, WorkView])[] = [
@@ -132,16 +130,6 @@ export default async function OpeningPage({ params }: PageProps<"/openings/[id]"
           title="Working Stage"
           pillClass={PILL}
         />
-
-        <div className="flex items-center gap-2.25 sm:ml-auto">
-          <span className="text-title font-medium">Target :</span>
-          <span className={PILL + " px-4.5"}>
-            LinkedIn:&nbsp;<b className="font-semibold">{OPENING.targetLinkedIn}</b>
-          </span>
-          <span className={PILL + " px-4.5"}>
-            CVs:&nbsp;<b className="font-semibold">{OPENING.targetCvs}</b>
-          </span>
-        </div>
       </div>
 
       {/* The lists keep their size and the page scrolls to the cards under them (owner,
