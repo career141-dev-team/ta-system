@@ -3,19 +3,17 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { DUR, EASE, gsap } from "@/lib/gsap";
-import { useRole } from "@/lib/role";
 import { PAGES, turn } from "./Board";
-import { LINKS } from "./NavLinks";
 
 // The overview (owner, 18 Nov 2026: "like Windows Alt + Tab and Figma's zoom out -
 // all my pages together in a zoomed-out view, pick one and it opens in full"). The
-// page you are on shrinks back into a grid of every page you have open, each one a
-// small picture of how you left it, over the dotted canvas; pick one and it grows
-// back into the full board and becomes the real page.
+// page you are on flies back into a grid of every page you opened lately, each one a
+// picture of how you left it, over the dotted canvas; pick one and it flies up into
+// the full board and becomes the real page.
 //
 // Open it: Alt + ` (hold Alt, press ` again to step, let Alt go to open - Alt + Tab
 // itself belongs to Windows and never reaches a web page), or the grid button in the
-// top bar. Arrows move, Enter opens, Esc goes back to where you were.
+// top bar. Arrows move, Enter or a click opens, Esc goes back to where you were.
 //
 // The pictures are copies of each page's board, taken as you leave it (a link click,
 // Back) and when the overview opens - a page you left is gone from the document, so
@@ -29,7 +27,7 @@ type Tile = { path: string; href: string; label: string; snap?: Snap };
 /** Copies of the pages you visited, newest last. */
 const snaps = new Map<string, Snap>();
 const KEEP = 12;
-const MAX_TILES = 9;
+const MAX_TILES = 6;
 
 const visibleMain = () =>
   [...document.querySelectorAll("main")].find((m) => m.getClientRects().length > 0 && !m.closest("[data-overview]"));
@@ -78,13 +76,15 @@ function take() {
   while (snaps.size > KEEP) snaps.delete(snaps.keys().next().value!);
 }
 
-/** The grid: as many columns as give the biggest pictures, rows centred like Alt + Tab. */
+/** The grid (owner, 18 Nov 2026: "the tabs look very small" - then "keep all recent
+ *  tabs visible"): every recent page at once, each as big as the window allows - the
+ *  column count that gives the biggest pictures, rows centred like Alt + Tab. */
 function layout(n: number, W: number, H: number, aspect: number) {
-  const pad = Math.max(20, W * 0.04);
-  const top = Math.max(64, H * 0.11);
-  const label = 30;
-  const gap = Math.max(16, W * 0.022);
-  const notch = 0.07; // the board's tab rises above it
+  const pad = Math.max(16, W * 0.03);
+  const top = Math.max(56, H * 0.085);
+  const label = Math.max(30, H * 0.045);
+  const gap = Math.max(14, W * 0.018);
+  const notch = 0.06; // the board's tab rises above it
   let best = { cols: 1, w: 0, h: 0 };
   for (let cols = 1; cols <= n; cols++) {
     const rows = Math.ceil(n / cols);
@@ -104,10 +104,25 @@ function layout(n: number, W: number, H: number, aspect: number) {
       const row = Math.floor(i / cols);
       const inRow = Math.min(cols, n - row * cols);
       const x0 = (W - (inRow * w + gap * (inRow - 1))) / 2;
-      return { left: x0 + (i % cols) * (w + gap), top: y0 + row * (cellH + gap) + h * notch };
+      return { left: x0 + (i % cols) * (w + gap), top: y0 + row * (cellH + gap) + label + h * notch };
     }),
   };
 }
+
+const ZOOM = 0.65;
+
+/** A fixed copy that flies a page between the full board and its tile: `node` sits at
+ *  its own size at `at`, and a transform carries it from a screen rectangle. */
+function flyer(root: HTMLElement, node: HTMLElement, at: Rect) {
+  const f = document.createElement("div");
+  f.setAttribute("aria-hidden", "true");
+  Object.assign(f.style, { position: "fixed", left: `${at.left}px`, top: `${at.top}px`, width: `${at.width}px`, height: `${at.height}px`, transformOrigin: "0 0", zIndex: "5", pointerEvents: "none" });
+  Object.assign(node.style, { position: "absolute", left: "0", top: "0", transform: "none" });
+  f.appendChild(node);
+  root.appendChild(f);
+  return f;
+}
+const toward = (from: Rect, at: Rect) => ({ x: from.left - at.left, y: from.top - at.top, scale: from.width / at.width });
 
 const OPEN = "overview:open";
 
@@ -136,9 +151,15 @@ type State = { tiles: Tile[]; held: boolean; home: Rect; W: number; H: number };
 export default function Overview() {
   const path = usePathname();
   const router = useRouter();
-  const role = useRole();
   const [open, setOpen] = useState<State | null>(null);
-  const [sel, setSel] = useState(0);
+  const [sel, setSelState] = useState(0);
+  // The pick as it is this moment: Enter straight after an arrow must open the new one,
+  // before React has drawn it.
+  const selNow = useRef(0);
+  const setSel = (v: number | ((s: number) => number)) => {
+    selNow.current = typeof v === "function" ? v(selNow.current) : v;
+    setSelState(selNow.current);
+  };
   const root = useRef<HTMLDivElement>(null);
   const ring = useRef<HTMLDivElement>(null);
   const hidden = useRef<HTMLElement | null>(null);
@@ -146,8 +167,8 @@ export default function Overview() {
   // Where the mouse last was: a tile moving under a still mouse is not a choice (the
   // shrinking page passed under it and took Alt + `'s pick back).
   const mouse = useRef("");
-  const live = useRef({ open, sel, role });
-  live.current = { open, sel, role };
+  const live = useRef({ open, sel });
+  live.current = { open, sel };
 
   // Pictures as you leave a page: a link to another page, or Back / Forward (the
   // old page is still in the document at that moment).
@@ -171,17 +192,13 @@ export default function Overview() {
     const main = visibleMain();
     if (!main || live.current.open || leaving.current) return;
     take();
-    const here = location.pathname;
-    const seen = [...snaps.values()].reverse();
-    const tiles: Tile[] = seen.map((s) => ({ path: s.path, href: s.href, label: s.label, snap: s }));
-    // Then the top bar's pages not opened yet, so every page is one pick away.
-    for (const [label, href, who] of LINKS) {
-      if (tiles.length >= MAX_TILES) break;
-      if (who.includes(live.current.role) && !snaps.has(href)) tiles.push({ path: href, href, label });
-    }
-    tiles.splice(MAX_TILES);
-    // The page you are on comes first (it was the last picture taken).
-    if (tiles[0]?.path !== here) return;
+    // The pages you opened, newest first - the one you are on leads (its picture was
+    // just taken). Only real pages: empty "not opened" boards crowded them small.
+    const tiles: Tile[] = [...snaps.values()]
+      .reverse()
+      .slice(0, MAX_TILES)
+      .map((s) => ({ path: s.path, href: s.href, label: s.label, snap: s }));
+    if (tiles[0]?.path !== location.pathname) return;
     mouse.current = "";
     setSel(held && tiles.length > 1 ? 1 : 0);
     setOpen({ tiles, held, home: rectOf(main), W: innerWidth, H: innerHeight });
@@ -205,26 +222,26 @@ export default function Overview() {
       if (leaving.current) return e.preventDefault();
       const n = o.tiles.length;
       const cols = layout(n, o.W, o.H, o.home.width / o.home.height).cols;
-      const step: Record<string, number> = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: cols, ArrowUp: -cols };
-      if (e.key in step) {
+      const by: Record<string, number> = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: cols, ArrowUp: -cols };
+      if (e.key in by) {
         e.preventDefault();
-        setSel((s) => Math.min(n - 1, Math.max(0, s + step[e.key])));
-      } else if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        pick(live.current.sel);
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        pick(0);
+        setSel((s) => Math.min(n - 1, Math.max(0, s + by[e.key])));
       } else if (e.key === "Tab") {
         e.preventDefault();
         setSel((s) => (s + (e.shiftKey ? -1 : 1) + n) % n);
+      } else if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        pick(selNow.current);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        pick(0);
       }
     };
     // Letting Alt go opens the one picked, as Alt + Tab does.
     const up = (e: KeyboardEvent) => {
       if (e.key === "Alt" && live.current.open?.held && !leaving.current) {
         e.preventDefault();
-        pick(live.current.sel);
+        pick(selNow.current);
       }
     };
     addEventListener(OPEN, onOpen);
@@ -240,71 +257,93 @@ export default function Overview() {
   const grid = open && layout(open.tiles.length, open.W, open.H, open.home.width / open.home.height);
   /** Each tile's picture: the page at its own size, scaled to fit the cell. */
   const fit = (t: Tile) => {
-    const r = t.snap?.rect ?? open!.home;
+    const r = t.snap!.rect;
     const s = Math.min(grid!.w / r.width, grid!.h / r.height);
-    return { r, s, ox: (grid!.w - r.width * s) / 2 };
+    return { r, s, ox: (grid!.w - r.width * s) / 2, oy: (grid!.h - r.height * s) / 2 };
   };
-  /** Where a tile must stand to cover `r` exactly (it is drawn at its cell). */
-  const cover = (i: number) => {
-    const t = open!.tiles[i];
-    const { r, s, ox } = fit(t);
-    const k = 1 / s;
+  const ringBox = (i: number) => {
     const c = grid!.cells[i];
-    return { x: r.left - c.left - ox * k, y: r.top - c.top, scale: k };
+    return { x: c.left - 7, y: c.top - 7, width: grid!.w + 14, height: grid!.h + 14 };
   };
 
-  // Zooming out: the page you are on shrinks from the full board into its place in
-  // the grid while the canvas fades in around it, then the others settle in.
+  // Zooming out, one camera move: the page you are on flies down from the full board
+  // into its place in the grid while the dotted canvas zooms out behind it, then the
+  // other pages slide in from their side, their names rise out of a blur, and the
+  // ring settles round the pick.
   useLayoutEffect(() => {
-    if (!open || !root.current) return;
+    if (!open || !root.current || !grid) return;
     const el = root.current;
     for (const t of open.tiles) {
       const slot = el.querySelector<HTMLElement>(`[data-slot="${CSS.escape(t.path)}"]`);
       if (!slot || !t.snap) continue;
       const n = t.snap.node;
-      Object.assign(n.style, { position: "absolute", left: "0", top: "0", margin: "0", width: `${t.snap.rect.width}px`, height: `${t.snap.rect.height}px`, pointerEvents: "none" });
+      Object.assign(n.style, { position: "absolute", left: "0", top: "0", margin: "0", width: `${t.snap.rect.width}px`, height: `${t.snap.rect.height}px`, pointerEvents: "none", transform: "none" });
       slot.appendChild(n);
       const all = n.querySelectorAll<HTMLElement>("*");
       for (const [i, top, left] of t.snap.scrolls) if (all[i]) Object.assign(all[i], { scrollTop: top, scrollLeft: left });
     }
+    const s0 = live.current.sel;
     const tiles = [...el.querySelectorAll<HTMLElement>("[data-tile]")];
-    const labels = el.querySelectorAll("[data-tile-label]");
+    const labels = [...el.querySelectorAll<HTMLElement>("[data-tile-label]")];
     const back = el.querySelector("[data-backdrop]");
     const head = el.querySelector("[data-head]");
-    gsap.set(tiles[0], { ...cover(0), transformOrigin: "0 0" });
-    gsap.set(tiles.slice(1), { opacity: 0, y: 14, scale: 0.94, transformOrigin: "50% 50%" });
-    gsap.set([labels, head, ring.current], { opacity: 0 });
-    gsap.set(back, { opacity: 0 });
-    // The real page hides under its own picture, so nothing of it shows twice.
+    // Where the page you are on lands: its picture's place in its tile.
+    const slot0 = tiles[0].querySelector<HTMLElement>("[data-slot]")!;
+    const land = rectOf(slot0);
+    const snap0 = open.tiles[0].snap!;
+    const fly = flyer(el, snap0.node, snap0.rect);
+    gsap.set(labels, { opacity: 0, y: 10, filter: "blur(4px)" });
+    gsap.set(head, { opacity: 0, y: -8 });
+    gsap.set(ring.current, { ...ringBox(s0), opacity: 0, scale: 1.04, transformOrigin: "50% 50%" });
+    gsap.set(back, { opacity: 0, scale: 1.5, transformOrigin: "50% 45%" });
+    // The others wait just off to their side of the page you are on, a little small.
+    const c0 = grid.cells[0];
+    tiles.forEach((t, i) => {
+      if (!i) return;
+      const c = grid.cells[i];
+      gsap.set(t, { opacity: 0, scale: 0.9, x: Math.sign(c.left - c0.left) * 60, y: Math.sign(c.top - c0.top) * 40, transformOrigin: "50% 50%" });
+    });
+    // The real page hides under its own copy, so nothing of it shows twice.
     const main = visibleMain();
     if (main) {
       main.style.visibility = "hidden";
       hidden.current = main;
     }
+    const home = () => {
+      if (fly.isConnected) {
+        slot0.appendChild(snap0.node);
+        fly.remove();
+      }
+    };
     const tl = gsap.timeline({ defaults: { ease: EASE.out } });
-    tl.to(back, { opacity: 1, duration: DUR.slow, ease: EASE.inOut }, 0)
-      .to(tiles[0], { x: 0, y: 0, scale: 1, duration: 0.55, ease: EASE.inOut }, 0)
-      .to(tiles.slice(1), { opacity: 1, y: 0, scale: 1, duration: DUR.slow, stagger: 0.035 }, 0.18)
-      .to([labels, head], { opacity: 1, duration: DUR.base }, 0.35)
-      .to(ring.current, { opacity: 1, duration: DUR.base }, 0.45);
-    const done = setTimeout(() => tl.progress(1), 1500);
-    // Focus follows the pick (the ring's effect); focusing the first tile here would
-    // take Alt + `'s pick back to the page you are on.
-    return () => clearTimeout(done);
-    // Once per opening; `cover` reads the same state.
+    tl.to(back, { opacity: 1, scale: 1, duration: ZOOM + 0.1, ease: EASE.inOut }, 0)
+      .to(fly, { ...toward(land, snap0.rect), duration: ZOOM, ease: EASE.inOut, onComplete: home }, 0)
+      .to(tiles.slice(1), { opacity: 1, scale: 1, x: 0, y: 0, duration: DUR.slow + 0.1, stagger: 0.05 }, ZOOM * 0.45)
+      .to(labels, { opacity: 1, y: 0, filter: "blur(0px)", duration: DUR.base, stagger: 0.04 }, ZOOM * 0.7)
+      .to(head, { opacity: 1, y: 0, duration: DUR.base }, ZOOM * 0.6)
+      .to(ring.current, { opacity: 1, scale: 1, duration: DUR.base }, ZOOM * 0.85);
+    // A held-back frame never leaves the page stuck in its copy.
+    const done = setTimeout(() => {
+      tl.progress(1);
+      home();
+    }, 1600);
+    return () => {
+      clearTimeout(done);
+      tl.kill();
+      home();
+    };
+    // Once per opening; grid and ringBox are worked out from `open`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // The ring glides to the picked tile.
+  // The ring glides to the pick, which lifts a little.
   useEffect(() => {
-    if (!open || !grid || !ring.current) return;
-    const c = grid.cells[sel];
-    if (!c) return;
-    const box = { x: c.left - 6, y: c.top - 6, width: grid.w + 12, height: grid.h + 12 };
-    if (Number(gsap.getProperty(ring.current, "opacity")) < 0.05) gsap.set(ring.current, box);
-    else gsap.to(ring.current, { ...box, duration: DUR.base, ease: EASE.out, overwrite: "auto" });
-    root.current?.querySelectorAll<HTMLElement>("[data-tile]")[sel]?.focus({ preventScroll: true });
-  }, [sel, open, grid]);
+    if (!open || !grid || !ring.current || !root.current) return;
+    if (Number(gsap.getProperty(ring.current, "opacity")) > 0.05) gsap.to(ring.current, { ...ringBox(sel), duration: DUR.base, ease: EASE.out, overwrite: "auto" });
+    else gsap.set(ring.current, ringBox(sel));
+    root.current.querySelectorAll<HTMLElement>("[data-tile]")[sel]?.focus({ preventScroll: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sel, open]);
 
   const finish = () => {
     const el = root.current;
@@ -319,23 +358,41 @@ export default function Overview() {
     setTimeout(end, 600);
   };
 
-  // Zooming in: the picked page grows back into the full board, the rest fade, and
-  // the real page takes its place the moment it is there.
+  // Zooming in: the picked page flies up from its tile into the full board as the
+  // canvas zooms in behind it and the others slide away; the real page takes its
+  // place the moment it is there.
   function pick(i: number) {
     const o = live.current.open;
     const el = root.current;
-    if (!o || !el || leaving.current) return;
+    if (!o || !el || leaving.current || !grid) return;
     const t = o.tiles[i];
     const moved = t.path !== location.pathname;
     leaving.current = { to: t.path, moved, arrived: !moved };
     setSel(i);
     const tiles = [...el.querySelectorAll<HTMLElement>("[data-tile]")];
+    const slot = tiles[i].querySelector<HTMLElement>("[data-slot]")!;
+    const from = rectOf(slot);
+    const at = t.snap!.rect;
+    const fly = flyer(el, t.snap!.node, at);
+    gsap.set(fly, toward(from, at));
+    const c = grid.cells[i];
     const others = tiles.filter((_, j) => j !== i);
     const tl = gsap.timeline({ defaults: { ease: EASE.out } });
-    tl.to([...others, ...el.querySelectorAll("[data-tile-label]"), el.querySelector("[data-head]"), ring.current], { opacity: 0, duration: DUR.fast }, 0)
-      .set(tiles[i], { transformOrigin: "0 0", zIndex: 2 }, 0)
-      .to(tiles[i], { ...cover(i), duration: 0.5, ease: EASE.inOut }, 0)
-      .to(el.querySelector("[data-backdrop]"), { opacity: 0, duration: DUR.slow, ease: EASE.inOut }, 0.05);
+    tl.to(
+      others,
+      {
+        opacity: 0,
+        scale: 0.9,
+        x: (j: number) => Math.sign(grid.cells[tiles.indexOf(others[j])].left - c.left) * 60,
+        y: (j: number) => Math.sign(grid.cells[tiles.indexOf(others[j])].top - c.top) * 40,
+        duration: DUR.base,
+        ease: EASE.in,
+      },
+      0,
+    )
+      .to([...el.querySelectorAll("[data-tile-label]"), el.querySelector("[data-head]"), ring.current], { opacity: 0, duration: DUR.fast }, 0)
+      .to(fly, { x: 0, y: 0, scale: 1, duration: ZOOM, ease: EASE.inOut }, 0)
+      .to(el.querySelector("[data-backdrop]"), { opacity: 0, scale: 1.5, duration: ZOOM, ease: EASE.inOut }, 0.05);
     let landed = false;
     const land = () => {
       if (landed) return;
@@ -346,7 +403,7 @@ export default function Overview() {
       if (l.arrived) finish();
     };
     tl.eventCallback("onComplete", land);
-    setTimeout(land, 900);
+    setTimeout(land, 1000);
     if (moved) {
       // The board's slide and the arrival motion stand aside: this is the move.
       turn.quietUntil = performance.now() + 2500;
@@ -358,27 +415,30 @@ export default function Overview() {
     }
   }
 
-  // The picked page is there: once the zoom has landed, the picture gives way to it.
+  // The picked page is there: once the zoom has landed, the copy gives way to it.
   useEffect(() => {
     const l = leaving.current;
     if (!l || l.to !== path) return;
-    // One frame on, so the new page is drawn under the picture first.
+    // One frame on, so the new page is drawn under the copy first.
     const f = requestAnimationFrame(() => {
       l.arrived = true;
       if (hidden.current && !hidden.current.isConnected) hidden.current = null;
       if (l.moved && leaving.current === l) finish();
     });
     return () => cancelAnimationFrame(f);
-     
   }, [path]);
 
-  // Never leave the page hidden.
-  useEffect(
-    () => () => {
+  // Never leave the page hidden: whenever the overview is gone, the page shows.
+  useEffect(() => {
+    const restore = () => {
       if (hidden.current) hidden.current.style.visibility = "";
-    },
-    [],
-  );
+      hidden.current = null;
+    };
+    if (!open) restore();
+    return () => {
+      if (!live.current.open) restore();
+    };
+  }, [open]);
 
   if (!open || !grid) return null;
   return (
@@ -394,20 +454,18 @@ export default function Overview() {
       }}
     >
       <div data-backdrop className="board absolute inset-0" />
-      <div data-head className="pointer-events-none absolute inset-x-0 top-0 flex flex-col items-center gap-1 pt-[max(1.75rem,16px)] text-center">
-        <p className="text-h3 font-semibold text-ink">Your pages</p>
-        <p className="text-caption text-ink-3 max-md:hidden">
-          Alt + ` next · arrows move · Enter opens · Esc goes back
-        </p>
+      <div data-head className="pointer-events-none absolute inset-x-0 top-0 flex flex-col items-center gap-1 pt-[max(1.25rem,12px)] text-center">
+        <p className="text-h3 font-semibold text-ink">Your recent pages</p>
+        <p className="text-caption text-ink-3 max-md:hidden">Click a page to open it · arrows move · Esc goes back</p>
       </div>
       <div
         ref={ring}
         aria-hidden="true"
-        className="pointer-events-none absolute left-0 top-0 rounded-[calc(var(--radius-lg)+6px)] border-[3px] border-brand shadow-aura"
+        className="pointer-events-none absolute left-0 top-0 z-[2] rounded-[calc(var(--radius-lg)+7px)] border-[3px] border-brand shadow-aura"
       />
       {open.tiles.map((t, i) => {
         const c = grid.cells[i];
-        const { r, s, ox } = fit(t);
+        const { r, s, ox, oy } = fit(t);
         return (
           <button
             key={t.path}
@@ -422,34 +480,29 @@ export default function Overview() {
               mouse.current = at;
               if (moved && !leaving.current) setSel(i);
             }}
-            onFocus={() => setSel(i)}
+            onFocus={() => !leaving.current && setSel(i)}
             onClick={() => pick(i)}
             style={{ left: c.left, top: c.top, width: grid.w, height: grid.h }}
             className="absolute text-left outline-none"
           >
-            <span
-              data-slot={t.path}
-              className="absolute top-0 block origin-top-left"
-              style={{ left: ox, width: r.width, height: r.height, transform: `scale(${s})` }}
-            >
-              {!t.snap && (
-                // A page not opened yet: its empty board, opened when picked.
-                <span className="flex size-full flex-col items-center justify-center gap-2 rounded-lg bg-white shadow-card">
-                  <span className="text-h2 font-semibold text-ink-2">{t.label}</span>
-                  <span className="text-body text-ink-3">Not opened yet</span>
-                </span>
-              )}
-            </span>
+            {/* The page's name above it, readable at a glance. */}
             <span
               data-tile-label
+              // Above the board's tab, which rises 6% of the picture over it.
+              style={{ marginBottom: grid.h * 0.06 + 6 }}
               className={
-                "absolute inset-x-0 top-full mt-2 flex items-center justify-center gap-2 truncate text-small " +
-                (i === sel ? "font-semibold text-ink" : "text-ink-2")
+                "pointer-events-none absolute inset-x-0 bottom-full flex items-center justify-center gap-2 text-[max(1.15rem,13px)] " +
+                (i === sel ? "font-semibold text-ink" : "font-medium text-ink-2")
               }
             >
               <span className="truncate">{t.label}</span>
-              {i === 0 && <span className="shrink-0 rounded-pill bg-brand-tint px-2 text-caption text-brand-strong">Now</span>}
+              {i === 0 && <span className="shrink-0 rounded-pill bg-brand-tint px-2.5 py-0.5 text-caption font-medium text-brand-strong">Now</span>}
             </span>
+            <span
+              data-slot={t.path}
+              className="absolute block origin-top-left"
+              style={{ left: ox, top: oy, width: r.width, height: r.height, transform: `scale(${s})` }}
+            />
           </button>
         );
       })}
