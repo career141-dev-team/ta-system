@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { Pager } from "@/components/Pager";
 import { repo } from "@/data/store";
 import { assess } from "@/lib/assessment";
-import { FIT_BANDS, type Score } from "@/lib/scoring";
+import { FIT_BANDS, SEARCH_CUT, searchCutOn, type Score } from "@/lib/scoring";
 import { pageUser } from "@/lib/session";
 import { STAGE_LABEL } from "@/data/types";
 import { FILTER_PARAMS, conversationText, criteriaFromParams, criteriaToParams, describe, parseBoolean, parseConversation, resultsKeyOf, searchParamsOf, turnCounts, turnsOf, withoutChip, withValue } from "@/lib/query";
@@ -380,8 +380,9 @@ async function ResultsView({
    * engine ranked the list the bar is zero: everyone it sent back is shown, in
    * its order, and the criteria below still narrow them.
    */
-  const bar = referenceRanked ? FIT_BANDS.worth / 100 : engineRanked ? 0 : isMeaningBased() ? RELEVANT_SIMILARITY : Math.max(0.08, best * 0.6);
-  const floor = referenceRanked ? (showBelow ? 0 : bar) : engineRanked ? 0 : showBelow ? bar - (isMeaningBased() ? BELOW_BAR : 0.04) : bar;
+  const cutOn = searchCutOn({ engineRanked, referenceRanked, forOpening: !!forOpening, kind: engineKind });
+  const bar = referenceRanked ? FIT_BANDS.worth / 100 : cutOn ? SEARCH_CUT / 100 : engineRanked ? 0 : isMeaningBased() ? RELEVANT_SIMILARITY : Math.max(0.08, best * 0.6);
+  const floor = referenceRanked || cutOn ? (showBelow ? 0 : bar) : engineRanked ? 0 : showBelow ? bar - (isMeaningBased() ? BELOW_BAR : 0.04) : bar;
   // What is still ours to enforce. Where the engine ran it has already applied
   // place and years against its own fields; see `deskCriteria`.
   const narrowing = engineRanked ? deskCriteria(criteria) : criteria;
@@ -390,7 +391,7 @@ async function ResultsView({
     limit: Number.MAX_SAFE_INTEGER,
     similarity,
     floor,
-    belowFloor: showBelow ? undefined : referenceRanked ? 0 : bar - (isMeaningBased() ? BELOW_BAR : 0.04),
+    belowFloor: showBelow ? undefined : referenceRanked || cutOn ? 0 : bar - (isMeaningBased() ? BELOW_BAR : 0.04),
   });
   /*
    * One score, not two.
@@ -814,15 +815,15 @@ async function ResultsView({
                 <span className="text-[11.5px] font-semibold uppercase tracking-wider text-ink-soft">
                   <span className="tabular">{total.toLocaleString()}</span> {mode === "meaning" ? (total === 1 ? "relevant person" : "relevant people") : "results"}
                 </span>
-                {(mode === "meaning" || referenceProfile) && below > 0 && !showBelow && (
+                {(mode === "meaning" || referenceProfile || cutOn) && below > 0 && !showBelow && (
                   <Link href={broaderHref(true)} className="text-[12px] font-medium text-accent hover:underline">
-                    {referenceProfile ? `Show ${below.toLocaleString()} broader ${below === 1 ? "match" : "matches"}` : `${below.toLocaleString()} more possible ${below === 1 ? "match" : "matches"} just below the bar — show ${below === 1 ? "it" : "them"}`}
+                    {referenceProfile || cutOn ? `Show ${below.toLocaleString()} weaker ${below === 1 ? "match" : "matches"}` : `${below.toLocaleString()} more possible ${below === 1 ? "match" : "matches"} just below the bar — show ${below === 1 ? "it" : "them"}`}
                   </Link>
                 )}
-                {(mode === "meaning" || referenceProfile) && showBelow && (
+                {(mode === "meaning" || referenceProfile || cutOn) && showBelow && (
                   <span className="text-[12px] text-ink-soft">
                     Including broader, lower-confidence matches
-                    {referenceProfile && <> · <Link href={broaderHref(false)} className="font-medium text-accent hover:underline">hide them</Link></>}
+                    {(referenceProfile || cutOn) && <> · <Link href={broaderHref(false)} className="font-medium text-accent hover:underline">hide them</Link></>}
                   </span>
                 )}
                 <span className="text-[12px] text-ink-faint">
@@ -880,7 +881,7 @@ async function ResultsView({
             ) : shown.length === 0 ? (
               <div className="px-8 py-16 text-center">
                 <p className="text-[14px] font-medium">{mode === "meaning" ? "Nobody relevant found" : "Nobody matches all of that"}</p>
-                {mode === "meaning" && below > 0 && (
+                {(mode === "meaning" || cutOn) && below > 0 && (
                   <p className="mt-2 text-[12.5px] text-ink-soft">
                     <a href={`${pageHref(1)}&below=1`} className="font-medium text-accent hover:underline">
                       {below.toLocaleString()} {below === 1 ? "person is" : "people are"} just below the bar — show {below === 1 ? "them" : "them"}

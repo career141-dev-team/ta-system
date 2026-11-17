@@ -1,4 +1,4 @@
-import { requirementsFromOpening, scoreCandidate, seniorityOf, skillsScore, type Requirements } from "@/lib/scoring";
+import { SEARCH_CUT, searchCutOn, requirementsFromOpening, scoreCandidate, seniorityOf, skillsScore, type Requirements } from "@/lib/scoring";
 import { countryOf, locationFit } from "@/lib/places";
 import type { Candidate } from "@/data/types";
 
@@ -105,6 +105,17 @@ console.log("\nlocation ranks, it does not exclude (13 September)");
   eq("another country costs little when not local only", at(open, "Colombo") - at(open, "Dubai") <= 10, true);
   eq("another country costs a lot when local only", at(local, "Colombo") - at(local, "Dubai") >= 20, true);
   eq("local only: another city is not marked down", at(local, "Kandy, Sri Lanka"), at(local, "Colombo"));
+}
+
+console.log("\nsearch cut-off (17 Nov)");
+{
+  const on = { engineRanked: true, referenceRanked: false, forOpening: false, kind: "role" as string | null };
+  eq("cut is 40", SEARCH_CUT, 40);
+  eq("plain engine search is cut", searchCutOn(on), true);
+  eq("keyword list is not cut", searchCutOn({ ...on, kind: "keywords" }), false);
+  eq("search for an opening is not cut", searchCutOn({ ...on, forOpening: true }), false);
+  eq("reference search keeps its own bar", searchCutOn({ ...on, referenceRanked: true }), false);
+  eq("words-only fallback is not cut", searchCutOn({ ...on, engineRanked: false }), false);
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
