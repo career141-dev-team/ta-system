@@ -148,6 +148,8 @@ export default function CvPreview({
       el.removeAttribute("id");
       el.removeAttribute("data-card-id");
       el.removeAttribute("data-panel");
+      // No "…" cut-off marks: with the letters still to write in, they showed first.
+      el.style.textOverflow = "clip";
     }
     // A copied canvas comes out blank: paint each drawn CV page onto its copy, so a
     // grow from a small CV (Scoops, Database CVs) starts from that CV, not white boxes.
@@ -197,7 +199,7 @@ export default function CvPreview({
       //    its rows popping up one after another, the board zooming soft behind it;
       // 2. a moment later it expands into the full CV.
       const lift = liftOf(c);
-      const typing = typeIn(ghost);
+      const letters = lettersOf(ghost);
       const end = EXPAND + OPEN_GROW;
       // One flow, like a video (owner, 17 Nov 2026: "no break, go with the flow", "too
       // quick"): every move overlaps the next, nothing stops and nothing bounces. The
@@ -205,13 +207,16 @@ export default function CvPreview({
       // starts to open into the CV; the board behind is one long camera move.
       enter.current = gsap
         .timeline()
-        .to(board, { ...BOARD_AWAY, duration: end, ease: "power2.inOut" }, 0)
-        .to("[data-veil]", { opacity: 1, duration: end * 0.6, ease: "sine.inOut" }, 0)
+        // The board zooms once, with the pop, and then holds still (owner, 17 Nov 2026:
+        // "keep the zoom state" - no second move behind the typing or the opening).
+        .to(board, { ...BOARD_AWAY, duration: ZOOM, ease: "power2.out" }, 0)
+        .to("[data-veil]", { opacity: 1, duration: ZOOM, ease: "power2.out" }, 0)
         // 1. The same card lifts and grows, easing all the way to the moment it opens.
         .to(ghost, { ...lift, duration: EXPAND, ease: "power2.out" }, 0)
         .fromTo(details, { y: 6 }, { y: 0, duration: 0.6, stagger: 0.08, ease: "power2.out" }, 0.1)
-        // Its words type themselves in, a character at a time.
-        .to(typing.state, { n: typing.total, duration: TYPE, ease: "sine.inOut", onUpdate: typing.draw }, 0.15)
+        // Its words write themselves in: each letter fades and rises into place a moment
+        // after the one before, so the text flows on rather than snapping in.
+        .to(letters, { opacity: 1, y: 0, duration: 0.35, ease: "power2.out", stagger: { amount: TYPE } }, 0.2)
         // 2. Without a pause it opens into the CV: details soften away as it grows and
         //    darkens, and the frame with the CV fades in as it lands.
         .to(details, { opacity: 0, filter: "blur(6px)", duration: OPEN_GROW * 0.45, ease: "sine.in" }, EXPAND)
@@ -461,28 +466,34 @@ const GROW = 0.55;
  *  motion reads like a video): the card lifts until EXPAND while its words type in over
  *  TYPE, then grows into the CV over OPEN_GROW, the frame fading in over OPEN_LAND. */
 const TYPE = 1.0;
+/** The board's one zoom, with the pop. */
+const ZOOM = 0.6;
 const EXPAND = 1.3;
 const OPEN_GROW = 0.85;
 const OPEN_LAND = 0.3;
 
-/** The copy's words, emptied and typed back in by one tween of a character count:
- *  every text in the card fills in order, a character at a time. Text nodes only. */
-function typeIn(ghost: HTMLElement) {
-  const nodes: { node: Text; text: string }[] = [];
+/** Every letter of the copy in its own inline span, hidden (faded, a little low), in
+ *  reading order, for the timeline to write in. Text only; the copy is thrown away
+ *  after the opening, so its markup may change. */
+function lettersOf(ghost: HTMLElement): HTMLElement[] {
+  const texts: Text[] = [];
   const walk = document.createTreeWalker(ghost, NodeFilter.SHOW_TEXT);
-  for (let t = walk.nextNode() as Text | null; t; t = walk.nextNode() as Text | null)
-    if (t.data.trim()) nodes.push({ node: t, text: t.data });
-  const total = nodes.reduce((n, x) => n + x.text.length, 0);
-  const state = { n: 0 };
-  const draw = () => {
-    let left = Math.round(state.n);
-    for (const x of nodes) {
-      x.node.data = x.text.slice(0, Math.max(0, left));
-      left -= x.text.length;
+  for (let t = walk.nextNode() as Text | null; t; t = walk.nextNode() as Text | null) if (t.data.trim()) texts.push(t);
+  const out: HTMLElement[] = [];
+  for (const t of texts) {
+    const frag = document.createDocumentFragment();
+    for (const ch of t.data) {
+      const span = document.createElement("span");
+      span.textContent = ch;
+      span.style.display = "inline-block";
+      span.style.whiteSpace = "pre";
+      frag.appendChild(span);
+      out.push(span);
     }
-  };
-  draw();
-  return { state, total, draw };
+    t.replaceWith(frag);
+  }
+  gsap.set(out, { opacity: 0, y: 4 });
+  return out;
 }
 
 /** How the clicked card lifts: about 1.4 times its size (less if the window is small),
