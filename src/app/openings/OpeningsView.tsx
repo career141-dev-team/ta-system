@@ -168,7 +168,17 @@ export default function OpeningsView() {
                 {shown.length ? (
                   <div className="grid grid-cols-4 gap-[max(1.5rem,12px)] max-lg:grid-cols-2 max-sm:grid-cols-1">
                     {shown.map((o) => (
-                      <Card key={o.id} o={o} canBin={canBin(o)} armed={arming === o.id} onArm={() => setArming(o.id)} onBin={() => bin(o)} onDisarm={() => setArming(null)} />
+                      <Card
+                        key={o.id}
+                        o={o}
+                        canBin={canBin(o)}
+                        canWeb={me.lead}
+                        armed={arming === o.id}
+                        onArm={() => setArming(o.id)}
+                        onBin={() => bin(o)}
+                        onWeb={() => setRows((r) => r.map((x) => (x.id === o.id ? { ...x, website: !x.website } : x)))}
+                        onDisarm={() => setArming(null)}
+                      />
                     ))}
                   </div>
                 ) : (
@@ -217,7 +227,26 @@ export default function OpeningsView() {
 // ponytail: sample candidate count per opening, the backend sends the real one.
 const kept = (o: Opening) => 6 + ((o.id.length * 7 + o.days * 3) % 30);
 
-function Card({ o, canBin, armed, onArm, onBin, onDisarm }: { o: Opening; canBin: boolean; armed: boolean; onArm: () => void; onBin: () => void; onDisarm: () => void }) {
+function Card({
+  o,
+  canBin,
+  canWeb,
+  armed,
+  onArm,
+  onBin,
+  onWeb,
+  onDisarm,
+}: {
+  o: Opening;
+  canBin: boolean;
+  /** Old TA System (website jobs): admin, TA lead and ops put a job on career141.com. */
+  canWeb: boolean;
+  armed: boolean;
+  onArm: () => void;
+  onBin: () => void;
+  onWeb: () => void;
+  onDisarm: () => void;
+}) {
   const l: List = inList(o, "unassigned") ? "unassigned" : o.status;
   const over = o.status === "active" && o.team.length > 0 && o.days > TARGET[o.priority];
   const right =
@@ -245,13 +274,14 @@ function Card({ o, canBin, armed, onArm, onBin, onDisarm }: { o: Opening; canBin
   return (
     <Link
       // ponytail: every card opens the one opening built so far.
-      href="/openings/demo"
+      href={o.referee ? "/openings/demo?referee=1" : "/openings/demo"}
       prefetch={false}
       onMouseLeave={armed ? onDisarm : undefined}
       className="group relative flex h-[clamp(116px,15.5dvh,168px)] flex-col gap-[clamp(5px,0.95dvh,10px)] rounded-lg border border-border bg-surface px-[max(1.625rem,16px)] py-[clamp(12px,2dvh,22px)] transition-colors hover:border-border-strong hover:shadow-card"
     >
       <div className="flex items-center gap-2 text-small text-ink-3">
         <span className="truncate">{o.client}</span>
+        {o.referee && <span className="shrink-0 rounded-full bg-violet-soft px-2.5 py-0.5 text-caption font-medium text-violet">Referee</span>}
         <span className="ml-auto shrink-0 text-caption">P{o.priority}</span>
       </div>
       <p className="line-clamp-2 text-h3 font-medium text-ink">{o.title}</p>
@@ -261,6 +291,35 @@ function Card({ o, canBin, armed, onArm, onBin, onDisarm }: { o: Opening; canBin
         <span className={"ml-auto truncate " + (over ? "text-danger" : "text-ink-3")} title={over ? "Past its target" : undefined}>
           {right}
         </span>
+        {/* On career141.com: only an active job is listed (a held or closed one drops
+            off by itself, as in the old system); only a lead, Director or Ops switches
+            it, others just see that it is on. A globe, not the word, so the row fits. */}
+        {o.status === "active" &&
+          (canWeb ? (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={!!o.website}
+              aria-label={`List ${o.title} on career141.com`}
+              title={o.website ? "On career141.com - press to take it off" : "Not on career141.com - press to list it"}
+              onClick={(e) => {
+                hold(e);
+                onWeb();
+              }}
+              className={"flex shrink-0 items-center gap-1 rounded-full py-0.5 pl-1.5 pr-0.5 transition-colors " + (o.website ? "text-brand" : "text-ink-3 hover:text-ink")}
+            >
+              <GlobeIcon />
+              <span className={"relative h-4 w-7 rounded-full transition-colors " + (o.website ? "bg-brand" : "bg-border-strong")}>
+                <span className={"absolute top-0.5 size-3 rounded-full bg-white transition-[left] " + (o.website ? "left-3.5" : "left-0.5")} />
+              </span>
+            </button>
+          ) : (
+            o.website && (
+              <span className="flex shrink-0 text-brand" title="On career141.com">
+                <GlobeIcon />
+              </span>
+            )
+          ))}
       </div>
       {canBin && (
         <button
@@ -336,6 +395,13 @@ function Card({ o, canBin, armed, onArm, onBin, onDisarm }: { o: Opening; canBin
 const BinIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-4 shrink-0" aria-hidden="true">
     <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
+  </svg>
+);
+
+const GlobeIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-3.5 shrink-0" aria-hidden="true">
+    <circle cx="12" cy="12" r="9" />
+    <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
   </svg>
 );
 

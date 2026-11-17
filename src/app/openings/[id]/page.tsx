@@ -5,6 +5,7 @@ import OpeningView from "./OpeningView";
 import OverviewCharts, { type OverviewNumbers } from "./OverviewCharts";
 import type { WorkView } from "./view";
 import { CAN_SOURCE } from "@/lib/user";
+import RefereeBadge from "./RefereeBadge";
 
 // Placeholder: the opening shown in the design. Replaced by the backend read
 // when the owner wires this screen.
@@ -137,6 +138,7 @@ export default async function OpeningPage({ params }: PageProps<"/openings/[id]"
         <h1 className="text-title font-semibold">{OPENING.title}</h1>
         <Divider />
         <span className="text-title font-semibold">{OPENING.client}</span>
+        <RefereeBadge />
         <Divider />
         <PillMenu options={STATUS} initial={OPENING.status} pillClass={PILL} />
         <Divider />

@@ -97,6 +97,8 @@ export default function NewOpening({
       days: 0,
       team: r.team,
       made: 0,
+      referee: r.referee,
+      website: r.website,
     });
   };
   const set = (p: Partial<Read>) => setR((x) => ({ ...x, ...p }));
@@ -381,6 +383,40 @@ export default function NewOpening({
                     {r.autoFollowUp ? "On — AURA chases for CV, salary and notice" : "Off — a TA sends each message"}
                   </label>
                 </Field>
+                <Field label="Referee opening">
+                  <label className="mt-1 flex cursor-pointer items-center gap-3 text-body text-ink">
+                    <input type="checkbox" checked={r.referee} onChange={(e) => set({ referee: e.target.checked })} className="peer sr-only" />
+                    <span
+                      aria-hidden="true"
+                      className={
+                        "relative h-7 w-12 shrink-0 rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-brand peer-focus-visible:ring-offset-2 " +
+                        (r.referee ? "bg-brand" : "bg-border-strong")
+                      }
+                    >
+                      <span className={"absolute top-1 size-5 rounded-full bg-white transition-[left] " + (r.referee ? "left-6" : "left-1")} />
+                    </span>
+                    {r.referee ? "On — hire a referee for this role" : "Off — find candidates as usual"}
+                  </label>
+                </Field>
+                {/* Old TA System: only a lead, Director or Ops lists a job on career141.com,
+                    and only an open job with an approved JD shows there. */}
+                {LEAD && (
+                <Field label="Website">
+                  <label className="mt-1 flex cursor-pointer items-center gap-3 text-body text-ink">
+                    <input type="checkbox" checked={r.website} onChange={(e) => set({ website: e.target.checked })} className="peer sr-only" />
+                    <span
+                      aria-hidden="true"
+                      className={
+                        "relative h-7 w-12 shrink-0 rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-brand peer-focus-visible:ring-offset-2 " +
+                        (r.website ? "bg-brand" : "bg-border-strong")
+                      }
+                    >
+                      <span className={"absolute top-1 size-5 rounded-full bg-white transition-[left] " + (r.website ? "left-6" : "left-1")} />
+                    </span>
+                    {r.website ? "On — listed on career141.com once the JD is approved" : "Off — not on career141.com"}
+                  </label>
+                </Field>
+                )}
               </div>
               {asks.length > 0 && <AuraAsks q={asks[0]} more={asks.length - 1} />}
               <div className="mt-3 flex flex-wrap items-center gap-3">

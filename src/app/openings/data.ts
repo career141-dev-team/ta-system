@@ -27,6 +27,10 @@ export type Opening = {
   /** Newer is higher - stands for createdAt. */
   made: number;
   note?: string;
+  /** Hire from the referee table (the referees / people who applied) for this role. */
+  referee?: boolean;
+  /** Posted on the Career141 website's job vacancies page. */
+  website?: boolean;
 };
 
 export const TARGET: Record<Priority, number> = { 1: 14, 2: 21, 3: 30, 4: 45, 5: 60 };
@@ -52,7 +56,7 @@ export const CLIENTS = [
 // Written out for the four the design shows first in each list; the rest are made up
 // from a small set so the counts are real numbers.
 const FIRST: Omit<Opening, "made">[] = [
-  { id: "demo", client: "PGP Glass", title: "Senior Manager — SAP Business Transformation", status: "active", priority: 1, days: 9, team: ["Chathura", "Dinuka"] },
+  { id: "demo", client: "PGP Glass", title: "Senior Manager — SAP Business Transformation", status: "active", priority: 1, days: 9, team: ["Chathura", "Dinuka"], referee: true },
   { id: "o2", client: "Hayleys Fabric", title: "Finance Manager", status: "active", priority: 2, days: 4, team: ["Hasini"] },
   { id: "o3", client: "MAS Bodyline", title: "Production Executive", status: "active", priority: 3, days: 22, team: ["Nipuna"] },
   { id: "o4", client: "Dialog Axiata", title: "HR Business Partner", status: "active", priority: 3, days: 2, team: ["Sanduni"] },
@@ -115,6 +119,8 @@ export type Read = {
   hiringFor: string;
   gender: string;
   autoFollowUp: boolean;
+  referee: boolean;
+  website: boolean;
   /** Which fields AURA filled from the words (marked ✦). */
   read: string[];
 };
@@ -132,6 +138,8 @@ export const EMPTY: Read = {
   gender: "Any",
   // Off until someone switches it on, as in the TA System.
   autoFollowUp: false,
+  referee: false,
+  website: false,
   read: [],
 };
 
