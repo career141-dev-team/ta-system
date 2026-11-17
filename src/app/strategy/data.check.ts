@@ -6,8 +6,9 @@ void useRows;
 let all: Row[] = [];
 setRows((rs) => (all = rs));
 
-assert.deepEqual(counts(all), { unplanned: 6, waiting: 5, unread: 5 });
-assert.equal(jobStatus(all, "j1").text, "Not planned");
+assert.deepEqual(counts(all), { unplanned: 5, waiting: 6, unread: 5 });
+assert.equal(jobStatus(all, "j2").text, "Not planned");
+assert.equal(jobStatus(all, "j1").text, "1 waiting to accept");
 assert.equal(jobStatus(all, "j4").text, "2 waiting to accept");
 assert.equal(jobStatus(all, "j6").text, "All submitted");
 assert.equal(jobStatus(all, "j5").text, "In progress");

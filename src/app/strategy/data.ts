@@ -115,6 +115,12 @@ const r = (job: string, name: string, state: State, ta?: TaId, extra: Partial<Ro
 const DONE = { assigned: "8 Nov", accepted: "9 Nov", done: "11 Nov", read: true, proofs: 2, ago: "3 days ago", note: "Ran it as planned. Two people came through to TA Follow-up." };
 
 let rows: Row[] = [
+  // The opening the UI shows (PGP Glass, /openings/demo): its own strategies under its
+  // lists (owner, 18 Nov 2026: "the strategies section content needs to change").
+  r("j1", "LinkedIn search", "done", "CS", { ...DONE, done: "13 Nov", read: true, cvs: 3 }),
+  r("j1", "Direct headhunt", "working", "DK", { assigned: "12 Nov", accepted: "12 Nov", when: "Wed–Thu", days: [2, 3] }),
+  r("j1", "InMail", "waiting", "CS", { assigned: "13 Nov", when: "Today", days: [1, 1] }),
+  r("j1", "Referral extraction", "open"),
   r("j4", "LinkedIn search", "done", "CS", { ...DONE, read: false, ago: "Yesterday", note: "Searched 3 finance groups and saved 22 profiles; 9 approached, 3 replied." }),
   r("j4", "InMail", "working", "CS", { assigned: "8 Nov", accepted: "9 Nov", when: "Thu", days: [3, 3] }),
   r("j4", "Direct headhunt", "done", "DR", {
