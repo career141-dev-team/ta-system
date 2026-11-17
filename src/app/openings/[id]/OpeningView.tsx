@@ -55,6 +55,30 @@ function viewIn(search: string): View | null {
   const v = new URLSearchParams(search).get("view") as View | null;
   return v && v !== "overview" && ORDER.includes(v) ? v : null;
 }
+/** A light sketch of a tab not opened yet: its card with grey blocks where the work
+ *  goes. Static, and reads nothing. */
+function sketch(className: string) {
+  const node = document.createElement("div");
+  node.className = className;
+  // Inline sizes: a class written only inside a string is not always built into the
+  // stylesheet (the first try drew nothing).
+  const box = (css: string) => `<div style="border-radius:12px;background:var(--color-surface-2);${css}"></div>`;
+  node.innerHTML =
+    '<div style="display:flex;flex-direction:column;gap:3%;height:100%;padding:2.5% 3%">' +
+    box("height:6%;width:34%") +
+    '<div style="flex:1;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(2,1fr);gap:3%">' +
+    box("") + box("") + box("") + box("") + box("") + box("") +
+    "</div></div>";
+  node.setAttribute("aria-hidden", "true");
+  node.inert = true;
+  return { node, scrolls: [] as [number, number, number][] };
+}
+/** A picture of the job page (both lists) on the dotted canvas, with a margin. */
+function jobPage(page: HTMLElement) {
+  const c = copyOf(page, "board flex min-h-0 flex-col overflow-hidden rounded-lg");
+  c.node.style.padding = "2.5% 3% 0";
+  return c;
+}
 /** The last view used in each set, so the switch returns to it. */
 const lastIn: Partial<Record<ViewSet, View>> = {};
 /** Where the ATS | Headhunting switch lands: Headhunting's Overview, or the last ATS
@@ -85,8 +109,12 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
   // keeps it for as long as this opening is open.
   const [opened, setOpened] = useState<View[]>(["overview"]);
 
+  // The views this person really opened: the board of tabs shows a real picture only
+  // of those, and a light sketch of the rest - nothing is loaded just to draw a picture.
+  const visited = useRef(new Set<View>());
   const show = useCallback((next: View) => {
     current.current = next;
+    visited.current.add(next);
     if (next !== "overview") lastIn[setOf(next)] = next;
     setView(next);
     setOpened((o) => (o.includes(next) ? o : [...o, next]));
@@ -161,44 +189,56 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
     // set - all the ATS tabs from an ATS view, all the Headhunting tabs from a
     // Headhunting one - each a picture of its own screen (owner, 18 Nov 2026: "show the
     // Figma board with all the tabs like our previous implementation... inside the ATS
-    // show all the tabs of ATS, inside Headhunting all its tabs"). Pick one and it opens;
-    // Esc goes back into the view you were in. Every view of the set is mounted first,
-    // hidden, so each has a real picture; they stay mounted, so opening one is instant.
-    const back = () => {
+    // show all the tabs of ATS, inside Headhunting all its tabs"). Then, after the
+    // owner's review the same day: the job page is the first tile, the heading is the
+    // job's name with an ATS | Headhunting switch that swaps the tiles in place, a tab
+    // never opened is a light sketch (no data is read to draw it), and on a phone Back
+    // simply goes to the job page. Pick one and it opens; Esc goes back where you were.
+    const board = (set: ViewSet, replace: boolean) => {
       const left = current.current;
       const stage = stageRef.current;
       if (left === "overview" || !stage) return;
-      const rows = setOf(left) === "hh" ? HH_ROWS : ATS_ROWS;
+      const here = stage.querySelector<HTMLElement>(`[data-panel="${left}"]`);
+      const page = stage.firstElementChild as HTMLElement | null;
+      if (!here || !page) return;
+      const rows = set === "hh" ? HH_ROWS : ATS_ROWS;
       // Headhunting's board starts with its Overview (owner, 18 Nov 2026: "when they
       // come back it misses the overview"); its list on the opening page does not have it.
-      const set: View[] = [...(setOf(left) === "hh" ? (["hh-overview"] as View[]) : []), ...rows.map(([, v]) => v)];
-      const keys = set.includes(left) ? set : [left, ...set];
-      setOpened((o) => [...o, ...keys.filter((k) => !o.includes(k))]);
-      // The pictures wait until every tab has drawn - a view opening for the first time
-      // shows its loading skeleton while its code arrives - for at most 1.2 s.
-      const began = performance.now();
-      const drawn = () => keys.every((k) => !stage.querySelector(`[data-panel="${k}"] .shimmer`) && stage.querySelector(`[data-panel="${k}"]`));
-      const snap = () => {
-        if (current.current !== left) return;
-        const here = stage.querySelector<HTMLElement>(`[data-panel="${left}"]`);
-        if (!here) return;
-        const rect = here.getBoundingClientRect();
-        const box = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
-        const tiles = keys.flatMap((k) => {
-          const p = stage.querySelector<HTMLElement>(`[data-panel="${k}"]`);
-          if (!p) return [];
+      const keys: View[] = [...(set === "hh" ? (["hh-overview"] as View[]) : []), ...rows.map(([, v]) => v)];
+      if (setOf(left) === set && !keys.includes(left)) keys.unshift(left);
+      const r = here.getBoundingClientRect();
+      const box = { left: r.left, top: r.top, width: r.width, height: r.height };
+      const tiles = [
+        { key: "overview", label: "Job page", rect: box, ...jobPage(page) },
+        ...keys.map((k) => {
           const label = rows.find(([, v]) => v === k)?.[0] ?? viewLabel(k);
-          return [{ key: k, label, rect: box, ...copyOf(p, here.className) }];
-        });
-        openBoard({
-          title: setOf(left) === "hh" ? "Headhunting" : "ATS",
-          tiles,
-          cur: Math.max(0, tiles.findIndex((t) => t.key === left)),
-          onPick: (k) => go(k as View),
-        });
-      };
-      const wait = () => (drawn() || performance.now() - began > 1200 ? snap() : void setTimeout(wait, 80));
-      requestAnimationFrame(() => requestAnimationFrame(wait));
+          const p = stage.querySelector<HTMLElement>(`[data-panel="${k}"]`);
+          return { key: k, label, rect: box, ...(p && visited.current.has(k) ? copyOf(p, here.className) : sketch(here.className)) };
+        }),
+      ];
+      const title = stage.querySelector("h1")?.textContent?.trim() || "This job";
+      openBoard({
+        title,
+        tiles,
+        cur: tiles.findIndex((t) => t.key === left),
+        onPick: (k) => go(k as View),
+        sets: CAN_SOURCE
+          ? [
+              { key: "ats", label: "ATS", on: set === "ats" },
+              { key: "hh", label: "Headhunting", on: set === "hh" },
+            ]
+          : undefined,
+        onSet: (k) => board(k as ViewSet, true),
+        tip: "Tip: the bar at the bottom switches tabs in one click",
+        replace,
+      });
+    };
+    const back = () => {
+      if (current.current === "overview") return;
+      // A phone is too narrow for a board of pictures: Back goes to the job page.
+      if (window.innerWidth < 768) return list();
+      // Two frames, so a view that just opened has drawn before its picture is taken.
+      requestAnimationFrame(() => requestAnimationFrame(() => board(setOf(current.current), false)));
     };
     window.addEventListener(LIST, list);
     window.addEventListener(SHOW_TABS, back);
@@ -209,14 +249,13 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
       window.removeEventListener("popstate", pop);
     };
   }, [show, go]);
-  // While someone works in a view, the other tabs of its set are drawn quietly in
-  // the background (hidden, like any view left), so Back's board of tabs can zoom out
-  // at once instead of waiting for them (owner, 18 Nov 2026: "more smoother").
+  // While someone works in a view, the one view the ATS | Headhunting switch would
+  // land on is drawn quietly in the background, so the switch is instant. Only that one:
+  // the board of tabs no longer draws every tab (owner's review, 18 Nov 2026 - with the
+  // backend each drawn view reads its data, and a picture is not worth that).
   useEffect(() => {
     if (view === "overview") return;
-    const rows = setOf(view) === "hh" ? HH_ROWS : ATS_ROWS;
-    // And where the ATS | Headhunting switch would land, so switching is instant too.
-    const keys: View[] = [...rows.map(([, v]) => v), "hh-overview" as View, landingOf(setOf(view) === "hh" ? "ats" : "hh")].filter((v) => CAN_SOURCE || setOf(v) !== "hh");
+    const keys: View[] = [landingOf(setOf(view) === "hh" ? "ats" : "hh")].filter((v) => CAN_SOURCE || setOf(v) !== "hh");
     const idle = window.requestIdleCallback?.bind(window) ?? ((f: () => void) => window.setTimeout(f, 600));
     const cancel = window.cancelIdleCallback?.bind(window) ?? window.clearTimeout;
     const id = idle(() => setOpened((o) => (keys.every((v) => o.includes(v)) ? o : [...o, ...keys.filter((v) => !o.includes(v))])));

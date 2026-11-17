@@ -21,7 +21,7 @@ import { PAGES, turn } from "./Board";
 // opens when you pick it, with everything it had.
 
 type Rect = { left: number; top: number; width: number; height: number };
-type Snap = { path: string; href: string; label: string; node: HTMLElement; rect: Rect; scrolls: [number, number, number][] };
+type Snap = { path: string; href: string; label: string; node: HTMLElement; rect: Rect; scrolls: [number, number, number][]; at?: number };
 type Tile = { path: string; href: string; label: string; snap?: Snap };
 
 /** Copies of the pages you visited, newest last. */
@@ -79,7 +79,7 @@ function take() {
   // The board's own look, without its first-load rise (a CSS animation would replay).
   const { node, scrolls } = copyOf(main, main.className.replace(/\benter-board\b/g, ""));
   snaps.delete(path);
-  snaps.set(path, { path, href: location.pathname + location.search, label: labelOf(path, main), node, rect: rectOf(main), scrolls });
+  snaps.set(path, { path, href: location.pathname + location.search, label: labelOf(path, main), node, rect: rectOf(main), scrolls, at: Date.now() });
   while (snaps.size > KEEP) snaps.delete(snaps.keys().next().value!);
 }
 
@@ -141,6 +141,11 @@ function flyer(root: HTMLElement, node: HTMLElement, at: Rect) {
   root.appendChild(f);
   return f;
 }
+/** "just now", "4 min ago", "2 h ago". */
+const ago = (t: number) => {
+  const m = Math.round((Date.now() - t) / 60000);
+  return m < 1 ? "just now" : m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`;
+};
 const toward = (from: Rect, at: Rect) => ({ x: from.left - at.left, y: from.top - at.top, scale: from.width / at.width });
 
 const OPEN = "overview:open";
@@ -148,7 +153,20 @@ const BOARD = "overview:board";
 
 /** One tab on a board of tabs: its picture (`copyOf`) at the size it is shown. */
 export type BoardTile = { key: string; label: string; node: HTMLElement; rect: Rect; scrolls?: Snap["scrolls"] };
-type BoardOpen = { title: string; tiles: BoardTile[]; cur: number; onPick: (key: string) => void };
+type BoardSet = { key: string; label: string; on: boolean };
+type BoardOpen = {
+  title: string;
+  tiles: BoardTile[];
+  /** The tab you are in, or -1 when the board shows another set than yours. */
+  cur: number;
+  onPick: (key: string) => void;
+  /** A switch in the heading (ATS | Headhunting); `onSet` swaps the tiles in place. */
+  sets?: BoardSet[];
+  onSet?: (key: string) => void;
+  tip?: string;
+  /** Swap the tiles of a board already open, without zooming again. */
+  replace?: boolean;
+};
 /** The same zoomed-out board for the tabs of one place - an opening's ATS or
  *  Headhunting tabs (owner, 18 Nov 2026: "inside the ATS show all the tabs of ATS,
  *  inside Headhunting all its tabs"). `cur` is the tab you are in; picking one calls
@@ -177,7 +195,7 @@ export function OverviewButton() {
   );
 }
 
-type State = { tiles: Tile[]; held: boolean; home: Rect; W: number; H: number; cur: number; title: string; board: boolean; onPick?: (key: string) => void };
+type State = { tiles: Tile[]; held: boolean; home: Rect; W: number; H: number; cur: number; title: string; board: boolean; onPick?: (key: string) => void; sets?: BoardSet[]; onSet?: (key: string) => void; tip?: string; swapped?: boolean };
 
 export default function Overview() {
   const path = usePathname();
@@ -236,7 +254,7 @@ export default function Overview() {
   };
 
   const showBoard = (d: BoardOpen) => {
-    if (live.current.open || leaving.current || !d.tiles[d.cur]) return;
+    if (leaving.current || !!live.current.open !== !!d.replace || (!d.replace && !d.tiles[d.cur])) return;
     const tiles: Tile[] = d.tiles.map((t) => ({
       path: t.key,
       href: "",
@@ -244,8 +262,22 @@ export default function Overview() {
       snap: { path: t.key, href: "", label: t.label, node: t.node, rect: t.rect, scrolls: t.scrolls ?? [] },
     }));
     mouse.current = "";
-    setSel(d.cur);
-    setOpen({ tiles, held: false, home: d.tiles[d.cur].rect, W: innerWidth, H: innerHeight, cur: d.cur, title: d.title, board: true, onPick: d.onPick });
+    setSel(Math.max(0, d.cur));
+    setOpen({
+      tiles,
+      held: false,
+      home: (d.tiles[d.cur] ?? d.tiles[0]).rect,
+      W: innerWidth,
+      H: innerHeight,
+      cur: d.cur,
+      title: d.title,
+      board: true,
+      onPick: d.onPick,
+      sets: d.sets,
+      onSet: d.onSet,
+      tip: d.tip,
+      swapped: d.replace,
+    });
   };
 
   // The keys and the button.
@@ -279,7 +311,7 @@ export default function Overview() {
         pick(selNow.current);
       } else if (e.key === "Escape") {
         e.preventDefault();
-        pick(o.cur);
+        leave(o);
       }
     };
     // Letting Alt go opens the one picked, as Alt + Tab does.
@@ -338,6 +370,18 @@ export default function Overview() {
     const labels = [...el.querySelectorAll<HTMLElement>("[data-tile-label]")];
     const back = el.querySelector("[data-backdrop]");
     const head = el.querySelector("[data-head]");
+    if (open.swapped || open.cur < 0) {
+      // The other set's tiles, swapped in place by the heading's switch: they settle in
+      // where they stand, no zoom (the board is already open).
+      gsap.set(ring.current, { ...ringBox(s0), opacity: 1, scale: 1 });
+      const tl = gsap.timeline();
+      tl.fromTo(tiles, { opacity: 0, scale: 0.96 }, { opacity: 1, scale: 1, duration: DUR.slow, ease: "power2.out", stagger: 0.04, clearProps: "transform" });
+      const done = setTimeout(() => tl.progress(1), 1500);
+      return () => {
+        clearTimeout(done);
+        tl.kill();
+      };
+    }
     // Where the page you are on lands: its picture's place in its tile.
     const slot0 = tiles[open.cur].querySelector<HTMLElement>("[data-slot]")!;
     const land = rectOf(slot0);
@@ -402,6 +446,15 @@ export default function Overview() {
     root.current.querySelectorAll<HTMLElement>("[data-tile]")[sel]?.focus({ preventScroll: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sel, open]);
+
+  /** Back where you were: into your tab, or - on another set's board, where your tab
+   *  is not a tile - the board simply closes over it. */
+  const leave = (o: State) => {
+    if (leaving.current) return;
+    if (o.cur >= 0) return pick(o.cur);
+    leaving.current = { to: "", moved: false, arrived: true };
+    finish();
+  };
 
   const finish = () => {
     const el = root.current;
@@ -507,13 +560,37 @@ export default function Overview() {
       aria-label={open.title}
       className="fixed inset-0 z-[90] overflow-hidden"
       onClick={(e) => {
-        if (e.target === e.currentTarget || (e.target as Element).hasAttribute("data-backdrop")) pick(open.cur);
+        if (e.target === e.currentTarget || (e.target as Element).hasAttribute("data-backdrop")) leave(open);
       }}
     >
       <div data-backdrop className="board absolute inset-0" />
       <div data-head className="pointer-events-none absolute inset-x-0 top-0 flex flex-col items-center gap-1 pt-[max(1.25rem,12px)] text-center">
-        <p className="text-h3 font-semibold text-ink">{open.title}</p>
-        <p className="text-caption text-ink-3 max-md:hidden">Click a page to open it · arrows move · Esc goes back</p>
+        <div className="flex max-w-[92vw] items-center gap-[max(0.9rem,10px)]">
+          <p className="truncate text-h3 font-semibold text-ink">{open.title}</p>
+          {open.sets && (
+            <div role="tablist" aria-label="Section" className="pointer-events-auto flex shrink-0 gap-1 rounded-pill bg-white p-1 shadow-float">
+              {open.sets.map((x) => (
+                <button
+                  key={x.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={x.on}
+                  data-still
+                  onClick={() => !x.on && !leaving.current && open.onSet?.(x.key)}
+                  className={
+                    "h-[max(2rem,28px)] rounded-pill px-[max(1rem,12px)] text-small transition-colors " +
+                    (x.on ? "bg-ink font-medium text-white" : "text-ink-2 hover:text-ink")
+                  }
+                >
+                  {x.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <p className="text-caption text-ink-3 max-md:hidden">
+          {open.tip ? `${open.tip} · Esc goes back` : "Click a page to open it · arrows move · Esc goes back"}
+        </p>
       </div>
       <div
         ref={ring}
@@ -557,6 +634,7 @@ export default function Overview() {
               }
             >
               <span className="truncate">{t.label}</span>
+              {!open.board && t.snap?.at && i !== open.cur && <span className="shrink-0 font-normal text-ink-3">· {ago(t.snap.at)}</span>}
               {i === open.cur && <span className="shrink-0 rounded-pill bg-brand-tint px-2.5 py-0.5 text-caption font-medium text-brand-strong">Now</span>}
             </span>
             <span className={clip ? "absolute inset-0 block overflow-hidden rounded-lg shadow-card" : "contents"}>
