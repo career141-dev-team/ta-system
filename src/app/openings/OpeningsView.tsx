@@ -169,7 +169,7 @@ export default function OpeningsView() {
                 {shown.length ? (
                   <div className="grid grid-cols-4 gap-[max(1.5rem,12px)] max-lg:grid-cols-2 max-sm:grid-cols-1">
                     {shown.map((o) => (
-                      <Card key={o.id} o={o} canBin={canBin(o)} armed={arming === o.id} onBin={() => bin(o)} onDisarm={() => setArming(null)} />
+                      <Card key={o.id} o={o} canBin={canBin(o)} armed={arming === o.id} onBin={() => bin(o)} onWeb={() => setRows((r) => r.map((x) => (x.id === o.id ? { ...x, website: !x.website } : x)))} onDisarm={() => setArming(null)} />
                     ))}
                   </div>
                 ) : (
@@ -218,7 +218,7 @@ export default function OpeningsView() {
 // ponytail: sample candidate count per opening, the backend sends the real one.
 const kept = (o: Opening) => 6 + ((o.id.length * 7 + o.days * 3) % 30);
 
-function Card({ o, canBin, armed, onBin, onDisarm }: { o: Opening; canBin: boolean; armed: boolean; onBin: () => void; onDisarm: () => void }) {
+function Card({ o, canBin, armed, onBin, onWeb, onDisarm }: { o: Opening; canBin: boolean; armed: boolean; onBin: () => void; onWeb: () => void; onDisarm: () => void }) {
   const l: List = inList(o, "unassigned") ? "unassigned" : o.status;
   const over = o.status === "active" && o.team.length > 0 && o.days > TARGET[o.priority];
   const right =
@@ -226,13 +226,14 @@ function Card({ o, canBin, armed, onBin, onDisarm }: { o: Opening; canBin: boole
   return (
     <Link
       // ponytail: every card opens the one opening built so far.
-      href="/openings/demo"
+      href={o.referee ? "/openings/demo?referee=1" : "/openings/demo"}
       prefetch={false}
       onMouseLeave={armed ? onDisarm : undefined}
       className="group relative flex h-[clamp(116px,15.5dvh,168px)] flex-col gap-[clamp(5px,0.95dvh,10px)] rounded-lg border border-border bg-surface px-[max(1.625rem,16px)] py-[clamp(12px,2dvh,22px)] transition-colors hover:border-border-strong hover:shadow-card"
     >
       <div className="flex items-center gap-2 text-small text-ink-3">
         <span className="truncate">{o.client}</span>
+        {o.referee && <span className="shrink-0 rounded-full bg-violet-soft px-2.5 py-0.5 text-caption font-medium text-violet">Referee</span>}
         <span className="ml-auto shrink-0 text-caption">P{o.priority}</span>
       </div>
       <p className="line-clamp-2 text-h3 font-medium text-ink">{o.title}</p>
@@ -242,6 +243,24 @@ function Card({ o, canBin, armed, onBin, onDisarm }: { o: Opening; canBin: boole
         <span className={"ml-auto truncate " + (over ? "text-danger" : "text-ink-3")} title={over ? "Past its target" : undefined}>
           {right}
         </span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={!!o.website}
+          aria-label={`Post ${o.title} on the website`}
+          title={o.website ? "On the website's job vacancies" : "Not on the website"}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onWeb();
+          }}
+          className="flex shrink-0 items-center gap-1.5 text-caption text-ink-3 hover:text-ink"
+        >
+          Website
+          <span className={"relative h-4.5 w-8 rounded-full transition-colors " + (o.website ? "bg-brand" : "bg-border-strong")}>
+            <span className={"absolute top-0.5 size-3.5 rounded-full bg-white transition-[left] " + (o.website ? "left-4" : "left-0.5")} />
+          </span>
+        </button>
       </div>
       {canBin && (
         <button
