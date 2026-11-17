@@ -1,9 +1,11 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useOpeningView, type WorkView } from "./view";
 import { warmPdf } from "./CvPages";
+import { DUR, EASE, gsap } from "@/lib/gsap";
 
 const ROW = "flex h-18.25 w-full items-center px-2 text-left text-row md:h-full ";
 const ON = "font-semibold text-brand";
@@ -28,11 +30,28 @@ export default function RowLink({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const { go } = useOpeningView();
+  const { go, view: shown, from } = useOpeningView();
+  const ref = useRef<HTMLButtonElement>(null);
+  // Back brings you to this page from the view you were in: its row comes into sight
+  // (a phone stacks Headhunting under ATS) and glows green for a moment, then settles
+  // back - no row stays green (owner, 12 Nov 2026).
+  const cameFrom = !!view && shown === "overview" && from === view;
+  useEffect(() => {
+    const el = ref.current;
+    if (!cameFrom || !el) return;
+    el.scrollIntoView({ block: "nearest" });
+    const tw = gsap.fromTo(
+      el,
+      { color: "var(--color-brand-strong)", fontWeight: 500 },
+      { color: "var(--color-ink-2)", fontWeight: 300, duration: DUR.slow, delay: 0.9, ease: EASE.out, clearProps: "color,fontWeight" },
+    );
+    return () => void tw.progress(1).kill();
+  }, [cameFrom]);
 
   if (view) {
     return (
       <button
+        ref={ref}
         type="button"
         onClick={() => go(view)}
         // Scoops opens on a CV: get pdf.js ready while the pointer is on its way.

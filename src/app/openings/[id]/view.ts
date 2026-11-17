@@ -44,6 +44,8 @@ export const isWorkView = (v: unknown): v is WorkView => typeof v === "string" &
 export const ViewContext = createContext<{
   view: View;
   go: (next: View) => void;
+  /** The view Back last left, so its row on the opening page can show where you were. */
+  from?: View;
 }>({
   view: "overview",
   go: () => {},

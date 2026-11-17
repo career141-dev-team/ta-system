@@ -63,9 +63,6 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
   // keeps it for as long as this opening is open.
   const [opened, setOpened] = useState<View[]>(["overview"]);
 
-  // Where the person has been, so Back is a normal back: to the screen they came from
-  // (owner, 17 Nov 2026: "Back needs to work like a normal back").
-  const trail = useRef<View[]>([]);
   const show = useCallback((next: View) => {
     current.current = next;
     setView(next);
@@ -75,22 +72,31 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
     (next: View) => {
       if (next === current.current) return;
       if (!CAN_SOURCE && setOf(next) === "hh") return;
-      trail.current.push(current.current);
       show(next);
     },
     [show],
   );
+  // Back always goes to the opening's own page, with both lists, ATS and Headhunting
+  // (owner, 18 Nov 2026: "When a user enters the ATS section and clicks the Back
+  // button, it should return to the main view, displaying both Head Hunting and ATS";
+  // the same for Headhunting). It replaces the 17 Nov trail, which took Pipeline ->
+  // Scoops -> Back to Pipeline. The set you came from is kept, so the views bar opens
+  // on it again, and its row shows where you were.
+  const [from, setFrom] = useState<View | undefined>(undefined);
   useEffect(() => {
     const back = () => {
-      if (current.current === "overview") return;
-      show(trail.current.pop() ?? "overview");
+      const left = current.current;
+      if (left === "overview") return;
+      keepSet(setOf(left));
+      setFrom(left);
+      show("overview");
     };
     window.addEventListener(SHOW_TABS, back);
     return () => window.removeEventListener(SHOW_TABS, back);
   }, [show]);
   // One value per view, so the rows and back buttons that only need `go` do not
   // re-render on every render of this screen.
-  const ctx = useMemo(() => ({ view, go }), [view, go]);
+  const ctx = useMemo(() => ({ view, go, from }), [view, go, from]);
 
   // Once the screen is idle, fetch the pieces that are not in the first download.
   useEffect(() => {
