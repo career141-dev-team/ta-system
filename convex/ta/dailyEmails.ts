@@ -37,6 +37,23 @@ async function workday(ctx: Ctx, user: Doc<"users">, jobId: Id<"jobs">) {
   return day?.date === workdayDate(Date.now()) && day.jobs.some(j => j.jobId === jobId) ? day : null;
 }
 
+/** "The candidate list changed" with the names (17 Nov): it named nobody, so a desk dropped out,
+ *  rejected and deleted the one candidate they had touched, again and again, while another blocked it. */
+async function listChanged(ctx: Ctx, onPage: readonly Id<"applications">[], ready: readonly Id<"applications">[]) {
+  const name = async (id: Id<"applications">) => {
+    const app = await ctx.db.get(id);
+    const person = app ? await ctx.db.get(app.candidateId) : null;
+    return person?.fullName?.trim() || "a candidate";
+  };
+  const say = async (ids: Id<"applications">[], what: string) =>
+    ids.length ? `${(await Promise.all(ids.map(name))).join(", ")} ${ids.length === 1 ? "is" : "are"} ${what}` : "";
+  const parts = [
+    await say(ready.filter(id => !onPage.includes(id)), "ready to send but not on your page"),
+    await say(onPage.filter(id => !ready.includes(id)), "on your page but no longer ready to send"),
+  ].filter(Boolean);
+  return `The candidate list changed${parts.length ? `: ${parts.join("; ")}` : ""}. Reload, review the updated list and send again.`;
+}
+
 export const saveAttachment = internalMutation({
   args: { actorId: v.string(), jobId: v.id("jobs"), applicationId: v.id("applications"), storageId: v.id("_storage"), name: v.string() },
   handler: async (ctx, args) => {
@@ -215,17 +232,16 @@ export const begin = internalMutation({
       const entry = day?.jobs.find(j => j.jobId === args.jobId);
       const currentWorkType = entry?.workType ?? "100%";
       const sessionStart = entry ? workSessionStart(entry) : null;
-      const eligible = apps.filter(a => inWorkLocation(a, locationId ?? "") && !sent.has(a._id) && (
-        args.submissionType === "eod"
-          ? isEodCandidateEligible({
-              stage: a.currentStage,
-              ownerTaId: a.ownerTaId,
-              isAddOn: a.isAddOn,
-              lastStageChangedAt: a.lastStageChangedAt,
-            }, { taId: worker(user) ? user._id : null, workType: currentWorkType, sessionStart, day: late ?? date })
-          : a.currentStage === "second_shortlist" && (!worker(user) || a.ownerTaId === user._id)
-      ));
-      if (!sameCandidateList(args.applicationIds, eligible.map(a => a._id))) throw new Error("The candidate list changed. Reload, review the updated list and send again.");
+      // Midday and EOD use the page's one rule (17 Nov). Midday used to take every unsent Director
+      // Review CV from any day while the page lists only today's, so one older CV - usually a missed
+      // end of day - refused every midday send for good, and no reload or drop-out could clear it.
+      const eligible = apps.filter(a => inWorkLocation(a, locationId ?? "") && !sent.has(a._id) && isEodCandidateEligible({
+        stage: a.currentStage,
+        ownerTaId: a.ownerTaId,
+        isAddOn: a.isAddOn,
+        lastStageChangedAt: a.lastStageChangedAt,
+      }, { taId: worker(user) ? user._id : null, workType: currentWorkType, sessionStart, day: late ?? date }));
+      if (!sameCandidateList(args.applicationIds, eligible.map(a => a._id))) throw new Error(await listChanged(ctx, args.applicationIds, eligible.map(a => a._id)));
       if (day && args.submissionType === "eod") {
         const blockers = setup!.eodChecks.filter(c => !["director_cv", "chatgpt", "midday_email"].includes(c.key.split(":")[0]) && c.status !== "complete" && !c.exception);
         if (blockers.length) throw new Error(`Complete Today's Checks: ${blockers.map(c => c.label).join("; ")}`);

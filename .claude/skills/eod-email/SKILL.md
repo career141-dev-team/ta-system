@@ -65,7 +65,7 @@ The shared actions module includes `addCandidateToJob`; destination shortlisting
 | `snapshot.rows` ids != `applicationIds` (set compare) | "The email preview does not match its candidate list. Reload before sending." |
 | empty subject / no To | "Add a subject and a recipient." |
 | Correction roster != parent roster or different order | "A correction must keep the original candidates and their order." |
-| Original: roster != recomputed eligible list (excludes apps already in a director round, in any accepted `dailyEmails`, wrong location; EOD uses `isEodCandidateEligible`; midday uses `currentStage === "second_shortlist"` + ownership for workers) | "The candidate list changed. Reload, review the updated list and send again." |
+| Original: roster != recomputed eligible list (excludes apps already in a director round, in any accepted `dailyEmails`, wrong location; midday and EOD both use `isEodCandidateEligible` (today, owner, Add-on rule) - midday used `second_shortlist` of any day until 17 Nov) | "The candidate list changed: <names> is ready to send but not on your page; <names> is on your page but no longer ready to send. Reload, review the updated list and send again." (`listChanged`, names from the candidate rows) |
 | Original EOD: `setup.eodChecks` not complete/excused, excluding keys `director_cv`, `chatgpt`, `midday_email` | "Complete Today's Checks: <labels>" |
 | `taWorkdayMail` receipts for the day in sending/uncertain/accepted-unfinalized (same or unknown location) | "An earlier email needs reconciliation before sending." |
 | Legacy original EOD receipt already accepted for the location | "The end-of-day email has already been sent today for this location." |
@@ -79,7 +79,7 @@ Order of work in `emailEod` matters: CV PDFs and the workbook are built **before
 - Trigger: Midday page `src/app/openings/[id]/midday/page.tsx` is a 8-line wrapper that calls `EodPage` with `mode:"midday"`. "Add midday email" button -> `addMiddayEmail` -> `ta/dailyEmails:createDraft` (needs workday + job on it, `dailySendProblem(emails,"midday",false)`, number = max midday number today in that location + 1, `revision:0`, `status:"draft"`, `expiresAt` +31 days) -> redirect to `/midday?mail=<id>&location=<id>`.
 - Drafts autosave: composer debounces 750 ms on input/change/click, posts `saveMiddayDraft` -> `ta/dailyEmails:saveDraft` (`revision` optimistic lock, 250,000-char JSON cap, only own draft/failed rows, only today's date). Fields whitelisted by regex `subject|introText|outroText|chatgptLink|extraTo|extraCc|removed|skipAttachments|shortlist_*|effort_*|target_*`, plus `baseSubject`, `base_effort_*`, `base_shortlist_<appId>_<key>` (so a later profile change wins over an older edit - `candidateDraftBases` in src/lib/eodDraft.ts).
 - Send: same `sendDailyEmail` path with `submissionType=midday`, `dailyDraftId`, `dailyDraftRevision`. Midday needs a confirmed ChatGPT share link but no completed tasks, no Today's Checks blockers, and may tick "Send without CV attachments" (`skipAttachments=yes`; honoured only when `type==="midday"`). Midday never gets the Excel workbook and tolerates per-CV preparation failures (`preparationFailures` ignored when `isMidday`).
-- Midday roster: remaining unsent Director Review (`second_shortlist`) candidates; sending them removes them from the later EOD (accepted emails' `applicationIds` count as sent). An empty midday is an activity summary. Midday emails never create a Director reply round beyond the `reviewRounds` row `finalizeDailyEmail` inserts when `applicationIds.length > 0` (`submissionType:"midday"` on the round).
+- Midday roster: the same list as the EOD page - this TA's unsent Director Review candidates moved there today (`isEodCandidateEligible`; older ones belong to a missed end of day); sending them removes them from the later EOD (accepted emails' `applicationIds` count as sent). An empty midday is an activity summary. Midday emails never create a Director reply round beyond the `reviewRounds` row `finalizeDailyEmail` inserts when `applicationIds.length > 0` (`submissionType:"midday"` on the round).
 - Requirement policy: `middayRequired(ctx,date)` (convex/lib/dailyEmail.ts) = a `dailyEmailPolicy` row `key:"midday"` exists and `date >= requiredFrom`. Only workers (`ta`,`ta_support`) are held to it. Activated by pipeline `ta/dailyEmails:enableRequirement` (`{"dryRun":true}` first; sets `requiredFrom` = next Colombo day; re-running keeps the saved date). Before activation midday is available, not compulsory. docs/MIDDAY-EMAILS.md has the release steps.
 - Sent midday emails are read-only (`saveDraft` refuses non-draft/failed).
 
@@ -244,7 +244,7 @@ Where to edit:
 |---|---|---|
 | Table 1/2 columns, wording, sign-off, referee block | `src/lib/eod-format.ts` (`SHORTLIST_COLUMNS`, `EFFORT_COLUMNS`, `eodEmailHtml`) | `ShortlistRow` type, `shortlistRowFor`/`shortlistRowsFromForm` in `src/lib/eod.ts`, `EodComposer` inputs, `eodDetailChanges`/`boxOverrides`, `normalizeRetention` rebuild, legacy `eodEmailCopies.rows` validator in schema if a legacy row gains a field, `docs/` text |
 | Effort column logic | `src/lib/eod.ts` (`effortRow`, `effortBucket`, `sentToDirectorToday`) | `tests/eodeffort.test.ts`; owner decides what is counted (desk rule 28 Sep) |
-| Who is eligible | `src/lib/eodEligibility.ts` only | `begin` and `shortlistRows` already share it; midday uses the inline `second_shortlist` test in `begin` - keep in sync if you change it |
+| Who is eligible | `src/lib/eodEligibility.ts` only | `begin` (midday and EOD) and `shortlistRows` share it |
 | Recipients | `EOD_TO`, `EOD_CC_DEFAULTS`, `eodRecipients` | page `fixedCc`/`toEmail`, composer chips; tell the owner |
 | New send guard | `ta/dailyEmails:begin` (authoritative) and `dailySendProblem`; mirror the message in `emailPreflight` and composer if the TA should see it earlier | `tests/dailyEmails.test.ts` |
 | Midday rules | `createDraft`, `saveDraft`, `middayRequired`, `enableRequirement` | `docs/MIDDAY-EMAILS.md` |
@@ -293,9 +293,11 @@ Short hashes from `git log`; dates are commit dates.
 - 2026-10-23 f3d57d6 - EOD can be sent without CVs (activity-only); c28e1b1 - referee calls section in the email (`refereeCalls` on snapshot, `eodEmailHtml`).
 - 2026-11-02 - nobody was told about end-of-day trouble: a stuck send now bells the admins and the job's lead (`eod_stuck`), a 17:30 reminder bells each TA with a 100% position still without an EOD (`eod_reminder`), an 18:30 digest bells each lead (`eod_lead_digest`), and an expired day bells the lead (`workday_expired`, see /workday). New `convex/ta/eodReminders.ts`, `src/lib/eodReminders.ts`.
 
+- 2026-11-17 - a midday email refused for good with "The candidate list changed": the page lists today's Director Review CVs, `begin` counted every unsent one of any day, so one older CV (a missed end of day) blocked every midday and the desk kept dropping out the wrong candidate. Midday now uses `isEodCandidateEligible` like the EOD, and the refusal names who differs (`listChanged`).
+
 <!-- skill-meta
-verified-commit: 481925a0
-verified-hash: a84d307fb101f9b2f815bf69fd6babe17f3e8004
+verified-commit: caf747b9
+verified-hash: a66dc569930c4335209f7828fb9a092719b2af71
 verified-date: 2026-11-17
 sources:
   src/app/openings/[id]/eod/page.tsx
