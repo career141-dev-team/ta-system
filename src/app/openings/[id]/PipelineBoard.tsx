@@ -753,7 +753,7 @@ export default function PipelineBoard() {
 
       {mode === "board" ? (
         // Columns side by side; the row scrolls sideways, each column scrolls itself.
-        <div ref={boardRow} data-board className="flex min-h-0 flex-1 gap-[max(1.75rem,18px)] overflow-x-auto [container-type:inline-size] px-[max(1.5rem,14px)] pb-2 [&::-webkit-scrollbar]:h-[10px] [&::-webkit-scrollbar-track]:mx-[max(1.5rem,14px)] [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-surface-2 [&::-webkit-scrollbar-thumb]:bg-ink-3 [&::-webkit-scrollbar-thumb:hover]:bg-ink-2">
+        <div ref={boardRow} data-board className="flex cursor-grab min-h-0 flex-1 gap-[max(1.75rem,18px)] overflow-x-auto [container-type:inline-size] px-[max(1.5rem,14px)] pb-2 [&::-webkit-scrollbar]:h-[10px] [&::-webkit-scrollbar-track]:mx-[max(1.5rem,14px)] [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-surface-2 [&::-webkit-scrollbar-thumb]:bg-ink-3 [&::-webkit-scrollbar-thumb:hover]:bg-ink-2">
           {columns.map(({ s, all, cards }) => (
             <section
               key={s.name}
@@ -1331,10 +1331,59 @@ function useBoardWheel(ref: RefObject<HTMLDivElement | null>, on: boolean) {
       settle = setTimeout(snap, 160);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
+    // Grab and drag the board sideways (owner, 17 Nov 2026: "we need click the pipeline
+    // and move"). A mouse press on anything that is not a card or a control pulls the
+    // board with the pointer; on release it settles on a column edge. Cards keep their
+    // own drag, touch keeps the finger's native scroll.
+    let pan: { x: number; left: number; moved: boolean; id: number } | null = null;
+    const onDown = (e: PointerEvent) => {
+      if (e.pointerType !== "mouse" || e.button !== 0) return;
+      if ((e.target as HTMLElement).closest("[data-card-id],button,a,input,textarea,select,[role=menu]")) return;
+      // A press on the scroll bar itself is the browser's to handle.
+      if (e.clientY > el.getBoundingClientRect().top + el.clientTop + el.clientHeight) return;
+      gsap.killTweensOf(el);
+      gliding = false;
+      pan = { x: e.clientX, left: el.scrollLeft, moved: false, id: e.pointerId };
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!pan || e.pointerId !== pan.id) return;
+      const dx = e.clientX - pan.x;
+      if (!pan.moved && Math.abs(dx) < 4) return;
+      if (!pan.moved) {
+        pan.moved = true;
+        try {
+          el.setPointerCapture(e.pointerId);
+        } catch {
+          // The pointer is already gone; the move still applies.
+        }
+        el.style.cursor = "grabbing";
+        el.style.userSelect = "none";
+      }
+      el.scrollLeft = pan.left - dx;
+    };
+    const onUp = (e: PointerEvent) => {
+      if (!pan || e.pointerId !== pan.id) return;
+      const moved = pan.moved;
+      pan = null;
+      el.style.cursor = "";
+      el.style.userSelect = "";
+      if (!moved) return;
+      if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+      target = el.scrollLeft;
+      snap();
+    };
+    el.addEventListener("pointerdown", onDown);
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerup", onUp);
+    el.addEventListener("pointercancel", onUp);
     return () => {
       clearTimeout(settle);
       gsap.killTweensOf(el);
       el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("pointerdown", onDown);
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointercancel", onUp);
     };
   }, [ref, on]);
 }
