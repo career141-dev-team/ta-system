@@ -5260,7 +5260,7 @@ async function emailEod(input: {
 
   let result:
     | { ok: true; from: string; to: string; alsoTo?: string[]; cc: string[]; note: string }
-    | { ok: false; error: string };
+    | { ok: false; error: string; maybeSent?: boolean };
   let workdayMailId: string | null = null;
   let dailyEmailId: string | undefined;
   // False while the reservation is still being made: a refusal there means nothing went out.
@@ -5309,7 +5309,7 @@ async function emailEod(input: {
     if (input.daily) return { ok: false, error: reachedSender ? UNCERTAIN_SEND_MESSAGE : backendMessage(e, "Nothing was sent. Reload the page and try again."), plain: true };
     return { ok: false, error: backendMessage(e, "The email could not be sent.") };
   }
-  if (!result.ok) return input.daily ? { ok: false, error: plainSendFailure(result.error).message, plain: true } : { ok: false, error: result.error };
+  if (!result.ok) return input.daily ? { ok: false, error: plainSendFailure(result.error, result.maybeSent ?? false).message, plain: true } : { ok: false, error: result.error };
   // Everyone it actually went to: the added To were left out of this line, so
   // it read as if only the first address got the email (1 Oct).
   const sentTo = [result.to, ...(result.alsoTo ?? [])].join(", ");
