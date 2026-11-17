@@ -40,6 +40,18 @@ const StrategiesView = dynamic(() => import("./StrategiesView"));
  *  view replaces it full-window, with the top bar and title row out of the way. */
 /** Every view in the bottom bar's order: the side a view slides in from. */
 const ORDER: View[] = ["overview", ...VIEW_TABS.map(([k]) => k), ...HH_VIEWS.map(([k]) => k)];
+/** The address with `v` as its ?view= (none for the tab list). */
+function addressFor(v: View) {
+  const u = new URL(window.location.href);
+  if (v === "overview") u.searchParams.delete("view");
+  else u.searchParams.set("view", v);
+  return u.pathname + u.search + u.hash;
+}
+/** The work view an address names, if it names a real one. */
+function viewIn(search: string): View | null {
+  const v = new URLSearchParams(search).get("view") as View | null;
+  return v && v !== "overview" && ORDER.includes(v) ? v : null;
+}
 /** The parts of a view that flow in after it arrives. */
 const PARTS = "[data-col], section, article, li, tr, form, aside, [role=row], [role=tablist]";
 const STILL = "[data-card-id], [data-card-id] *, [data-still], [data-still] *";
@@ -68,10 +80,23 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
     setView(next);
     setOpened((o) => (o.includes(next) ? o : [...o, next]));
   }, []);
+  // The view is in the address (?view=pipeline), so the browser's own Back - its
+  // button, the mouse's back key, Alt+Left - also returns to the tab list instead of
+  // leaving the opening (owner, 18 Nov 2026: "When they click Back inside ATS, they
+  // should return to the Pipeline overview... never reset"). Before, a view never
+  // touched the address, so the browser's Back skipped the tab list and left the
+  // opening entirely. Opening a view from the list adds one step; moving between views
+  // replaces it, so Back is always one step to the list. A refresh keeps the view.
+  const pushed = useRef(false);
   const go = useCallback(
     (next: View) => {
       if (next === current.current) return;
       if (!CAN_SOURCE && setOf(next) === "hh") return;
+      if (next === "overview") return void window.dispatchEvent(new Event(SHOW_TABS));
+      if (current.current === "overview") {
+        window.history.pushState(window.history.state, "", addressFor(next));
+        pushed.current = true;
+      } else window.history.replaceState(window.history.state, "", addressFor(next));
       show(next);
     },
     [show],
@@ -84,15 +109,49 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
   // on it again, and its row shows where you were.
   const [from, setFrom] = useState<View | undefined>(undefined);
   useEffect(() => {
-    const back = () => {
+    const toList = () => {
       const left = current.current;
       if (left === "overview") return;
       keepSet(setOf(left));
       setFrom(left);
       show("overview");
     };
+    // The Back buttons: the browser's Back when the view added a step (the address
+    // and history stay true), else straight to the list.
+    const back = () => {
+      if (current.current === "overview") return;
+      if (pushed.current) {
+        pushed.current = false;
+        window.history.back();
+      } else {
+        window.history.replaceState(window.history.state, "", addressFor("overview"));
+        toList();
+      }
+    };
+    // The browser's Back / Forward: show what the address says.
+    const pop = () => {
+      const v = viewIn(location.search);
+      if (!v) {
+        pushed.current = false;
+        toList();
+      } else if (v !== current.current && (CAN_SOURCE || setOf(v) !== "hh")) show(v);
+    };
+    // Opened with ?view= (a refresh, a shared link): that view, with the list one Back away.
+    const first = viewIn(location.search);
+    if (first && (CAN_SOURCE || setOf(first) !== "hh")) {
+      const here = location.pathname + location.search + location.hash;
+      window.history.replaceState(window.history.state, "", addressFor("overview"));
+      window.history.pushState(window.history.state, "", here);
+      pushed.current = true;
+      // After the page has taken over, like any other switch.
+      queueMicrotask(() => show(first));
+    }
     window.addEventListener(SHOW_TABS, back);
-    return () => window.removeEventListener(SHOW_TABS, back);
+    window.addEventListener("popstate", pop);
+    return () => {
+      window.removeEventListener(SHOW_TABS, back);
+      window.removeEventListener("popstate", pop);
+    };
   }, [show]);
   // One value per view, so the rows and back buttons that only need `go` do not
   // re-render on every render of this screen.
