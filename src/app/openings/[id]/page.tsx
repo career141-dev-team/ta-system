@@ -2,7 +2,6 @@ import RowLink from "./RowLink";
 import PillMenu, { type MenuOption } from "./PillMenu";
 import Notch from "./Notch";
 import OpeningView from "./OpeningView";
-import OverviewCharts, { DEMO_NUMBERS } from "./OverviewCharts";
 import type { WorkView } from "./view";
 import { CAN_SOURCE } from "@/lib/user";
 import RefereeBadge from "./RefereeBadge";
@@ -144,12 +143,9 @@ export default async function OpeningPage({ params }: PageProps<"/openings/[id]"
         </div>
       </div>
 
-      {/* The lists keep their size (owner, 17 Nov 2026: the numbers cards must not make
-          the top tab smaller): they take the height they had beside the old slim strip,
-          up to the design's 706px, and the page scrolls to the numbers cards under
-          them. Not positioned, so the Status / Stage menus above open over it. */}
-      <div className="mt-12.5 flex flex-col md:min-h-0 md:flex-1 md:overflow-y-auto md:overscroll-contain">
-      <div className="relative grid rounded-lg bg-white max-md:flex-none md:h-[calc(100%-5.75rem)] md:max-h-[44.125rem] md:min-h-[17rem] md:flex-none md:grid-cols-2">
+      {/* The lists fill the card again (owner, 18 Nov 2026: the numbers cards under
+          them removed). */}
+      <div className="relative mt-12.5 grid min-h-0 flex-1 rounded-lg bg-white max-md:flex-none md:max-h-[44.125rem] md:grid-cols-2">
         <Column name="ATS" items={ATS} base={base} first inPlace />
         {CAN_SOURCE && <Column name="Headhunting" items={HEADHUNTING} base={base} inPlace />}
         {CAN_SOURCE && (
@@ -158,8 +154,6 @@ export default async function OpeningPage({ params }: PageProps<"/openings/[id]"
             className="absolute bottom-11.25 left-1/2 top-6.5 hidden w-px bg-border md:block"
           />
         )}
-      </div>
-      <OverviewCharts data={DEMO_NUMBERS} />
       </div>
         </>
       }
