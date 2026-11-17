@@ -384,6 +384,7 @@ export default function NewOpening({
                   </label>
                 </Field>
                 <Field label="Referee opening">
+                  
                   <label className="mt-1 flex cursor-pointer items-center gap-3 text-body text-ink">
                     <input type="checkbox" checked={r.referee} onChange={(e) => set({ referee: e.target.checked })} className="peer sr-only" />
                     <span
