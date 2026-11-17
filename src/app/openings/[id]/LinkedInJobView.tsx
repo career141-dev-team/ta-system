@@ -178,6 +178,9 @@ export default function LinkedInJobView() {
   const [readingOpen, setReadingOpen] = useState(false);
   const cvBox = useRef<HTMLDivElement>(null);
   const readingShown = useExit(readingOpen, cvBox, FADE_OUT);
+  // The CV grows out of the applicant's row it was opened from (CvPreview `from`).
+  const [cvFrom, setCvFrom] = useState<HTMLElement | null>(null);
+  const [cvN, setCvN] = useState(0);
 
   const all = chosen === ALL;
   const post = all ? undefined : (posts.find((p) => p.id === chosen) ?? posts[0]);
@@ -430,9 +433,11 @@ export default function LinkedInJobView() {
                 {/* The name opens the CV, with Download in its corner. */}
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={(e) => {
+                    setCvFrom(e.currentTarget.closest<HTMLElement>("li, article") ?? e.currentTarget);
                     setReading(a);
                     setReadingOpen(true);
+                    setCvN((n) => n + 1);
                   }}
                   title="Read the CV"
                   className="flex min-w-0 flex-col gap-0.5 text-left max-md:flex-1 md:w-[max(16.25rem,170px)] md:shrink-0"
@@ -487,7 +492,7 @@ export default function LinkedInJobView() {
       </div>
 
       {notice && <Toast key={notice.n} bold={notice.bold} rest={notice.rest} warn={notice.warn} />}
-      {readingShown && reading && <CvPreview ref={cvBox} name={reading.name} title={reading.title} src={reading.cv} onClose={() => setReadingOpen(false)} />}
+      {readingShown && reading && <CvPreview key={cvN} ref={cvBox} from={cvFrom} name={reading.name} title={reading.title} src={reading.cv} onClose={() => setReadingOpen(false)} />}
       {dialogShown && editing && <PostDialog ref={dialog} post={editing === "new" ? null : editing} titles={allPosts.filter((p) => editing === "new" || p.id !== editing.id).map((p) => p.title.toLowerCase())} onClose={() => setDialogOpen(false)} onSave={savePost} />}
       {askShown && ask && (
         <MoveForm

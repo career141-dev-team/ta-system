@@ -119,7 +119,6 @@ export default function CvPreview({
   // on the board itself, not a backdrop-filter re-blurring the whole screen every
   // frame; and the PDF is not drawn until the frame has finished growing.
   const enter = useRef<gsap.core.Timeline | null>(null);
-  const [grown, setGrown] = useState(!from);
   const shownCard = () => (from && from.getClientRects().length ? from : null);
   /** The board the card sits on: it is the "camera" that zooms. */
   const boardOf = (card: HTMLElement) => card.closest<HTMLElement>("[data-panel]");
@@ -140,13 +139,31 @@ export default function CvPreview({
       borderBottomLeftRadius: s.borderBottomLeftRadius,
     };
   };
-  const newGhost = () => {
-    const g = document.createElement("div");
+  /** The growing box is a copy of the card itself - its name and details showing - so
+   *  the grow starts from the card the person pressed, not from a blank box (owner,
+   *  17 Nov 2026). Ids and card markers are stripped so nothing finds the copy. */
+  const newGhost = (card: HTMLElement) => {
+    const g = card.cloneNode(true) as HTMLElement;
+    for (const el of [g, ...g.querySelectorAll<HTMLElement>("*")]) {
+      el.removeAttribute("id");
+      el.removeAttribute("data-card-id");
+      el.removeAttribute("data-panel");
+    }
+    // A copied canvas comes out blank: paint each drawn CV page onto its copy, so a
+    // grow from a small CV (Scoops, Database CVs) starts from that CV, not white boxes.
+    const drawn = card.querySelectorAll("canvas");
+    g.querySelectorAll("canvas").forEach((c, i) => {
+      if (drawn[i]?.width) c.getContext("2d")?.drawImage(drawn[i], 0, 0);
+    });
     g.setAttribute("aria-hidden", "true");
-    g.style.cssText = "position:fixed;pointer-events:none;will-change:left,top,width,height";
+    g.setAttribute("inert", "");
+    g.style.cssText =
+      "position:fixed;margin:0;box-sizing:border-box;overflow:hidden;pointer-events:none;transform:none;opacity:1;will-change:left,top,width,height";
     root.current!.appendChild(g);
     return g;
   };
+  /** What fades inside the copy: its own details. */
+  const detailsOf = (g: HTMLElement) => [...g.children];
 
   useGSAP(
     () => {
@@ -162,7 +179,8 @@ export default function CvPreview({
       const doc = root.current!.querySelectorAll("[data-doc] > *");
       const board = boardOf(card);
       const c = card.getBoundingClientRect();
-      const ghost = newGhost();
+      const ghost = newGhost(card);
+      const details = detailsOf(ghost);
       // Start states first (a timeline's first tick comes a frame late).
       gsap.set(ghost, shapeOf(card));
       gsap.set(frame, { opacity: 0 });
@@ -180,16 +198,16 @@ export default function CvPreview({
         .to(board, { ...BOARD_AWAY, duration: GROW, ease: GROW_EASE }, 0)
         .to("[data-veil]", { opacity: 1, duration: GROW, ease: GROW_EASE }, 0)
         .to(ghost, { ...shapeOf(frame), duration: GROW, ease: GROW_EASE }, 0)
-        // Grown: the real frame takes the shape's place, exactly where it stands.
-        .set(frame, { opacity: 1 }, GROW)
+        // The card's details melt away as it starts to grow.
+        .to(details, { opacity: 0, filter: "blur(6px)", duration: GROW * 0.4, ease: EASE.in }, 0)
+        // Landing: the real frame, its CV already drawn, fades in over the copy - the
+        // CV arrives with the grow, never after an empty dark box.
+        .to(frame, { opacity: 1, duration: LAND, ease: "none" }, GROW - LAND)
         .set(ghost, { display: "none" }, GROW)
-        // Then what is inside comes into focus, one part after another.
-        .to(inside, { opacity: 1, filter: "blur(0px)", duration: 0.35, stagger: 0.07, ease: EASE.out, clearProps: "filter" }, GROW - 0.05)
-        .to(doc, { opacity: 1, filter: "blur(0px)", duration: 0.35, stagger: 0.06, ease: EASE.out, clearProps: "filter" }, GROW + 0.05);
-      // The PDF is drawn once the frame is open, so the grow never waits on it.
-      const t = setTimeout(() => setGrown(true), GROW * 1000);
+        // What is inside comes into focus as it lands, one part after another.
+        .to(inside, { opacity: 1, filter: "blur(0px)", duration: 0.3, stagger: 0.05, ease: EASE.out, clearProps: "filter" }, GROW - LAND)
+        .to(doc, { opacity: 1, filter: "blur(0px)", duration: 0.3, stagger: 0.04, ease: EASE.out, clearProps: "filter" }, GROW - LAND);
       return () => {
-        clearTimeout(t);
         ghost.remove();
         // The close hands over on a timer, which can beat the tween's last frame:
         // leave the board and the card exactly as they were, whatever ran last.
@@ -215,9 +233,11 @@ export default function CvPreview({
     gsap.getTweensOf(frame).forEach((t) => t.progress(1)); // a full-view glide still running
     const inside = [...frame.children, ...root.current!.querySelectorAll("[data-aura-button]")];
     const board = boardOf(card);
-    const ghost = newGhost();
+    const ghost = newGhost(card);
+    const details = detailsOf(ghost);
     const out = 0.14;
     gsap.set(ghost, { ...shapeOf(frame), opacity: 0 });
+    gsap.set(details, { opacity: 0, filter: "blur(6px)" });
     gsap
       .timeline()
       .to(inside, { opacity: 0, filter: "blur(8px)", duration: out, ease: EASE.in }, 0)
@@ -225,6 +245,8 @@ export default function CvPreview({
       .set(ghost, { opacity: 1 }, out)
       .set(frame, { opacity: 0 }, out)
       .to(ghost, { ...shapeOf(card), duration: GROW, ease: GROW_EASE }, out)
+      // Nearly home, the card's details come back into focus on it.
+      .to(details, { opacity: 1, filter: "blur(0px)", duration: GROW * 0.45, ease: EASE.out }, out + GROW * 0.55)
       .to("[data-veil]", { opacity: 0, duration: GROW, ease: GROW_EASE }, out)
       // One move out, straight from the zoom back to its place, as the shape shrinks.
       .to(board, { ...BOARD_HOME, duration: GROW, ease: GROW_EASE, clearProps: "transform,transformOrigin,filter,opacity,willChange" }, out)
@@ -324,7 +346,9 @@ export default function CvPreview({
         <div className="relative flex min-h-0 flex-1 flex-col">
         {src ? (
           <div className="min-h-0 flex-1 overflow-hidden rounded-t-[2.6rem] bg-ink max-md:rounded-t-md">
-            {grown && <CvPages key={src} src={src} fit="width" overlay={box && <GreenBox box={box} setBox={setBox} />} />}
+            {/* Drawn from the click (owner, 17 Nov 2026: no empty dark box first), so it
+                is ready as the frame lands. */}
+            <CvPages key={src} src={src} fit="width" overlay={box && <GreenBox box={box} setBox={setBox} />} />
           </div>
         ) : (
         <div className="min-h-0 flex-1 overflow-y-auto pr-[3%] [scrollbar-color:#fff_transparent]">
@@ -420,6 +444,8 @@ const NO_DETAILS: BoxContent = { notes: [] };
 /** The grow from a card (seconds), its curve, and where the board goes meanwhile:
  *  it zooms toward you, goes soft and fades back, as the video's diagram does. */
 const GROW = 0.55;
+/** The last stretch of the grow, where the frame fades in over the growing copy. */
+const LAND = 0.18;
 const GROW_EASE = "power3.inOut";
 // Owner, 17 Nov 2026: the board must zoom in and out more (1.06 was too little), stay
 // zoomed while the CV is open, and stay visible beside it under the dotted veil.

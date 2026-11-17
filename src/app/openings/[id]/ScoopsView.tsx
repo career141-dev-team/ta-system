@@ -126,6 +126,15 @@ export default function ScoopsView() {
   const [readingOpen, setReadingOpen] = useState(false);
   const cvBox = useRef<HTMLDivElement>(null);
   const readingShown = useExit(readingOpen, cvBox, { opacity: 0 });
+  // The big CV grows out of the small one it was opened from (CvPreview `from`).
+  const [cvFrom, setCvFrom] = useState<HTMLElement | null>(null);
+  const [cvN, setCvN] = useState(0);
+  const openBig = (s: NonNullable<typeof current>, from: Element | null) => {
+    setCvFrom(from as HTMLElement | null);
+    setReading(s);
+    setReadingOpen(true);
+    setCvN((n) => n + 1);
+  };
   // Scoops just deleted, kept for Undo a few seconds, with where each stood.
   const [removed, setRemoved] = useState<{ s: Scoop; at: number }[] | null>(null);
   useEffect(() => {
@@ -622,7 +631,7 @@ export default function ScoopsView() {
                     12 Nov 2026). Double-click opens it big. */}
                 <div
                   data-scoop-cv
-                  onDoubleClick={() => (setReading(current), setReadingOpen(true))}
+                  onDoubleClick={(e) => openBig(current, e.currentTarget)}
                   title="Double-click to open this CV big"
                   className="min-h-0 flex-1 overflow-hidden p-[max(0.9rem,8px)]"
                 >
@@ -631,7 +640,7 @@ export default function ScoopsView() {
                 <div className="flex items-center gap-[max(0.9rem,8px)] border-t border-border bg-surface px-[max(1.1rem,10px)] py-[max(0.65rem,7px)]">
                   <button
                     type="button"
-                    onClick={() => (setReading(current), setReadingOpen(true))}
+                    onClick={(e) => openBig(current, e.currentTarget.closest("section")?.querySelector("[data-scoop-cv]") ?? null)}
                     className="flex h-[max(2.4rem,32px)] shrink-0 items-center gap-2 rounded-full border border-border bg-surface px-[max(1rem,11px)] text-[max(0.85rem,12px)] text-ink transition-colors hover:bg-surface-2"
                   >
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-[1.1em]" aria-hidden="true">
@@ -681,7 +690,7 @@ export default function ScoopsView() {
         </div>
       )}
       {notice && <Toast key={notice.n} bold={notice.bold} rest={notice.rest} warn={notice.warn} />}
-      {readingShown && reading && <CvPreview ref={cvBox} name={reading.name} title={reading.title} src={reading.cv} onClose={() => setReadingOpen(false)} />}
+      {readingShown && reading && <CvPreview key={cvN} ref={cvBox} from={cvFrom} name={reading.name} title={reading.title} src={reading.cv} onClose={() => setReadingOpen(false)} />}
     </div>
   );
 }

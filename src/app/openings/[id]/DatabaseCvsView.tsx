@@ -88,6 +88,12 @@ export default function DatabaseCvsView() {
   const [pickedId, setPickedId] = useState(rows[0]?.id ?? "");
   const [matching, setMatching] = useState(false);
   const [big, setBig] = useState(false);
+  // The big CV grows out of the CV pane it was opened from (CvPreview `from`).
+  const [bigFrom, setBigFrom] = useState<HTMLElement | null>(null);
+  const openBig = () => {
+    setBigFrom(cv.current?.closest("section") ?? null);
+    setBig(true);
+  };
   const [ranAgo, setRanAgo] = useState("4 min ago");
   const [toast, setToast] = useState<{ bold?: string; rest: string; warn?: boolean; n: number } | null>(null);
   // ponytail: sample set number; the backend gives the real next set.
@@ -293,7 +299,7 @@ export default function DatabaseCvsView() {
               {picked.cv && (
                 <button
                   type="button"
-                  onClick={() => setBig(true)}
+                  onClick={() => openBig()}
                   aria-label="Open this CV big"
                   title="Open this CV big (or double-click it)"
                   className="absolute right-3 top-3 z-10 flex size-[max(2.2rem,30px)] items-center justify-center rounded-full bg-surface text-ink shadow-float hover:bg-surface-2"
@@ -303,7 +309,7 @@ export default function DatabaseCvsView() {
                   </svg>
                 </button>
               )}
-              <div ref={cv} onDoubleClick={() => picked.cv && setBig(true)} className="min-h-0 flex-1 overflow-y-auto px-[max(1.25rem,12px)] pb-[max(5.5rem,70px)] pt-[max(1.25rem,12px)]">
+              <div ref={cv} onDoubleClick={() => picked.cv && openBig()} className="min-h-0 flex-1 overflow-y-auto px-[max(1.25rem,12px)] pb-[max(5.5rem,70px)] pt-[max(1.25rem,12px)]">
                 {picked.cv ? (
                   <CvPages key={picked.cv} src={picked.cv} fit="width" />
                 ) : (
@@ -345,7 +351,7 @@ export default function DatabaseCvsView() {
         </section>
       </div>
       {big && picked?.cv && (
-        <CvPreview name={picked.name} title={`${picked.title} · ${picked.company}`} src={picked.cv} onClose={() => setBig(false)} />
+        <CvPreview from={bigFrom} name={picked.name} title={`${picked.title} · ${picked.company}`} src={picked.cv} onClose={() => setBig(false)} />
       )}
       {undo && (
         <div role="status" className="fixed bottom-[max(4rem,48px)] left-1/2 z-[90] flex max-w-[calc(100vw-24px)] -translate-x-1/2 items-center gap-3 rounded-full bg-ink px-[max(1.3rem,14px)] py-[max(0.7rem,8px)] text-[max(0.85rem,12.5px)] text-white shadow-float">
