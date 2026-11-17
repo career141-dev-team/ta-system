@@ -9,9 +9,10 @@ const ROW = "flex h-18.25 w-full items-center px-2 text-left text-row md:h-full 
 const ON = "font-semibold text-brand";
 // Green only under the pointer (or keyboard focus), on every row of both columns -
 // no row starts green (owner, 12 Nov 2026: "no need to initially show the pipeline
-// as a green colour... if I hover over any links... that need to be green").
+// as a green colour... if I hover over any links... that need to be green"; 17 Nov:
+// "more darker green" - the strong brand green).
 const OFF =
-  "font-light text-ink-2 transition-[color,translate] hover:translate-x-1 hover:text-brand focus-visible:text-brand";
+  "font-light text-ink-2 transition-[color,translate] hover:translate-x-1 hover:text-brand-strong focus-visible:text-brand-strong";
 
 /** A row of the opening card. An ATS row (`view`) opens its work view in place,
  *  without leaving the page; a Headhunting row is still a link, green while its
