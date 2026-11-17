@@ -169,7 +169,10 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
       const stage = stageRef.current;
       if (left === "overview" || !stage) return;
       const rows = setOf(left) === "hh" ? HH_ROWS : ATS_ROWS;
-      const keys = rows.some(([, v]) => v === left) ? rows.map(([, v]) => v) : [left, ...rows.map(([, v]) => v)];
+      // Headhunting's board starts with its Overview (owner, 18 Nov 2026: "when they
+      // come back it misses the overview"); its list on the opening page does not have it.
+      const set: View[] = [...(setOf(left) === "hh" ? (["hh-overview"] as View[]) : []), ...rows.map(([, v]) => v)];
+      const keys = set.includes(left) ? set : [left, ...set];
       setOpened((o) => [...o, ...keys.filter((k) => !o.includes(k))]);
       // The pictures wait until every tab has drawn - a view opening for the first time
       // shows its loading skeleton while its code arrives - for at most 1.2 s.
@@ -213,7 +216,7 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
     if (view === "overview") return;
     const rows = setOf(view) === "hh" ? HH_ROWS : ATS_ROWS;
     // And where the ATS | Headhunting switch would land, so switching is instant too.
-    const keys: View[] = [...rows.map(([, v]) => v), landingOf(setOf(view) === "hh" ? "ats" : "hh")].filter((v) => CAN_SOURCE || setOf(v) !== "hh");
+    const keys: View[] = [...rows.map(([, v]) => v), "hh-overview" as View, landingOf(setOf(view) === "hh" ? "ats" : "hh")].filter((v) => CAN_SOURCE || setOf(v) !== "hh");
     const idle = window.requestIdleCallback?.bind(window) ?? ((f: () => void) => window.setTimeout(f, 600));
     const cancel = window.cancelIdleCallback?.bind(window) ?? window.clearTimeout;
     const id = idle(() => setOpened((o) => (keys.every((v) => o.includes(v)) ? o : [...o, ...keys.filter((v) => !o.includes(v))])));
