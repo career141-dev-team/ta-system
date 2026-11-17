@@ -5,6 +5,7 @@ import { repo } from "@/data/store";
 import { getCurrentUser } from "@/lib/session";
 import { allows, can, isDeskWide, isReadOnly, isTa, seesEveryTaRow, type Capability } from "@/lib/auth";
 import { otherHolders, rowCountsFor } from "@/lib/sharedLinks";
+import { scrapeLinkedinProfile } from "@/lib/apifyProfile";
 import { readWorkCountry } from "@/lib/countries";
 import { BIN_DAYS, BIN_MS, purgeDateLabel } from "@/lib/bin";
 import { WEBSITE_POSTERS_KEY, canPostToWebsite, parseWebsitePosters, websiteRefusal } from "@/lib/websiteJobs";
@@ -591,6 +592,41 @@ export async function addLink(formData: FormData) {
       (leadNote ? " Your note is on the row." : "") +
       alsoHeldLine(otherHolders(repo.linksByUrl(openingId, key), user, deskWide)),
   );
+}
+
+/**
+ * "Extract with AI" (the box's second button, or a row's own): the profile is
+ * added to the table if it is not there, then read by Apify and stored as the
+ * row's capture - the same shape the Chrome extension writes. Fills blanks
+ * only; a name, title or company a TA typed is never overwritten.
+ */
+export async function extractLinkProfile(formData: FormData) {
+  const openingId = String(formData.get("openingId"));
+  await primeStore({ openingId });
+  const user = await authorize(formData, "opening.sourcing", { opening: "openingId" });
+  const profile = profileLink(String(formData.get("url") ?? "").trim());
+  if (!profile) await fail("That is not a LinkedIn profile link. It should look like linkedin.com/in/their-name.");
+  const { url, key, guessedName } = profile!;
+  const row = repo.findLinkByUrl(openingId, key, rowCountsFor(user, deskWideCheck()));
+  // Checked before the paid read, so a refusal costs nothing.
+  const location = row ? undefined : requireWorkLocation(repo.opening(openingId)!, String(formData.get("workLocationId") ?? ""));
+  // Read first: a refusal or timeout must not leave an empty row behind.
+  let capture;
+  try {
+    capture = await scrapeLinkedinProfile(url, user.id);
+  } catch (e) {
+    await fail(e instanceof Error ? e.message : "Could not read that profile.");
+  }
+  const id = row?.id ?? repo.addLink(openingId, url, user.id, capture!.fullName ?? guessedName, "shortlisted", location?.id, Number(formData.get("level")) || undefined);
+  repo.updateLink(id, {
+    name: row?.name ?? capture!.fullName,
+    title: row?.title ?? capture!.currentTitle ?? capture!.headline,
+    company: row?.company ?? capture!.currentCompany,
+    capture,
+  });
+  if (!row) await matchLink(id, user.id);
+  revalidateLinks(openingId);
+  await done(`Read ${capture!.fullName}'s profile${row ? "" : " and saved them to Excel Tables as Shortlisted"}. Press See details on their row.`);
 }
 
 /** Most rows one paste adds: the lot is saved as one transaction. */
@@ -5720,6 +5756,10 @@ export async function createOpeningStep1Inline(_: ActionResult | null, formData:
 
 export async function addLinkInline(_: ActionResult | null, formData: FormData) {
   return inline(() => addLink(formData));
+}
+
+export async function extractLinkProfileInline(_: ActionResult | null, formData: FormData) {
+  return inline(() => extractLinkProfile(formData));
 }
 
 export async function addLinksBulkInline(_: ActionResult | null, formData: FormData) {

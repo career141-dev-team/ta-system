@@ -40,6 +40,9 @@ Trigger: `AddLinkForm` (src/components/AddLinkForm.tsx) via `addLinkInline`. Act
 6. `repo.addLink(openingId, url, userId, name, "shortlisted", locationId, level)`: id `lv_*`, `sourcingChannel: "L"`, `outcome: "shortlisted"` (21 Sep: "Not contacted" made saved profiles look untouched), `isAddOn: true` when `repo.workingStage(opening,user) === "Add-on"`. Level: chosen L if it is one of the TA's live levels, else `latestLinkLevel`, else it starts a new L automatically (15 Oct - TAs pasted into All before noticing the +). A single non-archived work location is applied automatically.
 7. `matchLink(id, user.id)` (src/lib/cvMatch.ts) then `heldLine` message. Final message ends with `alsoHeldLine(otherHolders(...))` ("X also has them in their table - whoever shortlists them first works them.").
 
+### Flow 2b - Extract with AI / See details
+Second button in `AddLinkForm` (`extractLinkProfileInline` -> `extractLinkProfile`, actions.ts). Same url box; finds the TA's row by url or adds it as Shortlisted, then `scrapeLinkedinProfile` (src/lib/apifyProfile.ts) runs Apify actor `harvestapi~linkedin-profile-scraper` (run-sync, 90 s, env `APIFY_API_TOKEN`, no-email mode) for that one url. The item is mapped by `captureFromApify` into the same `capture` the extension writes (name/title/company only filled when blank). Work location is checked before the paid call; a failed read leaves no row. `LinkRow` shows "See details" (`ProfileDetails.tsx`, a dialog) whenever `r.capture` exists, extension rows included. One url per press - keep it that way. Test: `tests/apifyprofile.test.ts`.
+
 ### Flow 3 - Paste many rows (`addLinksBulk`, 26 Oct, PR #291)
 `PasteLinksForm` inside AddLinkForm ("Paste many rows from an Excel sheet"), `addLinksBulkInline`. `parseLinkPaste` (src/lib/linkPaste.ts): lines split on tab; the cell containing `linkedin.com/in/` is the url; first cell that is 9-15 digits (after stripping spaces `-()+.`) is the phone (`phoneSource: "other"`); bare 1-4 digit cells (row numbers) dropped; remaining cells joined with " · " become a TA note (`repo.addLinkTaNote`, sliced to 1000). `PASTE_MAX = 100` rows -> "That is N rows. Paste up to 100 at a time."; no links -> "No LinkedIn profile links in what was pasted...". Each row: `profileLink`, skipped if the TA already holds it (`there`), else `addLink` as Shortlisted into the chosen `level`. Summary message counts added / already there / not profiles / lines with no link; names are guessed from slugs ("check them"). No `matchLink` is run per row (matchUnchecked picks them up on the next page load, 10 at a time).
 
@@ -252,9 +255,9 @@ Pre-merge checklist:
 - 2026-10-26 (ef61c9c, PR #291): paste many rows from a TA's sheet into an L (cap 100).
 
 <!-- skill-meta
-verified-commit: 5cec575e
-verified-hash: 042f923e694edbc51d821b9441625f7eceadfc42
-verified-date: 2026-11-12
+verified-commit: caf747b
+verified-hash: 17408cf1923c29695a4a4594709716f11415a136
+verified-date: 2026-11-17
 sources:
   src/app/openings/[id]/hh/**
   src/app/openings/[id]/sourcingGate.ts
@@ -274,6 +277,8 @@ sources:
   src/lib/sharedLinks.ts
   src/lib/cvMatch.ts
   src/lib/extension.ts
+  src/lib/apifyProfile.ts
+  src/components/ProfileDetails.tsx
   src/lib/refereeCalls.ts
   src/lib/headhunt.ts
   src/lib/sourcing.ts
