@@ -753,7 +753,7 @@ export default function PipelineBoard() {
 
       {mode === "board" ? (
         // Columns side by side; the row scrolls sideways, each column scrolls itself.
-        <div ref={boardRow} data-board className="flex min-h-0 flex-1 gap-[max(1.75rem,18px)] overflow-x-auto [container-type:inline-size] px-[max(1.5rem,14px)] pb-1 [scrollbar-width:thin] [scrollbar-color:var(--color-border-strong)_transparent]">
+        <div ref={boardRow} data-board className="flex min-h-0 flex-1 gap-[max(1.75rem,18px)] overflow-x-auto [container-type:inline-size] px-[max(1.5rem,14px)] pb-2 [&::-webkit-scrollbar]:h-[10px] [&::-webkit-scrollbar-track]:mx-[max(1.5rem,14px)] [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-surface-2 [&::-webkit-scrollbar-thumb]:bg-ink-3 [&::-webkit-scrollbar-thumb:hover]:bg-ink-2">
           {columns.map(({ s, all, cards }) => (
             <section
               key={s.name}
