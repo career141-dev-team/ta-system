@@ -1,3 +1,4 @@
+import OpeningCards from "./OpeningCards";
 import RowLink from "./RowLink";
 import PillMenu, { type MenuOption } from "./PillMenu";
 import Notch from "./Notch";
@@ -143,9 +144,11 @@ export default async function OpeningPage({ params }: PageProps<"/openings/[id]"
         </div>
       </div>
 
-      {/* The lists fill the card again (owner, 18 Nov 2026: the numbers cards under
-          them removed). */}
-      <div className="relative mt-12.5 grid min-h-0 flex-1 rounded-lg bg-white max-md:flex-none md:max-h-[44.125rem] md:grid-cols-2">
+      {/* The lists keep their size and the page scrolls to the cards under them (owner,
+          18 Nov 2026: "add these after, the user scrolls to see them, do not change the
+          tab"). Not positioned, so the Status / Stage menus above open over it. */}
+      <div className="mt-12.5 flex flex-col md:min-h-0 md:flex-1 md:overflow-y-auto md:overscroll-contain">
+      <div className="relative grid rounded-lg bg-white max-md:flex-none md:h-[calc(100%-5.75rem)] md:max-h-[44.125rem] md:min-h-[17rem] md:flex-none md:grid-cols-2">
         <Column name="ATS" items={ATS} base={base} first inPlace />
         {CAN_SOURCE && <Column name="Headhunting" items={HEADHUNTING} base={base} inPlace />}
         {CAN_SOURCE && (
@@ -154,6 +157,8 @@ export default async function OpeningPage({ params }: PageProps<"/openings/[id]"
             className="absolute bottom-11.25 left-1/2 top-6.5 hidden w-px bg-border md:block"
           />
         )}
+      </div>
+      <OpeningCards />
       </div>
         </>
       }
