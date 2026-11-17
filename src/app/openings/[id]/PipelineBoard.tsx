@@ -1154,21 +1154,24 @@ function ListView({
           return (
             <article
               key={p.id}
-              className="mb-3 flex min-w-max items-center gap-[max(0.9rem,10px)] rounded-full border border-border bg-white px-4 py-2.5 text-card-line text-ink-2"
+              // One grid template for every row, so each column lines up down the list (no table look).
+              className="mb-3 grid min-w-max grid-cols-[2.25rem_15rem_14rem_5rem_12rem_9rem_9rem_auto_auto_auto_minmax(14rem,1fr)_auto_auto] items-center gap-x-[max(0.9rem,10px)] rounded-full border border-border bg-white px-4 py-2.5 text-card-line text-ink-2 [&>span]:truncate"
             >
               <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-info-soft text-chip font-semibold text-info">
                 {initials(p.name)}
               </span>
-              <button
-                type="button"
-                onClick={() => onOpenCv(p)}
-                onPointerEnter={() => warmPdf()}
-                aria-label={`Open the CV of ${p.name}`}
-                className="text-card-name font-semibold text-ink hover:text-brand"
-              >
-                {p.name}
-              </button>
-              <LinkedInIcon />
+              <span className="flex min-w-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onOpenCv(p)}
+                  onPointerEnter={() => warmPdf()}
+                  aria-label={`Open the CV of ${p.name}`}
+                  className="min-w-0 flex-1 truncate text-left text-card-name font-semibold text-ink hover:text-brand"
+                >
+                  {p.name}
+                </button>
+                <LinkedInIcon />
+              </span>
               <span className="text-card-sub">{p.title}</span>
               <span>E : {p.years}</span>
               <span>C : {p.company}</span>
@@ -1184,7 +1187,7 @@ function ListView({
               </button>
               {chip("Salary")}
               {chip("Notice Period")}
-              <span className="ml-auto">M : {p.email}</span>
+              <span className="text-right">M : {p.email}</span>
               <span aria-hidden="true" className="h-[1em] w-px bg-border-strong" />
               {p.lockedBy ? (
                 <span className="size-[max(0.9rem,12px)]" title={`Shortlisted by ${p.lockedBy}. You cannot contact.`} />
