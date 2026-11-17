@@ -273,9 +273,15 @@ export default function PipelineBoard() {
   const [cvOpen, setCvOpen] = useState(false);
   const cvBox = useRef<HTMLDivElement>(null);
   const cvShown = useExit(cvOpen, cvBox, FADE_OUT);
+  // The card it was opened from: the preview grows out of it (CvPreview `from`).
+  // A fresh preview each time (`cvN`), so one opened again mid-close starts clean.
+  const [cvFrom, setCvFrom] = useState<HTMLElement | null>(null);
+  const [cvN, setCvN] = useState(0);
   const openCv = useCallback((p: Card) => {
+    setCvFrom(onScreen('[data-card-id="' + p.id + '"]'));
     setCvFor(p);
     setCvOpen(true);
+    setCvN((n) => n + 1);
   }, []);
 
   // A move the rules refuse says why, in a notice at the bottom (FLOW-CHECK 2.2).
@@ -782,7 +788,9 @@ export default function PipelineBoard() {
 
       {cvShown && cvFor && (
         <CvPreview
+          key={cvN}
           ref={cvBox}
+          from={cvFrom}
           name={cvFor.name}
           title={cvFor.title}
           // Sample: the two demo CVs in public/cvs; the real board reads each candidate's own.
@@ -1297,19 +1305,16 @@ function useBoardWheel(ref: RefObject<HTMLDivElement | null>, on: boolean) {
       const best = edges.reduce((a, b) => (Math.abs(b - target) < Math.abs(a - target) ? b : a), 0);
       glide(best, DUR.base);
     };
+    // The usual board rules (owner, 17 Nov 2026: "only vertical works, horizontal and
+    // vertical are not working" - the wheel used to move the board sideways even over
+    // a column, so a column could not be scrolled with a mouse):
+    //   over a column's cards - the wheel scrolls that column up and down (the browser's own);
+    //   Shift+wheel or a trackpad's sideways swipe - the board moves sideways (the browser's own);
+    //   anywhere else on the board (headings, gaps, empty space) - the wheel moves it sideways.
     const onWheel = (e: WheelEvent) => {
-      if (e.ctrlKey) return;
-      // Shift+wheel scrolls the column under the pointer up and down (the browser may
-      // turn Shift+wheel into a sideways delta, so read whichever one is set).
-      if (e.shiftKey) {
-        const list = (e.target as HTMLElement).closest<HTMLElement>("[data-col-list]");
-        if (!list) return;
-        e.preventDefault();
-        const dy = e.deltaY || e.deltaX;
-        list.scrollBy({ top: e.deltaMode === 1 ? dy * 40 : dy });
-        return;
-      }
-      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return; // a trackpad's own sideways swipe
+      if (e.ctrlKey || e.shiftKey) return;
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      if ((e.target as HTMLElement).closest("[data-col-list]")) return;
       e.preventDefault();
       if (!gliding) target = el.scrollLeft;
       const step = e.deltaMode === 1 ? e.deltaY * 40 : e.deltaY;
