@@ -438,7 +438,11 @@ function TabsBar() {
   // between the bottom notch tab and the floating views bar. Switching views keeps the bar open.
   useGSAP(
     () => {
-      if (!focus) return;
+      // Leaving a view drops the bar's nodes; the next view starts from gsap.set again.
+      if (!focus) {
+        prevTabsOpen.current = null;
+        return;
+      }
       const nav = navWrap.current;
       const notch = notchTab.current;
       if (!nav || !notch) return;
@@ -495,8 +499,9 @@ function TabsBar() {
         {/* The floating views bar */}
         <div
           ref={navWrap}
+          // No inline style: React would write the end state before GSAP tweens it, so the
+          // bar would jump instead of rising. The first run sets the start with gsap.set.
           className="relative z-10"
-          style={{ opacity: tabsOpen ? 1 : 0, transform: tabsOpen ? "none" : "translateY(20px)", pointerEvents: tabsOpen ? "auto" : "none" }}
         >
           <ViewTabs
             ref={tabsNav}
