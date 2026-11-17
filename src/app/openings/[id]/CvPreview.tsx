@@ -150,6 +150,9 @@ export default function CvPreview({
       el.removeAttribute("data-panel");
       // No "…" cut-off marks: with the letters still to write in, they showed first.
       el.style.textOverflow = "clip";
+      // The motion here is GSAP's alone: a CSS transition (the CV chip's colour fade)
+      // let its word show for 150 ms before the chip background arrived.
+      el.style.transition = "none";
     }
     // A copied canvas comes out blank: paint each drawn CV page onto its copy, so a
     // grow from a small CV (Scoops, Database CVs) starts from that CV, not white boxes.
@@ -199,7 +202,7 @@ export default function CvPreview({
       //    its rows popping up one after another, the board zooming soft behind it;
       // 2. a moment later it expands into the full CV.
       const lift = liftOf(c);
-      const letters = lettersOf(ghost);
+      const parts = linesOf(ghost);
       const end = EXPAND + OPEN_GROW;
       // One flow, like a video (owner, 17 Nov 2026: "no break, go with the flow", "too
       // quick"): every move overlaps the next, nothing stops and nothing bounces. The
@@ -213,10 +216,16 @@ export default function CvPreview({
         .to("[data-veil]", { opacity: 1, duration: ZOOM, ease: "power2.out" }, 0)
         // 1. The same card lifts and grows, easing all the way to the moment it opens.
         .to(ghost, { ...lift, duration: EXPAND, ease: "power2.out" }, 0)
-        .fromTo(details, { y: 6 }, { y: 0, duration: 0.6, stagger: 0.08, ease: "power2.out" }, 0.1)
-        // Its words write themselves in: each letter fades and rises into place a moment
-        // after the one before, so the text flows on rather than snapping in.
-        .to(letters, { opacity: 1, y: 0, duration: 0.35, ease: "power2.out", stagger: { amount: TYPE } }, 0.2)
+        // As in the reference video (owner, 18 Nov 2026): the chip backgrounds (CV,
+        // Salary, Notice Period) arrive first, empty; then the text rises from below,
+        // one line after another, the chips' words with their own line.
+        .to(parts.chips, { opacity: 1, scale: 1, duration: 0.3, stagger: 0.04, ease: "power2.out" }, 0.08);
+      parts.lines.forEach((line, i) => {
+        const at = LINES_AT + i * LINE_GAP;
+        enter.current!.to(line.els, { opacity: 1, y: 0, filter: "blur(0px)", duration: 0.45, ease: "power3.out" }, at);
+        if (line.chips.length) enter.current!.to(line.chips, { color: (_: number, el: HTMLElement) => el.dataset.ink!, duration: 0.35, ease: "sine.out" }, at);
+      });
+      enter.current
         // 2. Without a pause it opens into the CV: details soften away as it grows and
         //    darkens, and the frame with the CV fades in as it lands.
         .to(details, { opacity: 0, filter: "blur(6px)", duration: OPEN_GROW * 0.45, ease: "sine.in" }, EXPAND)
@@ -465,35 +474,44 @@ const GROW = 0.55;
 /** The opening's timing, one flow from click to CV (owner, 17 Nov 2026: slower, so the
  *  motion reads like a video): the card lifts until EXPAND while its words type in over
  *  TYPE, then grows into the CV over OPEN_GROW, the frame fading in over OPEN_LAND. */
-const TYPE = 1.0;
+/** When the first line of the card's text rises, and the gap between lines. */
+const LINES_AT = 0.3;
+const LINE_GAP = 0.11;
 /** The board's one zoom, with the pop. */
 const ZOOM = 0.75;
-const EXPAND = 1.3;
+const EXPAND = 1.45;
 const OPEN_GROW = 0.85;
 const OPEN_LAND = 0.3;
 
-/** Every letter of the copy in its own inline span, hidden (faded, a little low), in
- *  reading order, for the timeline to write in. Text only; the copy is thrown away
- *  after the opening, so its markup may change. */
-function lettersOf(ghost: HTMLElement): HTMLElement[] {
-  const texts: Text[] = [];
-  const walk = document.createTreeWalker(ghost, NodeFilter.SHOW_TEXT);
-  for (let t = walk.nextNode() as Text | null; t; t = walk.nextNode() as Text | null) if (t.data.trim()) texts.push(t);
-  const out: HTMLElement[] = [];
-  for (const t of texts) {
-    const frag = document.createDocumentFragment();
-    for (const ch of t.data) {
-      const span = document.createElement("span");
-      span.textContent = ch;
-      span.style.display = "inline-block";
-      span.style.whiteSpace = "pre";
-      frag.appendChild(span);
-      out.push(span);
-    }
-    t.replaceWith(frag);
+/** The copy's text in lines, top to bottom, hidden a little low and soft, for the
+ *  timeline to raise one line at a time; and its chips (anything with a background
+ *  around its words - CV, Salary, Notice Period, the initials), hidden so their
+ *  backgrounds can arrive first, their words held clear until their line comes.
+ *  Elements on the same row rise together. The copy is thrown away afterwards. */
+function linesOf(ghost: HTMLElement) {
+  const own = (el: Element) => [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent!.trim());
+  const textEls = [...ghost.querySelectorAll<HTMLElement>("*")].filter(own);
+  const filled = (el: HTMLElement) => {
+    const bg = getComputedStyle(el).backgroundColor;
+    return bg !== "transparent" && !/rgba\(.*,\s*0\)$/.test(bg);
+  };
+  const chips = textEls.filter(filled);
+  const rows = new Map<number, { els: HTMLElement[]; chips: HTMLElement[] }>();
+  for (const el of textEls) {
+    const top = Math.round(el.getBoundingClientRect().top / 6);
+    const row = rows.get(top) ?? { els: [], chips: [] };
+    if (chips.includes(el)) row.chips.push(el);
+    else row.els.push(el);
+    rows.set(top, row);
   }
-  gsap.set(out, { opacity: 0, y: 4 });
-  return out;
+  for (const c of chips) {
+    c.dataset.ink = getComputedStyle(c).color;
+    c.style.color = "transparent";
+  }
+  gsap.set(chips, { opacity: 0, scale: 0.85 });
+  const lines = [...rows.entries()].sort((x, y) => x[0] - y[0]).map(([, r]) => r);
+  gsap.set(lines.flatMap((l) => l.els), { opacity: 0, y: 12, filter: "blur(4px)" });
+  return { chips, lines };
 }
 
 /** How the clicked card lifts: about 1.4 times its size (less if the window is small),
