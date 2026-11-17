@@ -103,7 +103,12 @@ function layout(n: number, W: number, H: number, aspect: number, board = false) 
     const w = Math.min((W - 2 * pad - gap * (cols - 1)) / cols, byH * aspect);
     if (w > best.w) best = { cols, w, h: w / aspect };
   }
-  const { cols, w, h } = best;
+  // A board of tabs sits a little smaller than the most that fits, with more air
+  // between them (owner, 18 Nov 2026: "reduce the width slightly").
+  const fit = board ? 0.9 : 1;
+  const w = best.w * fit;
+  const h = best.h * fit;
+  const { cols } = best;
   const rows = Math.ceil(n / cols);
   const cellH = h * (1 + notch) + label;
   const y0 = top + (H - top - pad - (rows * cellH + gap * (rows - 1))) / 2;
