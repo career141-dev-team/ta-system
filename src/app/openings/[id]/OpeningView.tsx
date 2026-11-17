@@ -200,6 +200,17 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
       window.removeEventListener("popstate", pop);
     };
   }, [show, go]);
+  // While someone works in a view, the other tabs of its set are drawn quietly in
+  // the background (hidden, like any view left), so Back's board of tabs can zoom out
+  // at once instead of waiting for them (owner, 18 Nov 2026: "more smoother").
+  useEffect(() => {
+    if (view === "overview") return;
+    const rows = setOf(view) === "hh" ? HH_ROWS : ATS_ROWS;
+    const idle = window.requestIdleCallback?.bind(window) ?? ((f: () => void) => window.setTimeout(f, 600));
+    const cancel = window.cancelIdleCallback?.bind(window) ?? window.clearTimeout;
+    const id = idle(() => setOpened((o) => (rows.every(([, v]) => o.includes(v)) ? o : [...o, ...rows.map(([, v]) => v).filter((v) => !o.includes(v))])));
+    return () => cancel(id);
+  }, [view]);
   // One value per view, so the rows and back buttons that only need `go` do not
   // re-render on every render of this screen.
   const ctx = useMemo(() => ({ view, go, from }), [view, go, from]);

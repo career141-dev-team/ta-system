@@ -86,18 +86,21 @@ function take() {
 /** The grid (owner, 18 Nov 2026: "the tabs look very small" - then "keep all recent
  *  tabs visible"): every recent page at once, each as big as the window allows - the
  *  column count that gives the biggest pictures, rows centred like Alt + Tab. */
-function layout(n: number, W: number, H: number, aspect: number) {
-  const pad = Math.max(16, W * 0.03);
-  const top = Math.max(56, H * 0.085);
-  const label = Math.max(30, H * 0.045);
-  const gap = Math.max(14, W * 0.018);
-  const notch = 0.06; // the board's tab rises above it
+function layout(n: number, W: number, H: number, aspect: number, show = 1) {
+  const pad = Math.max(12, W * 0.02);
+  const top = Math.max(64, H * 0.095);
+  const label = Math.max(26, H * 0.04);
+  const gap = Math.max(12, W * 0.014);
+  // A page's own tab rises above its board; a board of tabs is clipped, so no room.
+  const notch = show < 1 ? 0.02 : 0.06;
   let best = { cols: 1, w: 0, h: 0 };
   for (let cols = 1; cols <= n; cols++) {
     const rows = Math.ceil(n / cols);
     const byH = ((H - top - pad - gap * (rows - 1)) / rows - label) / (1 + notch);
-    const w = Math.min((W - 2 * pad - gap * (cols - 1)) / cols, byH * aspect);
-    if (w > best.w) best = { cols, w, h: w / aspect };
+    // `show` of each screen's height must fit: a board of tabs shows the top of each
+    // screen, so its pictures can be bigger (owner, 18 Nov 2026: "the tabs are smaller").
+    const w = Math.min((W - 2 * pad - gap * (cols - 1)) / cols, (byH * aspect) / show);
+    if (w > best.w) best = { cols, w, h: Math.min(w / aspect, byH) };
   }
   const { cols, w, h } = best;
   const rows = Math.ceil(n / cols);
@@ -105,18 +108,23 @@ function layout(n: number, W: number, H: number, aspect: number) {
   const y0 = top + (H - top - pad - (rows * cellH + gap * (rows - 1))) / 2;
   return {
     cols,
+    rows,
     w,
     h,
     cells: Array.from({ length: n }, (_, i) => {
       const row = Math.floor(i / cols);
       const inRow = Math.min(cols, n - row * cols);
       const x0 = (W - (inRow * w + gap * (inRow - 1))) / 2;
-      return { left: x0 + (i % cols) * (w + gap), top: y0 + row * (cellH + gap) + label + h * notch };
+      return { left: x0 + (i % cols) * (w + gap), top: y0 + row * (cellH + gap) + label + h * notch, row, col: i % cols };
     }),
   };
 }
 
-const ZOOM = 0.65;
+/** A board of tabs shows at least this much of each screen, from the top. */
+const BOARD_SHOW = 0.6;
+/** The zoom, out and in: slower and softer than a switch (owner, 18 Nov 2026: "more smoother"). */
+const ZOOM = 0.85;
+const ZOOM_EASE = "power3.inOut";
 
 /** A fixed copy that flies a page between the full board and its tile: `node` sits at
  *  its own size at `at`, and a transform carries it from a screen rectangle. */
@@ -165,7 +173,7 @@ export function OverviewButton() {
   );
 }
 
-type State = { tiles: Tile[]; held: boolean; home: Rect; W: number; H: number; cur: number; title: string; onPick?: (key: string) => void };
+type State = { tiles: Tile[]; held: boolean; home: Rect; W: number; H: number; cur: number; title: string; show: number; onPick?: (key: string) => void };
 
 export default function Overview() {
   const path = usePathname();
@@ -220,7 +228,7 @@ export default function Overview() {
     if (tiles[0]?.path !== location.pathname) return;
     mouse.current = "";
     setSel(held && tiles.length > 1 ? 1 : 0);
-    setOpen({ tiles, held, home: rectOf(main), W: innerWidth, H: innerHeight, cur: 0, title: "Your recent pages" });
+    setOpen({ tiles, held, home: rectOf(main), W: innerWidth, H: innerHeight, cur: 0, title: "Your recent pages", show: 1 });
   };
 
   const showBoard = (d: BoardOpen) => {
@@ -233,7 +241,7 @@ export default function Overview() {
     }));
     mouse.current = "";
     setSel(d.cur);
-    setOpen({ tiles, held: false, home: d.tiles[d.cur].rect, W: innerWidth, H: innerHeight, cur: d.cur, title: d.title, onPick: d.onPick });
+    setOpen({ tiles, held: false, home: d.tiles[d.cur].rect, W: innerWidth, H: innerHeight, cur: d.cur, title: d.title, show: BOARD_SHOW, onPick: d.onPick });
   };
 
   // The keys and the button.
@@ -254,7 +262,7 @@ export default function Overview() {
       e.stopPropagation();
       if (leaving.current) return e.preventDefault();
       const n = o.tiles.length;
-      const cols = layout(n, o.W, o.H, o.home.width / o.home.height).cols;
+      const cols = layout(n, o.W, o.H, o.home.width / o.home.height, o.show).cols;
       const by: Record<string, number> = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: cols, ArrowUp: -cols };
       if (e.key in by) {
         e.preventDefault();
@@ -289,13 +297,18 @@ export default function Overview() {
     };
   });
 
-  const grid = open && layout(open.tiles.length, open.W, open.H, open.home.width / open.home.height);
+  const grid = open && layout(open.tiles.length, open.W, open.H, open.home.width / open.home.height, open.show);
   /** Each tile's picture: the page at its own size, scaled to fit the cell. */
   const fit = (t: Tile) => {
     const r = t.snap!.rect;
-    const s = Math.min(grid!.w / r.width, grid!.h / r.height);
-    return { r, s, ox: (grid!.w - r.width * s) / 2, oy: (grid!.h - r.height * s) / 2 };
+    const s = Math.min(grid!.w / r.width, grid!.h / (r.height * open!.show));
+    const crop = open!.show < 1;
+    // How much of the screen's height the tile shows (1 = all of it).
+    const shown = Math.min(1, grid!.h / (r.height * s));
+    return { r, s, ox: (grid!.w - r.width * s) / 2, oy: crop ? 0 : (grid!.h - r.height * s) / 2, shown };
   };
+  /** The copy's clip while it is a tile: the part of the screen the tile shows. */
+  const clipFor = (shown: number, scale: number) => `inset(0% 0% ${((1 - shown) * 100).toFixed(2)}% 0% round ${(16 / scale).toFixed(1)}px)`;
   const ringBox = (i: number) => {
     const c = grid!.cells[i];
     return { x: c.left - 7, y: c.top - 7, width: grid!.w + 14, height: grid!.h + 14 };
@@ -327,17 +340,21 @@ export default function Overview() {
     const land = rectOf(slot0);
     const snap0 = open.tiles[open.cur].snap!;
     const fly = flyer(el, snap0.node, snap0.rect);
-    gsap.set(labels, { opacity: 0, y: 10, filter: "blur(4px)" });
-    gsap.set(head, { opacity: 0, y: -8 });
-    gsap.set(ring.current, { ...ringBox(s0), opacity: 0, scale: 1.04, transformOrigin: "50% 50%" });
-    gsap.set(back, { opacity: 0, scale: 1.5, transformOrigin: "50% 45%" });
-    // The others wait just off to their side of the page you are on, a little small.
+    const { shown: shown0 } = fit(open.tiles[open.cur]);
+    const k0 = land.width / snap0.rect.width;
+    gsap.set(labels, { opacity: 0, y: 6, filter: "blur(3px)" });
+    gsap.set(head, { opacity: 0, y: -6 });
+    gsap.set(ring.current, { ...ringBox(s0), opacity: 0, scale: 1.03, transformOrigin: "50% 50%" });
+    // The canvas and the moving copy get their own layers, so nothing repaints while
+    // they move (a full-window dotted background scaling was the stutter).
+    gsap.set([back, fly, ...tiles], { willChange: "transform, opacity" });
+    gsap.set(back, { opacity: 0, scale: 1.12, transformOrigin: "50% 45%" });
+    gsap.set(fly, { clipPath: clipFor(1, 1) });
+    // The others grow in where they stand - no sliding in from the sides - spreading
+    // out from the one you were in.
     const c0 = grid.cells[open.cur];
-    tiles.forEach((t, i) => {
-      if (i === open.cur) return;
-      const c = grid.cells[i];
-      gsap.set(t, { opacity: 0, scale: 0.9, x: Math.sign(c.left - c0.left) * 60, y: Math.sign(c.top - c0.top) * 40, transformOrigin: "50% 50%" });
-    });
+    const far = (i: number) => Math.hypot(grid.cells[i].col - c0.col, grid.cells[i].row - c0.row);
+    tiles.forEach((t, i) => i !== open.cur && gsap.set(t, { opacity: 0, scale: 0.92, transformOrigin: "50% 50%" }));
     // The real page hides under its own copy, so nothing of it shows twice.
     const main = visibleMain();
     if (main) {
@@ -351,17 +368,20 @@ export default function Overview() {
       }
     };
     const tl = gsap.timeline({ defaults: { ease: EASE.out } });
-    tl.to(back, { opacity: 1, scale: 1, duration: ZOOM + 0.1, ease: EASE.inOut }, 0)
-      .to(fly, { ...toward(land, snap0.rect), duration: ZOOM, ease: EASE.inOut, onComplete: home }, 0)
-      .to(tiles.filter((_, i) => i !== open.cur), { opacity: 1, scale: 1, x: 0, y: 0, duration: DUR.slow + 0.1, stagger: 0.05 }, ZOOM * 0.45)
-      .to(labels, { opacity: 1, y: 0, filter: "blur(0px)", duration: DUR.base, stagger: 0.04 }, ZOOM * 0.7)
-      .to(head, { opacity: 1, y: 0, duration: DUR.base }, ZOOM * 0.6)
-      .to(ring.current, { opacity: 1, scale: 1, duration: DUR.base }, ZOOM * 0.85);
+    tl.to(back, { opacity: 1, scale: 1, duration: ZOOM, ease: ZOOM_EASE }, 0)
+      .to(fly, { ...toward(land, snap0.rect), clipPath: clipFor(shown0, k0), duration: ZOOM, ease: ZOOM_EASE, onComplete: home }, 0);
+    tiles.forEach((t, i) => {
+      if (i !== open.cur) tl.to(t, { opacity: 1, scale: 1, duration: 0.6, ease: "power2.out" }, ZOOM * 0.4 + far(i) * 0.06);
+    });
+    tl.to(labels, { opacity: 1, y: 0, filter: "blur(0px)", duration: DUR.slow, stagger: 0.03 }, ZOOM * 0.65)
+      .to(head, { opacity: 1, y: 0, duration: DUR.slow }, ZOOM * 0.55)
+      .to(ring.current, { opacity: 1, scale: 1, duration: DUR.slow }, ZOOM * 0.85)
+      .set([back, ...tiles], { clearProps: "willChange" });
     // A held-back frame never leaves the page stuck in its copy.
     const done = setTimeout(() => {
       tl.progress(1);
       home();
-    }, 1600);
+    }, 2200);
     return () => {
       clearTimeout(done);
       tl.kill();
@@ -410,25 +430,19 @@ export default function Overview() {
     const from = rectOf(slot);
     const at = t.snap!.rect;
     const fly = flyer(el, t.snap!.node, at);
-    gsap.set(fly, toward(from, at));
-    const c = grid.cells[i];
+    const { shown } = fit(t);
+    const k = from.width / at.width;
+    gsap.set(fly, { ...toward(from, at), clipPath: clipFor(shown, k), willChange: "transform, opacity" });
+    const back = el.querySelector("[data-backdrop]");
+    gsap.set(back, { willChange: "transform, opacity" });
     const others = tiles.filter((_, j) => j !== i);
     const tl = gsap.timeline({ defaults: { ease: EASE.out } });
-    tl.to(
-      others,
-      {
-        opacity: 0,
-        scale: 0.9,
-        x: (j: number) => Math.sign(grid.cells[tiles.indexOf(others[j])].left - c.left) * 60,
-        y: (j: number) => Math.sign(grid.cells[tiles.indexOf(others[j])].top - c.top) * 40,
-        duration: DUR.base,
-        ease: EASE.in,
-      },
-      0,
-    )
-      .to([...el.querySelectorAll("[data-tile-label]"), el.querySelector("[data-head]"), ring.current], { opacity: 0, duration: DUR.fast }, 0)
-      .to(fly, { x: 0, y: 0, scale: 1, duration: ZOOM, ease: EASE.inOut }, 0)
-      .to(el.querySelector("[data-backdrop]"), { opacity: 0, scale: 1.5, duration: ZOOM, ease: EASE.inOut }, 0.05);
+    // The others fade back where they stand while the picked one grows to the full
+    // board and the canvas zooms in behind it.
+    tl.to(others, { opacity: 0, scale: 0.94, duration: 0.4, ease: "power2.in" }, 0)
+      .to([...el.querySelectorAll("[data-tile-label]"), el.querySelector("[data-head]"), ring.current], { opacity: 0, duration: DUR.base }, 0)
+      .to(fly, { x: 0, y: 0, scale: 1, clipPath: clipFor(1, 1), duration: ZOOM, ease: ZOOM_EASE }, 0)
+      .to(back, { opacity: 0, scale: 1.12, duration: ZOOM, ease: ZOOM_EASE }, 0.05);
     let landed = false;
     const land = () => {
       if (landed) return;
@@ -439,7 +453,7 @@ export default function Overview() {
       if (l.arrived) finish();
     };
     tl.eventCallback("onComplete", land);
-    setTimeout(land, 1000);
+    setTimeout(land, 1200);
     if (moved && o.onPick) {
       // The view's own switch stands aside: this zoom is the move.
       turn.quietUntil = performance.now() + 2500;
@@ -506,6 +520,7 @@ export default function Overview() {
       {open.tiles.map((t, i) => {
         const c = grid.cells[i];
         const { r, s, ox, oy } = fit(t);
+        const clip = open.show < 1;
         return (
           <button
             key={t.path}
@@ -538,11 +553,13 @@ export default function Overview() {
               <span className="truncate">{t.label}</span>
               {i === open.cur && <span className="shrink-0 rounded-pill bg-brand-tint px-2.5 py-0.5 text-caption font-medium text-brand-strong">Now</span>}
             </span>
-            <span
-              data-slot={t.path}
-              className="absolute block origin-top-left"
-              style={{ left: ox, top: oy, width: r.width, height: r.height, transform: `scale(${s})` }}
-            />
+            <span className={clip ? "absolute inset-0 block overflow-hidden rounded-lg shadow-card" : "contents"}>
+              <span
+                data-slot={t.path}
+                className="absolute block origin-top-left"
+                style={{ left: ox, top: oy, width: r.width, height: r.height, transform: `scale(${s})` }}
+              />
+            </span>
           </button>
         );
       })}
