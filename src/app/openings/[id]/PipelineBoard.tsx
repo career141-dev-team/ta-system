@@ -753,7 +753,7 @@ export default function PipelineBoard() {
 
       {mode === "board" ? (
         // Columns side by side; the row scrolls sideways, each column scrolls itself.
-        <div ref={boardRow} data-board className="flex min-h-0 flex-1 gap-[max(1.75rem,18px)] overflow-x-auto [container-type:inline-size] px-[max(1.5rem,14px)] [scrollbar-width:none]">
+        <div ref={boardRow} data-board className="flex min-h-0 flex-1 gap-[max(1.75rem,18px)] overflow-x-auto [container-type:inline-size] px-[max(1.5rem,14px)] pb-1 [scrollbar-width:thin] [scrollbar-color:var(--color-border-strong)_transparent]">
           {columns.map(({ s, all, cards }) => (
             <section
               key={s.name}
@@ -1123,12 +1123,14 @@ function ListView({
 }) {
   const [stage, setStage] = useState(STAGES[0].name);
   const rows = board[stage].filter(match);
-  const pill = "shrink-0 rounded-full px-2.5 py-0.5 text-chip font-medium ";
+  // The owner's List design (17 Nov 2026): stages as soft rounded buttons on the left
+  // behind a hairline, each candidate a rounded row with its details spread evenly.
+  const pill = "shrink-0 rounded-full px-[max(0.5rem,6px)] py-0.5 text-[max(0.6875rem,10px)] font-medium ";
   return (
-    <div className="mx-[max(1.5rem,14px)] mb-[max(1.2rem,12px)] flex min-h-0 flex-1 gap-[max(1.2rem,12px)] max-md:flex-col">
+    <div className="mx-[max(1.5rem,14px)] mb-[max(1.2rem,12px)] mt-[max(1.25rem,10px)] flex min-h-0 flex-1 max-md:flex-col">
       <nav
         aria-label="Stages"
-        className="flex w-[max(15rem,200px)] shrink-0 flex-col gap-2.5 overflow-y-auto border-r border-border pr-[max(1.2rem,12px)] max-md:w-full max-md:flex-row max-md:overflow-x-auto max-md:border-r-0 max-md:pb-2 max-md:pr-0"
+        className="flex w-[max(14.75rem,190px)] shrink-0 flex-col gap-[max(0.75rem,8px)] overflow-y-auto border-r border-border pr-[max(1.5rem,14px)] [scrollbar-width:none] max-md:w-full max-md:flex-row max-md:overflow-x-auto max-md:border-r-0 max-md:pb-2 max-md:pr-0"
       >
         {STAGES.map((s) => (
           <button
@@ -1137,26 +1139,32 @@ function ListView({
             aria-pressed={stage === s.name}
             onClick={() => setStage(s.name)}
             className={
-              "h-[max(2.4rem,33px)] shrink-0 whitespace-nowrap rounded-full px-[max(1rem,13px)] text-left text-col " +
-              (stage === s.name ? "bg-surface-2 text-ink" : "border border-border bg-white text-ink hover:bg-surface-2")
+              "h-[max(2.25rem,30px)] shrink-0 whitespace-nowrap rounded-sm border px-[max(0.875rem,11px)] text-left text-[max(0.9375rem,12.5px)] text-ink transition-colors " +
+              (stage === s.name ? "border-transparent bg-surface-2" : "border-border bg-surface hover:bg-surface-2")
             }
           >
             {s.name}
           </button>
         ))}
       </nav>
-      <div className="min-h-0 min-w-0 flex-1 overflow-auto">
+      <div className="min-h-0 min-w-0 flex-1 overflow-auto pl-[max(1.5rem,14px)] [scrollbar-width:thin] max-md:pl-0">
         {rows.length === 0 && <p className="py-6 text-center text-ink-2">No candidates in {stage}.</p>}
         {rows.map((p) => {
           const chip = (label: string) => (
             <span className={pill + (p.missing.includes(label) ? "bg-warn-soft text-warn" : "bg-surface-2 text-ink")}>{label}</span>
           );
+          // One line per candidate at every width (owner, 17 Nov 2026: rows ran past the
+          // edge, the email and ⋮ cut off). Long words shorten with "…"; on a narrower
+          // window the phone, then the email, step out of the line and stay in the
+          // row's hover text.
+          const all = [p.name, p.title, `${p.years} experience`, p.company, p.location, p.phone, p.email].join(" · ");
           return (
             <article
               key={p.id}
-              className="mb-3 flex min-w-max items-center gap-[max(0.9rem,10px)] rounded-full border border-border bg-white px-4 py-2.5 text-card-line text-ink-2"
+              title={all}
+              className="mb-[max(1.5625rem,12px)] flex h-[max(3.625rem,46px)] min-w-0 items-center justify-between gap-[max(0.875rem,8px)] whitespace-nowrap rounded-sm border border-border bg-surface pl-[max(0.75rem,8px)] pr-[max(1.5rem,12px)] text-[max(0.8125rem,11px)] text-ink-2 transition-colors hover:border-border-strong"
             >
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-info-soft text-chip font-semibold text-info">
+              <span className="flex size-[max(2.5rem,32px)] shrink-0 items-center justify-center rounded-full bg-info-soft text-[max(0.9375rem,12px)] font-semibold text-info">
                 {initials(p.name)}
               </span>
               <button
@@ -1164,16 +1172,16 @@ function ListView({
                 onClick={() => onOpenCv(p)}
                 onPointerEnter={() => warmPdf()}
                 aria-label={`Open the CV of ${p.name}`}
-                className="text-card-name font-semibold text-ink hover:text-brand"
+                className="max-w-[16rem] shrink-0 truncate text-left text-[max(1.0625rem,13.5px)] font-semibold text-ink hover:text-brand"
               >
                 {p.name}
               </button>
               <LinkedInIcon />
-              <span className="text-card-sub">{p.title}</span>
-              <span>E : {p.years}</span>
-              <span>C : {p.company}</span>
-              <span>L : {p.location}</span>
-              <span>P : {p.phone}</span>
+              <span className="min-w-[3rem] shrink-[2] truncate">{p.title}</span>
+              <span className="shrink-0">E : {p.years}</span>
+              <span className="min-w-[3rem] shrink-[2] truncate">C : {p.company}</span>
+              <span className="max-w-[10rem] shrink-0 truncate">L : {p.location}</span>
+              <span className="shrink-0 max-[1500px]:hidden">P : {p.phone}</span>
               <button
                 type="button"
                 onClick={() => onOpenCv(p)}
@@ -1184,8 +1192,8 @@ function ListView({
               </button>
               {chip("Salary")}
               {chip("Notice Period")}
-              <span className="ml-auto">M : {p.email}</span>
-              <span aria-hidden="true" className="h-[1em] w-px bg-border-strong" />
+              <span className="min-w-[4rem] shrink-[3] truncate max-[1400px]:hidden">M : {p.email}</span>
+              <span aria-hidden="true" className="h-[1.1em] w-px shrink-0 bg-ink-2" />
               {p.lockedBy ? (
                 <span className="size-[max(0.9rem,12px)]" title={`Shortlisted by ${p.lockedBy}. You cannot contact.`} />
               ) : (
@@ -1194,7 +1202,7 @@ function ListView({
                   aria-label={`Move or mark ${p.name}`}
                   aria-haspopup="menu"
                   onClick={(e) => onMenu(p, stage, e.currentTarget)}
-                  className="rounded p-0.5 text-ink hover:bg-surface-2"
+                  className="shrink-0 rounded p-0.5 text-ink hover:bg-surface-2"
                 >
                   <svg viewBox="0 0 24 24" fill="currentColor" className="size-[max(0.9rem,12px)]" aria-hidden="true">
                     <circle cx="12" cy="5" r="1.8" />
