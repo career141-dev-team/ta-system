@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useRef } from "react";
 import Count from "@/app/Count";
 import { EASE, MOTION, gsap } from "@/lib/gsap";
 
-// The opening's numbers under its two lists (owner's Figma comment, 16 Nov 2026:
-// "CVs Today, Position CVs, LinkedIn Today ... circular chart visualizations ...
-// Target & Strategies Charts below these sections"). Kept small (owner, 17 Nov: "keep
-// it but make it smaller") and the rings draw the way TA Track's rings do. Sample
-// numbers until the backend sends them; they agree with the title row's targets.
+// The opening's numbers under its two lists, as two white cards (owner's design,
+// 17 Nov 2026, replacing the slim strip): the three rings - CVs today, Position CVs,
+// LinkedIn today - in one card, Days open and Strategies as thick bars in the other.
+// The rings draw the way TA Track's rings do. Sample numbers until the backend sends
+// them; they agree with the title row's targets.
 
 export type OverviewNumbers = {
   cvsToday: number;
@@ -24,9 +24,8 @@ export type OverviewNumbers = {
   strategies: { done: number; working: number; notStarted: number };
 };
 
-/** Sample numbers, shared by the ATS and Headhunting overviews so they agree: the
- *  targets on the title row (15 on LinkedIn, 20 CVs), P1 day 9 of 14, and the
- *  Strategies view (4 on this job). */
+/** Sample numbers, shared by the overviews so they agree: the targets on the title
+ *  row (15 on LinkedIn, 20 CVs), P1 day 9 of 14, and the Strategies view (4 on this job). */
 export const DEMO_NUMBERS: OverviewNumbers = {
   cvsToday: 4,
   cvsDayTarget: 5,
@@ -44,29 +43,21 @@ export const DEMO_NUMBERS: OverviewNumbers = {
 const stateOf = (n: number, target: number) => (n >= target ? "reached" : n < target / 2 ? "behind" : "on");
 const pct = (n: number, target: number) => (target > 0 ? Math.min(100, Math.round((n / target) * 100)) : 0);
 
-/** One number as a ring, drawn like TA Track's: a track and an arc from the top. */
+const CARD = "rounded-lg bg-white px-[max(1.75rem,16px)] py-[max(1.25rem,10px)]";
+
+/** One number as a ring, drawn like TA Track's: a light track and a thick arc from the
+ *  top, the number inside, the label and what is left beneath. */
 function Ring({ n, target, label }: { n: number; target: number; label: string }) {
   const p = pct(n, target);
   const state = stateOf(n, target);
   const left = Math.max(0, target - n);
   const line = state === "reached" ? "Target reached" : `${n} of ${target} · ${left} to go`;
   const behind = state === "behind";
-  // The arc shades from the logo's leaf green into brand green (amber when behind),
-  // over a soft tinted disc - brand and status tokens only (owner, 17 Nov 2026:
-  // "make the circle more attractive").
-  const id = "ring" + useId().replace(/[^\w-]/g, ""); // safe inside url(#...)
   return (
-    <div className="flex min-w-0 items-center gap-[max(0.75rem,8px)]">
-      <span className="relative grid size-[max(3.5rem,42px)] shrink-0 place-items-center" title={`${p}% of the target`}>
+    <div className="flex min-w-0 flex-col items-center gap-[max(0.5rem,4px)] text-center">
+      <span className="relative grid size-[max(6rem,66px)] place-items-center" title={`${p}% of the target`}>
         <svg viewBox="0 0 120 120" className="absolute inset-0 size-full" aria-hidden="true">
-          <defs>
-            <linearGradient id={id} x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor={behind ? "var(--color-warn)" : "var(--color-brand-leaf)"} stopOpacity={behind ? 0.55 : 1} />
-              <stop offset="100%" stopColor={behind ? "var(--color-warn)" : "var(--color-brand)"} />
-            </linearGradient>
-          </defs>
-          <circle cx="60" cy="60" r="41" className={behind ? "fill-warn-soft" : "fill-brand-tint"} />
-          <circle cx="60" cy="60" r="52" fill="none" strokeWidth="10" className="stroke-surface-2" />
+          <circle cx="60" cy="60" r="52" fill="none" strokeWidth="9" className="stroke-surface-2" />
           <circle
             data-draw="arc"
             data-to={p}
@@ -74,21 +65,21 @@ function Ring({ n, target, label }: { n: number; target: number; label: string }
             cy="60"
             r="52"
             fill="none"
-            stroke={`url(#${id})`}
-            strokeWidth="10"
+            strokeWidth="9"
             strokeLinecap="round"
+            className={behind ? "stroke-warn" : "stroke-brand"}
             pathLength={100}
             strokeDasharray={`${p} 100`}
             transform="rotate(-90 60 60)"
           />
         </svg>
-        <span className={"relative text-body font-semibold tabular-nums " + (behind ? "text-warn" : "text-brand-strong")}>
+        <span className={"relative text-h3 font-semibold tabular-nums " + (behind ? "text-warn" : "text-ink-2")}>
           <Count n={n} />
         </span>
       </span>
-      <div className="min-w-0">
-        <p className="truncate text-small font-medium text-ink">{label}</p>
-        <p className={"truncate text-caption " + (state === "behind" ? "text-warn" : state === "reached" ? "text-brand" : "text-ink-3")} title={line}>
+      <div className="min-w-0 max-w-full">
+        <p className="truncate text-body font-semibold text-ink">{label}</p>
+        <p className={"truncate text-small " + (behind ? "text-warn" : state === "reached" ? "text-brand" : "text-ink-3")} title={line}>
           {line}
         </p>
       </div>
@@ -96,20 +87,17 @@ function Ring({ n, target, label }: { n: number; target: number; label: string }
   );
 }
 
-/** One target as a slim bar: what it counts and the number against its target. */
-function Bar({ label, value, of, fill, tone, title }: { label: string; value: number; of: string; fill: number; tone: "brand" | "warn" | "danger"; title: string }) {
-  const colour = tone === "warn" ? "bg-warn" : tone === "danger" ? "bg-danger" : "bg-brand";
+/** One target as a thick bar: what it counts and the number against its target. */
+function Bar({ label, value, of, children, title }: { label: string; value: number; of: string; children: React.ReactNode; title: string }) {
   return (
     <div className="min-w-0" title={title}>
-      <div className="flex items-baseline justify-between gap-2 text-caption">
-        <span className="truncate text-ink-2">{label}</span>
-        <span className="shrink-0 font-medium tabular-nums text-ink">
-          {value} <span className="font-normal text-ink-3">{of}</span>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="truncate text-body font-semibold text-ink">{label}</span>
+        <span className="shrink-0 text-small tabular-nums text-ink-3">
+          <b className="font-semibold text-ink">{value}</b> {of}
         </span>
       </div>
-      <div className="mt-1 h-[max(0.375rem,4px)] overflow-hidden rounded-full bg-surface-2">
-        <div data-draw="bar" className={"h-full rounded-full " + colour} style={{ width: `${fill}%` }} />
-      </div>
+      <div className="mt-[max(0.75rem,6px)] h-[max(0.75rem,9px)] overflow-hidden rounded-full bg-surface-2">{children}</div>
     </div>
   );
 }
@@ -152,38 +140,32 @@ export default function OverviewCharts({ data }: { data: OverviewNumbers }) {
     <section
       ref={ref}
       aria-label="This job's numbers"
-      className="mt-[max(0.75rem,8px)] grid shrink-0 gap-[max(1rem,10px)] rounded-lg bg-white px-[max(1.75rem,16px)] py-[max(0.875rem,10px)] sm:grid-cols-3 lg:grid-cols-[repeat(3,minmax(0,1fr))_minmax(0,1.6fr)] lg:items-center"
+      className="mt-[max(0.75rem,8px)] grid shrink-0 gap-[max(1rem,10px)] md:grid-cols-[minmax(0,2.15fr)_minmax(0,1fr)]"
     >
-      <Ring n={data.cvsToday} target={data.cvsDayTarget} label="CVs today" />
-      <Ring n={data.cvsOnJob} target={data.cvsTarget} label="Position CVs" />
-      <Ring n={data.linkedInToday} target={data.linkedInTarget} label="LinkedIn today" />
+      <div className={CARD + " grid grid-cols-1 gap-[max(1rem,10px)] sm:grid-cols-3"}>
+        <Ring n={data.cvsToday} target={data.cvsDayTarget} label="CVs today" />
+        <Ring n={data.cvsOnJob} target={data.cvsTarget} label="Position CVs" />
+        <Ring n={data.linkedInToday} target={data.linkedInTarget} label="LinkedIn today" />
+      </div>
 
-      {/* Targets & strategies: two slim bars beside the rings on a wide window. */}
-      <div className="grid gap-x-[max(1.5rem,12px)] gap-y-2 sm:col-span-3 sm:grid-cols-2 lg:col-span-1 lg:border-l lg:border-border lg:pl-[max(1.5rem,12px)]">
+      {/* Targets & strategies: two thick bars. */}
+      <div className={CARD + " flex flex-col justify-center gap-[max(1.5rem,12px)]"}>
         <Bar
           label="Days open"
           value={data.daysOpen}
-          of={`/ ${data.priorityDays}`}
-          fill={pct(data.daysOpen, data.priorityDays)}
-          tone={late ? "danger" : "brand"}
+          of={`/ ${data.priorityDays} days`}
           title={late ? `P${data.priority} target · ${-daysLeft} days over` : `P${data.priority} target · ${daysLeft} days left`}
-        />
-        <div className="min-w-0" title={`${s.done} done · ${s.working} in progress · ${s.notStarted} not started`}>
-          <div className="flex items-baseline justify-between gap-2 text-caption">
-            <span className="truncate text-ink-2">Strategies</span>
-            <span className="shrink-0 font-medium tabular-nums text-ink">
-              {s.done} <span className="font-normal text-ink-3">/ {total} done</span>
-            </span>
-          </div>
-          <div className="mt-1 h-[max(0.375rem,4px)] overflow-hidden rounded-full bg-surface-2">
-            {total > 0 && (
-              <div data-draw="bar" className="flex h-full gap-px">
-                <span className="h-full rounded-full bg-brand" style={{ width: `${(s.done / total) * 100}%` }} />
-                <span className="h-full rounded-full bg-brand/40" style={{ width: `${(s.working / total) * 100}%` }} />
-              </div>
-            )}
-          </div>
-        </div>
+        >
+          <div data-draw="bar" className={"h-full rounded-full " + (late ? "bg-danger" : "bg-brand")} style={{ width: `${pct(data.daysOpen, data.priorityDays)}%` }} />
+        </Bar>
+        <Bar label="Strategies" value={s.done} of={`/ ${total} done`} title={`${s.done} done · ${s.working} in progress · ${s.notStarted} not started`}>
+          {total > 0 && (
+            <div data-draw="bar" className="flex h-full gap-px">
+              <span className="h-full rounded-full bg-brand" style={{ width: `${(s.done / total) * 100}%` }} />
+              <span className="h-full rounded-full bg-brand/40" style={{ width: `${(s.working / total) * 100}%` }} />
+            </div>
+          )}
+        </Bar>
       </div>
     </section>
   );
