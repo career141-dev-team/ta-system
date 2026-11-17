@@ -86,21 +86,22 @@ function take() {
 /** The grid (owner, 18 Nov 2026: "the tabs look very small" - then "keep all recent
  *  tabs visible"): every recent page at once, each as big as the window allows - the
  *  column count that gives the biggest pictures, rows centred like Alt + Tab. */
-function layout(n: number, W: number, H: number, aspect: number, show = 1) {
+function layout(n: number, W: number, H: number, aspect: number, board = false) {
   const pad = Math.max(12, W * 0.02);
   const top = Math.max(64, H * 0.095);
-  const label = Math.max(26, H * 0.04);
+  // A board of tabs puts each name inside its tab, so its rows need no room for names
+  // and the tabs can be bigger while keeping their screen's shape (owner, 18 Nov 2026:
+  // "you increased the width without the height, it looks so ugly").
+  const label = board ? 0 : Math.max(26, H * 0.04);
   const gap = Math.max(12, W * 0.014);
   // A page's own tab rises above its board; a board of tabs is clipped, so no room.
-  const notch = show < 1 ? 0.02 : 0.06;
+  const notch = board ? 0.02 : 0.06;
   let best = { cols: 1, w: 0, h: 0 };
   for (let cols = 1; cols <= n; cols++) {
     const rows = Math.ceil(n / cols);
     const byH = ((H - top - pad - gap * (rows - 1)) / rows - label) / (1 + notch);
-    // `show` of each screen's height must fit: a board of tabs shows the top of each
-    // screen, so its pictures can be bigger (owner, 18 Nov 2026: "the tabs are smaller").
-    const w = Math.min((W - 2 * pad - gap * (cols - 1)) / cols, (byH * aspect) / show);
-    if (w > best.w) best = { cols, w, h: Math.min(w / aspect, byH) };
+    const w = Math.min((W - 2 * pad - gap * (cols - 1)) / cols, byH * aspect);
+    if (w > best.w) best = { cols, w, h: w / aspect };
   }
   const { cols, w, h } = best;
   const rows = Math.ceil(n / cols);
@@ -120,8 +121,6 @@ function layout(n: number, W: number, H: number, aspect: number, show = 1) {
   };
 }
 
-/** A board of tabs shows at least this much of each screen, from the top. */
-const BOARD_SHOW = 0.6;
 /** The zoom, out and in: slower and softer than a switch (owner, 18 Nov 2026: "more smoother"). */
 const ZOOM = 0.85;
 const ZOOM_EASE = "power3.inOut";
@@ -173,7 +172,7 @@ export function OverviewButton() {
   );
 }
 
-type State = { tiles: Tile[]; held: boolean; home: Rect; W: number; H: number; cur: number; title: string; show: number; onPick?: (key: string) => void };
+type State = { tiles: Tile[]; held: boolean; home: Rect; W: number; H: number; cur: number; title: string; board: boolean; onPick?: (key: string) => void };
 
 export default function Overview() {
   const path = usePathname();
@@ -228,7 +227,7 @@ export default function Overview() {
     if (tiles[0]?.path !== location.pathname) return;
     mouse.current = "";
     setSel(held && tiles.length > 1 ? 1 : 0);
-    setOpen({ tiles, held, home: rectOf(main), W: innerWidth, H: innerHeight, cur: 0, title: "Your recent pages", show: 1 });
+    setOpen({ tiles, held, home: rectOf(main), W: innerWidth, H: innerHeight, cur: 0, title: "Your recent pages", board: false });
   };
 
   const showBoard = (d: BoardOpen) => {
@@ -241,7 +240,7 @@ export default function Overview() {
     }));
     mouse.current = "";
     setSel(d.cur);
-    setOpen({ tiles, held: false, home: d.tiles[d.cur].rect, W: innerWidth, H: innerHeight, cur: d.cur, title: d.title, show: BOARD_SHOW, onPick: d.onPick });
+    setOpen({ tiles, held: false, home: d.tiles[d.cur].rect, W: innerWidth, H: innerHeight, cur: d.cur, title: d.title, board: true, onPick: d.onPick });
   };
 
   // The keys and the button.
@@ -262,7 +261,7 @@ export default function Overview() {
       e.stopPropagation();
       if (leaving.current) return e.preventDefault();
       const n = o.tiles.length;
-      const cols = layout(n, o.W, o.H, o.home.width / o.home.height, o.show).cols;
+      const cols = layout(n, o.W, o.H, o.home.width / o.home.height, o.board).cols;
       const by: Record<string, number> = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: cols, ArrowUp: -cols };
       if (e.key in by) {
         e.preventDefault();
@@ -297,15 +296,14 @@ export default function Overview() {
     };
   });
 
-  const grid = open && layout(open.tiles.length, open.W, open.H, open.home.width / open.home.height, open.show);
+  const grid = open && layout(open.tiles.length, open.W, open.H, open.home.width / open.home.height, open.board);
   /** Each tile's picture: the page at its own size, scaled to fit the cell. */
   const fit = (t: Tile) => {
     const r = t.snap!.rect;
-    const s = Math.min(grid!.w / r.width, grid!.h / (r.height * open!.show));
-    const crop = open!.show < 1;
-    // How much of the screen's height the tile shows (1 = all of it).
+    const s = Math.min(grid!.w / r.width, grid!.h / r.height);
+    // How much of the screen's height the tile shows (all of it: tabs keep their shape).
     const shown = Math.min(1, grid!.h / (r.height * s));
-    return { r, s, ox: (grid!.w - r.width * s) / 2, oy: crop ? 0 : (grid!.h - r.height * s) / 2, shown };
+    return { r, s, ox: (grid!.w - r.width * s) / 2, oy: (grid!.h - r.height * s) / 2, shown };
   };
   /** The copy's clip while it is a tile: the part of the screen the tile shows. */
   const clipFor = (shown: number, scale: number) => `inset(0% 0% ${((1 - shown) * 100).toFixed(2)}% 0% round ${(16 / scale).toFixed(1)}px)`;
@@ -520,7 +518,7 @@ export default function Overview() {
       {open.tiles.map((t, i) => {
         const c = grid.cells[i];
         const { r, s, ox, oy } = fit(t);
-        const clip = open.show < 1;
+        const clip = open.board;
         return (
           <button
             key={t.path}
@@ -543,10 +541,13 @@ export default function Overview() {
             {/* The page's name above it, readable at a glance. */}
             <span
               data-tile-label
-              // Above the board's tab, which rises 6% of the picture over it.
-              style={{ marginBottom: grid.h * 0.06 + 6 }}
+              // Above the board's tab, which rises 6% of the picture over it - or, on a board
+              // of tabs, a label inside the tab's top-left corner.
+              style={open.board ? undefined : { marginBottom: grid.h * 0.06 + 6 }}
               className={
-                "pointer-events-none absolute inset-x-0 bottom-full flex items-center justify-center gap-2 text-[max(1.15rem,13px)] " +
+                (open.board
+                  ? "pointer-events-none absolute left-[max(0.75rem,8px)] top-[max(0.75rem,8px)] z-[1] flex max-w-[calc(100%-1.5rem)] items-center gap-2 rounded-pill bg-white px-[max(0.85rem,9px)] py-[max(0.3rem,3px)] text-[max(1rem,12.5px)] shadow-float "
+                  : "pointer-events-none absolute inset-x-0 bottom-full flex items-center justify-center gap-2 text-[max(1.15rem,13px)] ") +
                 (i === sel ? "font-semibold text-ink" : "font-medium text-ink-2")
               }
             >
