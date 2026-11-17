@@ -10,9 +10,10 @@ const ON = "font-semibold text-brand";
 // Green only under the pointer (or keyboard focus), on every row of both columns -
 // no row starts green (owner, 12 Nov 2026: "no need to initially show the pipeline
 // as a green colour... if I hover over any links... that need to be green"; 17 Nov:
-// "more darker green" - the strong brand green).
+// "more darker green" - the strong brand green; then "more darker" again - the thin
+// text also firms up to medium weight, so it reads darker, not just greener).
 const OFF =
-  "font-light text-ink-2 transition-[color,translate] hover:translate-x-1 hover:text-brand-strong focus-visible:text-brand-strong";
+  "font-light text-ink-2 transition-[color,translate,font-weight] hover:translate-x-1 hover:font-medium hover:text-brand-strong focus-visible:font-medium focus-visible:text-brand-strong";
 
 /** A row of the opening card. An ATS row (`view`) opens its work view in place,
  *  without leaving the page; a Headhunting row is still a link, green while its

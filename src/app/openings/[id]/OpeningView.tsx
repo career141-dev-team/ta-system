@@ -63,13 +63,31 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
   // keeps it for as long as this opening is open.
   const [opened, setOpened] = useState<View[]>(["overview"]);
 
-  const go = useCallback((next: View) => {
-    if (next === current.current) return;
-    if (!CAN_SOURCE && setOf(next) === "hh") return;
+  // Where the person has been, so Back is a normal back: to the screen they came from
+  // (owner, 17 Nov 2026: "Back needs to work like a normal back").
+  const trail = useRef<View[]>([]);
+  const show = useCallback((next: View) => {
     current.current = next;
     setView(next);
     setOpened((o) => (o.includes(next) ? o : [...o, next]));
   }, []);
+  const go = useCallback(
+    (next: View) => {
+      if (next === current.current) return;
+      if (!CAN_SOURCE && setOf(next) === "hh") return;
+      trail.current.push(current.current);
+      show(next);
+    },
+    [show],
+  );
+  useEffect(() => {
+    const back = () => {
+      if (current.current === "overview") return;
+      show(trail.current.pop() ?? "overview");
+    };
+    window.addEventListener(SHOW_TABS, back);
+    return () => window.removeEventListener(SHOW_TABS, back);
+  }, [show]);
   // One value per view, so the rows and back buttons that only need `go` do not
   // re-render on every render of this screen.
   const ctx = useMemo(() => ({ view, go }), [view, go]);
@@ -376,27 +394,30 @@ function TabsBar() {
       }, PEEK_MS);
     }, delay);
   }, []);
-  useEffect(() => {
-    if (focus && !inside.current) peek(500);
-  }, [focus, peek]);
+  // Inside a view the bar waits for a click on its arrow; it does not peek, and a new
+  // view starts with it down.
+  const [seenView, setSeenView] = useState(view);
+  if (seenView !== view) {
+    setSeenView(view);
+    setTabsOpen(false);
+  }
   useEffect(() => () => clearTimeout(tabsTimer.current), []);
 
-  // Back used to raise the bar (owner, 12 Nov 2026). Inside a view the bar is now
-  // always there, so Back has nothing to raise: it goes to the opening (16 Nov 2026).
+  // Inside a view a click anywhere but the bar puts it away again.
   useEffect(() => {
-    const show = () => {
-      if (focus) return go("overview");
-      clearTimeout(tabsTimer.current);
-      setTabsOpen(true);
+    if (!focus || !tabsOpen) return;
+    const away = (e: PointerEvent) => {
+      if (!(e.target as Element).closest?.("[data-views-bar]")) setTabsOpen(false);
     };
+    document.addEventListener("pointerdown", away);
+    return () => document.removeEventListener("pointerdown", away);
+  }, [focus, tabsOpen]);
+  // Escape puts the bar away. (Back is a normal back, handled in OpeningView.)
+  useEffect(() => {
     const esc = (e: KeyboardEvent) => e.key === "Escape" && setTabsOpen(false);
-    window.addEventListener(SHOW_TABS, show);
     window.addEventListener("keydown", esc);
-    return () => {
-      window.removeEventListener(SHOW_TABS, show);
-      window.removeEventListener("keydown", esc);
-    };
-  }, [focus, go]);
+    return () => window.removeEventListener("keydown", esc);
+  }, []);
 
   // Left and right arrow keys move along the tabs of the view's own set, like a
   // click on the next one: inside a view, or on the opening while the bar is up. Not while
@@ -427,11 +448,13 @@ function TabsBar() {
 
   // Closing, the bar sinks and fades the way it rose instead of vanishing.
   // Inside a view it is always shown.
+  // Inside a view it is always shown, in its own row (owner, 17 Nov 2026: keep the
+  // space as before, no hover to reveal it - click and use).
   const tabsShown = useExit(tabsOpen || focus, tabsNav, TABS_OUT);
 
   return (
     <>
-      {tabsShown && <ViewTabs ref={tabsNav} docked={focus} onEnter={enterBar} onLeave={leaveBar} onHold={() => (held.current = true)} />}
+      {tabsShown && <ViewTabs ref={tabsNav} docked={focus} open={tabsOpen} onToggle={() => setTabsOpen((o) => !o)} onEnter={enterBar} onLeave={leaveBar} onHold={() => (held.current = true)} />}
     </>
   );
 }
@@ -585,6 +608,8 @@ function keepSet(set: ViewSet) {
 function ViewTabs({
   ref: root,
   docked,
+  open,
+  onToggle,
   onEnter,
   onLeave,
   onHold,
@@ -592,6 +617,9 @@ function ViewTabs({
   ref: RefObject<HTMLElement | null>;
   /** Inside a view: its own row under the board. Else it floats in the same place. */
   docked: boolean;
+  /** Docked: the bar is up (a click on the arrow raised it). */
+  open: boolean;
+  onToggle: () => void;
   onEnter: () => void;
   onLeave: () => void;
   onHold: () => void;
@@ -620,7 +648,7 @@ function ViewTabs({
   const hoverGlow = () => root.current?.querySelector<HTMLElement>("[data-hover-glow]");
   const point = (el: HTMLElement, value: View) => {
     if (value === "scoops") warmPdf(); // Scoops opens on a CV: get pdf.js ready while pointing.
-    glide.to(hoverGlow(), { x: el.offsetLeft, y: el.offsetTop, width: el.offsetWidth, height: el.offsetHeight });
+    void el; // click and use: no hover highlight (owner, 17 Nov 2026)
   };
   const aim = (value: View) => {
     if (value !== "overview") keepSet(setOf(value));
@@ -677,30 +705,32 @@ function ViewTabs({
   return (
     // Same padding both ways, so the bar does not jump when a view opens or closes.
     <div
-      onMouseEnter={onEnter}
-      onMouseLeave={onLeave}
-      className={"py-[max(0.6rem,6px)] " + (docked ? "group relative flex shrink-0 justify-center pb-[max(1.75rem,16px)]" : "fixed bottom-0 left-1/2 z-40 -translate-x-1/2")}
+      data-views-bar
+      onMouseEnter={docked ? undefined : onEnter}
+      onMouseLeave={docked ? undefined : onLeave}
+      className={"py-[max(0.6rem,6px)] " + (docked ? "relative flex shrink-0 justify-center pb-[max(1.75rem,16px)]" : "fixed bottom-0 left-1/2 z-40 -translate-x-1/2")}
     >
-      {/* Inside a view the bar keeps its space but shows only while the pointer is on
-          that space or its arrow, like the top bar (owner, 16 Nov 2026). Keyboard focus
-          shows it too. */}
+      {/* Inside a view the bar keeps its row, with the arrow standing in for it; a CLICK
+          on the arrow raises the bar, a click on a tab uses it (owner, 17 Nov 2026:
+          "keep like this, the user will click and use" - no hover reveal). */}
       {docked && (
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute left-1/2 top-1/2 flex size-[max(2.25rem,28px)] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-surface text-ink-2 shadow-card transition-opacity duration-200 group-focus-within:opacity-0 group-hover:opacity-0"
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={open}
+          aria-label={open ? "Hide the views" : "Show the views"}
+          className={"absolute bottom-0 left-1/2 flex h-[max(2.125rem,26px)] w-[max(12rem,150px)] -translate-x-1/2 items-center justify-center pt-1 text-brand-strong transition-opacity duration-200 hover:text-brand " + (open ? "pointer-events-none opacity-0" : "")}
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="size-1/2">
+          {/* The notch: the bottom row's tab, wide at the window's edge (owner, 17 Nov 2026). */}
+          <svg viewBox="0 0 208 42" preserveAspectRatio="none" className="absolute inset-0 size-full -scale-y-100 fill-surface" aria-hidden="true">
+            <path d="M0 0c10 0 12 6 15 14l7 16c3 8 8 12 16 12h132c8 0 13-4 16-12l7-16c3-8 5-14 15-14Z" />
+          </svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="relative size-[max(1rem,13px)]" aria-hidden="true">
             <path d="m6 15 6-6 6 6" />
           </svg>
-        </span>
+        </button>
       )}
-      <div
-        className={
-          docked
-            ? "translate-y-2 opacity-0 transition duration-200 group-focus-within:translate-y-0 group-focus-within:opacity-100 group-hover:translate-y-0 group-hover:opacity-100"
-            : "contents"
-        }
-      >
+      <div className={docked ? "transition duration-200 " + (open ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-2 opacity-0") : "contents"}>
       <nav
         ref={root}
         aria-label="Views of this opening"

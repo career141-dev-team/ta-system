@@ -144,12 +144,12 @@ export default async function OpeningPage({ params }: PageProps<"/openings/[id]"
         </div>
       </div>
 
-      {/* One view, no scrolling (owner, 17 Nov 2026): the lists take the height left
-          after the slim numbers strip, up to the design's 706px; their text keeps its
-          size and only the rows get a little shorter. Not positioned, so the Status /
-          Stage menus above open over it. */}
-      <div className="mt-12.5 flex flex-col md:min-h-0 md:flex-1">
-      <div className="relative grid rounded-lg bg-white max-md:flex-none md:max-h-[44.125rem] md:min-h-0 md:flex-1 md:grid-cols-2">
+      {/* The lists keep their size (owner, 17 Nov 2026: the numbers cards must not make
+          the top tab smaller): they take the height they had beside the old slim strip,
+          up to the design's 706px, and the page scrolls to the numbers cards under
+          them. Not positioned, so the Status / Stage menus above open over it. */}
+      <div className="mt-12.5 flex flex-col md:min-h-0 md:flex-1 md:overflow-y-auto md:overscroll-contain">
+      <div className="relative grid rounded-lg bg-white max-md:flex-none md:h-[calc(100%-5.75rem)] md:max-h-[44.125rem] md:min-h-[17rem] md:flex-none md:grid-cols-2">
         <Column name="ATS" items={ATS} base={base} first inPlace />
         {CAN_SOURCE && <Column name="Headhunting" items={HEADHUNTING} base={base} inPlace />}
         {CAN_SOURCE && (
