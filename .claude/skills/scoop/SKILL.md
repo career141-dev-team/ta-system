@@ -91,6 +91,8 @@ On the Scoops tab `CandidateList` is rendered with `claimable` and `basePath=/op
 
 ### Flow 6 - EOD SCOOP column
 
+- A Director/midday email whose candidates are ALL scoops does not need the ChatGPT research link (owner, 17 Nov; `scoopsOnly` in src/lib/eod-format.ts, see /eod-email).
+
 - `effortBucket(app, headhunted)` in `src/lib/eod.ts` returns, in order: `backUp` if `backupForApplicationId`; `scoop` if `app.scoopFrom || app.scoopReceivedAt`; `addOns` if `isAddOn`; else `cvSource(...)` (`src/lib/cvSource.ts`; `sourcingChannel === "SCOOP"` -> "database" -> no column). A scoop therefore stays a scoop on an Add-on day. Order is backup > scoop > add-on > source.
 - Only CVs sent to the Director today are counted: `sentToDirectorToday(openingId, taId, since, workLocationId)` = applications in today's (Colombo day start, `colomboDayStart`) `director` review rounds sent by this TA (excluding `recoveryReopenedAt`) plus people waiting in tonight's Director email (`shortlistRows(...,"director")`). `effortRow` loops them, `count.scoop++` per scoop bucket, `scoop: count.scoop || null` (blank not 0). Six scoops uploaded, one sent to the Director -> SCOOP 1 (`tests/eodeffort.test.ts` "six mailed in").
 - The TA can overtype every EOD cell (`effortFromForm`, `form.set("effort_scoop")`); `MANUAL_EFFORT` is an empty set, so nothing is forced manual. `EffortSheet.tsx` explains: "SCOOP if you uploaded it under Scoops (add any that came on WhatsApp)". WhatsApp scoops the system never saw are added by typing.
@@ -238,9 +240,9 @@ Repo hard rules that apply: never run `convex deploy`/`convex run`/`convex impor
 - 2026-10-28 `d34d9a6` a scoop moved to Follow-up or Director Shortlist gets the opening's only active work location (`placeInOnlyLocation` in `ta/applications.ts`); Try again / Remove on failed scoop cards (`ta/hhUpload:retry`).
 
 <!-- skill-meta
-verified-commit: 89cc6f1
-verified-hash: 5dcbbf59c81fc5ae2cc3ea8143336459250542f7
-verified-date: 2026-11-03
+verified-commit: 481925a0
+verified-hash: 9e4e5e4895a63a1c52ea8ff0aceb7df1f342c037
+verified-date: 2026-11-17
 sources:
   convex/ta/scoopUpload.ts
   convex/lib/scoopMail.ts

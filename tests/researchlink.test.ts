@@ -10,6 +10,7 @@ import {
   checkResearchSubmission,
   eodEmailHtml,
   needsResearchLink,
+  scoopsOnly,
   validateResearchLink,
   type EffortRow,
   type ShortlistRow,
@@ -33,6 +34,14 @@ const ID = "68f1a2b3-4c5d-8e9f-a0b1-c2d3e4f5a6b7";
 eq("a trusted task exception allows an empty research link", checkResearchSubmission({ role: "ta", kind: "director", link: "", confirmed: false, excused: true }), { ok: true, url: null });
 eq("an exception does not allow a private link", checkResearchSubmission({ role: "ta", kind: "director", link: `https://chatgpt.com/c/${ID}`, confirmed: true, excused: true }).ok, false);
 eq("an exception does not confirm an edited share link", checkResearchSubmission({ role: "ta", kind: "director", link: `https://chatgpt.com/share/${ID}`, confirmed: false, excused: true }).ok, false);
+console.log("\nScoop CVs only (owner, 17 Nov)");
+eq("all scoops", scoopsOnly([{ scoopReceivedAt: 1 }, { scoopFrom: "u_lead" }]), true);
+eq("one of the TA's own makes it a normal email", scoopsOnly([{ scoopReceivedAt: 1 }, { scoopReceivedAt: null }]), false);
+eq("no candidates is not a scoop email", scoopsOnly([]), false);
+eq("a missing application is not a scoop", scoopsOnly([{ scoopReceivedAt: 1 }, null]), false);
+eq("a TA sending only scoops needs no link", checkResearchSubmission({ role: "ta", kind: "director", link: "", confirmed: false, scoopsOnly: true }), { ok: true, url: null });
+eq("a valid link is still kept", checkResearchSubmission({ role: "ta", kind: "director", link: `https://chatgpt.com/share/${ID}`, confirmed: false, scoopsOnly: true }), { ok: true, url: `https://chatgpt.com/share/${ID}` });
+eq("without scoops the link is still asked for", checkResearchSubmission({ role: "ta", kind: "director", link: "", confirmed: false }).ok, false);
 console.log("\nWhich links are accepted");
 eq("a share link on chatgpt.com", url(`https://chatgpt.com/share/${ID}`), `https://chatgpt.com/share/${ID}`);
 eq("the older host chat.openai.com", url(`https://chat.openai.com/share/${ID}`), `https://chat.openai.com/share/${ID}`);

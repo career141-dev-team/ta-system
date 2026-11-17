@@ -4,7 +4,7 @@ import { repo, setsForOpening, SET_SIZE } from "@/data/store";
 import { getCurrentUser } from "@/lib/session";
 import { EodComposer } from "@/components/EodComposer";
 import { effortRow, shortlistRows, subjectLine } from "@/lib/eod";
-import { EOD_CC_DEFAULTS, EOD_TO, eodEmailHtml, needsResearchLink, revisedSubject, validateResearchLink } from "@/lib/eod-format";
+import { EOD_CC_DEFAULTS, EOD_TO, eodEmailHtml, needsResearchLink, revisedSubject, scoopsOnly, validateResearchLink } from "@/lib/eod-format";
 import { getScopedLinkVaultEntries } from "@/lib/linkExport";
 import type { EodEmailCopy, User } from "@/data/types";
 import { readEodReply, readInboundReply, addMiddayEmail } from "@/app/actions";
@@ -449,6 +449,7 @@ export default async function EodPage({
         senderName={user.name}
         alreadyOut={!!awaiting}
         needsResearchLink={midday || needsResearchLink(user.role, kind, workType)}
+        scoopsOnly={kind === "director" && scoopsOnly(composerRows.map((r) => repo.application(r.applicationId)))}
         resend={
           correction?.snapshot ? { copyId: correction._id, introText: correction.snapshot.introText, outroText: correction.snapshot.outroText,
             researchLink: correction.snapshot.researchLink, extraTo: correction.snapshot.to.slice(1), extraCc: [], removed: [] } : resendCopy

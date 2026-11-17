@@ -282,8 +282,17 @@ export function validateResearchLink(raw: string | null | undefined): ResearchLi
 }
 
 /** Who must attach one: a TA sending the email that goes to the directors. Leads, directors and admins are exempt; the client copy sends no email. */
-export function needsResearchLink(role: Role, kind: "director" | "client", _workType: string = "100%"): boolean {
-  return (role === "ta" || role === "ta_support") && kind === "director";
+export function needsResearchLink(role: Role, kind: "director" | "client", _workType: string = "100%", scoopsOnly = false): boolean {
+  return (role === "ta" || role === "ta_support") && kind === "director" && !scoopsOnly;
+}
+
+/**
+ * Every candidate on the email is a scoop - CVs a Director, TA Lead or Ops person sent the TA (owner, 17 Nov).
+ * The TA did no search for them, so the ChatGPT research link is not asked for; a valid one is still used.
+ * An email with no candidates is not a scoop email: the day's research is still asked for.
+ */
+export function scoopsOnly(apps: ({ scoopFrom?: unknown; scoopReceivedAt?: number | null } | null | undefined)[]): boolean {
+  return apps.length > 0 && apps.every((a) => !!a && !!(a.scoopFrom || a.scoopReceivedAt));
 }
 
 /**
@@ -299,9 +308,11 @@ export function checkResearchSubmission(input: {
   workType?: string;
   /** Trusted backend evidence only; never accept this flag from a send form. */
   excused?: boolean;
+  /** Read from the applications by the server, never from a send form (scoopsOnly). */
+  scoopsOnly?: boolean;
 }): { ok: true; url: string | null } | { ok: false; reason: string } {
   const checked = validateResearchLink(input.link);
-  if (!needsResearchLink(input.role, input.kind, input.workType)) return { ok: true, url: checked.ok && input.kind === "director" ? checked.url : null };
+  if (!needsResearchLink(input.role, input.kind, input.workType, input.scoopsOnly)) return { ok: true, url: checked.ok && input.kind === "director" ? checked.url : null };
   if (input.excused && !input.link?.trim()) return { ok: true, url: null };
   if (!checked.ok) return { ok: false, reason: checked.reason };
   if (!input.confirmed) {
