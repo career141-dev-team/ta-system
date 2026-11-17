@@ -721,12 +721,14 @@ function ViewTabs({
           aria-label={open ? "Hide the views" : "Show the views"}
           className={"absolute bottom-0 left-1/2 flex h-[max(2.125rem,26px)] w-[max(12rem,150px)] -translate-x-1/2 items-center justify-center pt-1 text-brand-strong transition-opacity duration-200 hover:text-brand " + (open ? "pointer-events-none opacity-0" : "")}
         >
-          {/* The notch: the bottom row's tab, wide at the window's edge (owner, 17 Nov 2026). */}
-          <svg viewBox="0 0 208 42" preserveAspectRatio="none" className="absolute inset-0 size-full -scale-y-100 fill-surface" aria-hidden="true">
-            <path d="M0 0c10 0 12 6 15 14l7 16c3 8 8 12 16 12h132c8 0 13-4 16-12l7-16c3-8 5-14 15-14Z" />
-          </svg>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="relative size-[max(1rem,13px)]" aria-hidden="true">
+          {/* The arrow comes first in the markup, so the button's icon pop (Motion.tsx takes the
+              first svg) swells only the arrow, never the notch behind it (owner, 17 Nov 2026).
+              The notch is drawn already upside down - no flip transform for GSAP to undo. */}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="relative z-10 size-[max(1rem,13px)]" aria-hidden="true">
             <path d="m6 15 6-6 6 6" />
+          </svg>
+          <svg viewBox="0 0 208 42" preserveAspectRatio="none" className="absolute inset-0 size-full fill-surface" aria-hidden="true" data-still>
+            <path d="M0 42c10 0 12-6 15-14l7-16c3-8 8-12 16-12h132c8 0 13 4 16 12l7 16c3 8 5 14 15 14Z" />
           </svg>
         </button>
       )}
