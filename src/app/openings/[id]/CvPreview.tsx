@@ -197,11 +197,14 @@ export default function CvPreview({
       //    its rows popping up one after another, the board zooming soft behind it;
       // 2. a moment later it expands into the full CV.
       const lift = liftOf(c);
+      const typing = typeIn(ghost);
       enter.current = gsap
         .timeline()
         // 1. The same card lifts and grows, evenly (its design is kept, nothing reflows).
         .to(ghost, { ...lift, duration: LIFT, ease: "back.out(1.4)" }, 0)
         .fromTo(details, { y: 8 }, { y: 0, duration: 0.35, stagger: 0.06, ease: "back.out(2)" }, LIFT * 0.4)
+        // Its words type themselves in, as in the recording (owner, 17 Nov 2026).
+        .to(typing.state, { n: typing.total, duration: TYPE, ease: "none", onUpdate: typing.draw }, LIFT * 0.3)
         .to(board, { ...BOARD_AWAY, duration: LIFT + 0.2, ease: GROW_EASE }, 0)
         .to("[data-veil]", { opacity: 1, duration: LIFT, ease: GROW_EASE }, 0)
         // 2. Then it expands into the full CV: its details melt, it darkens to the frame.
@@ -452,8 +455,31 @@ const GROW = 0.55;
 const LAND = 0.18;
 /** Stage 1: how long the card takes to lift into the details card; when (from the click)
  *  the details card expands into the full CV. */
-const LIFT = 0.5;
-const EXPAND = 2.4;
+const LIFT = 0.4;
+/** How long the card's words take to type in, and when (from the click) the card
+ *  expands into the CV - short, so the CV opens quickly (owner, 17 Nov 2026). */
+const TYPE = 0.55;
+const EXPAND = 1.05;
+
+/** The copy's words, emptied and typed back in by one tween of a character count:
+ *  every text in the card fills in order, a character at a time. Text nodes only. */
+function typeIn(ghost: HTMLElement) {
+  const nodes: { node: Text; text: string }[] = [];
+  const walk = document.createTreeWalker(ghost, NodeFilter.SHOW_TEXT);
+  for (let t = walk.nextNode() as Text | null; t; t = walk.nextNode() as Text | null)
+    if (t.data.trim()) nodes.push({ node: t, text: t.data });
+  const total = nodes.reduce((n, x) => n + x.text.length, 0);
+  const state = { n: 0 };
+  const draw = () => {
+    let left = Math.round(state.n);
+    for (const x of nodes) {
+      x.node.data = x.text.slice(0, Math.max(0, left));
+      left -= x.text.length;
+    }
+  };
+  draw();
+  return { state, total, draw };
+}
 
 /** How the clicked card lifts: about 1.4 times its size (less if the window is small),
  *  a little up, shifted only as far as needed to stay inside the window. Scaled evenly,
