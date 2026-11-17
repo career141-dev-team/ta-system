@@ -7,7 +7,7 @@ import { workdayDate } from "../../src/lib/workday";
 import { isEodCandidateEligible } from "../../src/lib/eodEligibility";
 import { workSessionStart } from "../../src/lib/workdayRequirements";
 import { dailySendProblem, sameCandidateList, EMAIL_RETENTION_MS, MISSED_EOD_DAYS, type DailyEmailSnapshot } from "../../src/lib/dailyEmail";
-import { validateResearchLink, checkResearchSubmission } from "../../src/lib/eod-format";
+import { validateResearchLink, checkResearchSubmission, scoopsOnly } from "../../src/lib/eod-format";
 import { dailyEmailsFor, finalizeDailyEmail, middayRequired } from "../lib/dailyEmail";
 import { requiredChecks } from "../lib/workdayChecks";
 import { refreshWorkdayChecks } from "./workdays";
@@ -194,11 +194,13 @@ export const begin = internalMutation({
       if (!file || file.userId !== user._id || file.jobId !== args.jobId || file.applicationId !== a.applicationId || !args.applicationIds.includes(file.applicationId)) throw new Error("The saved CV attachment does not belong to this email.");
     }
     const link = validateResearchLink(snapshot.researchLink);
+    // Every candidate a scoop: no ChatGPT link asked for (owner, 17 Nov). Read from the rows, not the caller.
+    const scoops = scoopsOnly(await Promise.all(args.applicationIds.map(id => ctx.db.get(id))));
     if (args.submissionType === "midday") {
-      if (!link.ok || !args.confirmed) throw new Error(link.ok ? "Confirm your ChatGPT link before sending." : link.reason);
+      if (!scoops && (!link.ok || !args.confirmed)) throw new Error(link.ok ? "Confirm your ChatGPT link before sending." : link.reason);
     } else {
       const check = checkResearchSubmission({ role: mapUser(user).role, kind: "director", link: snapshot.researchLink, confirmed: args.confirmed,
-        excused: !!setup?.eodChecks.find(c => c.key.startsWith("chatgpt:"))?.exception });
+        excused: !!setup?.eodChecks.find(c => c.key.startsWith("chatgpt:"))?.exception, scoopsOnly: scoops });
       if (!check.ok) throw new Error(check.reason);
     }
     if (!sameCandidateList(snapshot.rows.map(r => r.applicationId), args.applicationIds)) throw new Error("The email preview does not match its candidate list. Reload before sending.");

@@ -4450,7 +4450,7 @@ export async function finishCall(formData: FormData) {
 const eodInFlight = new Set<string>();
 
 /** Read the saved work type in preflight; an editable form must not waive tasks. */
-async function eodResearchSubmission(user: User, openingId: string, kind: "director" | "client", formData: FormData, revised = false) {
+async function eodResearchSubmission(user: User, openingId: string, kind: "director" | "client", formData: FormData, revised = false, scoops = false) {
   const link = String(formData.get("chatgptLink") ?? "");
   const confirmed = formData.get("researchConfirmed") === "on";
   let workType: WorkingStage = repo.workingStage(openingId, user.id);
@@ -4466,6 +4466,7 @@ async function eodResearchSubmission(user: User, openingId: string, kind: "direc
         link,
         confirmed,
         revised,
+        scoopsOnly: scoops,
       });
       if (!check.ok) return { ok: false as const, reason: check.blockers.join("; ") };
       workType = check.workType;
@@ -4474,7 +4475,7 @@ async function eodResearchSubmission(user: User, openingId: string, kind: "direc
       return { ok: false as const, reason: backendMessage(error, "Could not check the requirements. Try again.") };
     }
   }
-  return checkResearchSubmission({ role: user.role, kind, link, confirmed, workType, excused });
+  return checkResearchSubmission({ role: user.role, kind, link, confirmed, workType, excused, scoopsOnly: scoops });
 }
 
 async function eodWorkContext(user: User, openingId: string): Promise<{ workType: WorkingStage; sessionStart: number | null }> {
@@ -4699,11 +4700,14 @@ export async function sendDailyEmail(formData: FormData) {
     }
     if (!recipients.to.length) throw new Error("Add an address on the To line.");
     const confirmed = formData.get("researchConfirmed") === "on";
+    // Scoop CVs only: no ChatGPT link asked for (owner, 17 Nov). Read from the applications, never the form.
+    const { scoopsOnly } = await import("@/lib/eod-format");
+    const scoops = scoopsOnly(ids.map((id) => repo.application(id)));
     // Midday always carries fresh research. EOD keeps the server-authoritative
     // work type and exception rules already used by the live send path.
     const research = type === "midday" || parent || forDate
-      ? checkResearchSubmission({ role: user.role, kind: "director", link: String(formData.get("chatgptLink") ?? ""), confirmed })
-      : await eodResearchSubmission(user, openingId, "director", formData, !!parentId);
+      ? checkResearchSubmission({ role: user.role, kind: "director", link: String(formData.get("chatgptLink") ?? ""), confirmed, scoopsOnly: scoops })
+      : await eodResearchSubmission(user, openingId, "director", formData, !!parentId, scoops);
     if (!research.ok) throw new Error(research.reason);
     const rawSubject = String(formData.get("subject") ?? "").trim();
     const subject = parent ? revisedSubject(rawSubject) : rawSubject;
