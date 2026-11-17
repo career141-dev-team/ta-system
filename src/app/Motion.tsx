@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { DUR, EASE, gsap } from "@/lib/gsap";
+import { turn } from "./Board";
 
 // The app's motion, once for every screen (owner, 14 Nov 2026: "apply GSAP for
 // everything... every button... like a modern dashboard"). One motion per kind of
@@ -58,7 +59,7 @@ export default function Motion() {
     }
     shown = path;
     // Board pages slide as one (src/app/Board.tsx); this is for the rest (an opening).
-    if (document.querySelector("main [data-board-body]")) return;
+    if (document.querySelector("main [data-board-body]") || performance.now() < turn.quietUntil) return;
     let tl: gsap.core.Timeline | undefined;
     // One frame on, so the new page is in place. The visible <main> only: with
     // Cache Components, Next keeps the page you left in the document, hidden

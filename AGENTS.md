@@ -44,6 +44,7 @@ Openings ─▶ one opening (/openings/[id])
 
 | Screen | File(s) | State |
 |---|---|---|
+| All pages (Alt + ` overview) | `src/app/Overview.tsx` (pictures of visited pages; quiets `Board.tsx` and `Motion.tsx` for its own zoom) | built |
 | Top bar | `src/app/TopNav.tsx`, `NavLinks.tsx`, `TopMenus.tsx` | built |
 | Today T1 / T2 | `src/app/today/` (`TodayScreen` picks which) | built |
 | Opening overview | `src/app/openings/[id]/page.tsx`, `OpeningView.tsx`, `view.ts` | built |

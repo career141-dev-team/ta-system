@@ -14,7 +14,7 @@ import { ROLES, useRole, type Role } from "@/lib/role";
 // its own rules (a TA sees only their own TA Track). Excel Tables (every TA's rows)
 // stays TA Support's. Not built yet, so not here: Clients, Reports, Targets, Voice
 // agent, Extras; Alerts is the bell.
-const LINKS: [string, string, Role[]][] = [
+export const LINKS: [string, string, Role[]][] = [
   ["Today", "/today", ROLES],
   ["Openings", "/openings", ROLES],
   ["Strategy Planner", "/strategy", ROLES],

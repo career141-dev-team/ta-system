@@ -14,7 +14,7 @@ import { counts, useRows } from "./strategy/data";
 // An opening (/openings/<id>) keeps its own layout; sign-in has none.
 
 /** Board pages in the top bar's order (the slide direction follows it). */
-const PAGES: [string, string][] = [
+export const PAGES: [string, string][] = [
   ["/today", "Today"],
   ["/openings", "Openings"],
   ["/strategy", "Strategy Planner"],
@@ -34,6 +34,10 @@ const at = (path: string) => PAGES.findIndex(([p]) => p === path);
 /** The last page shown, kept outside React so a second effect run (development
  *  runs effects twice) does not read it as a move. */
 let last: string | null = null;
+
+/** The overview (./Overview.tsx) zooms its own way into the page you pick: for that
+ *  move, the board's slide and the arrival motion stand aside. */
+export const turn = { quietUntil: 0 };
 
 export default function Board({ children }: { children: ReactNode }) {
   const path = usePathname();
@@ -118,6 +122,11 @@ export default function Board({ children }: { children: ReactNode }) {
       last = path;
       const g = ghost.current;
       ghost.current = null;
+      if (performance.now() < turn.quietUntil) {
+        g?.remove();
+        loading(false);
+        return;
+      }
       // Not on the first load: the page is server HTML that React has not taken
       // over yet, and styling it then breaks hydration.
       if (!moved || i < 0 || from < 0) {

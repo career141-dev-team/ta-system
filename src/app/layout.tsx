@@ -14,6 +14,7 @@ import "./globals.css";
 import TopNav from "./TopNav";
 import Motion from "./Motion";
 import Board from "./Board";
+import Overview from "./Overview";
 import { THEME_BOOT } from "@/lib/theme";
 
 export const metadata: Metadata = {
@@ -39,6 +40,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <TopNav />
         <Board>{children}</Board>
         <Motion />
+        <Overview />
       </body>
     </html>
   );

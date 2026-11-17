@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import ActiveNavLinks, { SearchShortcut } from "./NavLinks";
 import { Bell, Person } from "./TopMenus";
+import { OverviewButton } from "./Overview";
 
 
 const CIRCLE =
@@ -89,6 +90,8 @@ export default function TopNav() {
 
       {/* The bell's list and the person's menu (TopMenus): what the TA System's
           bell and name button open (FLOW-CHECK 7.1, 7.3). */}
+      {/* Every open page at once, zoomed out (Overview.tsx). */}
+      <OverviewButton />
       <Bell />
       <Person />
     </header>
