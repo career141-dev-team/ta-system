@@ -394,24 +394,8 @@ function TabsBar() {
       }, PEEK_MS);
     }, delay);
   }, []);
-  // Inside a view the bar waits for a click on its arrow; it does not peek, and a new
-  // view starts with it down.
-  const [seenView, setSeenView] = useState(view);
-  if (seenView !== view) {
-    setSeenView(view);
-    setTabsOpen(false);
-  }
   useEffect(() => () => clearTimeout(tabsTimer.current), []);
 
-  // Inside a view a click anywhere but the bar puts it away again.
-  useEffect(() => {
-    if (!focus || !tabsOpen) return;
-    const away = (e: PointerEvent) => {
-      if (!(e.target as Element).closest?.("[data-views-bar]")) setTabsOpen(false);
-    };
-    document.addEventListener("pointerdown", away);
-    return () => document.removeEventListener("pointerdown", away);
-  }, [focus, tabsOpen]);
   // Escape puts the bar away. (Back is a normal back, handled in OpeningView.)
   useEffect(() => {
     const esc = (e: KeyboardEvent) => e.key === "Escape" && setTabsOpen(false);
@@ -446,15 +430,94 @@ function TabsBar() {
     return () => window.removeEventListener("keydown", key);
   }, [focus, tabsOpen, view, go, peek]);
 
-  // Closing, the bar sinks and fades the way it rose instead of vanishing.
-  // Inside a view it is always shown.
-  // Inside a view it is always shown, in its own row (owner, 17 Nov 2026: keep the
-  // space as before, no hover to reveal it - click and use).
-  const tabsShown = useExit(tabsOpen || focus, tabsNav, TABS_OUT);
+  const navWrap = useRef<HTMLDivElement>(null);
+  const notchTab = useRef<HTMLButtonElement>(null);
+  const prevTabsOpen = useRef<boolean | null>(null);
+
+  // GSAP animation: when inside a view, popping the bar up and hiding it down smoothly transitions
+  // between the bottom notch tab and the floating views bar. Switching views keeps the bar open.
+  useGSAP(
+    () => {
+      if (!focus) return;
+      const nav = navWrap.current;
+      const notch = notchTab.current;
+      if (!nav || !notch) return;
+
+      if (prevTabsOpen.current === null) {
+        prevTabsOpen.current = tabsOpen;
+        if (tabsOpen) {
+          gsap.set(nav, { opacity: 1, y: 0, pointerEvents: "auto" });
+          gsap.set(notch, { opacity: 0, y: 12, pointerEvents: "none" });
+        } else {
+          gsap.set(nav, { opacity: 0, y: 20, pointerEvents: "none" });
+          gsap.set(notch, { opacity: 1, y: 0, pointerEvents: "auto" });
+        }
+        return;
+      }
+
+      if (prevTabsOpen.current === tabsOpen) return;
+      prevTabsOpen.current = tabsOpen;
+
+      if (tabsOpen) {
+        gsap.to(notch, { opacity: 0, y: 12, duration: DUR.fast, ease: EASE.in, overwrite: true, onComplete: () => { notch.style.pointerEvents = "none"; } });
+        gsap.to(nav, { opacity: 1, y: 0, duration: DUR.base, ease: EASE.out, overwrite: true, onStart: () => { nav.style.pointerEvents = "auto"; } });
+      } else {
+        gsap.to(nav, { opacity: 0, y: 20, duration: DUR.fast, ease: EASE.in, overwrite: true, onComplete: () => { nav.style.pointerEvents = "none"; } });
+        gsap.to(notch, { opacity: 1, y: 0, duration: DUR.base, ease: EASE.out, overwrite: true, onStart: () => { notch.style.pointerEvents = "auto"; } });
+      }
+    },
+    { dependencies: [tabsOpen, focus] },
+  );
+
+  // On Overview: floating tabs bar on hover
+  const tabsShown = useExit(tabsOpen && !focus, tabsNav, TABS_OUT);
+
+  if (focus) {
+    return (
+      <div data-views-bar className="relative flex shrink-0 justify-center overflow-hidden py-[max(0.6rem,6px)] pb-[max(1.75rem,16px)]">
+        {/* The bottom notch tab: click to pop the views bar up */}
+        <button
+          ref={notchTab}
+          type="button"
+          onClick={() => setTabsOpen(true)}
+          aria-expanded={tabsOpen}
+          aria-label="Show the views"
+          className="absolute bottom-0 left-1/2 z-20 flex h-[max(2.125rem,26px)] w-[max(12rem,150px)] -translate-x-1/2 cursor-pointer items-center justify-center pt-1 text-brand-strong transition-colors hover:text-brand"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="relative z-10 size-[max(1rem,13px)]" aria-hidden="true">
+            <path d="m6 15 6-6 6 6" />
+          </svg>
+          <svg viewBox="0 0 208 42" preserveAspectRatio="none" className="absolute inset-0 size-full fill-surface" aria-hidden="true" data-still>
+            <path d="M0 42c10 0 12-6 15-14l7-16c3-8 8-12 16-12h132c8 0 13 4 16 12l7 16c3 8 5 14 15 14Z" />
+          </svg>
+        </button>
+
+        {/* The floating views bar */}
+        <div
+          ref={navWrap}
+          className="relative z-10"
+          style={{ opacity: tabsOpen ? 1 : 0, transform: tabsOpen ? "none" : "translateY(20px)", pointerEvents: tabsOpen ? "auto" : "none" }}
+        >
+          <ViewTabs
+            ref={tabsNav}
+            docked={true}
+            onClose={() => setTabsOpen(false)}
+            onEnter={enterBar}
+            onLeave={leaveBar}
+            onHold={() => (held.current = true)}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
-      {tabsShown && <ViewTabs ref={tabsNav} docked={focus} open={tabsOpen} onToggle={() => setTabsOpen((o) => !o)} onEnter={enterBar} onLeave={leaveBar} onHold={() => (held.current = true)} />}
+      {tabsShown && (
+        <div data-views-bar className="fixed bottom-0 left-1/2 z-40 -translate-x-1/2 py-[max(0.6rem,6px)]">
+          <ViewTabs ref={tabsNav} docked={false} onEnter={enterBar} onLeave={leaveBar} onHold={() => (held.current = true)} />
+        </div>
+      )}
     </>
   );
 }
@@ -608,8 +671,7 @@ function keepSet(set: ViewSet) {
 function ViewTabs({
   ref: root,
   docked,
-  open,
-  onToggle,
+  onClose,
   onEnter,
   onLeave,
   onHold,
@@ -617,9 +679,7 @@ function ViewTabs({
   ref: RefObject<HTMLElement | null>;
   /** Inside a view: its own row under the board. Else it floats in the same place. */
   docked: boolean;
-  /** Docked: the bar is up (a click on the arrow raised it). */
-  open: boolean;
-  onToggle: () => void;
+  onClose?: () => void;
   onEnter: () => void;
   onLeave: () => void;
   onHold: () => void;
@@ -668,9 +728,10 @@ function ViewTabs({
     { dependencies: [set], scope: root },
   );
 
-  // The bar rises in once when it opens.
+  // The bar rises in once when it opens (on Overview, where it is mounted/unmounted).
   useGSAP(
     () => {
+      if (docked) return;
       gsap.from(root.current, { opacity: 0, y: 16, scale: 0.97, duration: DUR.base });
     },
     { scope: root },
@@ -692,53 +753,26 @@ function ViewTabs({
         gsap.to(pill, { opacity: 0, duration: DUR.fast, overwrite: true });
         return;
       }
-      if (!pill.style.width || Number(gsap.getProperty(pill, "opacity")) < 0.05) {
-        const start = (pillAt && nav.querySelector<HTMLElement>(`[data-view="${pillAt}"]`)) || on;
-        gsap.set(pill, { x: start.offsetLeft, y: start.offsetTop, width: start.offsetWidth, height: start.offsetHeight, opacity: 1 });
+      const needsInit = !pill.style.width || Number(gsap.getProperty(pill, "opacity")) < 0.05;
+      if (needsInit) {
+        gsap.set(pill, { x: on.offsetLeft, y: on.offsetTop, width: on.offsetWidth, height: on.offsetHeight, opacity: 1 });
+      } else if (pillAt && pillAt !== view) {
+        flow(pill, on);
       }
-      flow(pill, on);
       pillAt = view;
     },
     { dependencies: [view, set], scope: root },
   );
 
   return (
-    // Same padding both ways, so the bar does not jump when a view opens or closes.
-    <div
-      data-views-bar
+    <nav
+      ref={root}
+      aria-label="Views of this opening"
+      onPointerLeave={() => glide.out(hoverGlow())}
       onMouseEnter={docked ? undefined : onEnter}
       onMouseLeave={docked ? undefined : onLeave}
-      className={"py-[max(0.6rem,6px)] " + (docked ? "relative flex shrink-0 justify-center pb-[max(1.75rem,16px)]" : "fixed bottom-0 left-1/2 z-40 -translate-x-1/2")}
+      className="relative flex max-w-[calc(100vw-24px)] items-center gap-[max(0.3rem,2px)] overflow-x-auto whitespace-nowrap rounded-full bg-surface p-[max(0.5rem,5px)] shadow-float [scrollbar-width:none]"
     >
-      {/* Inside a view the bar keeps its row, with the arrow standing in for it; a CLICK
-          on the arrow raises the bar, a click on a tab uses it (owner, 17 Nov 2026:
-          "keep like this, the user will click and use" - no hover reveal). */}
-      {docked && (
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-expanded={open}
-          aria-label={open ? "Hide the views" : "Show the views"}
-          className={"absolute bottom-0 left-1/2 flex h-[max(2.125rem,26px)] w-[max(12rem,150px)] -translate-x-1/2 items-center justify-center pt-1 text-brand-strong transition-opacity duration-200 hover:text-brand " + (open ? "pointer-events-none opacity-0" : "")}
-        >
-          {/* The arrow comes first in the markup, so the button's icon pop (Motion.tsx takes the
-              first svg) swells only the arrow, never the notch behind it (owner, 17 Nov 2026).
-              The notch is drawn already upside down - no flip transform for GSAP to undo. */}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="relative z-10 size-[max(1rem,13px)]" aria-hidden="true">
-            <path d="m6 15 6-6 6 6" />
-          </svg>
-          <svg viewBox="0 0 208 42" preserveAspectRatio="none" className="absolute inset-0 size-full fill-surface" aria-hidden="true" data-still>
-            <path d="M0 42c10 0 12-6 15-14l7-16c3-8 8-12 16-12h132c8 0 13 4 16 12l7 16c3 8 5 14 15 14Z" />
-          </svg>
-        </button>
-      )}
-      <div className={docked ? "transition duration-200 " + (open ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-2 opacity-0") : "contents"}>
-      <nav
-        ref={root}
-        aria-label="Views of this opening"
-        onPointerLeave={() => glide.out(hoverGlow())}
-        className="relative flex max-w-[calc(100vw-24px)] items-center gap-[max(0.3rem,2px)] overflow-x-auto whitespace-nowrap rounded-full bg-surface p-[max(0.5rem,5px)] shadow-float [scrollbar-width:none]"
-      >
         {/* The opening itself, in neither set: one click home from any view. */}
         <button
           type="button"
@@ -818,8 +852,21 @@ function ViewTabs({
             </button>
           );
         })}
+        {docked && onClose && (
+          <>
+            <span aria-hidden="true" className="mx-[max(0.2rem,2px)] h-[max(1.4rem,18px)] w-px shrink-0 bg-border" />
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Hide the views"
+              className="relative z-[1] flex size-[max(2rem,24px)] shrink-0 cursor-pointer items-center justify-center rounded-full text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="size-[max(0.95rem,13px)]" aria-hidden="true">
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+            </button>
+          </>
+        )}
       </nav>
-      </div>
-    </div>
   );
 }
