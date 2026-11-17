@@ -191,42 +191,29 @@ export default function CvPreview({
         const b = board.getBoundingClientRect();
         gsap.set(board, { willChange: "transform, filter, opacity", transformOrigin: `${c.left - b.left + c.width / 2}px ${c.top - b.top + c.height / 2}px` });
       }
-      // Small screen first, then big (owner, 17 Nov 2026: "first show a small screen
-      // popping up, then it expands big"): the card grows into a SMALL CV screen near
-      // the middle, with a pop; the CV is readable there; it holds a moment; then the
-      // same screen expands to the full frame while the board zooms away. The frame is
-      // scaled evenly (never stretched), so the CV inside keeps its shape.
-      const f = frame.getBoundingClientRect();
-      const fs = shapeOf(frame);
-      const small: gsap.TweenVars = {
-        left: f.left + (f.width * (1 - SMALL_SCALE)) / 2,
-        top: f.top + (f.height * (1 - SMALL_SCALE)) / 2,
-        width: f.width * SMALL_SCALE,
-        height: f.height * SMALL_SCALE,
-        backgroundColor: fs.backgroundColor,
-        borderTopLeftRadius: `calc(${fs.borderTopLeftRadius} * ${SMALL_SCALE})`,
-        borderTopRightRadius: `calc(${fs.borderTopRightRadius} * ${SMALL_SCALE})`,
-        borderBottomRightRadius: `calc(${fs.borderBottomRightRadius} * ${SMALL_SCALE})`,
-        borderBottomLeftRadius: `calc(${fs.borderBottomLeftRadius} * ${SMALL_SCALE})`,
-      };
-      gsap.set(frame, { scale: SMALL_SCALE, transformOrigin: "50% 50%" });
-      const big = SMALL + HOLD;
+      // Two stages, as in the owner's recording (17 Nov 2026: "first the text card lifts
+      // a little and expands, then after 2 or 3 seconds the CV appears big"):
+      // 1. the card lifts and grows into a dark details card near where it was, the board
+      //    zooming soft behind it, and the candidate's lines appear one by one;
+      // 2. a moment later that card expands into the full CV frame.
+      const mid = midShape(c);
+      const lines = briefOf(ghost, name, title, start);
       enter.current = gsap
         .timeline()
-        // 1. The card pops into a small screen (a little overshoot), its details melting.
-        .to(ghost, { ...small, duration: SMALL, ease: "back.out(1.4)" }, 0)
-        .to(details, { opacity: 0, filter: "blur(6px)", duration: SMALL * 0.5, ease: EASE.in }, 0)
-        .to("[data-veil]", { opacity: 0.5, duration: SMALL, ease: EASE.out }, 0)
-        // The real frame, small, takes the copy's place with its CV already drawn.
-        .to(frame, { opacity: 1, duration: LAND, ease: "none" }, SMALL - LAND)
-        .set(ghost, { display: "none" }, SMALL)
-        .to(inside, { opacity: 1, filter: "blur(0px)", duration: 0.3, stagger: 0.04, ease: EASE.out, clearProps: "filter" }, SMALL - LAND)
-        .to(doc, { opacity: 1, filter: "blur(0px)", duration: 0.3, stagger: 0.03, ease: EASE.out, clearProps: "filter" }, SMALL - LAND)
-        // 2. It holds, small, for a moment. 3. Then it expands to the big view, while
-        // the board zooms away and stays there while the CV is open.
-        .to(frame, { scale: 1, duration: GROW, ease: GROW_EASE, clearProps: "transform,transformOrigin" }, big)
-        .to(board, { ...BOARD_AWAY, duration: GROW, ease: GROW_EASE }, big)
-        .to("[data-veil]", { opacity: 1, duration: GROW, ease: GROW_EASE }, big);
+        // 1. Lift and grow into the details card; the card's own details melt away.
+        .to(ghost, { ...mid, duration: LIFT, ease: "back.out(1.3)" }, 0)
+        .to(details, { opacity: 0, filter: "blur(6px)", duration: LIFT * 0.4, ease: EASE.in }, 0)
+        .to(board, { ...BOARD_AWAY, duration: LIFT + 0.2, ease: GROW_EASE }, 0)
+        .to("[data-veil]", { opacity: 1, duration: LIFT, ease: GROW_EASE }, 0)
+        // The lines come into focus one after another, like the recording's text.
+        .to(lines, { opacity: 1, filter: "blur(0px)", y: 0, duration: 0.4, stagger: 0.2, ease: EASE.out }, LIFT * 0.7)
+        // 2. Then it expands into the full CV.
+        .to(lines, { opacity: 0, filter: "blur(6px)", duration: 0.15, ease: EASE.in }, EXPAND)
+        .to(ghost, { ...shapeOf(frame), duration: GROW, ease: GROW_EASE }, EXPAND)
+        .to(frame, { opacity: 1, duration: LAND, ease: "none" }, EXPAND + GROW - LAND)
+        .set(ghost, { display: "none" }, EXPAND + GROW)
+        .to(inside, { opacity: 1, filter: "blur(0px)", duration: 0.3, stagger: 0.05, ease: EASE.out, clearProps: "filter" }, EXPAND + GROW - LAND)
+        .to(doc, { opacity: 1, filter: "blur(0px)", duration: 0.3, stagger: 0.04, ease: EASE.out, clearProps: "filter" }, EXPAND + GROW - LAND);
       return () => {
         ghost.remove();
         // The close hands over on a timer, which can beat the tween's last frame:
@@ -466,11 +453,58 @@ const NO_DETAILS: BoxContent = { notes: [] };
 const GROW = 0.55;
 /** The last stretch of the grow, where the frame fades in over the growing copy. */
 const LAND = 0.18;
-/** The small screen the card pops into first: its size against the big view, how long
- *  the pop takes, and how long it stays small before it expands. */
-const SMALL_SCALE = 0.42;
-const SMALL = 0.42;
-const HOLD = 0.3;
+/** Stage 1: how long the card takes to lift into the details card; when (from the click)
+ *  the details card expands into the full CV. */
+const LIFT = 0.5;
+const EXPAND = 2.4;
+
+/** The details card the clicked card lifts into: dark, about one and a half cards wide,
+ *  a little above where the card was, kept inside the window. */
+function midShape(c: DOMRect): gsap.TweenVars {
+  const pad = 16;
+  const w = Math.min(Math.max(c.width * 1.5, 300), 440, window.innerWidth - pad * 2);
+  const h = Math.min(w * 0.62, window.innerHeight - pad * 2);
+  const left = Math.min(Math.max(c.left + c.width / 2 - w / 2, pad), window.innerWidth - w - pad);
+  const top = Math.min(Math.max(c.top + c.height / 2 - h / 2 - 24, pad), window.innerHeight - h - pad);
+  return {
+    left,
+    top,
+    width: w,
+    height: h,
+    backgroundColor: "var(--color-ink)",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderBottomRightRadius: 20,
+    borderBottomLeftRadius: 20,
+    boxShadow: "0 24px 60px rgba(0,0,0,0.28)",
+  };
+}
+
+/** The candidate's lines for the details card, laid over the growing copy and hidden
+ *  (blurred, a little low) until the timeline brings them in. Text only - textContent,
+ *  never HTML. */
+function briefOf(ghost: HTMLElement, name: string, title: string, d: BoxContent): HTMLElement[] {
+  const box = document.createElement("div");
+  box.className = "absolute inset-0 flex flex-col justify-center gap-[max(0.45rem,5px)] px-[max(1.6rem,16px)] text-white";
+  const row = (text: string, cls: string) => {
+    const el = document.createElement("p");
+    el.className = "truncate " + cls;
+    el.textContent = text;
+    box.appendChild(el);
+    return el;
+  };
+  const out = [
+    row(name, "text-h3 font-semibold"),
+    row([title || d.designation, d.company].filter(Boolean).join(" · "), "text-small text-white/70"),
+  ];
+  if (d.notice) out.push(row(`Notice  ${d.notice}`, "text-small text-white/85"));
+  if (d.currentSalary || d.expectedSalary)
+    out.push(row(`Salary  ${[d.currentSalary, d.expectedSalary].filter(Boolean).join(" → ")}`, "text-small text-white/85"));
+  out.push(row("Opening the CV…", "mt-1 text-caption text-white/50"));
+  ghost.appendChild(box);
+  gsap.set(out, { opacity: 0, filter: "blur(8px)", y: 6 });
+  return out;
+}
 const GROW_EASE = "power3.inOut";
 // Owner, 17 Nov 2026: the board must zoom in and out more (1.06 was too little), stay
 // zoomed while the CV is open, and stay visible beside it under the dotted veil.
