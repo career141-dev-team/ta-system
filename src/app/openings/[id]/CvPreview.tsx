@@ -467,7 +467,7 @@ const GROW = 0.55;
  *  TYPE, then grows into the CV over OPEN_GROW, the frame fading in over OPEN_LAND. */
 const TYPE = 1.0;
 /** The board's one zoom, with the pop. */
-const ZOOM = 0.6;
+const ZOOM = 0.75;
 const EXPAND = 1.3;
 const OPEN_GROW = 0.85;
 const OPEN_LAND = 0.3;
@@ -513,7 +513,9 @@ function liftOf(c: DOMRect): gsap.TweenVars {
 const GROW_EASE = "power3.inOut";
 // Owner, 17 Nov 2026: the board must zoom in and out more (1.06 was too little), stay
 // zoomed while the CV is open, and stay visible beside it under the dotted veil.
-const BOARD_AWAY = { scale: 1.18, filter: "blur(2px)", opacity: 0.6 };
+// 18 Nov 2026: "the background zoom needs more, more expanded" - 1.18 -> 1.35, over a
+// little longer so the bigger move still reads smooth.
+const BOARD_AWAY = { scale: 1.35, filter: "blur(2px)", opacity: 0.6 };
 const BOARD_HOME = { scale: 1, filter: "blur(0px)", opacity: 1 };
 
 /** The sample CV's words, for asking when there is no file. */
