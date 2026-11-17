@@ -55,6 +55,11 @@ function viewIn(search: string): View | null {
   const v = new URLSearchParams(search).get("view") as View | null;
   return v && v !== "overview" && ORDER.includes(v) ? v : null;
 }
+/** The last view used in each set, so the switch returns to it. */
+const lastIn: Partial<Record<ViewSet, View>> = {};
+/** Where the ATS | Headhunting switch lands: Headhunting's Overview, or the last ATS
+ *  tab used (Pipeline the first time). */
+const landingOf = (set: ViewSet): View => (set === "hh" ? "hh-overview" : lastIn.ats ?? "pipeline");
 /** The bar's Job button: to the opening page (Back buttons open the board of tabs). */
 const LIST = "opening:list";
 /** The parts of a view that flow in after it arrives. */
@@ -82,6 +87,7 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
 
   const show = useCallback((next: View) => {
     current.current = next;
+    if (next !== "overview") lastIn[setOf(next)] = next;
     setView(next);
     setOpened((o) => (o.includes(next) ? o : [...o, next]));
   }, []);
@@ -206,9 +212,11 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
   useEffect(() => {
     if (view === "overview") return;
     const rows = setOf(view) === "hh" ? HH_ROWS : ATS_ROWS;
+    // And where the ATS | Headhunting switch would land, so switching is instant too.
+    const keys: View[] = [...rows.map(([, v]) => v), landingOf(setOf(view) === "hh" ? "ats" : "hh")].filter((v) => CAN_SOURCE || setOf(v) !== "hh");
     const idle = window.requestIdleCallback?.bind(window) ?? ((f: () => void) => window.setTimeout(f, 600));
     const cancel = window.cancelIdleCallback?.bind(window) ?? window.clearTimeout;
-    const id = idle(() => setOpened((o) => (rows.every(([, v]) => o.includes(v)) ? o : [...o, ...rows.map(([, v]) => v).filter((v) => !o.includes(v))])));
+    const id = idle(() => setOpened((o) => (keys.every((v) => o.includes(v)) ? o : [...o, ...keys.filter((v) => !o.includes(v))])));
     return () => cancel(id);
   }, [view]);
   // One value per view, so the rows and back buttons that only need `go` do not
@@ -827,6 +835,12 @@ function ViewTabs({
     onHold();
     setSet(next);
     keepSet(next);
+    // Inside a view the switch takes you there at once: Headhunting opens its
+    // Overview, ATS the last ATS tab (owner, 18 Nov 2026: "when the user clicks the
+    // toggle ATS to Headhunting it needs to show the Headhunting overview quickly - now
+    // it stays in the ATS even when they change the toggle"). On the opening page both
+    // lists are already in view, so there it only changes the bar's tabs.
+    if (view !== "overview") go(landingOf(next));
   };
 
   // Pointing shows, clicking acts (owner, 13 Nov 2026, replacing hover-to-switch):
