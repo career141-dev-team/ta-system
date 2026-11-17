@@ -1,129 +1,278 @@
 "use client";
 
-import { useState } from "react";
+import Image from "next/image";
+import { useEffect, useRef, useState } from "react";
+import { gsap, motionOK, swapIn, useGSAP } from "@/lib/gsap";
+import type { Found, SearchResult } from "@/lib/linkedinSearch";
+import { EMPTY, chipsOf, isEmpty, readAsk, type Ask } from "./read";
 
-// LinkedIn's own experience bands (the actor's yearsOfExperienceIds).
-const YEARS = [
-  ["", "Any"],
-  ["1", "Under 1 year"],
-  ["2", "1–2 years"],
-  ["3", "3–5 years"],
-  ["4", "6–10 years"],
-  ["5", "More than 10 years"],
+// LinkedIn Search as a chat with AURA (owner, 17 Nov 2026: "looks like a prompt chat
+// box, not a form"). The TA says who they need; AURA shows what it read, searches one
+// page of 25, opens the 10 most likely and shows them best first with what matched.
+// A follow-up ("only Colombo", "now 6+ years") changes the last search. Nothing is saved.
+
+type Turn =
+  | { id: number; from: "me"; text: string }
+  | { id: number; from: "aura"; text?: string; ask?: Ask; result?: SearchResult; error?: string };
+
+const TRY = [
+  "Software engineers at WSO2 in Colombo with 5 years experience",
+  "HR managers in Kandy",
+  "Java developers with Spring and React",
+  "Finance directors at Hemas",
 ];
-
-// The actor's output shape is only partly known: read every field defensively.
-type Item = {
-  firstName?: string;
-  lastName?: string;
-  headline?: string;
-  linkedinUrl?: string;
-  location?: { linkedinText?: string } | string;
-  currentPosition?: { companyName?: string; position?: string }[];
-  experience?: { position?: string; companyName?: string }[];
-  skills?: ({ name?: string } | string)[];
-};
-
-const field =
-  "h-10 w-full rounded-sm border border-border bg-surface px-3 text-small outline-none focus:border-brand focus:ring-2 focus:ring-brand/30";
-const label = "mb-1 block text-caption font-medium text-ink-2";
+const NEXT = ["Now 6+ years", "Only Colombo", "New search"];
 
 export default function LinkedInSearch() {
-  const [f, setF] = useState({ designation: "", skills: "", years: "", company: "", location: "", maxItems: "10" });
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const [ask, setAsk] = useState<Ask>(EMPTY);
+  const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [items, setItems] = useState<Item[] | null>(null);
-  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
+  const scroller = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLTextAreaElement>(null);
+  const seq = useRef(0);
+  const id = () => ++seq.current;
 
-  async function search(e: React.FormEvent) {
-    e.preventDefault();
+  // Each new turn arrives by the one switch, and the talk follows it down.
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    const all = el.querySelectorAll("[data-turn]");
+    if (all.length) swapIn(all[all.length - 1]);
+  }, [turns.length]);
+
+  // AURA's mark breathes while it looks (never spins).
+  const orb = useRef<HTMLDivElement>(null);
+  useGSAP(
+    () => {
+      if (!busy || !orb.current || !motionOK()) return;
+      gsap.to(orb.current.querySelector("[data-glow]"), { scale: 1.35, opacity: 0.15, duration: 0.9, ease: "sine.inOut", repeat: -1, yoyo: true });
+    },
+    { dependencies: [busy], scope: orb },
+  );
+
+  async function send(raw: string) {
+    const said = raw.trim();
+    if (!said || busy) return;
+    setText("");
+    if (/^(?:new search|start over|clear)$/i.test(said)) {
+      setTurns([]);
+      setAsk(EMPTY);
+      box.current?.focus();
+      return;
+    }
+    const next = readAsk(said, ask);
+    const me: Turn = { id: id(), from: "me", text: said };
+    if (isEmpty(next)) {
+      setTurns((t) => [...t, me, { id: id(), from: "aura", text: "Tell me a job title, a company, a place or a skill - for example “Java developers in Colombo with 5 years”." }]);
+      return;
+    }
+    setAsk(next);
+    setTurns((t) => [...t, me]);
     setBusy(true);
-    setError("");
     try {
-      const res = await fetch("/api/linkedin-search", { method: "POST", body: JSON.stringify(f) });
-      // The dev link is a static site with no server, so the search route is not there.
+      const res = await fetch("/api/linkedin-search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(next) });
       const data = await res.json().catch(() => {
-        throw new Error("LinkedIn search needs the server. It runs on a local copy with APIFY_TOKEN set, not on the dev link yet.");
+        throw new Error("LinkedIn search needs the server. It runs on a local copy with APIFY_TOKEN set, or on the dev link once the key is set in Cloudflare.");
       });
       if (!res.ok) throw new Error(data.error ?? "Search failed");
-      setItems(data.items);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Search failed");
+      setTurns((t) => [...t, { id: id(), from: "aura", ask: next, result: data as SearchResult }]);
+    } catch (e) {
+      setTurns((t) => [...t, { id: id(), from: "aura", ask: next, error: e instanceof Error ? e.message : "Search failed" }]);
     } finally {
       setBusy(false);
     }
   }
 
+  const lastAura = [...turns].reverse().find((t) => t.from === "aura")?.id;
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-8 max-md:p-4">
-      <form onSubmit={search} className="grid grid-cols-3 gap-4 max-lg:grid-cols-2 max-md:grid-cols-1">
-        <label>
-          <span className={label}>DESIGNATION</span>
-          <input className={field} value={f.designation} onChange={set("designation")} placeholder="Software Engineer, Tech Lead" />
-        </label>
-        <label>
-          <span className={label}>SKILLS</span>
-          <input className={field} value={f.skills} onChange={set("skills")} placeholder="React, Node.js" />
-        </label>
-        <label>
-          <span className={label}>YEARS OF EXPERIENCE</span>
-          <select className={field} value={f.years} onChange={set("years")}>
-            {YEARS.map(([v, t]) => (
-              <option key={v} value={v}>{t}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span className={label}>CURRENT COMPANY</span>
-          <input className={field} value={f.company} onChange={set("company")} placeholder="WSO2 or a LinkedIn company URL" />
-        </label>
-        <label>
-          <span className={label}>LOCATION</span>
-          <input className={field} value={f.location} onChange={set("location")} placeholder="Colombo, Sri Lanka" />
-        </label>
-        <label>
-          <span className={label}>HOW MANY (MAX 50)</span>
-          <input className={field} type="number" min={1} max={50} value={f.maxItems} onChange={set("maxItems")} />
-        </label>
-        <div className="col-span-full flex items-center gap-4">
-          <button disabled={busy} className="h-10 rounded-full bg-brand px-6 text-small font-medium text-white hover:bg-brand-strong disabled:opacity-60">
-            {busy ? "Searching…" : "Search LinkedIn"}
-          </button>
-          <span className="text-small text-ink-3">Separate several values with commas. Each profile costs about $0.008.</span>
-        </div>
-      </form>
-
-      {error && <p className="rounded-sm bg-danger-soft px-4 py-3 text-small text-danger">{error}</p>}
-      {items && !items.length && !error && <p className="text-small text-ink-2">No profiles found.</p>}
-
-      <ul className="flex flex-col gap-3">
-        {items?.map((p, i) => {
-          const loc = typeof p.location === "string" ? p.location : p.location?.linkedinText;
-          const now = p.currentPosition?.[0] ?? p.experience?.[0];
-          const skills = (p.skills ?? []).map((s) => (typeof s === "string" ? s : s.name)).filter(Boolean).slice(0, 8);
-          return (
-            <li key={p.linkedinUrl ?? i} className="rounded-md bg-surface p-4 shadow-card">
-              <div className="flex items-baseline justify-between gap-4">
-                <p className="text-body font-medium">{[p.firstName, p.lastName].filter(Boolean).join(" ") || "Unnamed"}</p>
-                {p.linkedinUrl && (
-                  <a href={p.linkedinUrl} target="_blank" rel="noreferrer" className="text-small text-brand hover:underline">
-                    Open on LinkedIn
-                  </a>
-                )}
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-[max(1.5rem,12px)] pb-6 pt-[max(2.25rem,20px)]">
+        <div className="mx-auto flex w-full max-w-[52rem] flex-col gap-[max(1.75rem,16px)]">
+          {!turns.length && <Welcome onTry={send} />}
+          {turns.map((t) =>
+            t.from === "me" ? (
+              <div key={t.id} data-turn className="flex justify-end">
+                <p className="max-w-[80%] whitespace-pre-line rounded-lg rounded-br-xs bg-surface-2 px-[max(1.25rem,14px)] py-[max(0.75rem,9px)] text-body text-ink">{t.text}</p>
               </div>
-              <p className="text-small text-ink-2">{p.headline}</p>
-              <p className="text-small text-ink-3">{[now?.position, now?.companyName, loc].filter(Boolean).join(" · ")}</p>
-              {skills.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {skills.map((s) => (
-                    <span key={s} className="rounded-full bg-surface-2 px-2.5 py-0.5 text-caption text-ink-2">{s}</span>
-                  ))}
+            ) : (
+              <div key={t.id} data-turn className="flex gap-[max(0.9rem,10px)]">
+                <Orb />
+                <div className="flex min-w-0 flex-1 flex-col gap-3 pt-1.5">
+                  {t.text && <p className="text-body text-ink">{t.text}</p>}
+                  {t.ask && <Read ask={t.ask} />}
+                  {t.error && <p className="rounded-sm bg-danger-soft px-4 py-3 text-small text-danger">{t.error}</p>}
+                  {t.result && <Results r={t.result} />}
+                  {t.id === lastAura && t.result && !busy && (
+                    <div className="flex flex-wrap gap-2">
+                      {NEXT.map((n) => (
+                        <button key={n} type="button" onClick={() => send(n)} className="rounded-full border border-border px-3.5 py-1.5 text-small text-ink-2 hover:border-border-strong hover:bg-surface-2 hover:text-ink">
+                          {n}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+              </div>
+            ),
+          )}
+          {busy && (
+            <div ref={orb} role="status" className="flex items-center gap-[max(0.9rem,10px)]">
+              <Orb breathing />
+              <p className="text-body text-ink-3">Reading 25 people on LinkedIn and opening the best 10… about a minute.</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* The prompt box: Enter sends, Shift+Enter is a new line. */}
+      <div className="px-[max(1.5rem,12px)] pb-[max(2rem,14px)]">
+        <div className="mx-auto flex w-full max-w-[52rem] items-end gap-[max(0.9rem,8px)] rounded-xl bg-surface p-2.5 shadow-float ring-1 ring-border/60 transition-shadow focus-within:ring-2 focus-within:ring-brand/30">
+          <textarea
+            ref={box}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                send(text);
+              }
+            }}
+            rows={1}
+            maxLength={500}
+            placeholder={turns.length ? "Change it - “only Colombo”, “now 6+ years” - or a new search" : "Who do you need? “Software engineers at WSO2 with 5 years”"}
+            aria-label="Ask AURA to search LinkedIn"
+            className="max-h-32 min-w-0 flex-1 resize-none self-center bg-transparent px-2 py-2 text-body text-ink outline-none placeholder:text-ink-3 [field-sizing:content]"
+          />
+          <button
+            type="button"
+            onClick={() => send(text)}
+            disabled={!text.trim() || busy}
+            aria-label="Send"
+            className="flex size-[max(2.75rem,36px)] shrink-0 items-center justify-center rounded-full bg-brand text-white hover:bg-brand-strong disabled:opacity-40"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="size-[max(1.25rem,16px)]" aria-hidden="true">
+              <path d="M12 19V5M5 12l7-7 7 7" />
+            </svg>
+          </button>
+        </div>
+        <p className="mx-auto mt-2 max-w-[52rem] text-center text-caption text-ink-3">Each search reads 25 people and opens the best 10 - about $0.14.</p>
+      </div>
     </div>
+  );
+}
+
+function Welcome({ onTry }: { onTry: (t: string) => void }) {
+  return (
+    <div className="mt-[max(3rem,16px)] flex flex-col items-center gap-[max(1rem,10px)] text-center">
+      <Orb />
+      <p className="text-h2 text-ink">Who do you need on LinkedIn?</p>
+      <p className="max-w-[34rem] text-small text-ink-2">Say it the way you would to a colleague. I read 25 people, open the 10 most likely and show them best first, with what matched.</p>
+      <div className="mt-2 flex max-w-[44rem] flex-wrap justify-center gap-2">
+        {TRY.map((t) => (
+          <button key={t} type="button" onClick={() => onTry(t)} className="rounded-full border border-border px-3.5 py-1.5 text-small text-ink-2 hover:border-border-strong hover:bg-surface-2 hover:text-ink">
+            {t}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** What AURA read from the prompt, so the TA can see it and say it again to change it. */
+function Read({ ask }: { ask: Ask }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="text-small text-ink-2">Searching LinkedIn for</span>
+      {chipsOf(ask).map((c) => (
+        <span key={c} className="rounded-full bg-violet-soft px-2.5 py-0.5 text-caption text-violet">{c}</span>
+      ))}
+    </div>
+  );
+}
+
+function Results({ r }: { r: SearchResult }) {
+  if (!r.checked.length)
+    return <p className="text-body text-ink">LinkedIn found nobody for this. Try fewer words, or a wider place.</p>;
+  return (
+    <>
+      <p className="text-body text-ink">
+        I read {r.checked.length + r.others.length} people and opened {r.opened ? `the ${r.opened} most likely` : "none"}. Best match first.
+      </p>
+      {r.note && <p className="rounded-sm bg-warn-soft px-4 py-3 text-small text-warn">{r.note}</p>}
+      <ul className="flex flex-col gap-2.5">
+        {r.checked.map((p, i) => (
+          <Person key={p.url || i} p={p} rank={i + 1} />
+        ))}
+      </ul>
+      {r.others.length > 0 && (
+        <details className="rounded-lg bg-surface-2 px-4 py-3">
+          <summary className="cursor-pointer text-small text-ink-2">{r.others.length} more, not opened - check them on LinkedIn for free</summary>
+          <ul className="mt-2 flex flex-col gap-1.5">
+            {r.others.map((p, i) => (
+              <li key={p.url || i} className="text-small">
+                <a href={p.url} target="_blank" rel="noreferrer" className="font-medium text-ink hover:text-brand hover:underline">{p.name}</a>
+                <span className="text-ink-3"> · {p.headline}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      <p className="text-caption text-ink-3">
+        This search: 1 page + {r.opened} profiles = about ${r.cost.toFixed(2)}
+      </p>
+    </>
+  );
+}
+
+function Person({ p, rank }: { p: Found; rank: number }) {
+  const met = p.checks.filter((c) => c.ok).length;
+  return (
+    <li className="rounded-lg bg-surface p-[max(1rem,10px)] shadow-card ring-1 ring-border/60">
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="min-w-0 text-body">
+          <span className="mr-2 font-mono text-caption text-ink-3">{rank}</span>
+          <span className="font-medium text-ink">{p.name}</span>
+        </p>
+        {p.url && (
+          <a href={p.url} target="_blank" rel="noreferrer" className="shrink-0 text-small text-brand hover:underline">
+            Open on LinkedIn ↗
+          </a>
+        )}
+      </div>
+      {p.headline && <p className="text-small text-ink-2">{p.headline}</p>}
+      <p className="text-small text-ink-3">{[p.now, p.place, p.years !== undefined ? `${p.years} years in work` : ""].filter(Boolean).join(" · ")}</p>
+      {p.checks.length > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <span className="text-caption text-ink-3">
+            Matches {met} of {p.checks.length}
+          </span>
+          {p.checks.map((c) => (
+            <span key={c.text} className={"rounded-full px-2.5 py-0.5 text-caption " + (c.ok ? "bg-success-soft text-success" : "bg-surface-2 text-ink-3 line-through")}>
+              {c.ok ? "✓ " : ""}
+              {c.text}
+            </span>
+          ))}
+        </div>
+      )}
+    </li>
+  );
+}
+
+/** AURA's mark; breathing while it looks. */
+function Orb({ breathing = false }: { breathing?: boolean }) {
+  return (
+    <span className="relative flex size-[max(2.5rem,32px)] shrink-0">
+      {breathing && (
+        <span
+          data-glow
+          aria-hidden="true"
+          className="absolute inset-0 rounded-full bg-[conic-gradient(from_0deg,var(--color-aura-1),var(--color-aura-2),var(--color-aura-3),var(--color-aura-4),var(--color-aura-1))] opacity-40"
+        />
+      )}
+      <Image src="/aura-mark.png" alt="AURA" width={40} height={40} className="relative size-full rounded-full" />
+    </span>
   );
 }
