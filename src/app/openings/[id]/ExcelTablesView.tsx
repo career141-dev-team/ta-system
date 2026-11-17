@@ -13,6 +13,7 @@ import WorkdayBlocked from "./WorkdayBlocked";
 import { FIELD_PILL } from "./filters";
 import { useLiftMenu } from "./liftMenu";
 import { useOpeningView } from "./view";
+import type { Profile } from "@/lib/linkedinProfile";
 
 // Headhunting > Excel Tables: the LinkedIn people a TA is working, sheet by sheet
 // (owner's design "Excel Tables", 13 Nov 2026). The rules are the old TA System's
@@ -50,6 +51,8 @@ type Row = {
   location?: string;
   notes: string[];
   matches?: { name: string; detail: string }[];
+  /** Read from LinkedIn by "Extract with AI". */
+  profile?: Profile;
   /** Another TA shortlisted this person first: nothing to send to the pipeline. */
   shortlistedBy?: string;
 };
@@ -314,7 +317,7 @@ export default function ExcelTablesView() {
   }, [undo]);
 
   // ---- Adding people ----
-  const addFromPaste = (text: string) => {
+  const addFromPaste = (text: string, p?: Profile) => {
     if (gate) return false;
     // Not in a sheet or All: the link goes to your latest L-sheet, or starts L1.
     let target = typeof sheet === "number" ? sheet : (sheets.at(-1)?.n ?? 0);
@@ -361,10 +364,11 @@ export default function ExcelTablesView() {
       const row = r(
         `n${Date.now()}${fresh.length}`,
         target,
-        nameFrom(slug),
-        "",
-        "",
+        p?.name || nameFrom(slug),
+        p?.title ?? "",
+        p?.company ?? "",
         {
+          profile: p,
           url: `https://www.linkedin.com/in/${slug}`,
           phone,
           via: phone ? "other" : undefined,
@@ -403,7 +407,9 @@ export default function ExcelTablesView() {
       );
     else if (fresh.length)
       say(
-        ` added to L${target} - name guessed from the link, check it`,
+        p
+          ? ` added to L${target} - read from LinkedIn`
+          : ` added to L${target} - name guessed from the link, check it`,
         fresh[0].name,
       );
     return fresh.length > 0 || there > 0;
@@ -574,7 +580,34 @@ export default function ExcelTablesView() {
         <WorkdayBlocked what="add or work LinkedIn profiles" className="mt-3" />
       )}
 
-      <PasteBar disabled={!!gate} onAdd={addFromPaste} />
+      <PasteBar
+        disabled={!!gate}
+        onAdd={addFromPaste}
+        onExtract={async (text) => {
+          const link = text.trim();
+          if (!LI.test(link) || link.includes("\n")) {
+            say("Paste one LinkedIn profile link to extract it.", undefined, true);
+            return false;
+          }
+          if (rows.some((x) => mine(x) && keyOf(x.url) === keyOf(link)))
+            return addFromPaste(link); // already there: says so
+          try {
+            const res = await fetch("/api/linkedin-profile", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ url: link }),
+            });
+            const data = await res.json().catch(() => {
+              throw new Error("Extract needs the server: a local copy with APIFY_TOKEN set, or the dev link once the key is in Cloudflare.");
+            });
+            if (!res.ok) throw new Error(data.error ?? "Extract failed");
+            return addFromPaste(link, data as Profile);
+          } catch (e) {
+            say(e instanceof Error ? e.message : "Extract failed", undefined, true);
+            return false;
+          }
+        }}
+      />
 
       {/* One toolbar: interest tabs, two toggles, then search and the two menus. */}
       <div className="mt-[max(0.9rem,10px)] flex flex-wrap items-center gap-2">
@@ -930,16 +963,25 @@ function SheetChip({
 function PasteBar({
   disabled,
   onAdd,
+  onExtract,
 }: {
   disabled: boolean;
   onAdd: (text: string) => boolean;
+  onExtract: (text: string) => Promise<boolean>;
 }) {
   const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
   // Always green, as drawn; an empty press puts the cursor in the box.
   const box = useRef<HTMLTextAreaElement>(null);
   const go = () => {
     if (!text.trim()) return box.current?.focus();
     if (onAdd(text)) setText("");
+  };
+  const extract = async () => {
+    if (!text.trim()) return box.current?.focus();
+    setBusy(true);
+    if (await onExtract(text)) setText("");
+    setBusy(false);
   };
   return (
     <div className="mt-[max(0.9rem,10px)] flex items-center gap-3 rounded-lg bg-surface-2 py-1 pl-[max(1.1rem,12px)] pr-1 transition-shadow focus-within:ring-2 focus-within:ring-brand/20">
@@ -968,8 +1010,20 @@ function PasteBar({
       />
       <button
         type="button"
+        onClick={extract}
+        disabled={disabled || busy}
+        title="Read the profile from LinkedIn: name, title, company, skills, experience (about $0.004)"
+        className={
+          BTN +
+          " shrink-0 border border-border bg-surface text-brand hover:bg-brand-tint disabled:opacity-40"
+        }
+      >
+        {busy ? "Extracting…" : "Extract with AI"}
+      </button>
+      <button
+        type="button"
         onClick={go}
-        disabled={disabled}
+        disabled={disabled || busy}
         className={
           BTN +
           " shrink-0 bg-brand text-white hover:bg-brand-strong disabled:opacity-40"
@@ -1241,6 +1295,7 @@ function TableRow({
               />
             </>
           ) : null}
+          {x.profile && <DetailsButton p={x.profile} />}
           {mine && (
             <div className={"flex shrink-0 items-center gap-1.5 transition-opacity" + quiet}>
               {x.hasCv ? (
@@ -1272,6 +1327,110 @@ function TableRow({
         </div>
       </td>
     </tr>
+  );
+}
+
+/** "See details": everything the extract read, in a dialog (Esc or the backdrop closes). */
+function DetailsButton({ p }: { p: Profile }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  }, [open]);
+  const h = "text-caption font-medium uppercase text-ink-3";
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className={ROW_BTN + " border border-border font-normal text-ink-2 hover:bg-surface-2 hover:text-ink"}
+      >
+        See details
+      </button>
+      {open && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 p-4"
+          onClick={() => setOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${p.name} from LinkedIn`}
+            onClick={(e) => e.stopPropagation()}
+            className="flex max-h-[85vh] w-[min(40rem,100%)] flex-col rounded-lg bg-surface shadow-float"
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-border p-5">
+              <div className="min-w-0">
+                <h2 className="truncate text-h3 font-medium text-ink">{p.name}</h2>
+                <p className="text-small text-ink-2">
+                  {[p.title, p.company].filter(Boolean).join(" at ") || p.headline}
+                </p>
+                {p.place && <p className="text-caption text-ink-3">{p.place}</p>}
+              </div>
+              <button
+                type="button"
+                autoFocus
+                onClick={() => setOpen(false)}
+                aria-label="Close"
+                className="flex size-8 shrink-0 items-center justify-center rounded-full text-ink-3 hover:bg-surface-2 hover:text-ink"
+              >
+                <CloseIcon />
+              </button>
+            </div>
+            <div className="flex flex-col gap-5 overflow-y-auto p-5 text-small text-ink">
+              {p.headline && <p>{p.headline}</p>}
+              {p.about && (
+                <section>
+                  <h3 className={h}>About</h3>
+                  <p className="mt-1 whitespace-pre-line text-ink-2">{p.about}</p>
+                </section>
+              )}
+              {p.skills.length > 0 && (
+                <section>
+                  <h3 className={h}>Skills</h3>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {p.skills.map((s) => (
+                      <span key={s} className="rounded-full bg-surface-2 px-2.5 py-0.5 text-caption text-ink-2">
+                        {s}
+                      </span>
+                    ))}
+                  </div>
+                </section>
+              )}
+              {p.experience.length > 0 && (
+                <section>
+                  <h3 className={h}>Experience</h3>
+                  <ul className="mt-1.5 flex flex-col gap-2.5">
+                    {p.experience.map((e, i) => (
+                      <li key={i}>
+                        <p className="font-medium">{e.title || "Role not shown"}</p>
+                        <p className="text-ink-2">{e.company}</p>
+                        <p className="text-caption text-ink-3">{e.period}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+              {p.education.length > 0 && (
+                <section>
+                  <h3 className={h}>Education</h3>
+                  <ul className="mt-1.5 flex flex-col gap-1.5">
+                    {p.education.map((e, i) => (
+                      <li key={i}>
+                        <span className="font-medium">{e.school}</span>
+                        {e.degree && <span className="text-ink-2"> · {e.degree}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
