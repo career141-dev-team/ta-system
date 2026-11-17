@@ -191,29 +191,42 @@ export default function CvPreview({
         const b = board.getBoundingClientRect();
         gsap.set(board, { willChange: "transform, filter, opacity", transformOrigin: `${c.left - b.left + c.width / 2}px ${c.top - b.top + c.height / 2}px` });
       }
-      // Three beats (owner, 17 Nov 2026: "the small box pops up a little, stays, then
-      // only the CV comes"): the card lifts toward you, holds a moment with its details
-      // readable, and only then grows into the CV while the board zooms away.
-      const go = POP + HOLD;
+      // Small screen first, then big (owner, 17 Nov 2026: "first show a small screen
+      // popping up, then it expands big"): the card grows into a SMALL CV screen near
+      // the middle, with a pop; the CV is readable there; it holds a moment; then the
+      // same screen expands to the full frame while the board zooms away. The frame is
+      // scaled evenly (never stretched), so the CV inside keeps its shape.
+      const f = frame.getBoundingClientRect();
+      const fs = shapeOf(frame);
+      const small: gsap.TweenVars = {
+        left: f.left + (f.width * (1 - SMALL_SCALE)) / 2,
+        top: f.top + (f.height * (1 - SMALL_SCALE)) / 2,
+        width: f.width * SMALL_SCALE,
+        height: f.height * SMALL_SCALE,
+        backgroundColor: fs.backgroundColor,
+        borderTopLeftRadius: `calc(${fs.borderTopLeftRadius} * ${SMALL_SCALE})`,
+        borderTopRightRadius: `calc(${fs.borderTopRightRadius} * ${SMALL_SCALE})`,
+        borderBottomRightRadius: `calc(${fs.borderBottomRightRadius} * ${SMALL_SCALE})`,
+        borderBottomLeftRadius: `calc(${fs.borderBottomLeftRadius} * ${SMALL_SCALE})`,
+      };
+      gsap.set(frame, { scale: SMALL_SCALE, transformOrigin: "50% 50%" });
+      const big = SMALL + HOLD;
       enter.current = gsap
         .timeline()
-        // 1. Pop: the copy of the card lifts a little, with a soft shadow.
-        .to(ghost, { scale: POP_SCALE, boxShadow: "0 18px 48px rgba(0,0,0,0.18)", duration: POP, ease: "back.out(2)" }, 0)
-        // 2. Hold: nothing moves until `go` - the details stay readable.
-        // 3. Grow: one move in, and the board stays zoomed while the CV is open (no
-        // second move - an earlier settle-back read as the board going again).
-        .to(board, { ...BOARD_AWAY, duration: GROW, ease: GROW_EASE }, go)
-        .to("[data-veil]", { opacity: 1, duration: GROW, ease: GROW_EASE }, go)
-        .to(ghost, { ...shapeOf(frame), scale: 1, duration: GROW, ease: GROW_EASE }, go)
-        // The card's details melt away as it starts to grow.
-        .to(details, { opacity: 0, filter: "blur(6px)", duration: GROW * 0.4, ease: EASE.in }, go)
-        // Landing: the real frame, its CV already drawn, fades in over the copy - the
-        // CV arrives with the grow, never after an empty dark box.
-        .to(frame, { opacity: 1, duration: LAND, ease: "none" }, go + GROW - LAND)
-        .set(ghost, { display: "none" }, go + GROW)
-        // What is inside comes into focus as it lands, one part after another.
-        .to(inside, { opacity: 1, filter: "blur(0px)", duration: 0.3, stagger: 0.05, ease: EASE.out, clearProps: "filter" }, go + GROW - LAND)
-        .to(doc, { opacity: 1, filter: "blur(0px)", duration: 0.3, stagger: 0.04, ease: EASE.out, clearProps: "filter" }, go + GROW - LAND);
+        // 1. The card pops into a small screen (a little overshoot), its details melting.
+        .to(ghost, { ...small, duration: SMALL, ease: "back.out(1.4)" }, 0)
+        .to(details, { opacity: 0, filter: "blur(6px)", duration: SMALL * 0.5, ease: EASE.in }, 0)
+        .to("[data-veil]", { opacity: 0.5, duration: SMALL, ease: EASE.out }, 0)
+        // The real frame, small, takes the copy's place with its CV already drawn.
+        .to(frame, { opacity: 1, duration: LAND, ease: "none" }, SMALL - LAND)
+        .set(ghost, { display: "none" }, SMALL)
+        .to(inside, { opacity: 1, filter: "blur(0px)", duration: 0.3, stagger: 0.04, ease: EASE.out, clearProps: "filter" }, SMALL - LAND)
+        .to(doc, { opacity: 1, filter: "blur(0px)", duration: 0.3, stagger: 0.03, ease: EASE.out, clearProps: "filter" }, SMALL - LAND)
+        // 2. It holds, small, for a moment. 3. Then it expands to the big view, while
+        // the board zooms away and stays there while the CV is open.
+        .to(frame, { scale: 1, duration: GROW, ease: GROW_EASE, clearProps: "transform,transformOrigin" }, big)
+        .to(board, { ...BOARD_AWAY, duration: GROW, ease: GROW_EASE }, big)
+        .to("[data-veil]", { opacity: 1, duration: GROW, ease: GROW_EASE }, big);
       return () => {
         ghost.remove();
         // The close hands over on a timer, which can beat the tween's last frame:
@@ -453,10 +466,11 @@ const NO_DETAILS: BoxContent = { notes: [] };
 const GROW = 0.55;
 /** The last stretch of the grow, where the frame fades in over the growing copy. */
 const LAND = 0.18;
-/** The card's pop before the grow: how long it lifts, how long it stays, how much. */
-const POP = 0.26;
-const HOLD = 0.22;
-const POP_SCALE = 1.06;
+/** The small screen the card pops into first: its size against the big view, how long
+ *  the pop takes, and how long it stays small before it expands. */
+const SMALL_SCALE = 0.42;
+const SMALL = 0.42;
+const HOLD = 0.3;
 const GROW_EASE = "power3.inOut";
 // Owner, 17 Nov 2026: the board must zoom in and out more (1.06 was too little), stay
 // zoomed while the CV is open, and stay visible beside it under the dotted veil.
