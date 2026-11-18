@@ -36,31 +36,14 @@ type Person = {
   email: string;
 };
 
-// The four filters, filled with what the TA System really has (read from its code,
+// The filters, filled with what the TA System really has (read from its code,
 // 12 Nov 2026), not made-up choices:
 // - Source = the application's sourcing channel (`SourcingChannel` + `CHANNEL_LABEL`,
 //   the Guidelines tab's codes).
-// - Recruiter = who owns the candidate (`ownerTaId`, set by whoever shortlisted
-//   first); the old pipeline's own filter is "mine". Each recruiter by name joins
-//   the list when the backend sends the opening's team.
-// - Priority = the opening's tier, P1 to P5, with its target time (`PRIORITY_TARGET`).
 // - All jobs = this opening only, or every opening you work on.
 const JOBS: MenuOption[] = [
   { value: "all", label: "All my jobs", pillLabel: "All jobs" },
   { value: "this", label: "This job only" },
-];
-const RECRUITERS: MenuOption[] = [
-  { value: "", label: "All recruiters", pillLabel: "Recruiter" },
-  { value: "mine", label: "Mine", hint: "Candidates you own" },
-  { value: "none", label: "Not owned yet", hint: "Nobody has shortlisted them" },
-];
-const PRIORITIES: MenuOption[] = [
-  { value: "", label: "All priorities", pillLabel: "Priority" },
-  { value: "P1", label: "P1", hint: "Fill in 2 weeks" },
-  { value: "P2", label: "P2", hint: "Fill in 3 weeks" },
-  { value: "P3", label: "P3", hint: "Fill in 1 month" },
-  { value: "P4", label: "P4", hint: "Fill in 1.5 months" },
-  { value: "P5", label: "P5", hint: "Fill in 2 months" },
 ];
 const SOURCES: MenuOption[] = [
   { value: "", label: "All sources", pillLabel: "Source" },
@@ -73,14 +56,6 @@ const SOURCES: MenuOption[] = [
   { value: "SCOOP", label: "Database", hint: "Shortlisted and reviewed" },
 ];
 const CHANNELS = SOURCES.slice(1).map((o) => o.value);
-// The TA System's own three list filters (CandidateList.tsx), which the design's
-// toolbar did not carry (FLOW-CHECK 2.11).
-const EXPERIENCE: MenuOption[] = [
-  { value: "", label: "Any experience", pillLabel: "Experience" },
-  { value: "5", label: "5+ years" },
-  { value: "10", label: "10+ years" },
-  { value: "15", label: "15+ years" },
-];
 const NOTICE: MenuOption[] = [
   { value: "", label: "Any notice", pillLabel: "Notice" },
   { value: "30", label: "30 days or less" },
@@ -92,9 +67,6 @@ const MARKS: MenuOption[] = [
   { value: "backup", label: "Backups only" },
   { value: "neither", label: "Neither" },
 ];
-
-/** Placeholder: this opening's priority tier, until it comes from the backend. */
-const OPENING_TIER = "P2";
 
 type Card = Person & {
   id: string;
@@ -214,10 +186,7 @@ export default function PipelineBoard() {
   // never waits on seven columns being drawn again.
   const searched = useDeferredValue(q);
   const [job, setJob] = useState("all");
-  const [recruiter, setRecruiter] = useState("");
-  const [priority, setPriority] = useState("");
   const [source, setSource] = useState("");
-  const [exp, setExp] = useState("");
   const [noticeMax, setNoticeMax] = useState("");
   const [marks, setMarks] = useState("");
 
@@ -656,20 +625,16 @@ export default function PipelineBoard() {
   });
 
   const query = searched.trim().toLowerCase();
-  const filtering = !!(query || recruiter || priority || source || exp || noticeMax || marks);
+  const filtering = !!(query || source || noticeMax || marks);
   // ponytail: filters the sample cards in the browser; with the backend each
   // filter is part of the column's indexed, paged query instead.
   const match = useCallback(
     (p: Card) =>
       (!query || [p.name, p.title, p.company].some((s) => s.toLowerCase().includes(query))) &&
-      (recruiter !== "mine" || p.mine) &&
-      (recruiter !== "none" || !p.owned) &&
-      (!priority || priority === OPENING_TIER) &&
       (!source || p.channel === source) &&
-      (!exp || p.yearsN >= Number(exp)) &&
       (!noticeMax || p.noticeDays <= Number(noticeMax)) &&
       (!marks || (marks === "addOn" ? !!p.addOn : marks === "backup" ? !!p.backup : !p.addOn && !p.backup)),
-    [query, recruiter, priority, source, exp, noticeMax, marks],
+    [query, source, noticeMax, marks],
   );
   // Each column's cards, worked out again only when the board or a filter changes.
   const columns = useMemo(
@@ -713,13 +678,10 @@ export default function PipelineBoard() {
           />
         </label>
         <PillMenu options={JOBS} initial={job} onChange={setJob} mark="tick" pillClass={TOOL_PILL} />
-        <PillMenu options={RECRUITERS} initial={recruiter} onChange={setRecruiter} mark="tick" pillClass={TOOL_PILL} />
-        <PillMenu options={PRIORITIES} initial={priority} onChange={setPriority} mark="tick" pillClass={TOOL_PILL} />
         <PillMenu options={SOURCES} initial={source} onChange={setSource} mark="tick" pillClass={TOOL_PILL} />
-        {/* The Figma list view keeps only the first four filters. */}
+        {/* The list view keeps only the first two filters. */}
         {mode === "board" && (
           <>
-            <PillMenu options={EXPERIENCE} initial={exp} onChange={setExp} mark="tick" pillClass={TOOL_PILL} />
             <PillMenu options={NOTICE} initial={noticeMax} onChange={setNoticeMax} mark="tick" pillClass={TOOL_PILL} />
             <PillMenu options={MARKS} initial={marks} onChange={setMarks} mark="tick" pillClass={TOOL_PILL} />
           </>
