@@ -31,7 +31,6 @@ import { useMe } from "@/lib/role";
 import { useJdApproved } from "./jdState";
 import { BackButton } from "./PipelineBoard";
 import Toast from "./Toast";
-import { useLiftMenu } from "./liftMenu";
 import { useOpeningView } from "./view";
 
 // The Snippets view (Figma 713:1721): the role as a 1080 x 1080 social card - made
@@ -48,7 +47,7 @@ import { useOpeningView } from "./view";
 
 /** Placeholder: the opening's JD is approved (same as LinkedIn Job's). */
 
-type Snip = { level: number; colour: number; font: string; body: number; underline: boolean; ink: number; version: number; line1: string; line2: string };
+type Snip = { level: number; colour: number; font: string; body: number; underline: boolean; bold: boolean; ink: number; version: number; line1: string; line2: string };
 
 const COLOURS = [
   { name: "mint", words: ["mint", "green"], hex: "#01fea3" },
@@ -85,7 +84,7 @@ const VERSIONS: [string, string][] = [
 ];
 const INKS = ["#000000", "#165b42", "#ffffff"];
 const START_LEVEL = levelOf(VERSIONS[0][0]);
-const START: Snip = { level: START_LEVEL, colour: LEVELS[START_LEVEL].colour, font: "Poppins", body: 24.5, underline: false, ink: 0, version: 0, line1: VERSIONS[0][0], line2: VERSIONS[0][1] };
+const START: Snip = { level: START_LEVEL, colour: LEVELS[START_LEVEL].colour, font: "Poppins", body: 24.5, underline: false, bold: false, ink: 0, version: 0, line1: VERSIONS[0][0], line2: VERSIONS[0][1] };
 
 const ROLE = {
   sector: "Apparel",
@@ -194,12 +193,12 @@ function drawCard(ctx: CanvasRenderingContext2D, s: Snip, logo: HTMLImageElement
   // Heading: the light line, then the bold one. Sized to the design's widths (its own
   // face is narrower than Poppins), baselines as measured.
   ctx.fillStyle = INKS[s.ink];
-  ctx.font = f(300, 42);
+  ctx.font = f(s.bold ? 700 : 300, 42);
   ctx.fillText(s.line1, 57, 252);
   ctx.font = f(700, 52.7);
   ctx.fillText(s.line2, 57, 307);
   if (s.underline) {
-    ctx.font = f(300, 42);
+    ctx.font = f(s.bold ? 700 : 300, 42);
     ctx.fillRect(57, 258, ctx.measureText(s.line1).width, 2.5);
     ctx.font = f(700, 52.7);
     ctx.fillRect(57, 313, ctx.measureText(s.line2).width, 2.5);
@@ -276,7 +275,7 @@ function drawCard(ctx: CanvasRenderingContext2D, s: Snip, logo: HTMLImageElement
 // to AURA, which returns the same kind of patch.
 type Msg = { who: "you" | "aura"; text: string };
 const HELP = "I can change the level, the colour, the font, the text size, underline the title, or reword it. Try “make it senior”, “make it orange”, “use Montserrat”, “bigger text” or “title to Senior Finance Manager”.";
-const SUGGESTIONS = ["Make it orange", "Use Montserrat", "Bigger text", "Underline the title"];
+const SUGGESTIONS = ["Make it orange", "Make it bold", "Bigger text", "Underline the title"];
 
 // "Bigger" and "smaller" have no number of their own: they are a step from where the text is
 // now, which only the view knows, so `send` turns these two markers into one.
@@ -312,6 +311,8 @@ function ask(text: string): { patch: Partial<Snip>; reply: string } {
     did(`the text size to ${body}`, { body });
   } else if (/\b(bigger|larger|increase|grow)\b/.test(t)) did("the text bigger", { body: BIGGER });
   else if (/\b(smaller|reduce|decrease|shrink)\b/.test(t)) did("the text smaller", { body: SMALLER });
+  if (/(remove|no|without|drop|un) ?bold/.test(t)) did("the bold off", { bold: false });
+  else if (/\bbold(er)?\b/.test(t)) did("the title bold", { bold: true });
   if (/(remove|no|without|drop) underline/.test(t)) did("the underline off", { underline: false });
   else if (/underline/.test(t)) did("the title underlined", { underline: true });
   if (/white (text|title|heading)/.test(t)) did("the title white", { ink: 2 });
@@ -452,7 +453,7 @@ export default function SnippetsView() {
             <span className={CAPTION + " ml-auto"}>{s.version ? `Version ${s.version + 1} of ${VERSIONS.length}` : `${VERSIONS.length} versions`}</span>
           </button>
 
-          {/* Level: sets the badge and the colour. The dot at the end picks another colour. */}
+          {/* Level: sets the badge and the colour. */}
           <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
             <span className={CAPTION}>Level</span>
             <div role="radiogroup" aria-label="Level" className="flex flex-wrap gap-0.5 rounded-full bg-surface-2 p-1">
@@ -473,26 +474,11 @@ export default function SnippetsView() {
                 </button>
               ))}
             </div>
-            <ColourDot colour={s.colour} levelColour={LEVELS[s.level].colour} onPick={(colour) => setS((x) => ({ ...x, colour }))} />
           </div>
 
-          {/* Font row: wraps on a narrow window instead of overlapping. */}
+          {/* Text row: size, title colour, bold, underline. Wraps on a narrow window instead of overlapping. */}
           <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
-            <span className={CAPTION}>Font</span>
-            <div role="radiogroup" aria-label="Font" className="flex gap-0.5 rounded-full bg-surface-2 p-1">
-              {FONTS.map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  role="radio"
-                  aria-checked={s.font === n}
-                  onClick={() => setS((x) => ({ ...x, font: n }))}
-                  className={"rounded-full px-3.5 py-[0.4375rem] text-small font-medium " + (s.font === n ? "bg-surface text-ink shadow-card" : "text-ink-3 hover:text-ink")}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
+            <span className={CAPTION}>Text</span>
             <div className="flex h-[max(2.6875rem,34px)] items-center justify-center gap-1 rounded-full border border-border-strong bg-surface px-3 text-body font-medium text-ink-2">
               <button type="button" aria-label="Smaller text" onClick={() => step(-0.5)} className="w-4 hover:text-ink">
                 -
@@ -514,6 +500,16 @@ export default function SnippetsView() {
               <span className="relative text-body font-medium leading-none">
                 A<span style={{ background: INKS[s.ink] }} className="absolute -bottom-0.5 -right-1 size-1.5 rounded-full ring-1 ring-surface" />
               </span>
+            </button>
+            <button
+              type="button"
+              aria-label="Bold the title"
+              aria-pressed={s.bold}
+              onClick={() => setS((x) => ({ ...x, bold: !x.bold }))}
+              title="Bold the title"
+              className={"flex size-8 items-center justify-center rounded-full text-body font-bold hover:bg-surface-2 " + (s.bold ? "bg-brand-soft text-brand" : "text-ink")}
+            >
+              B
             </button>
             <button
               type="button"
@@ -601,47 +597,3 @@ export default function SnippetsView() {
   );
 }
 
-/** The card's colour when it should not follow the level: one dot that lifts the five
- *  colours, and "Match the level" to go back. */
-function ColourDot({ colour, levelColour, onPick }: { colour: number; levelColour: number; onPick: (c: number) => void }) {
-  const { open, setOpen, root, panel, shown } = useLiftMenu();
-  const own = colour !== levelColour;
-  return (
-    <div ref={root} className="relative flex items-center gap-2">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        aria-haspopup="menu"
-        aria-label="Card colour"
-        title={own ? "Card colour - your own" : "Card colour - follows the level"}
-        style={{ background: COLOURS[colour].hex }}
-        className={"size-8 rounded-full ring-offset-2 hover:ring-2 hover:ring-border-strong " + (own ? "ring-2 ring-ink" : "")}
-      />
-      {own && (
-        <button type="button" onClick={() => onPick(levelColour)} className="text-caption font-medium text-brand hover:underline">
-          Match the level
-        </button>
-      )}
-      {shown && (
-        <div ref={panel} role="menu" className="absolute left-0 top-full z-30 mt-2 flex gap-2 rounded-full bg-surface p-2 shadow-float ring-1 ring-border/60">
-          {COLOURS.map((c, i) => (
-            <button
-              key={c.name}
-              type="button"
-              role="menuitem"
-              aria-label={c.name}
-              title={i === levelColour ? `${c.name} - the level's` : c.name}
-              onClick={() => {
-                onPick(i);
-                setOpen(false);
-              }}
-              style={{ background: c.hex }}
-              className={"size-8 rounded-full border-2 " + (colour === i ? "border-ink" : "border-transparent")}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}

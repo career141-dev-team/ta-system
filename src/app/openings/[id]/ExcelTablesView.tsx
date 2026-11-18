@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import Image from "next/image";
-import { useTabGlide } from "@/lib/gsap";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { DUR, EASE, gsap, useTabGlide } from "@/lib/gsap";
 import { useWorkdayGate } from "@/lib/workday";
-import { BackButton } from "./PipelineBoard";
+import { BackButton, LinkedInIcon } from "./PipelineBoard";
 import FindCvButton from "./FindCvButton";
 import PillMenu, { type MenuOption } from "./PillMenu";
 import Toast from "./Toast";
@@ -985,13 +985,7 @@ function PasteBar({
   };
   return (
     <div className="mt-[max(0.9rem,10px)] flex items-center gap-3 rounded-lg bg-surface-2 py-1 pl-[max(1.1rem,12px)] pr-1 transition-shadow focus-within:ring-2 focus-within:ring-brand/20">
-      <Image
-        src="/li.svg"
-        alt=""
-        width={20}
-        height={20}
-        className="size-[max(1.15rem,15px)] shrink-0"
-      />
+      <LinkedInIcon className="size-[max(1.3rem,17px)]" />
       <textarea
         ref={box}
         value={text}
@@ -1131,13 +1125,7 @@ function TableRow({
             aria-label={`${x.name} on LinkedIn`}
             className="shrink-0 hover:opacity-80"
           >
-            <Image
-              src="/li.svg"
-              alt=""
-              width={18}
-              height={18}
-              className="size-[max(1.1rem,15px)]"
-            />
+            <LinkedInIcon className="size-[max(1.3rem,17px)]" />
           </a>
           <div className="min-w-0">
             <div className="flex min-w-0 items-center gap-1.5">
@@ -1295,7 +1283,8 @@ function TableRow({
               />
             </>
           ) : null}
-          {x.profile && <DetailsButton p={x.profile} />}
+          {x.profile && <DetailsButton p={x.profile} url={x.url} />}
+          {can && <NoteButton x={x} up={up} edit={edit} say={say} />}
           {mine && (
             <div className={"flex shrink-0 items-center gap-1.5 transition-opacity" + quiet}>
               {x.hasCv ? (
@@ -1330,16 +1319,11 @@ function TableRow({
   );
 }
 
-/** "See details": everything the extract read, in a dialog (Esc or the backdrop closes). */
-function DetailsButton({ p }: { p: Profile }) {
+/** "See details": everything the extract read, as a profile card in a dialog (Esc or the
+ *  backdrop closes). Header with the person and their LinkedIn link, then About, Skills,
+ *  Experience as a timeline and Education, each in its own soft panel. */
+function DetailsButton({ p, url }: { p: Profile; url: string }) {
   const [open, setOpen] = useState(false);
-  useEffect(() => {
-    if (!open) return;
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("keydown", esc);
-    return () => document.removeEventListener("keydown", esc);
-  }, [open]);
-  const h = "text-caption font-medium uppercase text-ink-3";
   return (
     <>
       <button
@@ -1349,88 +1333,184 @@ function DetailsButton({ p }: { p: Profile }) {
       >
         See details
       </button>
-      {open && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 p-4"
-          onClick={() => setOpen(false)}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label={`${p.name} from LinkedIn`}
-            onClick={(e) => e.stopPropagation()}
-            className="flex max-h-[85vh] w-[min(40rem,100%)] flex-col rounded-lg bg-surface shadow-float"
-          >
-            <div className="flex items-start justify-between gap-4 border-b border-border p-5">
-              <div className="min-w-0">
-                <h2 className="truncate text-h3 font-medium text-ink">{p.name}</h2>
-                <p className="text-small text-ink-2">
-                  {[p.title, p.company].filter(Boolean).join(" at ") || p.headline}
-                </p>
-                {p.place && <p className="text-caption text-ink-3">{p.place}</p>}
-              </div>
-              <button
-                type="button"
-                autoFocus
-                onClick={() => setOpen(false)}
-                aria-label="Close"
-                className="flex size-8 shrink-0 items-center justify-center rounded-full text-ink-3 hover:bg-surface-2 hover:text-ink"
-              >
-                <CloseIcon />
-              </button>
-            </div>
-            <div className="flex flex-col gap-5 overflow-y-auto p-5 text-small text-ink">
-              {p.headline && <p>{p.headline}</p>}
-              {p.about && (
-                <section>
-                  <h3 className={h}>About</h3>
-                  <p className="mt-1 whitespace-pre-line text-ink-2">{p.about}</p>
-                </section>
-              )}
-              {p.skills.length > 0 && (
-                <section>
-                  <h3 className={h}>Skills</h3>
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">
-                    {p.skills.map((s) => (
-                      <span key={s} className="rounded-full bg-surface-2 px-2.5 py-0.5 text-caption text-ink-2">
-                        {s}
+      {open && <DetailsDialog p={p} url={url} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+function DetailsDialog({ p, url, onClose }: { p: Profile; url: string; onClose: () => void }) {
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  }, [onClose]);
+  // Lifts in like the other dialogs. fromTo, not from: development runs effects twice,
+  // and a second from() would take the already-hidden state as its end.
+  useLayoutEffect(() => {
+    const el = root.current;
+    if (!el) return;
+    gsap.fromTo(el.querySelector("[data-veil]"), { opacity: 0 }, { opacity: 1, duration: DUR.fast });
+    gsap.fromTo(el.querySelector("[data-box]"), { opacity: 0, y: 14, scale: 0.96 }, { opacity: 1, y: 0, scale: 1, duration: DUR.base, ease: EASE.pop, clearProps: "transform,opacity" });
+  }, []);
+  const role = [p.title, p.company].filter(Boolean).join(" at ") || p.headline;
+  const initials = p.name.split(" ").map((w) => w[0]).join("").slice(0, 2);
+  const panel = "rounded-md bg-surface-2 p-4";
+  const h = "text-caption font-medium uppercase text-ink-3";
+  return createPortal(
+    <div ref={root} className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+      <div data-veil className="absolute inset-0 bg-surface/20 backdrop-blur-[6px]" onClick={onClose} />
+      <div
+        data-box
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${p.name} from LinkedIn`}
+        className="relative flex max-h-[min(52rem,calc(100dvh-32px))] w-[min(76rem,100%)] flex-col overflow-hidden rounded-lg bg-surface shadow-float"
+      >
+        {/* One slim row: who they are, their LinkedIn, close. */}
+        <div className="flex items-center gap-3 border-b border-border px-[max(1.25rem,14px)] py-3">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-info-soft text-small font-medium text-info">{initials}</span>
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-body font-medium text-ink">{p.name}</h2>
+            <p className="truncate text-small text-ink-2">{[role, p.place].filter(Boolean).join(" · ")}</p>
+          </div>
+          <a href={url} target="_blank" rel="noreferrer" className="flex shrink-0 items-center gap-1.5 rounded-full border border-border px-3 py-1 text-small font-medium text-ink hover:bg-surface-2 max-md:hidden">
+            <LinkedInIcon className="size-4" />
+            LinkedIn
+          </a>
+          <button type="button" autoFocus onClick={onClose} aria-label="Close" className="flex size-8 shrink-0 items-center justify-center rounded-full text-ink-3 hover:bg-surface-2 hover:text-ink">
+            <CloseIcon />
+          </button>
+        </div>
+        {/* Two columns: about and skills on the left, the career on the right. */}
+        <div className="grid min-h-0 flex-1 grid-cols-2 gap-4 overflow-y-auto p-[max(1.25rem,14px)] text-small text-ink max-md:grid-cols-1">
+          <div className="flex flex-col gap-4">
+            {p.headline && (
+              <section className={panel}>
+                <h3 className={h}>Headline</h3>
+                <p className="mt-1 text-ink-2">{p.headline}</p>
+              </section>
+            )}
+            {p.about && (
+              <section className={panel}>
+                <h3 className={h}>About</h3>
+                <p className="mt-1 whitespace-pre-line text-ink-2">{p.about}</p>
+              </section>
+            )}
+            {p.skills.length > 0 && (
+              <section className={panel}>
+                <h3 className={h}>Skills</h3>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {p.skills.slice(0, 8).map((k) => (
+                    <span key={k} className="rounded-full bg-surface px-2.5 py-0.5 text-caption text-ink-2">
+                      {k}
+                    </span>
+                  ))}
+                  {p.skills.length > 8 && <span className="px-1 py-0.5 text-caption text-ink-3">+{p.skills.length - 8} more</span>}
+                </div>
+              </section>
+            )}
+          </div>
+          <div className="flex flex-col gap-4">
+            {p.experience.length > 0 && (
+              <section className={panel}>
+                <h3 className={h}>Experience</h3>
+                <ul className="mt-2 flex flex-col">
+                  {p.experience.map((e, i) => (
+                    <li key={i} className="relative flex gap-3 pb-2.5 last:pb-0">
+                      <span aria-hidden="true" className="relative mt-1.5 flex flex-col items-center">
+                        <span className="size-2 rounded-full bg-brand" />
+                        {i < p.experience.length - 1 && <span className="absolute top-3 h-[calc(100%+0.25rem)] w-px bg-border-strong" />}
                       </span>
-                    ))}
-                  </div>
-                </section>
-              )}
-              {p.experience.length > 0 && (
-                <section>
-                  <h3 className={h}>Experience</h3>
-                  <ul className="mt-1.5 flex flex-col gap-2.5">
-                    {p.experience.map((e, i) => (
-                      <li key={i}>
+                      <div className="min-w-0">
                         <p className="font-medium">{e.title || "Role not shown"}</p>
-                        <p className="text-ink-2">{e.company}</p>
-                        <p className="text-caption text-ink-3">{e.period}</p>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )}
-              {p.education.length > 0 && (
-                <section>
-                  <h3 className={h}>Education</h3>
-                  <ul className="mt-1.5 flex flex-col gap-1.5">
-                    {p.education.map((e, i) => (
-                      <li key={i}>
-                        <span className="font-medium">{e.school}</span>
-                        {e.degree && <span className="text-ink-2"> · {e.degree}</span>}
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )}
-            </div>
+                        <p className="text-ink-2">{[e.company, e.period].filter(Boolean).join(" · ")}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            {p.education.length > 0 && (
+              <section className={panel}>
+                <h3 className={h}>Education</h3>
+                <ul className="mt-1.5 flex flex-col gap-1">
+                  {p.education.map((e, i) => (
+                    <li key={i}>
+                      <span className="font-medium">{e.school}</span>
+                      {e.degree && <span className="text-ink-2"> · {e.degree}</span>}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+/** "Add note": a button on the row that opens an Add note section under it - a large
+ *  field, Save note and Cancel. The note joins the row's notes. */
+function NoteButton({ x, up, edit, say }: { x: Row; up?: boolean; edit: (patch: Partial<Row>) => void; say: (rest: string, bold?: string) => void }) {
+  const { open, setOpen, root, panel, shown } = useLiftMenu();
+  const [text, setText] = useState("");
+  const close = () => {
+    setOpen(false);
+    setText("");
+  };
+  return (
+    <div ref={root} className="relative">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        onClick={() => (open ? close() : setOpen(true))}
+        className={ROW_BTN + " border border-border font-normal text-ink-2 hover:bg-surface-2 hover:text-ink aria-expanded:bg-surface-2 aria-expanded:text-ink"}
+      >
+        Add note
+      </button>
+      {shown && (
+        <div
+          ref={panel}
+          role="dialog"
+          aria-label={`Add note for ${x.name}`}
+          onKeyDown={(e) => e.key === "Escape" && close()}
+          className={LIFT + place(up) + " right-0 w-[max(26rem,300px)] p-4"}
+        >
+          <p className="text-small font-medium text-ink">Add note</p>
+          <textarea
+            autoFocus
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={4}
+            maxLength={2000}
+            placeholder="e.g. Requested to call back at 4, Not interested, Already interviewed"
+            aria-label="Note"
+            className="mt-2 w-full resize-none rounded-md border border-brand bg-surface p-3 text-small text-ink outline-none placeholder:text-ink-3 focus:ring-2 focus:ring-brand/20"
+          />
+          <div className="mt-3 flex items-center gap-4">
+            <button
+              type="button"
+              disabled={!text.trim()}
+              onClick={() => {
+                edit({ notes: [...x.notes, text.trim()] });
+                say(" - note added", x.name);
+                close();
+              }}
+              className="rounded-full bg-brand px-[max(1.3rem,14px)] py-[max(0.5rem,6px)] text-small font-medium text-white hover:bg-brand-strong disabled:opacity-40 disabled:hover:bg-brand"
+            >
+              Save note
+            </button>
+            <button type="button" onClick={close} className="text-small text-ink-2 hover:text-ink">
+              Cancel
+            </button>
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }
 
