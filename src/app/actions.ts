@@ -84,6 +84,7 @@ import { FAILURE_MESSAGE, gemini, modelFor } from "@/lib/ai";
 import { DEFAULT_DEPS as WEB, researchViaSearch } from "@/lib/researchSearch";
 import { SENIORITY_LABEL, benchmarkByDefault, findIncumbents, seniorityOf, type IncumbentRow } from "@/lib/incumbents";
 import { MAX_ROUNDS, runSourcing } from "@/lib/sourcing";
+import { similarTitles } from "@/lib/similarTitles";
 import { canonicalProfile, displayUrl, searchProvider, serperConfigured } from "@/lib/serper";
 import { linkKey, profileLink } from "@/lib/url";
 import { parseLinkPaste } from "@/lib/linkPaste";
@@ -3319,6 +3320,7 @@ async function sourceForNow(openingId: string, forUserId?: string, extraRound = 
       targetGender: o.targetGender,
       salaryNote: o.packageNotes || salaryNoteOf(o),
       targetEmployers: repo.benchmarks(openingId).filter((b) => b.isSelected).map((b) => b.company),
+      similarTitles: similarTitles(repo.research(openingId)?.fields.similarDesignation, o.title),
       alreadyKnown,
       ...deskSignalsFor(openingId, existing),
     },

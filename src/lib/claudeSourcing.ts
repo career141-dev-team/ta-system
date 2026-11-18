@@ -58,7 +58,7 @@ export function headhuntPrompt(s: SourcingSpec, market: string): string {
 Find real people on LinkedIn we can approach for this job.
 
 THE JOB
-Position: ${s.title}
+Position: ${s.title}${s.similarTitles?.length ? `\nThe same job at other companies (from our research), search these titles too: ${s.similarTitles.join("; ")}` : ""}
 Client: ${client}${aboutClient(s)}
 Location: ${s.locations.join(", ") || market}
 Market: ${market}
