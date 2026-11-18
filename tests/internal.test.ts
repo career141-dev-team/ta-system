@@ -48,6 +48,8 @@ const ALLOWED_PUBLIC = new Set<string>([
   "ui/manage:setQuestions",
   "ui/manage:acceptStrategies",
   "ui/manage:submitStrategies",
+  "ui/manage:removeFromOpening",
+  "ui/manage:notForJob",
   "ui/posts:addPost",
   "ui/posts:updatePost",
   "ui/posts:setPostStatus",

@@ -13,6 +13,10 @@
 import { v } from "convex/values";
 import { mutation, type MutationCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
+import { makeFunctionReference } from "convex/server";
+
+// Not in the checked-in _generated/api (its own module since 9 Nov).
+const DELETE_DROPPED = makeFunctionReference<"mutation", { actorId?: string; applicationId: string }>("ta/applicationDelete:deleteDropped");
 import type { Doc, Id } from "../_generated/dataModel";
 import { mapUser } from "../../src/data/convex/map";
 import { can } from "../../src/lib/auth";
@@ -20,7 +24,7 @@ import { isGone } from "../../src/lib/bin";
 import { colomboDayFromValue, colomboDayStart } from "../../src/lib/calendar";
 import { isTicked, strategyAcceptanceStatus } from "../../src/lib/strategyPlanner";
 import { NotSignedIn, uiUser } from "./me";
-import { normalizeQuestions, strategyRowsToSubmit, type StrategyRowLike } from "./rules";
+import { inWords, normalizeQuestions, strategyRowsToSubmit, type StrategyRowLike } from "./rules";
 
 type Refused = { ok: false; message: string };
 type Done = Refused | { ok: true; message: string };
@@ -149,5 +153,52 @@ export const submitStrategies = mutation({
       });
     }
     return { ok: true, message: `Submitted ${taken} ${taken === 1 ? "strategy" : "strategies"}. Your TA Lead can now see ${taken === 1 ? "it" : "them"}.` };
+  },
+});
+
+/**
+ * Remove someone from this opening (src/app/actions.ts removeApplication):
+ * opening.manage; a move to Dropped out with "Removed from the opening", which
+ * Bring back reverses; already in Dropped out it is the lead-only real delete
+ * (ta/applicationDelete:deleteDropped). The collision lock is in moveStage.
+ */
+export const removeFromOpening = mutation({
+  args: { applicationId: v.string() },
+  handler: async (ctx, args): Promise<Done> => {
+    const appId = ctx.db.normalizeId("applications", args.applicationId);
+    const app = appId ? await ctx.db.get(appId) : null;
+    if (!appId || !app) return refused("That record no longer exists — it may have been removed.");
+    const o = await forOpening(ctx, app.jobId as string);
+    if (!o.ok) return o;
+    const verdict = can(o.mapped, "opening.manage", { openingId: o.jobId as string, assignment: o.assignment });
+    if (!verdict.ok) return refused(verdict.message);
+    try {
+      if (app.currentStage === "unresponsive") {
+        await ctx.runMutation(DELETE_DROPPED, { actorId: o.user._id, applicationId: appId });
+        return { ok: true, message: "Deleted from this job. The candidate and their CV stay in the database." };
+      }
+      const r: { ownerTaId?: string } = await ctx.runMutation(internal.ta.applications.moveStage, {
+        actorId: o.user._id, applicationId: appId, stage: "dropped_out", reason: "Removed from the opening",
+      });
+      if (r?.ownerTaId) return refused("Another recruiter has claimed this candidate.");
+    } catch (error) {
+      return refused(inWords(error, "They could not be removed."));
+    }
+    return { ok: true, message: "Removed from the opening — they are under Dropped out, and can be brought back from there." };
+  },
+});
+
+/** Database CVs "Not for this job": off this opening's matches for good (ta/applications:excludeFromMatches). */
+export const notForJob = mutation({
+  args: { openingId: v.string(), candidateId: v.string() },
+  handler: async (ctx, args): Promise<Done> => {
+    const o = await forOpening(ctx, args.openingId);
+    if (!o.ok) return o;
+    try {
+      await ctx.runMutation(internal.ta.applications.excludeFromMatches, { actorId: o.user._id, openingId: o.jobId, candidateId: args.candidateId });
+    } catch (error) {
+      return refused(inWords(error, "That could not be saved. Try again."));
+    }
+    return { ok: true, message: "Taken off this job's matches." };
   },
 });
