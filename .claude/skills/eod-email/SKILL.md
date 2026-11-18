@@ -145,7 +145,7 @@ Order of work in `emailEod` matters: CV PDFs and the workbook are built **before
 - For daily emails each PDF is also uploaded: `ta/cv:uploadUrl` -> POST bytes to `internalUploadUrl(url)` -> `ta/dailyEmails:saveAttachment` (own candidates only for workers). The `{id,name,applicationId}` list goes in `snapshot.attachments`; download route `GET /api/eod/attachment?email=&attachment=` (src/app/api/eod/attachment/route.ts) -> `ta/dailyEmails:attachment` (owner TA or desk roles; retained only), served `application/pdf`, `private, no-store`.
 - Workbook: `buildOpeningExcelAttachment(openingId, user, title, workLocationId)` (src/lib/linkExport.ts) - `getScopedLinkVaultEntries` for the user/location, `buildLinkExportLayout`, `buildXlsx`; filename from `excelFilename(client, title, location)`. Attached only when `rowCount > 0` and not midday and not `skipAttachments`. `linkIds` stored as `snapshot.workbookLinkIds` and re-checked in `begin` for opening+location. Workbook bytes are not retained; only names.
 - **EOD is all-or-nothing**: any CV preparation failure returns "Not sent: could not prepare the CV attachment for <names>. No candidates have been marked as sent." (before `begin`). Also "No CV could be attached..." when rows empty and not activity-only. Midday tolerates failures.
-- Graph transport (`sendDraftWithAttachments`): POST `/users/{from}/messages` (draft) -> per attachment: < 3 MiB (`SIMPLE_ATTACHMENT_LIMIT`) POST `/attachments`; >= 3 MiB `createUploadSession` and PUT chunks of 3 MiB (`ATTACHMENT_CHUNK`) with `Content-Range`, no bearer header on PUTs -> POST `/send`. Senders tried in order: the TA's own mailbox (`from`), then `fallbackFrom` only on 403/404. Any other status stops. A failed draft leaves an unsent draft in the mailbox (unverified whether cleaned up).
+- Graph transport (`sendDraftWithAttachments`): POST `/users/{from}/messages` (draft) -> per attachment: < 3 MiB (`SIMPLE_ATTACHMENT_LIMIT`) POST `/attachments`; >= 3 MiB `createUploadSession` and PUT chunks of 3 MiB (`ATTACHMENT_CHUNK`) with `Content-Range`, no bearer header on PUTs -> POST `/send`. Senders tried in order: the TA's own mailbox (`from`), then `fallbackFrom` only on 403/404. Any other status stops. A failed build (throw, 429 or 5xx before `/send`) is retried from a fresh draft, 3 attempts with 2 s / 5 s pauses (`BUILD_RETRY_PAUSE_MS`, 18 Nov), and each half-built draft is deleted (best effort); `/send` is never retried and a 4xx other than 429 is not retried. Retry-After is not read.
 - Gates inside `sendFollowUpMail`: `resolveRecipient("email", to, "EOD_TEST_EMAIL")` (convex/lib/outreachSafety.ts) - unless `OUTREACH_LIVE=true`, the main To is swapped for the `EOD_TEST_EMAIL` inbox and, because of `keepInternalInTest:"career141.com"`, other `@career141.com` recipients still get it (others dropped, noted as `[TEST MODE: ...]`); `emailAllowed` (convex/lib/outboundGuard.ts, `C141_OUTBOUND_ALLOW_EMAILS`) holds back non-allowed addresses with `[OUTBOUND LOCK: not sent to ...]` in the result note, shown to the TA. Result note is shown in the redirect `msg`.
 
 ### Work locations (multi-location jobs)
@@ -296,9 +296,9 @@ Short hashes from `git log`; dates are commit dates.
 - 2026-11-17 - a midday email refused for good with "The candidate list changed": the page lists today's Director Review CVs, `begin` counted every unsent one of any day, so one older CV (a missed end of day) blocked every midday and the desk kept dropping out the wrong candidate. Midday now uses `isEodCandidateEligible` like the EOD, and the refusal names who differs (`listChanged`).
 
 <!-- skill-meta
-verified-commit: caf747b9
-verified-hash: a66dc569930c4335209f7828fb9a092719b2af71
-verified-date: 2026-11-17
+verified-commit: c43ba37
+verified-hash: f6619136db8512d6a7937fd44aaeb6d17a0e8ad5
+verified-date: 2026-11-18
 sources:
   src/app/openings/[id]/eod/page.tsx
   src/app/openings/[id]/midday/page.tsx
