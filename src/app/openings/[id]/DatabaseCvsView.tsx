@@ -12,7 +12,7 @@ import CvPages, { warmPdf } from "./CvPages";
 import WorkdayBlocked from "./WorkdayBlocked";
 import Toast from "./Toast";
 import { sendToPipeline } from "./pipelineInbox";
-import { useJdApproved } from "./jdState";
+import { useJdApproved, getJd } from "./jdState";
 
 // ATS · Database CVs - matches from the whole database (owner's design, 14 Nov 2026).
 // The old tab's rules (database-search skill §10, §13): matching reads the approved
@@ -76,8 +76,6 @@ const keep = (f: Filters) => (p: Person) => {
     LISTS.every(([k]) => !f.lists[k].length || f.lists[k].some((w) => text[k].includes(w.toLowerCase())))
   );
 };
-const JOB_Q = "SAP Business Transformation, manufacturing";
-const JOB_TITLE = "Head of SAP";
 
 export default function DatabaseCvsView() {
   const gate = useWorkdayGate();
@@ -247,7 +245,7 @@ export default function DatabaseCvsView() {
           </span>
         ))}
         <Link
-          href={`/database?q=${encodeURIComponent(JOB_Q)}&for=${encodeURIComponent(JOB_TITLE)}`}
+          href={`/database?for=${encodeURIComponent(getJd().title)}`}
           className="ml-auto text-small font-medium text-brand hover:underline"
         >
           Search the whole database →

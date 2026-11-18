@@ -1,6 +1,6 @@
 "use client";
 
-import { useJdApproved, setJdApproved } from "./jdState";
+import { useJdApproved, setJdApproved, getJd, setJd, jdText, type Section } from "./jdState";
 
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
@@ -22,53 +22,6 @@ import { useMe } from "@/lib/role";
 const CAN_WRITE: boolean = true;
 const ASK_MAX = 2000;
 
-type Section = { h: string; p?: string; list?: string[] };
-const TITLE = "Senior Manager — SAP Business Transformation";
-/** Client · place · type · reports to - the quiet line under the title. */
-const META = ["PGP Glass", "Colombo · hybrid", "Full-time", "Reports to the Group CIO"];
-const SECTIONS: Section[] = [
-  {
-    h: "About the role",
-    p: "PGP Glass is moving its six plants to SAP S/4HANA. You will lead the programme end to end — from blueprint to hyper-care — and make sure the business, not just IT, comes out stronger.",
-  },
-  {
-    h: "Responsibilities",
-    list: [
-      "Own the S/4HANA roadmap, budget and partner relationships",
-      "Lead a team of 12 across finance, supply chain and manufacturing streams",
-      "Run cut-over and data migration for six plants",
-      "Report progress to the executive committee every month",
-    ],
-  },
-  {
-    h: "Requirements",
-    list: [
-      "10+ years in SAP, with at least one manufacturing rollout led end to end",
-      "Strong FI/CO, MM and PP knowledge",
-      "Experience managing system integrators",
-    ],
-  },
-  {
-    h: "Qualifications",
-    list: ["A degree in engineering, IT or accounting", "SAP S/4HANA certification is an advantage", "PMP or PRINCE2 is an advantage"],
-  },
-  {
-    h: "Skills",
-    list: [
-      "Programme planning, budgeting and vendor management",
-      "Clear written and spoken English; Sinhala or Tamil an advantage",
-      "Leading cross-functional teams through change",
-    ],
-  },
-  {
-    h: "Experience",
-    list: [
-      "At least 5 years leading SAP programmes or delivery teams",
-      "Manufacturing, FMCG or supply chain businesses preferred",
-    ],
-  },
-  { h: "Package", p: "Around LKR 1.2M a month, plus performance bonus and medical cover" },
-];
 const MATCH = ["10+ years", "SAP S/4HANA", "Led a rollout", "FI/CO · MM · PP", "Manufacturing", "Colombo · hybrid", "~LKR 1.2M"];
 const VERSIONS = [
   { n: 3, when: "Today 10:12", what: "Hybrid, 3 days in office; shorter intro" },
@@ -79,6 +32,8 @@ const VERSIONS = [
 type Turn = { me: string; aura: string; failed?: boolean };
 
 const CHIP = "rounded-full px-3 py-1 text-caption font-medium";
+/** A field that looks like the text it edits, with a quiet outline. */
+const EDIT = "w-full resize-none rounded-sm border border-border bg-surface px-2 py-1.5 outline-none focus:border-brand focus:ring-2 focus:ring-brand/20";
 
 export default function JobDescriptionView() {
   // Shared with LinkedIn Job, Snippets and Database CVs (jdState).
@@ -88,6 +43,26 @@ export default function JobDescriptionView() {
   // Who approved and when - kept in this view for the visit (sample; the backend keeps it).
   const [approvedBy, setApprovedBy] = useState("");
   const [version, setVersion] = useState(3);
+  // The JD's text lives in state so it can be edited here; edits save themselves.
+  // ponytail: kept for the visit only; the backend keeps the saved text.
+  const [title, setTitle] = useState(getJd().title);
+  const [metaText, setMetaText] = useState(getJd().metaText);
+  const [sections, setSections] = useState(getJd().sections);
+  const [editing, setEditing] = useState(false);
+  const [savedAt, setSavedAt] = useState("");
+  const first = useRef(true);
+  // Other views (Database search) send the JD as it stands now.
+  useEffect(() => setJd({ title, metaText, sections }), [title, metaText, sections]);
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    const t = setTimeout(() => setSavedAt("just now"), 700);
+    return () => clearTimeout(t);
+  }, [title, metaText, sections]);
+  const meta = metaText.split(",").map((m) => m.trim()).filter(Boolean);
+  const setSection = (i: number, patch: Partial<Section>) => setSections((all) => all.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   const [turns, setTurns] = useState<Turn[]>([
     {
       me: "Mention it’s hybrid, 3 days in office. Shorter intro.",
@@ -126,7 +101,7 @@ export default function JobDescriptionView() {
     setTurns((all) => [...all, { me: t, aura: "I could not change it - this screen is not connected yet. The JD is as it was.", failed: true }]);
   };
   const copy = async () => {
-    const text = [TITLE, META.join(" · "), ...SECTIONS.map((x) => [x.h, x.p, ...(x.list ?? []).map((l) => `• ${l}`)].filter(Boolean).join("\n"))].join("\n\n");
+    const text = jdText({ title, metaText, sections });
     try {
       await navigator.clipboard.writeText(text);
       setToast({ bold: "Copied", rest: " - the JD text is on your clipboard", n: Date.now() });
@@ -144,7 +119,7 @@ export default function JobDescriptionView() {
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col px-[max(1.5rem,14px)] pb-[max(2.19rem,12px)] pt-[max(1.4rem,14px)] max-md:overflow-y-auto max-md:pt-11">
+    <div className="flex min-h-0 flex-1 flex-col px-[max(1.5rem,14px)] pb-[max(2.19rem,12px)] pt-[max(2.6rem,24px)] max-md:overflow-y-auto max-md:pt-11">
       <div className="flex min-h-0 flex-1 items-start max-md:flex-col max-md:gap-y-6 md:gap-x-[max(1.875rem,14px)]">
         <BackButton />
 
@@ -159,7 +134,7 @@ export default function JobDescriptionView() {
                 {approved ? `Approved · version ${version}` : `Draft · version ${version}`}
               </span>
               <span className="truncate text-caption text-ink-3" title={approved ? approvedBy : undefined}>
-                {approved ? approvedBy || "Approved" : `Saved ${VERSIONS.find((v) => v.n === version)?.when ?? ""}`}
+                {approved ? approvedBy || "Approved" : `Saved ${savedAt || (VERSIONS.find((v) => v.n === version)?.when ?? "")}`}
               </span>
               <History
                 version={version}
@@ -168,32 +143,90 @@ export default function JobDescriptionView() {
                   setToast({ bold: `Version ${n}`, rest: approved ? " is back. It stays approved." : " is back.", n: Date.now() });
                 }}
               />
+              <button
+                type="button"
+                onClick={copy}
+                aria-label="Copy the JD text"
+                title="Copy the JD text"
+                className="flex size-8 items-center justify-center rounded-full text-ink-2 hover:bg-surface-2 hover:text-ink"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className="size-[1.1rem]" aria-hidden="true">
+                  <rect x="9" y="9" width="11" height="11" rx="2" />
+                  <path d="M5 15V6a2 2 0 0 1 2-2h9" />
+                </svg>
+              </button>
+              {CAN_WRITE && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (editing) {
+                      // Leaving edit mode drops empty lines.
+                      setSections((all) => all.map((x) => (x.list ? { ...x, list: x.list.filter((l) => l.trim()) } : x)));
+                    }
+                    setEditing((v) => !v);
+                  }}
+                  aria-pressed={editing}
+                  title={editing ? "Done editing - changes are already saved" : "Edit the job description"}
+                  className={"flex items-center gap-1.5 rounded-full px-3 py-1 text-small font-medium " + (editing ? "bg-brand text-white hover:bg-brand-strong" : "text-ink-2 hover:bg-surface-2 hover:text-ink")}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className="size-[1rem]" aria-hidden="true">
+                    {editing ? <path d="m5 12.5 4.5 4.5L19 7.5" /> : <path d="M4 20h4L19 9l-4-4L4 16v4ZM13.5 6.5l4 4" />}
+                  </svg>
+                  {editing ? "Done" : "Edit"}
+                </button>
+              )}
             </div>
-            <h2 className="text-h1 font-light text-ink">{TITLE}</h2>
-            <ul aria-label="About this job" className="flex flex-wrap gap-2">
-              {META.map((m) => (
-                <li key={m} className={CHIP + " bg-surface-2 text-ink-2"}>
-                  {m}
-                </li>
-              ))}
-            </ul>
+            {editing ? (
+              <>
+                <textarea value={title} onChange={(e) => setTitle(e.target.value)} rows={1} aria-label="Job title" className={EDIT + " field-sizing-content text-h1 font-light text-ink"} />
+                <input value={metaText} onChange={(e) => setMetaText(e.target.value)} aria-label="Client, place, type, reports to - separated by commas" className={EDIT + " text-small text-ink-2"} />
+              </>
+            ) : (
+              <>
+                <h2 className="text-h1 font-light text-ink">{title}</h2>
+                <ul aria-label="About this job" className="flex flex-wrap gap-2">
+                  {meta.map((m) => (
+                    <li key={m} className={CHIP + " bg-surface-2 text-ink-2"}>
+                      {m}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
           </header>
 
           <div ref={doc} className="flex max-w-[70ch] flex-col gap-[max(1.5rem,14px)] pt-[max(1.5rem,14px)]">
-            {SECTIONS.map((s) => (
-              <section key={s.h} className="flex flex-col gap-2">
-                <h3 className="text-caption font-medium uppercase text-ink-3">{s.h}</h3>
-                {s.p && <p className="text-body text-ink-2">{s.p}</p>}
-                {s.list && (
-                  <ul className="flex flex-col gap-1.5 text-body text-ink-2">
-                    {s.list.map((l) => (
-                      <li key={l} className="flex gap-3">
-                        <span aria-hidden="true" className="mt-[0.7em] size-1.5 shrink-0 rounded-full bg-ink-3" />
-                        {l}
-                      </li>
-                    ))}
-                  </ul>
+            {sections.map((s, i) => (
+              <section key={i} className="flex flex-col gap-2">
+                {editing ? (
+                  <input value={s.h} onChange={(e) => setSection(i, { h: e.target.value })} aria-label="Section heading" className={EDIT + " text-caption font-medium uppercase text-ink-3"} />
+                ) : (
+                  <h3 className="text-caption font-medium uppercase text-ink-3">{s.h}</h3>
                 )}
+                {s.p !== undefined &&
+                  (editing ? (
+                    <textarea value={s.p} onChange={(e) => setSection(i, { p: e.target.value })} aria-label={s.h} className={EDIT + " field-sizing-content text-body text-ink-2"} />
+                  ) : (
+                    <p className="text-body text-ink-2">{s.p}</p>
+                  ))}
+                {s.list &&
+                  (editing ? (
+                    <textarea
+                      value={s.list.join("\n")}
+                      onChange={(e) => setSection(i, { list: e.target.value.split("\n") })}
+                      aria-label={`${s.h} - one point per line`}
+                      className={EDIT + " field-sizing-content text-body text-ink-2"}
+                    />
+                  ) : (
+                    <ul className="flex flex-col gap-1.5 text-body text-ink-2">
+                      {s.list.map((l, k) => (
+                        <li key={k} className="flex gap-3">
+                          <span aria-hidden="true" className="mt-[0.7em] size-1.5 shrink-0 rounded-full bg-ink-3" />
+                          {l}
+                        </li>
+                      ))}
+                    </ul>
+                  ))}
               </section>
             ))}
           </div>
@@ -215,11 +248,6 @@ export default function JobDescriptionView() {
                   : "Approving starts Research, Suggestions and matching, and lets LinkedIn posts go live."}
               </p>
             </div>
-            {approved && (
-              <button type="button" onClick={copy} className="whitespace-nowrap rounded-full border border-border bg-surface px-[max(1.1rem,12px)] py-[max(0.5rem,6px)] text-small font-medium text-ink hover:bg-surface-2">
-                Copy
-              </button>
-            )}
             {!approved && CAN_WRITE && (
               <button
                 type="button"

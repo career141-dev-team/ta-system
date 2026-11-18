@@ -6,6 +6,7 @@ import Image from "next/image";
 import { gsap, motionOK, swapIn, useGSAP } from "@/lib/gsap";
 import { useWorkdayGate } from "@/lib/workday";
 import { useLiftMenu } from "../openings/[id]/liftMenu";
+import { jdText } from "../openings/[id]/jdState";
 import { refereeReply, toCsv, type Referee } from "./referees";
 import {
   JOBS,
@@ -276,7 +277,9 @@ export default function DatabaseView() {
   const asked = useRef(false);
   useEffect(() => {
     const sp = new URLSearchParams(location.search);
-    const q = sp.get("q");
+    // From an opening: the job title, then the whole JD, sent as the search.
+    const forJob = sp.get("for");
+    const q = forJob ? `Find people for this job: ${forJob}\n\n${jdText()}` : sp.get("q");
     // An opening's Referral Search tab arrives in Referees mode.
     const as: Mode | undefined = sp.get("mode") === "referees" ? "referees" : undefined;
     if (as) queueMicrotask(() => setMode(as));
@@ -461,6 +464,8 @@ export default function DatabaseView() {
           mode={mode}
           centred={!!picked}
           onFile={(name) => send(`Find people for this JD: ${name}`)}
+          suggestions={thinking ? undefined : thread?.turns.find((t) => t.id === lastAura && t.from === "aura" && t.actions?.length) ? (thread.turns.find((t) => t.id === lastAura) as Extract<Turn, { from: "aura" }>).actions : undefined}
+          onSuggest={send}
         />
       </section>
 
@@ -725,21 +730,6 @@ function Answer({
             onAll={onAll}
             onPick={onPick}
           />
-        )}
-        {latest && t.actions && t.actions.length > 0 && (
-          <div className="flex flex-wrap gap-2 pt-1">
-            {t.actions.map((a) => (
-              <button
-                key={a.label}
-                type="button"
-                disabled={busy}
-                onClick={() => onSend(a.prompt)}
-                className="rounded-full border border-border bg-surface px-3.5 py-1.5 text-small text-ink-2 transition-colors hover:border-brand hover:text-brand disabled:opacity-40"
-              >
-                {a.label}
-              </button>
-            ))}
-          </div>
         )}
       </div>
     </div>
@@ -1009,6 +999,8 @@ function Orb({ breathing = false }: { breathing?: boolean }) {
 
 /** "Refine — …": attach a JD, speak, or type; Enter sends, Shift+Enter is a new line. */
 function Composer({
+  suggestions,
+  onSuggest,
   value,
   onChange,
   onSend,
@@ -1026,6 +1018,8 @@ function Composer({
   mode: Mode;
   centred: boolean;
   onFile: (name: string) => void;
+  suggestions?: { label: string; prompt: string }[];
+  onSuggest: (text: string) => void;
 }) {
   const file = useRef<HTMLInputElement>(null);
   const [listening, setListening] = useState(false);
@@ -1066,6 +1060,22 @@ function Composer({
   };
   return (
     <div className="px-[max(1.5rem,12px)] pb-[max(2.4rem,14px)]">
+      {/* AURA's suggested next steps sit right above the typing bar. */}
+      {suggestions && suggestions.length > 0 && (
+        <div className={(centred ? "mx-auto" : "ml-[7.7rem] mr-auto") + " mb-3 flex max-w-[62.5rem] max-lg:ml-0 flex-wrap gap-2"}>
+          {suggestions.map((a) => (
+            <button
+              key={a.label}
+              type="button"
+              disabled={busy}
+              onClick={() => onSuggest(a.prompt)}
+              className="rounded-full border border-border bg-surface px-3.5 py-1.5 text-small text-ink-2 transition-colors hover:border-brand hover:text-brand disabled:opacity-40"
+            >
+              {a.label}
+            </button>
+          ))}
+        </div>
+      )}
       <div className={(centred ? "mx-auto" : "ml-[7.7rem] mr-auto") + " flex max-w-[62.5rem] max-lg:ml-0 items-end gap-[max(0.9rem,8px)] rounded-xl bg-surface p-2.5 shadow-float ring-1 ring-border/60 transition-shadow focus-within:ring-2 focus-within:ring-brand/30"}>
         <button
           type="button"
