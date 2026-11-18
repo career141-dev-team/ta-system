@@ -18,6 +18,8 @@ import { STAGES, checkMove, movesFrom, type Needs } from "./pipelineRules";
 import WorkdayBlocked from "./WorkdayBlocked";
 import { arrivals, onArrival, type Arrival } from "./pipelineInbox";
 import { useWorkdayGate } from "@/lib/workday";
+import { useMutation, useQuery } from "convex/react";
+import { door, jobFromAddress, STAGE_KEYS, useLive, type DoorBoard, type DoorCard, type DoorDone } from "@/lib/backend";
 
 // The CV preview is its own download, fetched while the screen is idle (OpeningView).
 const CvPreview = dynamic(() => import("./CvPreview"), { ssr: false });
@@ -114,6 +116,32 @@ const fromArrival = (a: Arrival, n: number): Card => ({
 const OTHER_JOBS = ["Finance Manager - Hayleys", "Production Executive - MAS Holdings", "HR Business Partner - Dialog"];
 const OPEN_SET = 3;
 
+/** The door's words for what is missing, in the board's own chips. */
+const MISSING: Record<string, string> = { "a CV": "CV", "expected salary": "Salary", "notice period": "Notice Period" };
+
+/** A real card from the backend door (src/lib/backend.tsx), in this board's shape. */
+const fromDoor = (c: DoorCard): Card => ({
+  id: c.id,
+  name: c.name,
+  title: c.title ?? "Not on record",
+  company: c.company ?? "Not on record",
+  location: c.location ?? "Not on record",
+  years: c.years != null ? `${c.years} years` : "Not on record",
+  phone: c.phone ?? "Not on record",
+  email: c.email ?? "Not on record",
+  mine: c.mine,
+  owned: c.owned,
+  channel: c.channel ?? "",
+  missing: c.missing.map((m) => MISSING[m] ?? m),
+  addOn: c.addOn,
+  backup: c.backup,
+  yearsN: c.years ?? 0,
+  noticeDays: c.noticeDays ?? 0,
+});
+
+/** Moves whose details (dates, package, signed offer letter) the backend does not check yet (PR 1b). */
+const NOT_YET_LIVE = new Set(["Interview", "Offer", "Placed"]);
+
 /** Placeholder: the other TAs on this opening, until the backend sends the team. */
 
 const PEOPLE: Person[] = [
@@ -195,6 +223,8 @@ export default function PipelineBoard() {
   // into every where they want"). Sample cards, held in the page for now; with the
   // backend a drop is one stage move through the TA System's own transition, which
   // can still refuse (a reject needs a reason, a Director decision is the Director's).
+  // Set by the real board below: saves a move, or puts the card back with the reason.
+  const sendMove = useRef<((card: Card, from: string, to: string, note?: string) => void) | null>(null);
   const [board, setBoard] = useState<Record<string, Card[]>>(() =>
     Object.fromEntries(STAGES.map((s, i) => [s.name, cardsFor(i)])),
   );
@@ -259,6 +289,43 @@ export default function PipelineBoard() {
   const [toast, setToast] = useState<{ bold?: string; rest: string; n: number; warn?: boolean } | null>(null);
   const refuse = useCallback((why: string) => setToast((t) => ({ rest: why, warn: true, n: (t?.n ?? 0) + 1 })), []);
   const tell = (bold: string, rest: string) => setToast((t) => ({ bold, rest, n: (t?.n ?? 0) + 1 }));
+
+  // The real board (18 Nov): with the backend switched on and ?job=<id> in the
+  // address, the columns are that opening's, read through the signed-in door
+  // and kept live; a move is saved there and put back with the reason if the
+  // backend refuses it. Without either, the sample board stays as it was.
+  const live = useLive();
+  const [jobId] = useState(jobFromAddress);
+  const realBoard = useQuery(door.board, live && jobId ? { openingId: jobId, limit: 50 } : "skip") as DoorBoard | undefined;
+  const saveMove = useMutation(door.move);
+  const saveShortlist = useMutation(door.shortlist);
+  // Each new answer from the backend replaces the columns (adjusted while
+  // rendering, React's pattern for state that follows a changing value).
+  const [seenBoard, setSeenBoard] = useState<DoorBoard | undefined>(undefined);
+  if (realBoard !== seenBoard) {
+    setSeenBoard(realBoard);
+    if (realBoard && !realBoard.ok) refuse(realBoard.message);
+    else if (realBoard) setBoard(Object.fromEntries(STAGES.map((s, i) => [s.name, (realBoard.columns.find((c) => c.stage === STAGE_KEYS[i])?.cards ?? []).map(fromDoor)])));
+  }
+  useEffect(() => {
+    sendMove.current =
+      live && jobId
+        ? async (card, from, to, note) => {
+            const key = STAGE_KEYS[STAGES.findIndex((st) => st.name === to)];
+            const putBack = (why: string) => {
+              setBoard((bd) => ({ ...bd, [to]: bd[to].filter((c) => c.id !== card.id), [from]: [card, ...bd[from].filter((c) => c.id !== card.id)] }));
+              refuse(why);
+            };
+            if (NOT_YET_LIVE.has(to)) return putBack(`${to} is not connected in the new screen yet. Do this one in AURA for now.`);
+            try {
+              const r = (await saveMove({ applicationId: card.id, stage: key, reason: to === "Rejected" || to === "Dropped out" ? note : undefined })) as DoorDone;
+              if (!r.ok) putBack(r.message);
+            } catch {
+              putBack("Could not reach the TA System. Check your connection and try again.");
+            }
+          }
+        : null;
+  }, [live, jobId, saveMove, refuse]);
   const [adding, setAdding] = useState(false);
 
   // The workday gate: a TA moves nobody until today's workday is started (6.2).
@@ -325,6 +392,7 @@ export default function PipelineBoard() {
       };
     });
     if (opts?.pop) setUndone((u) => ({ id: card.id, n: (u?.n ?? 0) + 1 }));
+    sendMove.current?.(card, from, to, opts?.note);
   }, []);
 
   // From the menu: the same rules as a drop.
@@ -348,7 +416,13 @@ export default function PipelineBoard() {
     const { card, stage } = menu;
     const mine = { ...card, owned: true, mine: true };
     closeMenu();
-    if (stage === "TA Follow-Up") {
+    if (stage === "TA Follow-Up" && live && jobId) {
+      // The real shortlist: the backend's collision lock decides, and names the set.
+      void (saveShortlist({ applicationId: card.id }) as Promise<DoorDone>).then(
+        (r) => (r.ok ? tell(card.name, ` ${r.message}`) : refuse(r.message)),
+        () => refuse("Could not reach the TA System. Check your connection and try again."),
+      );
+    } else if (stage === "TA Follow-Up") {
       setBoard((bd) => ({ ...bd, [stage]: bd[stage].map((c) => (c.id === card.id ? mine : c)) }));
       tell(card.name, ` shortlisted as set ${OPEN_SET}`);
     } else moveCard(mine, stage, "TA Follow-Up", { note: `Shortlisted as set ${OPEN_SET}. They are yours from now on.`, pop: true });
