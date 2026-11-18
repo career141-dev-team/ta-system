@@ -45,6 +45,9 @@ const ALLOWED_PUBLIC = new Set<string>([
   "ui/opening:saveJd",
   "ui/opening:scoopUploadUrl",
   "ui/opening:queueScoop",
+  "ui/manage:setQuestions",
+  "ui/manage:acceptStrategies",
+  "ui/manage:submitStrategies",
 ]);
 
 const PUBLIC = /export\s+(?:const\s+(\w+)\s*=|(default))\s*(query|mutation|action)\s*\(/g;
