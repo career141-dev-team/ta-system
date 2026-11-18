@@ -18,8 +18,7 @@ import { STAGES, checkMove, movesFrom, type Needs } from "./pipelineRules";
 import WorkdayBlocked from "./WorkdayBlocked";
 import { arrivals, onArrival, type Arrival } from "./pipelineInbox";
 import { useWorkdayGate } from "@/lib/workday";
-import { useMutation, useQuery } from "convex/react";
-import { door, jobFromAddress, STAGE_KEYS, useLive, type DoorBoard, type DoorCard, type DoorDone } from "@/lib/backend";
+import { door, jobFromAddress, STAGE_KEYS, useDoorMutation, useDoorQuery, useLive, type DoorBoard, type DoorCard, type DoorDone } from "@/lib/backend";
 
 // The CV preview is its own download, fetched while the screen is idle (OpeningView).
 const CvPreview = dynamic(() => import("./CvPreview"), { ssr: false });
@@ -296,9 +295,9 @@ export default function PipelineBoard() {
   // backend refuses it. Without either, the sample board stays as it was.
   const live = useLive();
   const [jobId] = useState(jobFromAddress);
-  const realBoard = useQuery(door.board, live && jobId ? { openingId: jobId, limit: 50 } : "skip") as DoorBoard | undefined;
-  const saveMove = useMutation(door.move);
-  const saveShortlist = useMutation(door.shortlist);
+  const realBoard = useDoorQuery(door.board, live && jobId ? { openingId: jobId, limit: 50 } : "skip") as DoorBoard | undefined;
+  const saveMove = useDoorMutation(door.move);
+  const saveShortlist = useDoorMutation(door.shortlist);
   // Each new answer from the backend replaces the columns (adjusted while
   // rendering, React's pattern for state that follows a changing value).
   const [seenBoard, setSeenBoard] = useState<DoorBoard | undefined>(undefined);

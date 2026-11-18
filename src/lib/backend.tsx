@@ -14,7 +14,7 @@
 // design preview) never tries to sign anyone in.
 
 import { ClerkProvider, SignedIn, SignedOut, SignIn, useAuth } from "@clerk/clerk-react";
-import { ConvexReactClient, useQuery } from "convex/react";
+import { ConvexReactClient, useMutation, useQuery } from "convex/react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
 import { makeFunctionReference } from "convex/server";
 import { createContext, useContext, useEffect, type ReactNode } from "react";
@@ -27,6 +27,13 @@ const CLERK_KEY = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "";
 export const LIVE = Boolean(URL && CLERK_KEY);
 
 const client = LIVE ? new ConvexReactClient(URL) : null;
+
+// Convex's hooks throw when there is no provider - which is every build without the two
+// env values (the live design preview). LIVE never changes in a build, so a screen uses
+// these two: the real hooks when live, harmless stand-ins when not.
+const noMutation = async () => undefined;
+export const useDoorQuery = (LIVE ? useQuery : () => undefined) as typeof useQuery;
+export const useDoorMutation = (LIVE ? useMutation : () => noMutation) as typeof useMutation;
 
 const Live = createContext(false);
 /** Whether this screen should read the backend instead of its sample data. */
