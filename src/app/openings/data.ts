@@ -12,8 +12,10 @@
 export type Status = "active" | "hold" | "placed" | "lost";
 /** The lists on the page: Active counts every open opening (as the old "All active"),
  *  Unassigned is the open ones with nobody on them. */
-export type List = Status | "unassigned";
-export const inList = (o: Opening, l: List) => (l === "unassigned" ? o.status === "active" && o.team.length === 0 : o.status === l);
+export type List = Status | "unassigned" | "today";
+// "today": open openings assigned today (day 0).
+export const inList = (o: Opening, l: List) =>
+  l === "unassigned" ? o.status === "active" && o.team.length === 0 : l === "today" ? o.status === "active" && o.days === 0 : o.status === l;
 export type Priority = 1 | 2 | 3 | 4 | 5;
 export type Opening = {
   id: string;
@@ -37,13 +39,14 @@ export const TARGET: Record<Priority, number> = { 1: 14, 2: 21, 3: 30, 4: 45, 5:
 export const TARGET_WORDS: Record<Priority, string> = { 1: "2 wks", 2: "3 wks", 3: "1 mo", 4: "6 wks", 5: "2 mo" };
 
 export const STATUS: Record<List, { label: string; dot: string; plural: string }> = {
+  today: { label: "Today", dot: "bg-info", plural: "Today" },
   active: { label: "Active", dot: "bg-success", plural: "Active" },
   unassigned: { label: "Unassigned", dot: "bg-violet", plural: "Unassigned" },
   hold: { label: "On hold", dot: "bg-warn", plural: "On hold" },
   placed: { label: "Placed", dot: "bg-brand", plural: "Placed" },
   lost: { label: "Lost", dot: "bg-ink-3", plural: "Lost" },
 };
-export const ORDER: List[] = ["active", "unassigned", "hold", "placed", "lost"];
+export const ORDER: List[] = ["today", "active", "unassigned", "hold", "placed", "lost"];
 
 /** TAs who can be put on an opening (sample). */
 export const TEAM = ["Chathura", "Dinuka", "Hasini", "Nipuna", "Sanduni", "Tharushi"];

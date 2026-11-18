@@ -21,7 +21,7 @@ const NewOpening = dynamic(() => import("./NewOpening"));
 /** Placeholder for `opening.manage`: a lead or admin may send an opening to the Bin. */
 type Tab = "all" | List;
 // The design's tab order; the lists below keep Active, Unassigned, On hold first.
-const TABS: Tab[] = ["all", "active", "hold", "placed", "lost", "unassigned"];
+const TABS: Tab[] = ["all", "today", "active", "hold", "placed", "lost", "unassigned"];
 type Sort = "new" | "days" | "client";
 const SORTS: [Sort, string][] = [
   ["new", "Newest first"],
@@ -183,7 +183,7 @@ export default function OpeningsView() {
                   </div>
                 ) : (
                   <p className="text-small text-ink-3">
-                    {client || ta ? "Nothing here with these filters." : `No ${STATUS[l].label.toLowerCase()} openings.`}
+                    {client || ta ? "Nothing here with these filters." : l === "today" ? "Nothing opened today." : `No ${STATUS[l].label.toLowerCase()} openings.`}
                   </p>
                 )}
               </section>

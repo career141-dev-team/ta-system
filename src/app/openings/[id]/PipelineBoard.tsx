@@ -1256,9 +1256,9 @@ const stroke = {
   "aria-hidden": true,
 };
 
-function LinkedInIcon() {
+export function LinkedInIcon({ className = "size-[max(1.25rem,16px)]" }: { className?: string } = {}) {
   return (
-    <svg viewBox="0 0 24 24" className="size-[max(1.25rem,16px)] shrink-0" aria-label="LinkedIn">
+    <svg viewBox="0 0 24 24" className={className + " shrink-0"} aria-label="LinkedIn">
       <rect width="24" height="24" rx="3" fill="#0a66c2" />
       <path
         fill="#fff"

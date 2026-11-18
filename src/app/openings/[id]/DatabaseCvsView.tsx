@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useWorkdayGate } from "@/lib/workday";
-import { useSwap } from "@/lib/gsap";
+import { DUR, EASE, gsap, useSwap } from "@/lib/gsap";
 import { CLAIMED, POOL, reasonOf, type Person } from "../../database/aura";
 import Count from "@/app/Count";
 import { BackButton } from "./PipelineBoard";
@@ -13,7 +13,6 @@ import WorkdayBlocked from "./WorkdayBlocked";
 import Toast from "./Toast";
 import { sendToPipeline } from "./pipelineInbox";
 import { useJdApproved } from "./jdState";
-import { useLiftMenu } from "./liftMenu";
 
 // ATS · Database CVs - matches from the whole database (owner's design, 14 Nov 2026).
 // The old tab's rules (database-search skill §10, §13): matching reads the approved
@@ -85,6 +84,8 @@ export default function DatabaseCvsView() {
   const jdApproved = useJdApproved();
   const [rows, setRows] = useState<Person[]>(() => [...POOL].sort((a, b) => b.score - a.score));
   const [f, setF] = useState<Filters>({ ...ANY, fit: "strong", notice: 1, city: "Colombo" });
+  const [fOpen, setFOpen] = useState(false);
+  const fBtn = useRef<HTMLButtonElement>(null);
   const [pickedId, setPickedId] = useState(rows[0]?.id ?? "");
   const [matching, setMatching] = useState(false);
   const [big, setBig] = useState(false);
@@ -215,8 +216,18 @@ export default function DatabaseCvsView() {
       {gate && <WorkdayBlocked what="shortlist candidates" className="mt-3" />}
 
       <div className="mt-[max(1rem,10px)] flex flex-wrap items-center gap-2">
-        {/* First in the row, so its panel always opens from the left and fits. */}
-        <FiltersMenu applied={f} onApply={setF} rows={rows} />
+        <button
+          ref={fBtn}
+          type="button"
+          onClick={() => setFOpen((v) => !v)}
+          aria-expanded={fOpen}
+          className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-small text-ink-2 hover:border-border-strong hover:text-ink aria-expanded:border-border-strong aria-expanded:text-ink"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="size-3.5" aria-hidden="true">
+            <path d="M4 6h16M7 12h10M10 18h4" />
+          </svg>
+          Filters
+        </button>
         {chips.map((c) => (
           <span key={c.label} className="flex max-w-[max(16rem,200px)] items-center gap-1 rounded-full bg-surface-2 py-1 pl-3 pr-1.5 text-small text-ink-2">
             <span className="truncate" title={c.label}>
@@ -244,7 +255,23 @@ export default function DatabaseCvsView() {
       </div>
 
       <div className="mt-[max(1rem,10px)] flex min-h-0 flex-1 gap-[max(1.25rem,12px)] max-md:flex-col">
-        <ul aria-label="Matches" className="flex w-[38%] min-w-[max(22rem,280px)] flex-col gap-2 overflow-y-auto pr-1 max-md:max-h-[40%] max-md:w-auto max-md:min-w-0">
+        {/* The filters slide in from the left edge; the list and the CV give way and get smaller. */}
+        {fOpen && (
+          <FiltersPanel
+            applied={f}
+            rows={rows}
+            onClose={() => {
+              setFOpen(false);
+              fBtn.current?.focus();
+            }}
+            onApply={(d) => {
+              setF(d);
+              setFOpen(false);
+              fBtn.current?.focus();
+            }}
+          />
+        )}
+        <ul aria-label="Matches" className="flex w-[46%] min-w-[max(22rem,280px)] shrink flex-col gap-2 overflow-y-auto pr-1 max-md:max-h-[40%] max-md:w-auto max-md:min-w-0">
           {shown.length === 0 && (
             <li className="flex flex-col items-start gap-2 rounded-md bg-surface-2 p-4 text-small text-ink-2">
               {rows.length ? "Nobody here with these filters." : "No matches waiting. Run matching again for new ones."}
@@ -285,6 +312,13 @@ export default function DatabaseCvsView() {
                       {p.title} · {p.company} · {p.city}
                     </span>
                     <span className="truncate text-small text-violet">✦ {reasonOf(p)}</span>
+                    <span className="mt-1 flex flex-wrap gap-1.5">
+                      {p.tags.slice(0, 6).map((t) => (
+                        <span key={t} className="rounded-full bg-surface-2 px-2.5 py-0.5 text-caption capitalize text-ink-2">
+                          {t}
+                        </span>
+                      ))}
+                    </span>
                   </span>
                 </button>
               </li>
@@ -392,57 +426,16 @@ function Ring({ score }: { score: number }) {
   );
 }
 
-/** "Filters": a lifted panel (owner's Figma "Filter popup", 17 Nov 2026). Changes are a
- *  draft until "Show N matches" applies them; Escape or a press outside leaves them. */
-function FiltersMenu({ applied, onApply, rows }: { applied: Filters; onApply: (f: Filters) => void; rows: Person[] }) {
-  const { open, setOpen, root, panel, shown } = useLiftMenu();
-  const btn = useRef<HTMLButtonElement>(null);
-  const close = () => {
-    setOpen(false);
-    btn.current?.focus();
-  };
-  return (
-    <div ref={root} className="relative">
-      <button
-        ref={btn}
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-small text-ink-2 hover:border-border-strong hover:text-ink aria-expanded:border-border-strong aria-expanded:text-ink"
-      >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="size-3.5" aria-hidden="true">
-          <path d="M4 6h16M7 12h10M10 18h4" />
-        </svg>
-        Filters
-      </button>
-      {shown && (
-        <FiltersPanel
-          panelRef={panel}
-          applied={applied}
-          rows={rows}
-          onClose={close}
-          onApply={(d) => {
-            onApply(d);
-            close();
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
 const BOX = "rounded-lg border border-border bg-surface hover:border-border-strong";
 const FOCUS = "focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/30";
 
 function FiltersPanel(props: {
-  panelRef: RefObject<HTMLDivElement | null>;
   applied: Filters;
   rows: Person[];
   onClose: () => void;
   onApply: (f: Filters) => void;
 }) {
-  const { panelRef } = props;
+  const panelRef = useRef<HTMLDivElement>(null);
   const [d, setD] = useState(props.applied);
   const listCount = LISTS.reduce((n, [k]) => n + d.lists[k].length, 0);
   const [more, setMore] = useState(listCount > 0);
@@ -454,12 +447,11 @@ function FiltersPanel(props: {
   const set = <K extends keyof Filters>(k: K, v: Filters[K]) => setD((x) => ({ ...x, [k]: v }));
   const num = (v: string) => (v === "" ? null : Number(v));
 
-  // Fits under its button on any window: the panel scrolls inside itself, never the page.
+  // Slides in from the left, pushing the list and the CV over.
   useLayoutEffect(() => {
-    const el = panelRef.current;
-    if (el) el.style.maxHeight = `${Math.max(240, window.innerHeight - el.getBoundingClientRect().top - 12)}px`;
+    if (panelRef.current) gsap.from(panelRef.current, { width: 0, opacity: 0, duration: DUR.base, ease: EASE.out, clearProps: "width,opacity" });
     first.current?.focus();
-  }, [panelRef]);
+  }, []);
 
   return (
     <div
@@ -467,7 +459,7 @@ function FiltersPanel(props: {
       role="dialog"
       aria-label="Filters"
       onKeyDown={(e) => e.key === "Escape" && props.onClose()}
-      className="absolute left-0 top-full z-30 mt-2 flex w-[max(34rem,360px)] flex-col overflow-hidden rounded-md border border-border bg-surface shadow-float max-md:fixed max-md:inset-x-3 max-md:top-[max(7rem,96px)] max-md:mt-0 max-md:w-auto"
+      className="flex w-[max(24rem,300px)] shrink-0 flex-col overflow-hidden rounded-md border border-border bg-surface max-md:max-h-[60%] max-md:w-auto"
     >
       <div className="flex items-center gap-2 px-[max(1.25rem,14px)] pb-2 pt-[max(1rem,12px)]">
         <p className="text-h3 font-medium text-ink">Filters</p>

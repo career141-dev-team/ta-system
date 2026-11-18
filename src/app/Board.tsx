@@ -45,11 +45,57 @@ export default function Board({ children }: { children: ReactNode }) {
   // The submissions page's tab carries how many are still to read.
   const unread = counts(useRows()).unread;
   const label = useRef<HTMLSpanElement>(null);
+  const tab = useRef<HTMLDivElement>(null);
+  const off = i < 0;
   const stage = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
   const bar = useRef<HTMLDivElement>(null);
   const ghost = useRef<HTMLElement | null>(null);
   const loop = useRef<gsap.core.Tween | null>(null);
+
+  // The tab hangs from the board's top edge. Scrolling down (the page or any scroll
+  // container inside it) lifts it away so it never covers content; scrolling up, the
+  // top, or the pointer near the top-centre brings it back.
+  useEffect(() => {
+    const el = tab.current;
+    if (!el) return;
+    let hidden = false;
+    gsap.set(el, { clearProps: "transform,opacity" }); // a new page always starts with the tab showing
+    const seen = new WeakMap<object, number>();
+    const show = (on: boolean) => {
+      if (on === !hidden) return;
+      hidden = !on;
+      gsap.to(el, { y: on ? 0 : -90, opacity: on ? 1 : 0, duration: DUR.base, ease: on ? EASE.out : EASE.in, overwrite: true, ...(on && { clearProps: "transform,opacity" }) });
+    };
+    // Only a scroll area that reaches under the tab, with content scrolled, counts as
+    // content "jumbling" with it; a list that starts below the tab never hides it.
+    const under = (s: Element) => {
+      const b = el.parentElement!.getBoundingClientRect();
+      const r = s.getBoundingClientRect();
+      const cx = b.left + b.width / 2;
+      return r.top < b.top + 160 && r.bottom > b.top && r.left < cx + 130 && r.right > cx - 130;
+    };
+    const scroll = (e: Event) => {
+      const t = e.target;
+      if (!(t instanceof Element) || !el.parentElement?.contains(t)) return;
+      const top = t.scrollTop;
+      const prev = seen.get(t) ?? 0;
+      seen.set(t, top);
+      if (top < 8 || top < prev) show(true);
+      else if (top > prev && top > 6 && under(t)) show(false);
+    };
+    const move = (e: PointerEvent) => {
+      if (e.clientY < 64 && Math.abs(e.clientX - innerWidth / 2) < 220) show(true);
+    };
+    document.addEventListener("scroll", scroll, { capture: true, passive: true });
+    document.addEventListener("pointermove", move, { passive: true });
+    return () => {
+      gsap.killTweensOf(el);
+      gsap.set(el, { clearProps: "transform,opacity" }); // never leave the tab half-faded
+      document.removeEventListener("scroll", scroll, true);
+      document.removeEventListener("pointermove", move);
+    };
+  }, [off, path]);
 
   // The loading bar (owner, 14 Nov 2026: "the rounded bar should be animated... give
   // the premium vibe"): a soft rounded track under the tab rises in, a glowing pill
@@ -160,17 +206,20 @@ export default function Board({ children }: { children: ReactNode }) {
 
   if (i < 0) return children;
   return (
-    <main className="enter-board relative mx-11 mb-[max(2.125rem,14px)] mt-[clamp(40px,8.7dvh,94px)] flex min-h-0 flex-1 flex-col rounded-lg bg-white shadow-card max-md:mx-3 max-md:mt-12">
-      <Notch label={path === "/strategy/submissions" && unread ? `${PAGES[i][1]} · ${unread}` : PAGES[i][1]} wide labelRef={label} />
-      {/* The loading bar under the tab, shown while the next page loads. */}
-      <div
-        ref={bar}
-        aria-hidden="true"
-        style={{ opacity: 0 }}
-        className="pointer-events-none absolute left-1/2 top-[max(0.6rem,6px)] z-20 -ml-[max(9rem,90px)] h-[max(0.45rem,5px)] w-[max(18rem,180px)] overflow-hidden rounded-full bg-brand-tint shadow-aura"
-      >
-        <span data-comet className="absolute inset-y-0 left-0 w-[38%] rounded-full bg-[linear-gradient(90deg,transparent,var(--color-aura-1),var(--color-aura-2),var(--color-aura-3),transparent)]" />
-        <span data-fill className="absolute inset-0 origin-left scale-x-0 rounded-full bg-brand" />
+    <main className="enter-board relative mx-11 mb-[max(2.125rem,14px)] mt-[max(1rem,12px)] flex min-h-0 flex-1 flex-col rounded-lg bg-white shadow-card max-md:mx-3 max-md:mt-3">
+      <div ref={tab} className="pointer-events-none absolute inset-x-0 top-0 z-20 h-0 [&>h2]:pointer-events-auto">
+        <Notch big label={path === "/strategy/submissions" && unread ? `${PAGES[i][1]} · ${unread}` : PAGES[i][1]} labelRef={label}>
+          {/* The loading bar lives inside the tab, shown while the next page loads. */}
+          <div
+            ref={bar}
+            aria-hidden="true"
+            style={{ opacity: 0 }}
+            className="pointer-events-none absolute inset-x-[22%] bottom-[max(0.55rem,6px)] h-[max(0.3rem,4px)] overflow-hidden rounded-full bg-brand-tint"
+          >
+            <span data-comet className="absolute inset-y-0 left-0 w-[38%] rounded-full bg-[linear-gradient(90deg,transparent,var(--color-aura-1),var(--color-aura-2),var(--color-aura-3),transparent)]" />
+            <span data-fill className="absolute inset-0 origin-left scale-x-0 rounded-full bg-brand" />
+          </div>
+        </Notch>
       </div>
       <div ref={stage} className="relative flex min-h-0 flex-1 flex-col rounded-lg">
         <div ref={body} data-board-body className="flex min-h-0 flex-1 flex-col">
