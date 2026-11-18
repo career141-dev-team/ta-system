@@ -91,7 +91,7 @@ export function Bell() {
           markRead(a.id);
           close();
         }}
-        className={"flex items-center gap-3.5 rounded-md px-3 py-[max(0.75rem,8px)] transition-colors hover:bg-surface-2 " + (a.unread ? "bg-canvas" : "")}
+        className={"flex items-center gap-3.5 rounded-sm px-3 py-[max(0.75rem,8px)] transition-colors hover:bg-surface-2 " + (a.unread ? "bg-canvas" : "")}
       >
         <span className={"flex size-[max(2.375rem,30px)] shrink-0 items-center justify-center rounded-full " + ICON[a.icon].tint}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-[45%]" aria-hidden="true">
@@ -172,7 +172,7 @@ function MenuRow({ icon, label, hint, href, onClick }: { icon: string; label: st
       {hint && <span className="text-caption text-ink-3">{hint}</span>}
     </>
   );
-  const cls = "flex w-full items-center gap-3.5 rounded-md px-2.5 py-[max(0.6rem,7px)] text-left transition-colors hover:bg-surface-2";
+  const cls = "flex w-full items-center gap-3.5 rounded-sm px-2.5 py-[max(0.6rem,7px)] text-left transition-colors hover:bg-surface-2";
   return (
     <li data-row role="none">
       {href ? (

@@ -92,13 +92,13 @@ export default function CardMenu({
     };
   }, [onClose, root]);
 
-  const ITEM = "flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left";
+  const ITEM = "flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left";
   return createPortal(
     <div
       ref={root}
       role="menu"
       aria-label={`Actions for ${name}`}
-      className="fixed z-[75] w-[max(16rem,220px)] rounded-2xl border border-border bg-white p-2 shadow-float"
+      className="fixed z-[75] w-[max(16rem,220px)] rounded-md border border-border bg-surface p-1.5 shadow-float"
     >
       {onShortlist && (
         <button type="button" role="menuitem" onClick={onShortlist} className={ITEM + " hover:bg-surface-2"}>
