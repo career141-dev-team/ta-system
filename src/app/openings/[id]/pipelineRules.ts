@@ -46,8 +46,6 @@ const NEXT: Record<string, string[]> = {
 export type Needs = "reason" | "interview" | "offer" | "placement";
 
 export type MoveCard = {
-  /** Another TA shortlisted them first: the collision lock. Their first name. */
-  lockedBy?: string;
   /** What is still needed before Director Review: "CV", "Salary", "Notice Period". */
   missing: string[];
   /** False while nobody has shortlisted them: Shortlist comes first (it claims the
@@ -64,7 +62,6 @@ const list = (a: string[]) => (a.length < 2 ? a.join("") : a.slice(0, -1).join("
 
 export function checkMove(card: MoveCard, from: string, to: string, role: string): Verdict {
   if (from === to) return { ok: false, why: "Already in " + to + "." };
-  if (card.lockedBy) return { ok: false, why: `Shortlisted by ${card.lockedBy}. You cannot move their candidate.` };
   if (card.owned === false) return { ok: false, why: "Nobody has shortlisted them yet. Shortlist them first." };
   if (to === "Ai Follow-Up") return { ok: false, why: "Nobody is moved into Ai Follow-Up by hand. The assistant takes candidates there itself." };
   if (CLOSED.includes(to)) {

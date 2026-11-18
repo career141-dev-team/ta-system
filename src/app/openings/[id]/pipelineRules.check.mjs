@@ -21,7 +21,6 @@ for (const s of STAGES.filter((s) => !s.closed && s.name !== "Placed"))
 assert.ok(!ok(checkMove(ready, "TA Follow-Up", "Placed", TA)), "no skipping to Placed");
 assert.ok(!ok(checkMove(ready, "TA Follow-Up", "Ai Follow-Up", TA)), "nobody into Ai Follow-Up by hand");
 assert.ok(!ok(checkMove({ missing: ["Notice Period"] }, "TA Follow-Up", "Director Review", TA)), "Director Review needs the details");
-assert.ok(!ok(checkMove({ missing: [], lockedBy: "Hasini" }, "TA Follow-Up", "Director Review", TA)), "another TA's candidate");
 assert.ok(!ok(checkMove(ready, "Director Review", "Director Shortlist", TA)), "a TA does not decide the shortlist");
 assert.ok(ok(checkMove(ready, "Director Review", "Director Shortlist", LEAD)));
 assert.ok(!ok(checkMove(ready, "Placed", "Rejected", TA)), "Placed is locked for a TA");

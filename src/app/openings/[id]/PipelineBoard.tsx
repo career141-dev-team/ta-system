@@ -101,8 +101,6 @@ type Card = Person & {
   mine: boolean;
   owned: boolean;
   channel: string;
-  /** Another TA shortlisted them first (the collision lock): their first name. */
-  lockedBy?: string;
   /** Still needed before Director Review: "CV", "Salary", "Notice Period". */
   missing: string[];
   addOn?: boolean;
@@ -145,7 +143,6 @@ const OTHER_JOBS = ["Finance Manager - Hayleys", "Production Executive - MAS Hol
 const OPEN_SET = 3;
 
 /** Placeholder: the other TAs on this opening, until the backend sends the team. */
-const OTHER_TAS = ["Hasini", "Dinuka"];
 
 const PEOPLE: Person[] = [
   {
@@ -172,17 +169,18 @@ const PEOPLE: Person[] = [
 
 /** Six sample cards per stage; the first stage starts with the design's first card.
  *  Owner and source vary so the filters have something to filter; every third card
- *  is another TA's (locked), and in the two follow-up stages every other card still
- *  lacks its notice period, so the Director Review rule has something to refuse. */
+ *  is yours or nobody's yet - another TA's candidates are not on the board at all
+ *  (owner, 18 Nov 2026: the backend sends a TA only their own, so no ash locked card) -
+ *  and in the two follow-up stages every other card still lacks its notice period, so
+ *  the Director Review rule has something to refuse. */
 const cardsFor = (i: number): Card[] =>
-  Array.from({ length: 6 }, (_, n) => ({
+  [0, 1, 2, 3, 4, 5].filter((n) => n % 3 !== 1).map((n) => ({
     ...(i === 0 && n === 0 ? PEOPLE[0] : PEOPLE[1]),
     id: `${i}-${n}`,
     mine: n % 3 === 0,
     // Nobody owns a candidate only before the first shortlist, so only in the
     // two follow-up stages; from Director Review on, everyone has an owner.
     owned: i >= 2 || n % 3 !== 2,
-    lockedBy: n % 3 === 1 ? OTHER_TAS[(i + n) % OTHER_TAS.length] : undefined,
     missing: i < 2 && n % 2 === 0 ? ["Notice Period"] : [],
     channel: CHANNELS[(i + n) % CHANNELS.length],
     yearsN: [5, 3, 8, 12, 16, 6][n],
@@ -426,8 +424,6 @@ export default function PipelineBoard() {
     // 2026). ponytail: no drag and drop by touch; a long press to pick up is the
     // way to add it if phones and tablets need to move candidates.
     if (e.pointerType === "touch") return;
-    // Another TA's candidate stays where it is (the collision lock, FLOW-CHECK 2.6).
-    if (card.lockedBy) return;
     const el = e.currentTarget;
     const sx = e.clientX;
     const sy = e.clientY;
@@ -1028,7 +1024,6 @@ const CandidateCard = memo(function CandidateCard({
   return (
     <article
       data-card-id={p.id}
-      data-locked={p.lockedBy ? "" : undefined}
       onPointerDown={(e) => onPickUp(e, p, stage)}
       // A click opens the CV: on the way in, read this candidate's CV and draw its first
       // page ahead, so the opening motion never waits on it (owner, 17 Nov 2026).
@@ -1039,7 +1034,7 @@ const CandidateCard = memo(function CandidateCard({
         if (e.currentTarget.dataset.dragged) return;
         onOpenCv(p);
       }}
-      className="cursor-grab select-none rounded-md border border-border bg-white p-[max(1rem,12px)] data-[locked]:cursor-default data-[locked]:bg-canvas"
+      className="cursor-grab select-none rounded-md border border-border bg-white p-[max(1rem,12px)]"
     >
       <div className="flex items-start gap-[max(0.6rem,7px)]">
         <span className="flex size-[max(2.4rem,32px)] shrink-0 items-center justify-center rounded-full bg-info-soft text-chip font-semibold text-info">
@@ -1081,34 +1076,23 @@ const CandidateCard = memo(function CandidateCard({
         </button>
         {chip("Salary")}
         {chip("Notice Period")}
-        {p.lockedBy ? (
-          // Another TA's candidate: no menu, no move (the TA System's collision lock).
-          <span className="ml-auto flex min-w-0 items-center gap-1 text-ink-2" title={`Shortlisted by ${p.lockedBy}. You cannot contact.`}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-[max(0.8rem,11px)] shrink-0" aria-hidden="true">
-              <rect x="5" y="11" width="14" height="9" rx="2" />
-              <path d="M8 11V8a4 4 0 0 1 8 0v3" />
-            </svg>
-            <span className="truncate">{p.lockedBy}&rsquo;s</span>
-          </span>
-        ) : (
-          <button
-            type="button"
-            aria-label={`Move or mark ${p.name}`}
-            aria-haspopup="menu"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              onMenu(p, stage, e.currentTarget);
-            }}
-            className="ml-auto rounded p-0.5 text-ink hover:bg-surface-2"
-          >
-            <svg viewBox="0 0 24 24" fill="currentColor" className="size-[max(0.9rem,12px)]" aria-hidden="true">
-              <circle cx="12" cy="5" r="1.8" />
-              <circle cx="12" cy="12" r="1.8" />
-              <circle cx="12" cy="19" r="1.8" />
-            </svg>
-          </button>
-        )}
+        <button
+          type="button"
+          aria-label={`Move or mark ${p.name}`}
+          aria-haspopup="menu"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onMenu(p, stage, e.currentTarget);
+          }}
+          className="ml-auto rounded p-0.5 text-ink hover:bg-surface-2"
+        >
+          <svg viewBox="0 0 24 24" fill="currentColor" className="size-[max(0.9rem,12px)]" aria-hidden="true">
+            <circle cx="12" cy="5" r="1.8" />
+            <circle cx="12" cy="12" r="1.8" />
+            <circle cx="12" cy="19" r="1.8" />
+          </svg>
+        </button>
       </div>
     </article>
   );
@@ -1204,23 +1188,19 @@ function ListView({
               {chip("Notice Period")}
               <span className="min-w-[4rem] shrink-[3] truncate max-[1400px]:hidden">M : {p.email}</span>
               <span aria-hidden="true" className="h-[1.1em] w-px shrink-0 bg-ink-2" />
-              {p.lockedBy ? (
-                <span className="size-[max(0.9rem,12px)]" title={`Shortlisted by ${p.lockedBy}. You cannot contact.`} />
-              ) : (
-                <button
-                  type="button"
-                  aria-label={`Move or mark ${p.name}`}
-                  aria-haspopup="menu"
-                  onClick={(e) => onMenu(p, stage, e.currentTarget)}
-                  className="shrink-0 rounded p-0.5 text-ink hover:bg-surface-2"
-                >
-                  <svg viewBox="0 0 24 24" fill="currentColor" className="size-[max(0.9rem,12px)]" aria-hidden="true">
-                    <circle cx="12" cy="5" r="1.8" />
-                    <circle cx="12" cy="12" r="1.8" />
-                    <circle cx="12" cy="19" r="1.8" />
-                  </svg>
-                </button>
-              )}
+              <button
+                type="button"
+                aria-label={`Move or mark ${p.name}`}
+                aria-haspopup="menu"
+                onClick={(e) => onMenu(p, stage, e.currentTarget)}
+                className="shrink-0 rounded p-0.5 text-ink hover:bg-surface-2"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" className="size-[max(0.9rem,12px)]" aria-hidden="true">
+                  <circle cx="12" cy="5" r="1.8" />
+                  <circle cx="12" cy="12" r="1.8" />
+                  <circle cx="12" cy="19" r="1.8" />
+                </svg>
+              </button>
             </article>
           );
         })}
