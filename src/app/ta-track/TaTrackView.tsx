@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import Image from "next/image";
 import { DUR, EASE, MOTION, gsap, useSwap } from "@/lib/gsap";
-import { PERSON, useRole } from "@/lib/role";
+import { personOf, useRole, useSignedInPerson } from "@/lib/role";
 import Count from "../Count";
 import { CardsSkeleton } from "../Skeleton";
 import { useLiftMenu } from "../openings/[id]/liftMenu";
@@ -55,8 +55,9 @@ export default function TaTrackView() {
   // Old system: an Admin or TA Lead sees every TA; anyone else sees only themself
   // (owner 14 Nov 2026: TA Track was missing from a TA's top bar). Follows "View as".
   const role = useRole();
+  useSignedInPerson(); // the signed-in name, when it arrives
   if (!ready) return <CardsSkeleton />;
-  return <Track key={role} viewAll={role === "Lead" || role === "Director"} me={PERSON[role].name.split(" ")[0]} />;
+  return <Track key={role} viewAll={role === "Lead" || role === "Director"} me={personOf(role).name.split(" ")[0]} />;
 }
 
 function Track({ viewAll, me }: { viewAll: boolean; me: string }) {

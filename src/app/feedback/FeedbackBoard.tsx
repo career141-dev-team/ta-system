@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { DUR, EASE, gsap, loadFlip, motionOK, type FlipPlugin } from "@/lib/gsap";
-import { PERSON, useRole } from "@/lib/role";
+import { personOf, useRole, useSignedInPerson } from "@/lib/role";
 import Toast from "../openings/[id]/Toast";
 import { pushAlert } from "../alerts/data";
 import { COLUMNS, KIND, meta, setItems, update, useItems, type Item } from "./data";
@@ -33,8 +33,9 @@ export default function FeedbackBoard() {
   // A TA sees only what they sent, and where each one is (old desk: "My submissions");
   // a lead, Director or Ops person sees everyone's and moves them on.
   const role = useRole();
+  useSignedInPerson(); // the signed-in name, when it arrives
   const lead = role === "Lead" || role === "Director";
-  const me = PERSON[role].name.split(" ")[0];
+  const me = personOf(role).name.split(" ")[0];
   const all = useItems();
   const items = lead ? all : all.filter((x) => x.by === me);
   const [open, setOpen] = useState<string | null>(null);
