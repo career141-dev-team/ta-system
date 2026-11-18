@@ -61,11 +61,32 @@ export default function Board({ children }: { children: ReactNode }) {
     if (!el) return;
     let hidden = false;
     gsap.set(el, { clearProps: "transform,opacity" }); // a new page always starts with the tab showing
-    const seen = new WeakMap<object, number>();
+    // The tab leaves and returns as one calm move (owner, 18 Nov 2026: "not smooth,
+    // the premium is missing"): it slides up exactly its own height on a long ease while
+    // the fade trails a beat behind, and comes back on a soft ease-out. It never
+    // flickers: it hides only after a real scroll down, and returns only after a
+    // real scroll up (or at the top), never on a nudge.
+    const height = () => (el.firstElementChild as HTMLElement | null)?.offsetHeight ?? 58;
     const show = (on: boolean) => {
       if (on === !hidden) return;
       hidden = !on;
-      gsap.to(el, { y: on ? 0 : -90, opacity: on ? 1 : 0, duration: DUR.base, ease: on ? EASE.out : EASE.in, overwrite: true, ...(on && { clearProps: "transform,opacity" }) });
+      el.style.willChange = "transform, opacity";
+      el.style.pointerEvents = on ? "" : "none";
+      const done = () => {
+        el.style.willChange = "";
+        // Gone means gone: a tab hidden above the board must not sit over the top bar.
+        el.style.visibility = on ? "" : "hidden";
+        if (on) gsap.set(el, { clearProps: "transform,opacity" });
+      };
+      gsap.killTweensOf(el);
+      el.style.visibility = "";
+      if (on) {
+        gsap.to(el, { y: 0, duration: 0.7, ease: "expo.out", onComplete: done });
+        gsap.to(el, { opacity: 1, duration: 0.35, ease: "power2.out", overwrite: false });
+      } else {
+        gsap.to(el, { y: -(height() + 10), duration: 0.55, ease: "power3.inOut", onComplete: done });
+        gsap.to(el, { opacity: 0, duration: 0.3, delay: 0.14, ease: "power1.in", overwrite: false });
+      }
     };
     // Only a scroll area that reaches under the tab, with content scrolled, counts as
     // content "jumbling" with it; a list that starts below the tab never hides it.
@@ -75,14 +96,21 @@ export default function Board({ children }: { children: ReactNode }) {
       const cx = b.left + b.width / 2;
       return r.top < b.top + 160 && r.bottom > b.top && r.left < cx + 130 && r.right > cx - 130;
     };
+    const HIDE_AFTER = 56; // px scrolled down in one go before the tab leaves
+    const SHOW_AFTER = 36; // px scrolled up in one go before it returns
+    const last = new WeakMap<object, { top: number; run: number }>();
     const scroll = (e: Event) => {
       const t = e.target;
       if (!(t instanceof Element) || !el.parentElement?.contains(t)) return;
       const top = t.scrollTop;
-      const prev = seen.get(t) ?? 0;
-      seen.set(t, top);
-      if (top < 8 || top < prev) show(true);
-      else if (top > prev && top > 6 && under(t)) show(false);
+      const was = last.get(t) ?? { top: 0, run: 0 }; // a list starts at its top
+      const d = top - was.top;
+      // A run is travel in one direction; turning round starts a new one.
+      const run = d === 0 ? was.run : Math.sign(d) === Math.sign(was.run) ? was.run + d : d;
+      last.set(t, { top, run });
+      if (top < 8) show(true);
+      else if (run <= -SHOW_AFTER) show(true);
+      else if (run >= HIDE_AFTER && under(t)) show(false);
     };
     const move = (e: PointerEvent) => {
       if (e.clientY < 64 && Math.abs(e.clientX - innerWidth / 2) < 220) show(true);
@@ -92,6 +120,8 @@ export default function Board({ children }: { children: ReactNode }) {
     return () => {
       gsap.killTweensOf(el);
       gsap.set(el, { clearProps: "transform,opacity" }); // never leave the tab half-faded
+      el.style.visibility = "";
+      el.style.pointerEvents = "";
       document.removeEventListener("scroll", scroll, true);
       document.removeEventListener("pointermove", move);
     };
