@@ -152,3 +152,69 @@ export function scoopFileRefusal(name: string, size: number, type: string): stri
   if (!SCOOP_TYPES.has(type) && !/\.(pdf|docx?)$/i.test(name)) return `${name} is not a PDF or a Word document.`;
   return null;
 }
+
+// ── Rules moved out of the old app (PR 1b, 18 Nov) ──────────────────────────
+// Each one is the old Next.js action's rule, word for word where it refused.
+
+/**
+ * The opening's follow-up questions from a list typed in the Automations panel
+ * (src/app/actions.ts setOpeningQuestions + addOpeningQuestion): blank lines
+ * dropped, a question keeps its id while its wording is unchanged so answers
+ * stay attached, 200 characters each (it goes out on WhatsApp), no repeats,
+ * 12 at most (store.ts).
+ */
+export function normalizeQuestions(
+  existing: { id: string; label: string }[],
+  labels: string[],
+  newId: () => string,
+): { ok: true; questions: { id: string; label: string }[] } | { ok: false; message: string } {
+  const out: { id: string; label: string }[] = [];
+  for (const raw of labels) {
+    const label = raw.trim().replace(/\s+/g, " ");
+    if (!label) continue;
+    if (label.length > 200) return { ok: false, message: "Keep each question under 200 characters — it goes out on WhatsApp." };
+    if (out.some((q) => q.label.toLowerCase() === label.toLowerCase())) return { ok: false, message: `"${label}" is asked twice.` };
+    out.push({ id: existing.find((q) => q.label === label)?.id ?? newId(), label });
+  }
+  if (out.length > 12) return { ok: false, message: "An opening can ask 12 questions at most." };
+  return { ok: true, questions: out };
+}
+
+/** A strategy row as the submit rule reads it. */
+export interface StrategyRowLike {
+  id: string;
+  name: string;
+  notApplicable: boolean;
+  onIt: boolean;
+  ticked: boolean;
+}
+
+/**
+ * Which rows a TA's submit takes in (src/lib/openings/strategyWrites.ts
+ * submitStrategies): only rows on this opening, not struck through, that they
+ * are on or that are ticked; a typed date must be a date; a note under 500
+ * characters; a row they are not on and left empty is skipped.
+ */
+export function strategyRowsToSubmit(
+  rows: Map<string, StrategyRowLike>,
+  input: { rowId: string; used: boolean; date: string; note: string }[],
+  dayOf: (typed: string) => number | null,
+  today: number,
+): { ok: true; rows: { rowId: string; doneAt: number | null; note: string | null }[] } | { ok: false; message: string } {
+  if (input.length === 0) return { ok: false, message: "There is nothing to submit." };
+  const out: { rowId: string; doneAt: number | null; note: string | null }[] = [];
+  for (const item of input) {
+    const row = rows.get(item.rowId);
+    if (!row || row.notApplicable) continue;
+    if (!row.onIt && !row.ticked) continue;
+    const typed = item.date.trim();
+    const day = dayOf(typed);
+    if (item.used && typed && day === null) return { ok: false, message: `That is not a date (${row.name}).` };
+    const text = item.note.trim();
+    if (text.length > 500) return { ok: false, message: `Keep the note under 500 characters (${row.name}).` };
+    if (!row.onIt && !item.used && !text) continue;
+    out.push({ rowId: row.id, doneAt: item.used ? day ?? today : null, note: text || null });
+  }
+  if (out.length === 0) return { ok: false, message: "None of those strategies are yours to update." };
+  return { ok: true, rows: out };
+}

@@ -6,7 +6,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { cardLimit, inWords, scoopFileRefusal, matchableEmail, moveRefusal, toCard, BOARD_STAGES, BACKEND_STAGES } from "../convex/ui/rules";
+import { cardLimit, inWords, scoopFileRefusal, normalizeQuestions, strategyRowsToSubmit, matchableEmail, moveRefusal, toCard, BOARD_STAGES, BACKEND_STAGES } from "../convex/ui/rules";
 
 let pass = 0, fail = 0;
 const eq = (l: string, got: unknown, want: unknown) => {
@@ -23,7 +23,7 @@ for (const f of files) {
   const src = read(`${dir}/${f}`);
   eq(`${f}: no actorId argument (the person is the Clerk identity only)`, /actorId\s*:\s*v\./.test(src), false);
   const publicFns = (src.match(/=\s*(query|mutation|action)\(\{/g) ?? []).length;
-  const checked = (src.match(/await (uiUser|openFor)\(ctx/g) ?? []).length;
+  const checked = (src.match(/await (uiUser|openFor|forOpening|manager|postFor)\(ctx/g) ?? []).length;
   if (publicFns) eq(`${f}: every public function asks uiUser first`, checked >= publicFns, true);
 }
 eq("unverified email is never matched", matchableEmail({ tokenIdentifier: "t", subject: "s", email: "a@b.com", emailVerified: false }), null);
@@ -73,6 +73,40 @@ eq("scoop: empty file", scoopFileRefusal("a.pdf", 0, "application/pdf"), "Choose
 eq("scoop: over 10 MB", scoopFileRefusal("a.pdf", 11 * 1024 * 1024, "application/pdf"), "a.pdf is over 10 MB. Save a smaller PDF and try again.");
 eq("scoop: rtf refused", scoopFileRefusal("a.rtf", 100, "application/rtf"), "a.rtf is not a PDF or a Word document.");
 eq("scoop: docx fine", scoopFileRefusal("a.docx", 100, ""), null);
+
+// ── PR 1b: rules moved out of the old app ──────────────────────────────────
+const manage = read("convex/ui/manage.ts");
+eq("questions: only the opening's recruiters or a lead (opening.manage)", manage.includes('"opening.manage"'), true);
+eq("strategies: the old app's strategy.work rule", (manage.match(/"strategy\.work"/g) ?? []).length, 2);
+let n = 0;
+const nid = () => `q${++n}`;
+eq("questions: wording kept keeps the id, blanks dropped",
+  normalizeQuestions([{ id: "qa", label: "Can you start in a month?" }], ["Can you start in a month?", "  ", "Do you drive?"], nid),
+  { ok: true, questions: [{ id: "qa", label: "Can you start in a month?" }, { id: "q1", label: "Do you drive?" }] });
+eq("questions: a repeat refused", normalizeQuestions([], ["Do you drive?", "do you drive?"], nid).ok, false);
+eq("questions: over 200 characters refused", normalizeQuestions([], ["x".repeat(201)], nid).ok, false);
+eq("questions: 13 refused", normalizeQuestions([], Array.from({ length: 13 }, (_, i) => `Q ${i}`), nid).ok, false);
+const srows = new Map([
+  ["r1", { id: "r1", name: "Referrals", notApplicable: false, onIt: true, ticked: true }],
+  ["r2", { id: "r2", name: "Groups", notApplicable: false, onIt: false, ticked: false }],
+  ["r3", { id: "r3", name: "Struck", notApplicable: true, onIt: true, ticked: true }],
+]);
+const day = (t: string) => (t === "2026-11-18" ? 100 : null);
+eq("submit: nothing given", strategyRowsToSubmit(srows, [], day, 1).ok, false);
+eq("submit: a bad date refused", strategyRowsToSubmit(srows, [{ rowId: "r1", used: true, date: "soon", note: "" }], day, 1), { ok: false, message: "That is not a date (Referrals)." });
+eq("submit: used with no date = today", strategyRowsToSubmit(srows, [{ rowId: "r1", used: true, date: "", note: "Posted" }], day, 7), { ok: true, rows: [{ rowId: "r1", doneAt: 7, note: "Posted" }] });
+eq("submit: not mine and not ticked, or struck = none of yours", strategyRowsToSubmit(srows, [{ rowId: "r2", used: true, date: "", note: "" }, { rowId: "r3", used: true, date: "", note: "" }], day, 1), { ok: false, message: "None of those strategies are yours to update." });
+eq("submit: note over 500 refused", strategyRowsToSubmit(srows, [{ rowId: "r1", used: false, date: "", note: "x".repeat(501) }], day, 1).ok, false);
+
+const posts = read("convex/ui/posts.ts");
+eq("posts: opening.manage, as the old actions", posts.includes('"opening.manage"'), true);
+eq("posts: going live needs the JD approved (add and status)", (posts.match(/JD_NOT_APPROVED\)/g) ?? []).length, 2);
+eq("posts: the old link check is reused", posts.includes("linkedinPostUrl(link)") && posts.includes("linkedinPostUrl(url)"), true);
+eq("posts: the same post twice refused", posts.includes("There is already a post called"), true);
+eq("posts: a rename keeps the old title", posts.includes("previousTitles"), true);
+eq("posts: workday checks refreshed like the old save", (posts.match(/refreshWorkdayChecks\(/g) ?? []).length >= 4, true);
+eq("posts: a new link re-reads the mailbox", posts.includes("queueRescanForLink"), true);
+eq("posts: moving CVs stays inside one opening", posts.includes("That record belongs to a different opening."), true);
 
 console.log(`\nuidoor: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
