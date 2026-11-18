@@ -1,7 +1,7 @@
-import NotBuilt from "../NotBuilt";
+import People from "./People";
 
 export const metadata = { title: "People and roles - TA System" };
 
 export default function Page() {
-  return <NotBuilt name="People and roles" />;
+  return <People />;
 }
