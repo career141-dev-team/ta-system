@@ -17,6 +17,7 @@ import {
   updateLinkInline,
 } from "@/app/actions";
 import { FindCvButton } from "./FindCvButton";
+import { ProfileDetails } from "./ProfileDetails";
 import { ActionNote, SubmitButton, latest, submitted, useInline } from "./Submit";
 import { CompanyReferenceSection } from "./CompanyReferenceSection";
 import Link from "next/link";
@@ -452,6 +453,7 @@ export function LinkRow({
                     {r.isAddOn ? "Add-on ✓" : "Add-on"}
                   </SubmitButton>
                 </form>
+                {r.capture && <ProfileDetails capture={r.capture} name={r.name ?? ""} />}
                 <button
                   onClick={() => setEdit((v) => !v)}
                   className="rounded-full bg-brand px-4 py-1.5 text-[12.5px] font-medium text-white transition-opacity hover:opacity-90"

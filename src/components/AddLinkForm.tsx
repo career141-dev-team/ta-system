@@ -1,7 +1,7 @@
 "use client";
 
-import { addLinkInline, addLinksBulkInline } from "@/app/actions";
-import { ActionNote, SubmitButton, submitted, useInline } from "./Submit";
+import { addLinkInline, addLinksBulkInline, extractLinkProfileInline } from "@/app/actions";
+import { ActionNote, SubmitButton, latest, submitted, useInline } from "./Submit";
 
 /**
  * Excel Tables' add box.
@@ -18,17 +18,33 @@ import { ActionNote, SubmitButton, submitted, useInline } from "./Submit";
  */
 export function AddLinkForm({ openingId, canNote = false, workLocationId, level, addingTo }: { openingId: string; canNote?: boolean; workLocationId?: string; level?: number; addingTo?: string }) {
   const add = useInline(addLinkInline);
+  // "Extract with AI" is the same box, read by Apify (lib/apifyProfile); it adds the row too.
+  const extract = useInline(extractLinkProfileInline);
+  const working = add.pending || extract.pending;
   // Which sheet the link lands in, said before it is pressed (22 Oct).
   const button = (
     <div className="flex flex-col items-start gap-1">
-      <SubmitButton
-        busy={add.pending}
-        locked={add.pending}
-        pendingLabel="Adding…"
-        className="rounded-lg bg-brand px-8 py-3 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
-      >
-        Add to table
-      </SubmitButton>
+      <div className="flex gap-2">
+        <SubmitButton
+          busy={add.pending}
+          locked={working}
+          pendingLabel="Adding…"
+          className="rounded-lg bg-brand px-8 py-3 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+        >
+          Add to table
+        </SubmitButton>
+        <SubmitButton
+          name="extract"
+          value="1"
+          busy={extract.pending}
+          locked={working}
+          pendingLabel="Reading profile… (up to a minute)"
+          tone="dark"
+          className="rounded-lg border border-brand px-6 py-3 text-[13px] font-medium text-brand transition-colors hover:bg-brand-soft disabled:opacity-60"
+        >
+          Extract with AI
+        </SubmitButton>
+      </div>
       {addingTo && <span className="text-[11.5px] text-ink-soft">{addingTo}</span>}
     </div>
   );
@@ -37,8 +53,8 @@ export function AddLinkForm({ openingId, canNote = false, workLocationId, level,
     <form
       onSubmit={(e) => {
         const form = e.currentTarget;
-        const { formData } = submitted(e);
-        add.run(formData);
+        const { formData, pressed } = submitted(e);
+        (pressed === "extract" ? extract : add).run(formData);
         // Ready for the next paste; a refusal leaves nothing worth keeping
         // that the message does not already repeat.
         form.reset();
@@ -90,7 +106,7 @@ export function AddLinkForm({ openingId, canNote = false, workLocationId, level,
           {button}
         </div>
       )}
-      <ActionNote result={add.result} className="mt-3" />
+      <ActionNote result={latest(add.result, extract.result)} className="mt-3" />
     </form>
     <PasteLinksForm openingId={openingId} workLocationId={workLocationId} level={level} addingTo={addingTo} />
     </>
