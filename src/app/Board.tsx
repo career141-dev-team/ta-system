@@ -222,7 +222,10 @@ export default function Board({ children }: { children: ReactNode }) {
         </Notch>
       </div>
       <div ref={stage} className="relative flex min-h-0 flex-1 flex-col rounded-lg">
-        <div ref={body} data-board-body className="flex min-h-0 flex-1 flex-col">
+        {/* Room for the middle tab above every page (owner 18 Nov: text slid under the
+            tab on every screen at a laptop size). The tab is 3.6rem tall; the pages'
+            own top padding was drawn for a wide window and fell short on a smaller one. */}
+        <div ref={body} data-board-body className="flex min-h-0 flex-1 flex-col pt-[max(2.4rem,14px)] max-md:pt-3">
           {children}
         </div>
       </div>

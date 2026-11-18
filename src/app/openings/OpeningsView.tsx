@@ -83,7 +83,7 @@ export default function OpeningsView() {
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col px-[max(3.5rem,14px)] pt-[clamp(14px,3.3dvh,36px)] max-md:pt-4">
+    <div className="flex min-h-0 flex-1 flex-col px-[max(3.5rem,14px)] pt-[clamp(14px,3.3dvh,36px)] max-md:pt-12">
       {/* Tabs and tools */}
       <div className="flex flex-wrap items-center gap-x-3.5 gap-y-3">
         <div ref={tabsRow} role="tablist" aria-label="Lists" className="relative flex flex-wrap items-center gap-1">
