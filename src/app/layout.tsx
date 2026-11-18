@@ -16,6 +16,7 @@ import Motion from "./Motion";
 import Board from "./Board";
 import Overview from "./Overview";
 import { THEME_BOOT } from "@/lib/theme";
+import { Backend } from "@/lib/backend";
 
 export const metadata: Metadata = {
   title: "TA System",
@@ -37,9 +38,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           cz-shortcut-listen, Grammarly) write attributes onto <body> before React
           loads; this ignores those attributes only, not the page inside. */}
       <body suppressHydrationWarning className="board flex h-dvh flex-col font-sans text-ink">
-        <TopNav />
-        <Board>{children}</Board>
-        <Motion />
+        {/* The live backend and sign-in, when this build has them (src/lib/backend.tsx). */}
+        <Backend>
+          <TopNav />
+          <Board>{children}</Board>
+          <Motion />
+        </Backend>
         <Overview />
       </body>
     </html>
