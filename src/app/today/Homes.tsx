@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { EASE, MOTION, gsap, motionOK } from "@/lib/gsap";
 import Count from "../Count";
+import { useSignedInPerson } from "@/lib/role";
 
 // Homes for the TA Lead, the Director and Ops (owner 14 Nov 2026: "based on the UI,
 // make the home view for the lead, director, ops"). Each keeps what its old dashboard
@@ -46,6 +47,8 @@ const SCROLL = "[@media(min-width:1280px)_and_(min-height:761px)]:min-h-0 [@medi
 const COLUMNS = "[@media(min-width:1280px)_and_(min-height:761px)]:grid-rows-[minmax(0,1fr)] " + FILL;
 
 export default function Home({ role }: { role: "Lead" | "Director" | "Ops" }) {
+  // The signed-in person's own first name (18 Nov); the sample one until then.
+  const signedFirst = useSignedInPerson()?.name.split(" ")[0] ?? null;
   const [hello] = useState(greeting);
   const flags = role === "Lead" ? leadFlags() : role === "Director" ? directorFlags() : opsFlags();
   return (
@@ -53,7 +56,7 @@ export default function Home({ role }: { role: "Lead" | "Director" | "Ops" }) {
       <header className="flex flex-wrap items-end gap-x-8 gap-y-3">
         <div className="min-w-0">
           <h1 className="text-display font-light text-ink">
-            {hello}, {PERSON[role].first}
+            {hello}, {signedFirst ?? PERSON[role].first}
           </h1>
           <p className="mt-1 text-small text-ink-3">{PERSON[role].line}</p>
         </div>

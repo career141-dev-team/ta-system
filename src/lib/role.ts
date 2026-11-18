@@ -7,7 +7,26 @@ export type Role = "TA" | "TA Support" | "Lead" | "Director" | "Ops";
 export const ROLES: Role[] = ["TA", "TA Support", "Lead", "Director", "Ops"];
 const KEY = "ta-ui:role";
 const subs = new Set<() => void>();
+/** The signed-in person (src/lib/backend.tsx), who wins over "View as" (18 Nov). */
+type Signed = { role: Role; name: string; title: string };
+let signed: Signed | null = null;
+export function setSignedIn(p: Signed | null) {
+  if (JSON.stringify(p) === JSON.stringify(signed)) return;
+  signed = p;
+  subs.forEach((f) => f());
+}
+/** True once a real sign-in decides who is looking; "View as" steps aside then. */
+export const useSignedInPerson = () =>
+  useSyncExternalStore(
+    (f) => {
+      subs.add(f);
+      return () => void subs.delete(f);
+    },
+    () => signed,
+    () => null,
+  );
 const read = (): Role => {
+  if (signed) return signed.role;
   try {
     const r = localStorage.getItem(KEY) as Role | null;
     return r && ROLES.includes(r) ? r : "TA";
@@ -49,8 +68,13 @@ export const PERSON: Record<Role, { name: string; title: string }> = {
  *  while the Pipeline's rules, the workday gate and the whole-job views still read
  *  a fixed sample TA). `lead` is the old `opening.manage` / whole-job view: TA Lead,
  *  Director, Ops (and admin). */
+/** Who the top bar names: the signed-in person, else the sample one for the role. */
+export const personOf = (role: Role): { name: string; title: string } =>
+  signed && signed.role === role ? { name: signed.name, title: signed.title } : PERSON[role];
+
 export function useMe() {
   const role = useRole();
-  const { name, title } = PERSON[role];
+  useSignedInPerson();
+  const { name, title } = personOf(role);
   return { role, name, first: name.split(" ")[0], title, lead: deskWide(role) };
 }

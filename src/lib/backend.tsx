@@ -17,7 +17,8 @@ import { ClerkProvider, SignedIn, SignedOut, SignIn, useAuth } from "@clerk/cler
 import { ConvexReactClient, useQuery } from "convex/react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
 import { makeFunctionReference } from "convex/server";
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useContext, useEffect, type ReactNode } from "react";
+import { setSignedIn, type Role } from "@/lib/role";
 
 const URL = process.env.NEXT_PUBLIC_CONVEX_URL ?? "";
 const CLERK_KEY = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "";
@@ -45,7 +46,10 @@ export function Backend({ children }: { children: ReactNode }) {
           </div>
         </SignedOut>
         <SignedIn>
-          <Live.Provider value={true}>{children}</Live.Provider>
+          <Live.Provider value={true}>
+            <WhoIsLooking />
+            {children}
+          </Live.Provider>
         </SignedIn>
       </ConvexProviderWithClerk>
     </ClerkProvider>
@@ -92,4 +96,19 @@ export function useSignedIn(): Me | undefined | null {
   const live = useLive();
   const me = useQuery(door.whoAmI, live ? {} : "skip") as Me | undefined;
   return live ? me : null;
+}
+
+/** The backend's role words in the UI's roles. Admin works as a lead does (desk-wide). */
+const ROLE_OF: Record<string, Role> = { ta: "TA", ta_support: "TA Support", ta_lead: "Lead", admin: "Lead", director: "Director", ops: "Ops" };
+const TITLE_OF: Record<Role, string> = { TA: "Talent Acquisition", "TA Support": "TA Support", Lead: "TA Lead", Director: "Director", Ops: "Ops" };
+
+/** Tells every screen who is signed in: their real name and role from the backend. */
+function WhoIsLooking() {
+  const me = useQuery(door.whoAmI, {}) as Me | undefined;
+  useEffect(() => {
+    if (!me?.ok) return;
+    const role = ROLE_OF[me.role] ?? "TA";
+    setSignedIn({ role, name: me.name, title: me.role === "admin" ? "Admin" : TITLE_OF[role] });
+  }, [me]);
+  return null;
 }
