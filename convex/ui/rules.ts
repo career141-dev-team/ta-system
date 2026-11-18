@@ -138,3 +138,17 @@ export function toCard(
     movedAt: app.lastStageChangedAt ?? null,
   };
 }
+
+/** The scoop upload's file rules (src/app/api/scoops/upload/route.ts): a PDF or Word file, 10 MB at most. */
+export const SCOOP_MAX_BYTES = 10 * 1024 * 1024;
+const SCOOP_TYPES = new Set([
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+]);
+export function scoopFileRefusal(name: string, size: number, type: string): string | null {
+  if (size === 0) return "Choose a CV file first.";
+  if (size > SCOOP_MAX_BYTES) return `${name} is over 10 MB. Save a smaller PDF and try again.`;
+  if (!SCOOP_TYPES.has(type) && !/\.(pdf|docx?)$/i.test(name)) return `${name} is not a PDF or a Word document.`;
+  return null;
+}

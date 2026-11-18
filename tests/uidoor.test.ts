@@ -6,7 +6,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { cardLimit, inWords, matchableEmail, moveRefusal, toCard, BOARD_STAGES, BACKEND_STAGES } from "../convex/ui/rules";
+import { cardLimit, inWords, scoopFileRefusal, matchableEmail, moveRefusal, toCard, BOARD_STAGES, BACKEND_STAGES } from "../convex/ui/rules";
 
 let pass = 0, fail = 0;
 const eq = (l: string, got: unknown, want: unknown) => {
@@ -23,7 +23,7 @@ for (const f of files) {
   const src = read(`${dir}/${f}`);
   eq(`${f}: no actorId argument (the person is the Clerk identity only)`, /actorId\s*:\s*v\./.test(src), false);
   const publicFns = (src.match(/=\s*(query|mutation|action)\(\{/g) ?? []).length;
-  const checked = (src.match(/await uiUser\(ctx\)/g) ?? []).length;
+  const checked = (src.match(/await (uiUser|openFor)\(ctx/g) ?? []).length;
   if (publicFns) eq(`${f}: every public function asks uiUser first`, checked >= publicFns, true);
 }
 eq("unverified email is never matched", matchableEmail({ tokenIdentifier: "t", subject: "s", email: "a@b.com", emailVerified: false }), null);
@@ -63,6 +63,16 @@ eq("locked by the other TA's first name", card.lockedBy, "Hasini");
 eq("not mine", card.mine, false);
 eq("missing details carried", card.missing, ["expected salary"]);
 eq("no CV text or scores on a card", Object.keys(card).some((k) => /cvText|explanation|embedding/i.test(k)), false);
+
+// ── Only writes whose rules live in the backend ───────────────────────────
+const opening = read("convex/ui/opening.ts");
+eq("the door never calls the generic save (its rules live in the old app)", /commit\.apply|commit:apply/.test(opening + pipeline), false);
+eq("approve JD is not in the door (Research and Suggestions start in the old app)", /approveJd/.test(opening.replace(/\/\/.*$/gm, "")), false);
+eq("scoop size is read from storage, not the browser", opening.includes("ctx.db.system.get(args.storageId)"), true);
+eq("scoop: empty file", scoopFileRefusal("a.pdf", 0, "application/pdf"), "Choose a CV file first.");
+eq("scoop: over 10 MB", scoopFileRefusal("a.pdf", 11 * 1024 * 1024, "application/pdf"), "a.pdf is over 10 MB. Save a smaller PDF and try again.");
+eq("scoop: rtf refused", scoopFileRefusal("a.rtf", 100, "application/rtf"), "a.rtf is not a PDF or a Word document.");
+eq("scoop: docx fine", scoopFileRefusal("a.docx", 100, ""), null);
 
 console.log(`\nuidoor: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

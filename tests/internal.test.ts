@@ -36,6 +36,15 @@ const ALLOWED_PUBLIC = new Set<string>([
   "ui/pipeline:board",
   "ui/pipeline:move",
   "ui/pipeline:shortlist",
+  "ui/opening:summary",
+  "ui/opening:scoops",
+  "ui/opening:postApplicants",
+  "ui/opening:matches",
+  "ui/opening:strategies",
+  "ui/opening:setFollowUp",
+  "ui/opening:saveJd",
+  "ui/opening:scoopUploadUrl",
+  "ui/opening:queueScoop",
 ]);
 
 const PUBLIC = /export\s+(?:const\s+(\w+)\s*=|(default))\s*(query|mutation|action)\s*\(/g;
