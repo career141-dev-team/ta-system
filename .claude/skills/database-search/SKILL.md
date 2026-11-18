@@ -345,6 +345,7 @@ Repo hard rules that apply: never touch the live backend from a laptop (no `conv
 - 2026-11-09 contact discovery for the Brevo clone (flow 14): a rule read once, every candidate checked against it with no model, a labelled meaning pass, its own key and routes.
 - 2026-11-10 contact discovery recall: level from the title's word, else the CV reader's stored level, else years (a bare title was always Mid-level: ~815 senior developers of ~92,000); phrase words in any order; the first email in the field; drop-out counts by reason on every search.
 - 2026-11-12 one keyword search bounded and the burst gone: `searchCandidates` clamps the limit (300) and caps CV-text hits (100 whole resume rows); `keywordSearchMany` runs terms two at a time (a database search ran two six-term passes together, measured 9.2 s live).
+- 2026-11-18 a search for a job (`/database/results?for=<opening>`, natural/meaning, first arrival only - not once the URL carries edited criteria) adds up to 4 of the opening's Research "Similar designation" titles to `criteria.titles` after the job's own title (`similarTitles`/`joinTitles`, src/lib/similarTitles.ts). Titles score as any-of (match.ts `titleScore`, engine `alternativeTitles` = titles.slice(1)), so it widens and never narrows; they show as removable chips.
 
 ## Model provider (5 Nov 2026)
 
@@ -353,8 +354,8 @@ With `ANTHROPIC_API_KEY` set (and `C141_LLM_PROVIDER` not `openrouter`) the Deep
 **Haiku only, and cached (5 Nov 2026, later):** with the key set, `askClaudeFirst`, `askBridge`, the CLI scoring (`claudeMatch`), CLI web search and the CV vision bridge all step aside (`hasToken()` is false, `haikuOnly()` in `src/lib/claudeSub.ts`), so every answer is `claude-haiku-5-5` on the API. `anthropicModelFor` ignores `C141_MODEL_*`; `C141_RESEARCH_PROVIDER` does not apply; the reference-CV parser drops its OpenRouter/OpenAI fallbacks; the jdParser drops NVIDIA. System prompts carry `cache_control` in both runtimes.
 
 <!-- skill-meta
-verified-commit: a6bbdd7
-verified-hash: 363996ebf1bbb56d34ef1008cf79184bf6821233
+verified-commit: 3d0d1120
+verified-hash: 44e66df69364c8e87493627e49d31fb90fa8a22f
 verified-date: 2026-11-17
 sources:
   src/lib/engineSearch.ts

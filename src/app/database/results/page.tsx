@@ -24,6 +24,7 @@ import { isConvex } from "@/data/mode";
 import * as backend from "@/data/convex/backend";
 import type { DrawerCv } from "@/components/db/DbCandidateDrawer";
 import { keywordRetrieve } from "@/lib/retrieve";
+import { joinTitles, similarTitles } from "@/lib/similarTitles";
 import { levelOptions } from "@/lib/levels";
 import { LevelFilter } from "@/components/db/LevelFilter";
 import { FacetFilter } from "@/components/db/FacetFilter";
@@ -148,7 +149,17 @@ async function Results({ sp }: { sp: Params }) {
   // notice, salary — and lets the similarity rank everything else.
   // Every message of the conversation, a later one winning where they disagree (5 Oct).
   const parsed = mode !== "boolean" ? parseConversation(q, vocab) : null;
-  const criteria = edited ? criteriaFromParams(sp) : (parsed?.criteria ?? criteriaFromParams(sp));
+  let criteria = edited ? criteriaFromParams(sp) : (parsed?.criteria ?? criteriaFromParams(sp));
+  // A search for a job also looks for the other names the job goes by, from
+  // its Research (lib/similarTitles, 18 Nov). Titles score as "any of these",
+  // so this widens the search and never narrows it. They show as chips the
+  // recruiter can take off; once a chip is touched the URL's criteria win.
+  if (forOpening && !edited && mode !== "boolean") {
+    const title = repo.opening(forOpening)?.title ?? "";
+    const extra = similarTitles(repo.research(forOpening)?.fields.similarDesignation, title, 4);
+    // The job's own title leads: the engine treats the first title as the role.
+    if (extra.length) criteria = { ...criteria, titles: joinTitles(criteria.titles.length ? criteria.titles : [title], extra) };
+  }
   const ignored = edited ? [] : (parsed?.ignored ?? []);
   const booleanError = mode === "boolean" ? parseBoolean(q).error : null;
   const view: ViewProps = { sp, q, mode, forOpening, page, candidateId, vocab, edited, criteria, ignored, booleanError, referenceParam, referenceProfile };

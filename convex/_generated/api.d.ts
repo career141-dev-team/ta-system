@@ -296,6 +296,12 @@ import type * as ta_website from "../ta/website.js";
 import type * as ta_workLocations from "../ta/workLocations.js";
 import type * as ta_workdays from "../ta/workdays.js";
 import type * as templates_messageTemplates from "../templates/messageTemplates.js";
+import type * as ui_manage from "../ui/manage.js";
+import type * as ui_me from "../ui/me.js";
+import type * as ui_opening from "../ui/opening.js";
+import type * as ui_pipeline from "../ui/pipeline.js";
+import type * as ui_posts from "../ui/posts.js";
+import type * as ui_rules from "../ui/rules.js";
 import type * as users_users from "../users/users.js";
 
 import type {
@@ -593,6 +599,12 @@ declare const fullApi: ApiFromModules<{
   "ta/workLocations": typeof ta_workLocations;
   "ta/workdays": typeof ta_workdays;
   "templates/messageTemplates": typeof templates_messageTemplates;
+  "ui/manage": typeof ui_manage;
+  "ui/me": typeof ui_me;
+  "ui/opening": typeof ui_opening;
+  "ui/pipeline": typeof ui_pipeline;
+  "ui/posts": typeof ui_posts;
+  "ui/rules": typeof ui_rules;
   "users/users": typeof users_users;
   analytics: typeof analytics;
   "applications/applications": typeof applications_applications;
@@ -824,6 +836,12 @@ declare const fullApi: ApiFromModules<{
   "ta/workLocations": typeof ta_workLocations;
   "ta/workdays": typeof ta_workdays;
   "templates/messageTemplates": typeof templates_messageTemplates;
+  "ui/manage": typeof ui_manage;
+  "ui/me": typeof ui_me;
+  "ui/opening": typeof ui_opening;
+  "ui/pipeline": typeof ui_pipeline;
+  "ui/posts": typeof ui_posts;
+  "ui/rules": typeof ui_rules;
   "users/users": typeof users_users;
 }>;
 

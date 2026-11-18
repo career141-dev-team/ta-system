@@ -2,6 +2,7 @@ import { gemini } from "./ai";
 import { claudeHeadhunt, claudeSourcingOn } from "./claudeSourcing";
 import { canonicalProfile, displayUrl, readPage, search, serperConfigured } from "./serper";
 import type { BenchmarkEntry, ProfileSuggestion } from "@/data/types";
+import { joinTitles } from "./similarTitles";
 
 /**
  * Finding people we do not hold a CV for — spec §8A.2.
@@ -53,6 +54,8 @@ export interface SourcingSpec {
   salaryNote: string;
   /** Employers the TA ticked on Benchmarking. The strongest query terms there are. */
   targetEmployers: string[];
+  /** The other names this job goes by, from Research (lib/similarTitles, 18 Nov). Searched first. */
+  similarTitles?: string[];
   /** Canonical profile keys already in the vault or a pipeline — never re-suggested. */
   alreadyKnown: string[];
   /** The desk's choices, one line per person (28 Oct, lib/claudeSourcing deskSignals). */
@@ -110,7 +113,7 @@ const PLAN_PROMPT = (s: SourcingSpec) => {
   return `You are preparing a LinkedIn X-ray sourcing plan for Career141, a recruitment firm based in Sri Lanka that places candidates across South Asia and the Gulf.
 
 THE ROLE
-Title: ${s.title}
+Title: ${s.title}${s.similarTitles?.length ? `\nThe same job at other companies (from our research): ${s.similarTitles.join("; ")}` : ""}
 Client: ${s.clientName}${aboutClient(s)}
 Location: ${s.locations.join(", ") || market}
 Market: ${market}
@@ -688,6 +691,9 @@ export async function runSourcing(spec: SourcingSpec, round: number): Promise<So
   const planRes = await gemini("plan", PLAN_PROMPT(spec), { maxTokens: 2000 });
   if (!planRes.ok) return { ...empty, error: planRes.reason, note: planRes.detail };
   const plan = parsePlan(planRes.text);
+  // Research's names go straight after the model's lead title, so they take the
+  // title queries' slots rather than adding queries (18 Nov).
+  plan.titleVariants = joinTitles(plan.titleVariants.slice(0, 1), spec.similarTitles, plan.titleVariants).slice(0, 8);
   let cost = usageCost(planRes.usage);
 
   // Stages 1–2 — search and dedupe.
