@@ -93,6 +93,9 @@ const GRAPH_REQUEST_TIMEOUT_MS = 90_000;
 const graphFetch: FetchLike = (url, init) =>
   (fetch as unknown as (u: string, i: object) => ReturnType<FetchLike>)(url, { ...init, signal: AbortSignal.timeout(GRAPH_REQUEST_TIMEOUT_MS) });
 
+// shortcut: fixed 2 s / 5 s waits, Retry-After is not read (FetchLike has no headers); upgrade if 429s persist.
+const BUILD_RETRY_PAUSE_MS = [2_000, 5_000];
+
 const SIMPLE_ATTACHMENT_LIMIT =3 * 1024 * 1024;
 // Microsoft recommends byte ranges below 4 MB. Three MiB also keeps the
 // request comfortably below intermediary limits and makes every range except
@@ -111,14 +114,35 @@ async function sendDraftWithAttachments(
   alsoTo: string[],
   token: string,
   fetchImpl: FetchLike,
+  pauseMs: number[] = BUILD_RETRY_PAUSE_MS,
 ): Promise<{ ok: true } | { ok: false; status: number; error: string; maybeSent: boolean }> {
   const notSent = (status: number, error: string) => ({ ok: false as const, status, error, maybeSent: false });
-  try {
-    return await buildAndSendDraft(mail, from, to, cc, alsoTo, token, fetchImpl, notSent);
-  } catch (e) {
-    // Only buildAndSendDraft's own steps throw here; the final /send catches for itself.
-    return notSent(0, `Microsoft Graph did not answer while the email from ${from} was being prepared (${(e as Error).message}). Nothing was sent.`);
+  // Nothing leaves before the final /send, so a build that failed can be redone from a fresh draft with no risk of a
+  // double send. A timeout or a 5xx/429 from Microsoft failed every attempt with no second try (18 Nov).
+  type Built = { ok: true } | { ok: false; status: number; error: string; maybeSent: boolean };
+  let last: Built = notSent(0, "");
+  for (let attempt = 0; attempt <= pauseMs.length; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, pauseMs[attempt - 1]));
+    const built: { draftId?: string } = {};
+    try {
+      last = await buildAndSendDraft(mail, from, to, cc, alsoTo, token, fetchImpl, notSent, built);
+    } catch (e) {
+      // Only buildAndSendDraft's own steps throw here; the final /send catches for itself.
+      last = notSent(0, `Microsoft Graph did not answer while the email from ${from} was being prepared (${(e as Error).message}). Nothing was sent.`);
+    }
+    if (last.ok || last.maybeSent) return last;
+    // A half-built draft would otherwise sit in the TA's Drafts folder.
+    if (built.draftId) {
+      try {
+        await fetchImpl(`${GRAPH_BASE}/users/${encodeURIComponent(from)}/messages/${encodeURIComponent(built.draftId)}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+      } catch {
+        // Best effort: the email itself is already settled as not sent.
+      }
+    }
+    const retryable = last.status === 0 || last.status === 429 || last.status >= 500;
+    if (!retryable) return last;
   }
+  return last;
 }
 
 async function buildAndSendDraft(
@@ -130,6 +154,7 @@ async function buildAndSendDraft(
   token: string,
   fetchImpl: FetchLike,
   notSent: (status: number, error: string) => { ok: false; status: number; error: string; maybeSent: boolean },
+  built: { draftId?: string },
 ): Promise<{ ok: true } | { ok: false; status: number; error: string; maybeSent: boolean }> {
   const auth = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
   const message = sendMailPayload({ ...mail, attachments: undefined }, to, cc, alsoTo).message;
@@ -146,6 +171,7 @@ async function buildAndSendDraft(
     // Handled by the explicit error below so the user sees the failed stage.
   }
   if (!draftId) return notSent(502, `Microsoft Graph created an email draft from ${from} without returning its ID.`);
+  built.draftId = draftId;
   const draft = `${GRAPH_BASE}/users/${encodeURIComponent(from)}/messages/${encodeURIComponent(draftId)}`;
 
   for (const attachment of mail.attachments ?? []) {
@@ -291,6 +317,7 @@ export async function sendFollowUpMail(
   mail: FollowUpMail,
   getToken: () => Promise<string | null>,
   fetchImpl: FetchLike = graphFetch,
+  buildPauseMs: number[] = BUILD_RETRY_PAUSE_MS,
 ): Promise<MailResult> {
   const decision = resolveRecipient("email", mail.to, mail.testInbox);
   if (!decision.ok) return { ok: false, error: decision.reason, blocked: true };
@@ -353,7 +380,7 @@ export async function sendFollowUpMail(
   for (const [i, from] of senders.entries()) {
     try {
       if (mail.attachmentMode === "draft" && mail.attachments?.length) {
-        const draft = await sendDraftWithAttachments(mail, from, decision.to, cc, alsoTo, token, fetchImpl);
+        const draft = await sendDraftWithAttachments(mail, from, decision.to, cc, alsoTo, token, fetchImpl, buildPauseMs);
         if (draft.ok) {
           return { ok: true, to: decision.to, alsoTo, from, cc, note: i > 0 ? `${note} [sent from ${from}: ${senders[0]} could not send]` : note };
         }

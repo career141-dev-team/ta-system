@@ -47,7 +47,7 @@ Trigger: a TA types in `SearchBox` (on `/database`, on `/database/results`, or t
    - `scoreCandidateAgainstRequirements(doc, req, i, {pastTitles:true, searchOccupation})` then sort by `compareSearchCandidates` (supported careers before "broader", then score, title score, recency, id).
    - Re-rank only with the model: `searchReviewPool` picks up to 20 profiles (10 supported with weakest skill scores, 10 uncertain, refilled), `scoreBatchWithLLM(..., "search_ranking", {roleAware:true})`. AI cannot override the occupation grouping; failure leaves deterministic scores.
    - Hits with `score > 0` or any role evidence, sliced to `limit`, carry `reason`, `roleEvidence`, a words-only `breakdown`, and `employerLine`.
-6. `ResultsView` applies the desk rules the engine does not know (`deskCriteria` empties place, years, titles, skills, industries, employers, qualifications and keeps notice, salary, availability, nationality, language) through `repo.searchDatabase`, orders by engine order, applies the Level filter (flow 6) then pages at `PAGE = 25`.
+6. Score cut-off (17 Nov): for a plain engine search (not keyword-list, not `?for=`, not a reference CV) `searchCutOn` (`src/lib/scoring.ts`) sets the floor to `SEARCH_CUT` = 40, so people the engine scored under 40 are hidden and "Show N weaker matches" (`below=1`) brings them back from the held answer. Reference search keeps its 60 bar. `ResultsView` applies the desk rules the engine does not know (`deskCriteria` empties place, years, titles, skills, industries, employers, qualifications and keeps notice, salary, availability, nationality, language) through `repo.searchDatabase`, orders by engine order, applies the Level filter (flow 6) then pages at `PAGE = 25`.
 
 Years and what was typed (28 Oct):
 
@@ -359,6 +359,7 @@ verified-hash: 44e66df69364c8e87493627e49d31fb90fa8a22f
 verified-date: 2026-11-17
 sources:
   src/lib/engineSearch.ts
+  src/lib/scoring.ts
   src/lib/dbMatch.ts
   src/lib/claudeMatch.ts
   src/lib/claudeBridge.ts

@@ -262,9 +262,9 @@ async function main() {
   };
   const oneCv = { ...mail, from: "ta@career141.com", attachmentMode: "draft" as const, attachments: [{ name: "A.pdf", contentType: "application/pdf", base64: Buffer.from("cv").toString("base64") }] };
   env({ OUTREACH_LIVE: "true" });
-  let m = await sendFollowUpMail(oneCv, token, stepGraph(u => u.endsWith("/attachments") ? "throw" : null));
+  let m = await sendFollowUpMail(oneCv, token, stepGraph(u => u.endsWith("/attachments") ? "throw" : null), [0, 0]);
   eq("CV upload times out -> not sent", !m.ok && m.maybeSent, false);
-  m = await sendFollowUpMail(oneCv, token, stepGraph(u => u.endsWith("/messages") ? 503 : null));
+  m = await sendFollowUpMail(oneCv, token, stepGraph(u => u.endsWith("/messages") ? 503 : null), [0, 0]);
   eq("draft creation 503 -> not sent", !m.ok && m.maybeSent, false);
   m = await sendFollowUpMail(oneCv, token, stepGraph(u => u.endsWith("/send") ? "throw" : null));
   eq("final send times out -> maybe sent", !m.ok && m.maybeSent, true);
@@ -272,6 +272,27 @@ async function main() {
   eq("final send 503 -> maybe sent", !m.ok && m.maybeSent, true);
   m = await sendFollowUpMail(oneCv, token, stepGraph(u => u.endsWith("/send") ? 400 : null));
   eq("final send 400 -> not sent", !m.ok && m.maybeSent, false);
+  // 18 Nov: a failed build is retried from a fresh draft, the half-built one deleted; /send is never retried.
+  const calls: string[] = [];
+  let attachmentTries = 0;
+  const flaky = async (url: string, init: { method: string }) => {
+    calls.push(`${init.method} ${url.split("/users/")[1] ?? url}`);
+    if (init.method === "DELETE") return { ok: true, status: 204, text: async () => "" };
+    if (url.endsWith("/attachments") && ++attachmentTries === 1) return { ok: false, status: 503, text: async () => "busy" };
+    const s = url.endsWith("/messages") ? 201 : 202;
+    return { ok: true, status: s, text: async () => JSON.stringify({ id: `draft-${calls.length}` }) };
+  };
+  m = await sendFollowUpMail(oneCv, token, flaky as never, [0, 0]);
+  eq("a 503 on a CV upload is retried and the email goes", m.ok, true);
+  eq("the half-built draft was deleted", calls.filter(c => c.startsWith("DELETE")).length, 1);
+  eq("two drafts were created", calls.filter(c => c.endsWith("/messages") && c.startsWith("POST")).length, 2);
+  let tries = 0;
+  m = await sendFollowUpMail(oneCv, token, stepGraph(u => (u.endsWith("/attachments") ? (tries++, "throw") : null)) as never, [0, 0]);
+  eq("three timeouts in a row -> still not sent", !m.ok && m.maybeSent, false);
+  eq("three attempts, no more", tries, 3);
+  let sends = 0;
+  m = await sendFollowUpMail(oneCv, token, stepGraph(u => (u.endsWith("/send") ? (sends++, 503) : null)) as never, [0, 0]);
+  eq("a failing /send is not retried", sends, 1);
   eq("no token -> unknown", await findSentMessage(["ta@career141.com"], "EOD 1", 0, async () => null, sentItems([]).fetchImpl), "unknown");
 
   // ── A queued message that should no longer go ─────────────────────────────

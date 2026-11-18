@@ -82,6 +82,18 @@ export interface Requirements {
  */
 export const FIT_BANDS = { strong: 75, worth: 60 } as const;
 
+/**
+ * Plain-English database searches hide anyone the engine scored under this
+ * (17 Nov: a search used to return every score above 0, ~300 people, and the
+ * weak tail drowned the good ones). "Show weaker matches" brings them back.
+ * Not applied to keyword lists (every keyword is already required, and their
+ * scores run low because no job title is read) nor to searches tied to an
+ * opening (the row then shows the job-fit score, not this number).
+ */
+export const SEARCH_CUT = 40;
+export const searchCutOn = (o: { engineRanked: boolean; referenceRanked: boolean; forOpening: boolean; kind: string | null }): boolean =>
+  o.engineRanked && !o.referenceRanked && !o.forOpening && o.kind !== "keywords";
+
 export type Seniority =
   | "intern" | "junior" | "mid" | "senior" | "lead" | "executive";
 
