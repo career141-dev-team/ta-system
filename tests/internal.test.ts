@@ -28,7 +28,24 @@ const ok = (name: string, cond: boolean, detail = "") => {
  * Functions deliberately left public, as "path:name". Each needs its own check
  * of who is calling, and a line here saying what it is. Keep it empty.
  */
-const ALLOWED_PUBLIC = new Set<string>([]);
+const ALLOWED_PUBLIC = new Set<string>([
+  // The new UI's door (18 Nov). No actorId: the person is the verified Clerk
+  // identity (convex/ui/me.ts uiUser), and every write calls the internal
+  // rule with that person's id. tests/uidoor.test.ts holds both.
+  "ui/me:whoAmI",
+  "ui/pipeline:board",
+  "ui/pipeline:move",
+  "ui/pipeline:shortlist",
+  "ui/opening:summary",
+  "ui/opening:scoops",
+  "ui/opening:postApplicants",
+  "ui/opening:matches",
+  "ui/opening:strategies",
+  "ui/opening:setFollowUp",
+  "ui/opening:saveJd",
+  "ui/opening:scoopUploadUrl",
+  "ui/opening:queueScoop",
+]);
 
 const PUBLIC = /export\s+(?:const\s+(\w+)\s*=|(default))\s*(query|mutation|action)\s*\(/g;
 
