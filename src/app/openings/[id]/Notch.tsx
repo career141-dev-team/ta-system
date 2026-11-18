@@ -10,12 +10,16 @@ export default function Notch({
   board = false,
   wide = false,
   small = false,
+  big = false,
   labelRef,
+  children,
 }: {
   label: string;
   board?: boolean;
   wide?: boolean;
   small?: boolean;
+  big?: boolean;
+  children?: React.ReactNode;
   labelRef?: React.Ref<HTMLSpanElement>;
 }) {
   // Openings: a white tab rising from the board's top edge, the board's own white.
@@ -42,6 +46,20 @@ export default function Notch({
   // A work view's tab: the same notch as the opening's ATS / Headhunting tabs (owner,
   // 16 Nov 2026: "like this notch also inside the pipeline screen"), only growing
   // wider when a longer name needs it.
+  // `big`: the main pages' tab - taller and wider, with room under the name for the
+  // loading bar (passed as children).
+  if (big)
+    return (
+      <h2 className="absolute left-1/2 top-0 z-10 flex h-[3.6rem] min-w-64 -translate-x-1/2 items-start justify-center whitespace-nowrap px-[max(3.25rem,30px)] pt-[max(0.7rem,7px)] text-h3 font-semibold">
+        <svg viewBox="0 0 208 42" preserveAspectRatio="none" className="absolute inset-0 size-full fill-background" aria-hidden="true">
+          <path d="M0 0c10 0 12 6 15 14l7 16c3 8 8 12 16 12h132c8 0 13-4 16-12l7-16c3-8 5-14 15-14Z" />
+        </svg>
+        <span ref={labelRef} className="relative">
+          {label}
+        </span>
+        {children}
+      </h2>
+    );
   if (small)
     return (
       <h2 className="absolute left-1/2 top-0 z-10 flex h-10.5 min-w-52 -translate-x-1/2 items-center justify-center whitespace-nowrap px-[max(2.75rem,26px)] pb-1 text-tab font-semibold">

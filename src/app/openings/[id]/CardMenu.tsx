@@ -92,19 +92,19 @@ export default function CardMenu({
     };
   }, [onClose, root]);
 
-  const ITEM = "flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left";
+  const ITEM = "flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left";
   return createPortal(
     <div
       ref={root}
       role="menu"
       aria-label={`Actions for ${name}`}
-      className="fixed z-[75] w-[max(16rem,220px)] rounded-2xl border border-border bg-white p-2 shadow-float"
+      className="fixed z-[75] w-[max(16rem,220px)] rounded-md border border-border bg-white/90 p-1.5 shadow-float backdrop-blur-md"
     >
       {onShortlist && (
-        <button type="button" role="menuitem" onClick={onShortlist} className={ITEM + " hover:bg-surface-2"}>
+        <button type="button" role="menuitem" onClick={onShortlist} className={ITEM + " hover:bg-surface-3"}>
           <span aria-hidden="true" className="size-[max(0.5rem,7px)] shrink-0 rounded-full bg-info" />
           <span className="min-w-0 flex-1">
-            <span className="block text-nav font-semibold text-ink">Shortlist</span>
+            <span className="block text-nav text-ink">Shortlist</span>
             <span className="block text-pill text-ink-2">Yours from now on, in TA Follow-Up.</span>
           </span>
         </button>
@@ -118,12 +118,12 @@ export default function CardMenu({
             role="menuitem"
             aria-disabled={!verdict.ok}
             onClick={() => onMove(to)}
-            className={ITEM + (verdict.ok ? " hover:bg-surface-2" : " cursor-not-allowed")}
+            className={ITEM + (verdict.ok ? " hover:bg-surface-3" : " cursor-not-allowed")}
           >
             <span aria-hidden="true" className={"size-[max(0.5rem,7px)] shrink-0 rounded-full " + (verdict.ok ? "" : "opacity-40")} style={{ background: dot }} />
             <span className="min-w-0 flex-1">
-              <span className={"block text-nav font-semibold " + (verdict.ok ? "text-ink" : "text-ink-2/70")}>{label(to, from, verdict)}</span>
-              {!verdict.ok && <span className="block text-pill text-ink-2">{verdict.why}</span>}
+              <span className={"block text-nav " + (verdict.ok ? "text-ink" : "text-ink-3")}>{label(to, from, verdict)}</span>
+              {!verdict.ok && <span className="block text-pill text-ink-3">{verdict.why}</span>}
             </span>
           </button>
         );
@@ -135,8 +135,8 @@ export default function CardMenu({
           ["backup", "Backup", backup],
         ] as const
       ).map(([key, text, on]) => (
-        <button key={key} type="button" role="menuitemcheckbox" aria-checked={on} onClick={() => onToggle(key)} className={ITEM + " hover:bg-surface-2"}>
-          <span className="min-w-0 flex-1 text-nav font-semibold text-ink">{text}</span>
+        <button key={key} type="button" role="menuitemcheckbox" aria-checked={on} onClick={() => onToggle(key)} className={ITEM + " hover:bg-surface-3"}>
+          <span className="min-w-0 flex-1 text-nav text-ink">{text}</span>
           {on && (
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" className="size-[max(0.9rem,12px)] shrink-0 text-brand" aria-hidden="true">
               <path d="m5 12 5 5 9-10" />
@@ -145,8 +145,8 @@ export default function CardMenu({
         </button>
       ))}
       <div className="mx-2 my-1.5 h-px bg-border" />
-      <button type="button" role="menuitem" onClick={onAddToJob} className={ITEM + " hover:bg-surface-2"}>
-        <span className="min-w-0 flex-1 text-nav font-semibold text-ink">Add to another job…</span>
+      <button type="button" role="menuitem" onClick={onAddToJob} className={ITEM + " hover:bg-surface-3"}>
+        <span className="min-w-0 flex-1 text-nav text-ink">Add to another job…</span>
       </button>
     </div>,
     document.body,

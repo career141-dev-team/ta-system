@@ -8,7 +8,7 @@ import CvPages, { warmPdf } from "./CvPages";
 import PillMenu, { type MenuOption } from "./PillMenu";
 import Toast from "./Toast";
 import { sendToPipeline } from "./pipelineInbox";
-import { EXPERIENCE, NOTICE, inRange } from "./filters";
+import { EXPERIENCE, inRange } from "./filters";
 import WorkdayBlocked from "./WorkdayBlocked";
 import { useWorkdayGate } from "@/lib/workday";
 import { useLiftMenu } from "./liftMenu";
@@ -31,6 +31,8 @@ type Scoop = {
   sentBy?: string;
   sentDay: string;
   years: number;
+  /** A few skills for the row (placeholder until the CV is read). */
+  skills?: string[];
   /** Notice period in days; 0 = can start now. */
   notice: number;
   /** I shortlisted this person: the row stays, marked "Shortlisted by you". */
@@ -40,12 +42,12 @@ type Scoop = {
 };
 
 const SCOOPS: Scoop[] = [
-  { id: "s1", cv: "/cvs/s1.pdf", name: "Nadeeka Dilshan", title: "Assistant Manager, Production", location: "Colombo", company: "Croydon Kowloon Designs", sentBy: "Shehan", sentDay: "today", years: 6, notice: 30 },
-  { id: "s2", cv: "/cvs/s2.pdf", name: "Kasun Perera", title: "Production Supervisor", location: "Gampaha", company: "Brandix Lanka Ltd", sentBy: "Shehan", sentDay: "today", years: 9, notice: 60 },
-  { id: "s3", cv: "/cvs/s3.pdf", name: "Ishara Fernando", title: "Assistant Manager, Production", location: "Colombo", company: "MAS Holdings", sentBy: "Rashmi", sentDay: "yesterday", years: 11, notice: 90, mine: true },
-  { id: "s4", cv: "/cvs/s4.pdf", name: "Tharindu Silva", title: "Planning Executive", location: "Kandy", company: "Hirdaramani Group", sentBy: "Rashmi", sentDay: "yesterday", years: 4, notice: 30 },
-  { id: "s5", cv: "/cvs/s5.pdf", name: "Dilani Jayasinghe", title: "Quality Assurance Lead", location: "Negombo", company: "Teejay Lanka PLC", sentBy: "Dinesh", sentDay: "2 days ago", years: 5, notice: 0, lockedBy: "Hasini" },
-  { id: "s6", cv: "/cvs/s6.pdf", name: "Ruwan Bandara", title: "Assistant Manager, Production", location: "Colombo", company: "Croydon Kowloon Designs", sentDay: "2 days ago", years: 2, notice: 0 },
+  { id: "s1", cv: "/cvs/s1.pdf", name: "Nadeeka Dilshan", title: "Assistant Manager, Production", location: "Colombo", company: "Croydon Kowloon Designs", sentBy: "Shehan", sentDay: "today", years: 6, skills: ["Production planning","Lean","Apparel"], notice: 30 },
+  { id: "s2", cv: "/cvs/s2.pdf", name: "Kasun Perera", title: "Production Supervisor", location: "Gampaha", company: "Brandix Lanka Ltd", sentBy: "Shehan", sentDay: "today", years: 9, skills: ["Line balancing","Team leadership","Apparel"], notice: 60 },
+  { id: "s3", cv: "/cvs/s3.pdf", name: "Ishara Fernando", title: "Assistant Manager, Production", location: "Colombo", company: "MAS Holdings", sentBy: "Rashmi", sentDay: "yesterday", years: 11, skills: ["Production","Costing","SAP"], notice: 90, mine: true },
+  { id: "s4", cv: "/cvs/s4.pdf", name: "Tharindu Silva", title: "Planning Executive", location: "Kandy", company: "Hirdaramani Group", sentBy: "Rashmi", sentDay: "yesterday", years: 4, skills: ["Planning","Merchandising","Excel"], notice: 30 },
+  { id: "s5", cv: "/cvs/s5.pdf", name: "Dilani Jayasinghe", title: "Quality Assurance Lead", location: "Negombo", company: "Teejay Lanka PLC", sentBy: "Dinesh", sentDay: "2 days ago", years: 5, skills: ["Quality assurance","Textiles","ISO 9001"], notice: 0, lockedBy: "Hasini" },
+  { id: "s6", cv: "/cvs/s6.pdf", name: "Ruwan Bandara", title: "Assistant Manager, Production", location: "Colombo", company: "Croydon Kowloon Designs", sentDay: "2 days ago", years: 2, skills: ["Production","Training","Apparel"], notice: 0 },
 ];
 
 // Placeholder: who may have sent a scoop - the TA System lists the active Directors,
@@ -76,13 +78,13 @@ const WHO: MenuOption[] = [
   { value: "today", label: "Sent today" },
 ];
 
-type Filters = { q: string; exp: string; notice: string; who: string };
-const NO_FILTERS: Filters = { q: "", exp: "", notice: "", who: "" };
+type Filters = { q: string; exp: string; who: string };
+const NO_FILTERS: Filters = { q: "", exp: "", who: "" };
 
 function matches(s: Scoop, f: Filters) {
   const q = f.q.trim().toLowerCase();
   if (q && ![s.name, s.title, s.company].some((t) => t.toLowerCase().includes(q))) return false;
-  if (!inRange(s.years, f.exp) || !inRange(s.notice, f.notice)) return false;
+  if (!inRange(s.years, f.exp)) return false;
   if (f.who === "open") return !s.mine && !s.lockedBy;
   if (f.who === "mine") return !!s.mine;
   if (f.who === "today") return s.sentDay === "today";
@@ -110,6 +112,22 @@ export default function ScoopsView() {
   const [mode, setMode] = useState<"list" | "read">("list");
   const [chosen, setChosen] = useState(SCOOPS[0].id);
   const [picked, setPicked] = useState<string[]>([]);
+  // ⋮ > "Select to shortlist / delete" turns the tickboxes on; the toolbar button then
+  // carries the chosen action and the count. `done` shows the drawn tick after it runs.
+  const [selecting, setSelecting] = useState<null | "shortlist" | "delete">(null);
+  const [done, setDone] = useState<null | "shortlist" | "delete">(null);
+  const tickPath = useRef<SVGPathElement>(null);
+  useEffect(() => {
+    const p = tickPath.current;
+    if (!done || !p) return;
+    const len = p.getTotalLength();
+    gsap.fromTo(p, { strokeDasharray: len, strokeDashoffset: len }, { strokeDashoffset: 0, duration: DUR.base, ease: EASE.out });
+    const t = setTimeout(() => {
+      setDone(null);
+      setSelecting(null);
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [done]);
   const [notice, setNotice] = useState<{ bold?: string; rest: string; n: number; warn?: boolean } | null>(null);
   const [sentBy, setSentBy] = useState("");
   const [draft, setDraft] = useState<Filters>(NO_FILTERS);
@@ -335,14 +353,6 @@ export default function ScoopsView() {
 
   const pick = () => fileInput.current?.click();
 
-  // ⋮ > Upload CVs: the same picker and rules as the upload panel. From the reading
-  // view it goes back to the list, where the reading bar shows.
-  const uploadFromMenu = () => {
-    if (gate) return say(gate + " Start it on Today, then upload scoops.", undefined, true);
-    setMode("list");
-    pick();
-  };
-
   // ⋮ > Delete: takes scoops off this job's scoops (asked once more in the menu),
   // with Undo. Another TA's shortlisted scoop stays - their claim (the lock).
   const remove = (ids: string[]) => {
@@ -376,6 +386,15 @@ export default function ScoopsView() {
   const failed = uploads.filter((u) => u.state === "failed");
   const mins = Math.max(1, Math.ceil(readingNow / 3));
   const pickable = picked.filter((id) => list.some((s) => s.id === id && free(s)));
+  const count = selecting === "shortlist" ? pickable.length : picked.length;
+  const finish = () => {
+    if (!selecting || !count || done) return;
+    const ids = selecting === "shortlist" ? pickable : [...picked];
+    const blocked = !!gate || (selecting === "delete" && ids.some((id) => list.find((s) => s.id === id)?.lockedBy));
+    if (selecting === "shortlist") shortlist(ids);
+    else remove(ids);
+    if (!blocked) setDone(selecting);
+  };
 
   return (
     <div
@@ -404,21 +423,55 @@ export default function ScoopsView() {
         <Count n={open} label="not shortlisted yet" />
         {CAN_ACT && (
           <div className="ml-auto flex items-center gap-[max(0.9rem,8px)]">
-            {mode === "list" && (
-              <button
-                type="button"
-                disabled={!pickable.length}
-                onClick={() => shortlist(pickable)}
-                className="h-[max(2.6rem,34px)] rounded-full border border-border bg-white px-[max(1.3rem,14px)] text-[max(0.9rem,12.5px)] font-medium text-ink transition-colors hover:border-brand hover:bg-brand hover:text-white disabled:pointer-events-none disabled:opacity-50"
-              >
-                Shortlist selected{pickable.length ? ` (${pickable.length})` : ""}
-              </button>
+            {mode === "list" && selecting && (
+              <>
+                {!done && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelecting(null);
+                      setPicked([]);
+                    }}
+                    className="h-[max(2.6rem,34px)] rounded-full px-[max(1rem,12px)] text-[max(0.9rem,12.5px)] text-ink-2 hover:bg-surface-2 hover:text-ink"
+                  >
+                    Cancel
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={!count && !done}
+                  onClick={finish}
+                  className={
+                    "flex h-[max(2.6rem,34px)] items-center gap-2 rounded-full px-[max(1.3rem,14px)] text-[max(0.9rem,12.5px)] font-medium text-white transition-colors disabled:pointer-events-none disabled:opacity-50 " +
+                    (done ? "bg-success" : selecting === "delete" ? "bg-danger hover:opacity-90" : "bg-brand hover:bg-brand-strong")
+                  }
+                >
+                  {done ? (
+                    <>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" className="size-[1.2em]" aria-hidden="true">
+                        <path ref={tickPath} d="m5 12.5 4.5 4.5L19 7.5" />
+                      </svg>
+                      {done === "shortlist" ? "Shortlisted" : "Deleted"}
+                    </>
+                  ) : (
+                    <>
+                      {selecting === "delete" && <Bin />}
+                      {`${selecting === "shortlist" ? "Shortlist" : "Delete"} · ${count} selected`}
+                    </>
+                  )}
+                </button>
+              </>
             )}
             <MoreMenu
-              what={mode === "read" ? (current ? "this scoop" : "") : pickable.length ? `${pickable.length} ticked scoop${pickable.length === 1 ? "" : "s"}` : ""}
-              refused={mode === "read" && !!current?.lockedBy}
-              onUpload={uploadFromMenu}
-              onDelete={() => remove(mode === "read" ? (current ? [current.id] : []) : pickable)}
+              listMode={mode === "list"}
+              what={current ? "this scoop" : ""}
+              refused={!!current?.lockedBy}
+              onSelect={(k) => {
+                setPicked([]);
+                setDone(null);
+                setSelecting(k);
+              }}
+              onDelete={() => remove(current ? [current.id] : [])}
             />
           </div>
         )}
@@ -522,7 +575,6 @@ export default function ScoopsView() {
               />
             </label>
             <PillMenu options={EXPERIENCE} initial="" onChange={(exp) => setDraft((d) => ({ ...d, exp }))} mark="tick" pillClass={FIELD_PILL + " text-ink-2"} />
-            <PillMenu options={NOTICE} initial="" onChange={(notice) => setDraft((d) => ({ ...d, notice }))} mark="tick" pillClass={FIELD_PILL + " text-ink-2"} />
             <PillMenu options={WHO} initial="" onChange={(who) => setDraft((d) => ({ ...d, who }))} mark="tick" pillClass={FIELD_PILL + " text-ink-2"} />
             <button
               type="button"
@@ -541,28 +593,36 @@ export default function ScoopsView() {
                 data-scoop-row={s.id}
                 className="flex flex-wrap items-center gap-x-[max(1.1rem,10px)] gap-y-2 rounded-md border border-surface-3 bg-white px-[max(1.4rem,11px)] py-[max(1.2rem,10px)] transition-shadow hover:shadow-card"
               >
-                {/* The initials tick the row for Shortlist selected. */}
-                <button
-                  type="button"
-                  disabled={!free(s)}
-                  aria-pressed={picked.includes(s.id)}
-                  aria-label={`Select ${s.name}`}
-                  onClick={() => setPicked((p) => (p.includes(s.id) ? p.filter((x) => x !== s.id) : [...p, s.id]))}
-                  className={
-                    "flex size-[max(3rem,34px)] shrink-0 items-center justify-center rounded-full text-[max(1rem,12px)] font-medium transition-colors disabled:cursor-default " +
-                    (picked.includes(s.id) ? "bg-brand text-white" : "bg-info-soft text-info enabled:hover:bg-info-soft")
-                  }
-                >
-                  {picked.includes(s.id) ? <Tick /> : initials(s.name)}
-                </button>
+                {/* The tickbox shows only while a ⋮ "Select to…" is on. */}
+                {selecting && (
+                  <input
+                    type="checkbox"
+                    disabled={selecting === "shortlist" ? !free(s) : !!s.lockedBy}
+                    checked={picked.includes(s.id)}
+                    aria-label={`Select ${s.name}`}
+                    onChange={() => setPicked((p) => (p.includes(s.id) ? p.filter((x) => x !== s.id) : [...p, s.id]))}
+                    className={"size-[max(1.15rem,16px)] shrink-0 cursor-pointer disabled:cursor-default disabled:opacity-30 " + (selecting === "delete" ? "accent-danger" : "accent-brand")}
+                  />
+                )}
+                <span className="flex size-[max(3rem,34px)] shrink-0 items-center justify-center rounded-full bg-info-soft text-[max(1rem,12px)] font-medium text-info">{initials(s.name)}</span>
                 <button type="button" onClick={() => openRow(s.id)} className="flex min-w-0 flex-1 items-center gap-x-[max(1.1rem,10px)] text-left" aria-label={`Read ${s.name}'s CV`}>
                   <span className="w-[max(17rem,130px)] min-w-0 shrink-0 max-md:flex-1">
                     <span className="block truncate text-[max(1.2rem,14px)] font-medium text-ink">{s.name}</span>
                     <span className="block truncate text-[max(0.9rem,11.5px)] text-ink-2">{s.title}</span>
+                    {s.skills && (
+                      <span className="mt-1 flex flex-wrap gap-1">
+                        {s.skills.slice(0, 3).map((k) => (
+                          <span key={k} className="rounded-full bg-surface-2 px-2 py-0.5 text-caption text-ink-2">
+                            {k}
+                          </span>
+                        ))}
+                      </span>
+                    )}
                   </span>
                   <span className="min-w-0 space-y-0.5 text-[max(0.9rem,11.5px)] text-ink-2 max-md:hidden">
                     <span className="block truncate">L : {s.location}</span>
                     <span className="block truncate">C : {s.company}</span>
+                    {s.years > 0 && <span className="block truncate">E : {s.years} years</span>}
                   </span>
                 </button>
                 <div className="ml-auto flex items-center gap-[max(1.1rem,8px)]">
@@ -616,6 +676,11 @@ export default function ScoopsView() {
                         </span>
                       </span>
                       <span className="block truncate text-[max(0.85rem,11.5px)] text-ink-2">{about}</span>
+                      {s.years > 0 && (
+                        <span className="block truncate text-[max(0.85rem,11.5px)] text-ink-3">
+                          {s.years} years{s.skills ? " · " + s.skills.slice(0, 3).join(", ") : ""}
+                        </span>
+                      )}
                     </span>
                   </button>
                 </li>
@@ -721,7 +786,7 @@ function ShortlistedChip({ s }: { s: Scoop }) {
  *  one being read), which asks once more before it goes. `what` names what Delete
  *  takes; empty = nothing to take yet. `refused` = another TA's scoop: Delete says
  *  why straight away instead of asking. */
-function MoreMenu({ what, refused, onUpload, onDelete }: { what: string; refused: boolean; onUpload: () => void; onDelete: () => void }) {
+function MoreMenu({ listMode, what, refused, onSelect, onDelete }: { listMode: boolean; what: string; refused: boolean; onSelect: (k: "shortlist" | "delete") => void; onDelete: () => void }) {
   const { open, setOpen, root, panel, shown } = useLiftMenu();
   const [sure, setSure] = useState(false);
   const pick = (fn: () => void) => () => {
@@ -749,22 +814,27 @@ function MoreMenu({ what, refused, onUpload, onDelete }: { what: string; refused
       </button>
       {shown && (
         <div ref={panel} role="menu" className="absolute right-0 top-full z-30 mt-2 w-[max(16rem,200px)] rounded-md border border-border bg-surface p-1.5 shadow-float">
-          <button type="button" role="menuitem" onClick={pick(onUpload)} className={MENU_ITEM + " text-ink hover:bg-surface-2"}>
-            <UploadIcon className="size-[1.1em] shrink-0" />
-            Upload CVs
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            disabled={!what}
-            onClick={refused || sure ? pick(onDelete) : () => setSure(true)}
-            className={MENU_ITEM + (what ? " text-danger hover:bg-danger-soft" : " cursor-default text-ink-3")}
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className="size-[1.1em] shrink-0" aria-hidden="true">
-              <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />
-            </svg>
-            {!what ? "Delete · tick scoops first" : sure ? `Press again to delete ${what}` : `Delete ${what}`}
-          </button>
+          {listMode ? (
+            <>
+              <button type="button" role="menuitem" onClick={pick(() => onSelect("shortlist"))} className={MENU_ITEM + " text-ink hover:bg-surface-2"}>
+                Select to shortlist
+              </button>
+              <button type="button" role="menuitem" onClick={pick(() => onSelect("delete"))} className={MENU_ITEM + " text-danger hover:bg-danger-soft"}>
+                <Bin />
+                Select to delete
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={!what}
+              onClick={refused || sure ? pick(onDelete) : () => setSure(true)}
+              className={MENU_ITEM + (what ? " text-danger hover:bg-danger-soft" : " cursor-default text-ink-3")}
+            >
+              {!what ? "Delete" : sure ? `Press again to delete ${what}` : `Delete ${what}`}
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -772,6 +842,14 @@ function MoreMenu({ what, refused, onUpload, onDelete }: { what: string; refused
 }
 
 const MENU_ITEM = "flex w-full items-center gap-2.5 rounded-sm px-3 py-2 text-left text-small";
+
+function Bin() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className="size-[1.1em] shrink-0" aria-hidden="true">
+      <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />
+    </svg>
+  );
+}
 
 function Count({ n, label }: { n: number; label: string }) {
   return (
@@ -813,14 +891,6 @@ function UploadIcon({ className }: { className: string }) {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
       <path d="M12 15V4M7.5 8.5 12 4l4.5 4.5" />
       <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
-    </svg>
-  );
-}
-
-function Tick() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" className="size-1/2" aria-hidden="true">
-      <path d="m5 12.5 4.5 4.5L19 7.5" />
     </svg>
   );
 }

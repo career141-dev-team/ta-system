@@ -1,20 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
-import Image from "next/image";
 import { DUR, EASE, gsap, useExit, useGSAP, useSwap } from "@/lib/gsap";
 import { useMe } from "@/lib/role";
 import { useWorkdayGate } from "@/lib/workday";
-import { BackButton } from "./PipelineBoard";
+import { BackButton, LinkedInIcon } from "./PipelineBoard";
 import MoveForm from "./MoveForm";
 import { STAGES } from "./pipelineRules";
 import Toast from "./Toast";
 import { sendToPipeline } from "./pipelineInbox";
 import { useJdApproved } from "./jdState";
-import PillMenu from "./PillMenu";
-import { EXPERIENCE, FIELD_PILL, NOTICE, inRange } from "./filters";
+import { EXPERIENCE, FIELD_PILL, inRange } from "./filters";
 import WorkdayBlocked from "./WorkdayBlocked";
 import { useLiftMenu } from "./liftMenu";
 
@@ -46,6 +44,8 @@ type Applicant = {
   applied: string;
   fit: number;
   years: number;
+  /** A few skills for the row (placeholder until the CV is read). */
+  skills?: string[];
   /** Notice period in days; 0 = can start now. */
   notice: number;
   /** The CV file (a demo PDF; made-up people). */
@@ -77,10 +77,10 @@ const OPEN_SET = 3;
 
 const NEW: Applicant[] = [
   // Names match the demo CV files in public/cvs, so a row opens its own CV.
-  { id: "a1", name: "Kasun Perera", title: "SAP S/4HANA Lead", location: "Colombo", company: "Virtusa", applied: "Applied 2 h ago", fit: 92, years: 9, notice: 30, cv: "/cvs/s2.pdf" },
-  { id: "a2", name: "Ishara Fernando", title: "SAP Solution Architect", location: "Colombo", company: "Virtusa", applied: "Applied 5 h ago", fit: 88, years: 11, notice: 60, cv: "/cvs/s3.pdf" },
-  { id: "a3", name: "Tharindu Silva", title: "SAP FICO Manager", location: "Katunayake", company: "Brandix", applied: "Applied yesterday", fit: 77, years: 4, notice: 0, cv: "/cvs/s4.pdf", lockedBy: "Hasini" },
-  { id: "a4", name: "Ruwan Bandara", title: "SAP Project Manager", location: "Colombo", company: "Hemas", applied: "Applied yesterday", fit: 74, years: 6, notice: 90, cv: "/cvs/s6.pdf" },
+  { id: "a1", name: "Kasun Perera", title: "SAP S/4HANA Lead", location: "Colombo", company: "Virtusa", applied: "Applied 2 h ago", fit: 92, years: 9, skills: ["SAP S/4HANA","Finance","Leadership"], notice: 30, cv: "/cvs/s2.pdf" },
+  { id: "a2", name: "Ishara Fernando", title: "SAP Solution Architect", location: "Colombo", company: "Virtusa", applied: "Applied 5 h ago", fit: 88, years: 11, skills: ["SAP","Architecture","Integration"], notice: 60, cv: "/cvs/s3.pdf" },
+  { id: "a3", name: "Tharindu Silva", title: "SAP FICO Manager", location: "Katunayake", company: "Brandix", applied: "Applied yesterday", fit: 77, years: 4, skills: ["SAP FICO","Finance","Reporting"], notice: 0, cv: "/cvs/s4.pdf", lockedBy: "Hasini" },
+  { id: "a4", name: "Ruwan Bandara", title: "SAP Project Manager", location: "Colombo", company: "Hemas", applied: "Applied yesterday", fit: 74, years: 6, skills: ["SAP","Project management","Rollouts"], notice: 90, cv: "/cvs/s6.pdf" },
 ];
 const NONE = (): Record<Tab, Applicant[]> => ({ new: [], shortlisted: [], notfit: [] });
 const ZERO = (): Record<Tab, number> => ({ new: 0, shortlisted: 0, notfit: 0 });
@@ -109,7 +109,6 @@ const TABS: [Tab, string][] = [
   ["notfit", "Not a fit"],
 ];
 const STATUS_LABEL: Record<Status, string> = { draft: "Draft", live: "Live", paused: "Paused", closed: "Closed" };
-const CHANNEL_LABEL: Record<Channel, string> = { linkedin: "LinkedIn job", facebook: "Meta campaign (WhatsApp)", email_campaign: "Email campaign" };
 const ALL = "all";
 
 const initials = (name: string) =>
@@ -171,8 +170,24 @@ export default function LinkedInJobView() {
   useSwap(side, `${chosen}-${tab}`);
   // The TA System's list tools, as in Scoops: search and filters on Apply (or Enter),
   // tick several by their initials and Shortlist selected, a click reads the CV.
-  const [draft, setDraft] = useState({ q: "", exp: "", notice: "" });
-  const [applied, setApplied] = useState(draft);
+  const [draft, setDraft] = useState({ q: "", exp: "", fit: "" });
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  // "Shortlist selected" turns the tickboxes on; the button then shows the count and
+  // runs the shortlist, with a drawn tick (as in Scoops).
+  const [selecting, setSelecting] = useState(false);
+  const [done, setDone] = useState(false);
+  const tickPath = useRef<SVGPathElement>(null);
+  useEffect(() => {
+    const p = tickPath.current;
+    if (!done || !p) return;
+    const len = p.getTotalLength();
+    gsap.fromTo(p, { strokeDasharray: len, strokeDashoffset: len }, { strokeDashoffset: 0, duration: DUR.base, ease: EASE.out });
+    const t = setTimeout(() => {
+      setDone(false);
+      setSelecting(false);
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [done]);
   const [picked, setPicked] = useState<string[]>([]);
   const [reading, setReading] = useState<Applicant | null>(null);
   const [readingOpen, setReadingOpen] = useState(false);
@@ -190,10 +205,10 @@ export default function LinkedInJobView() {
   const rows: { a: Applicant; postId: string; postTitle: string }[] = (all ? posts : post ? [post] : []).flatMap((p) =>
     p.applicants[tab].map((a) => ({ a, postId: p.id, postTitle: p.title })),
   );
-  const q = applied.q.trim().toLowerCase();
+  const q = draft.q.trim().toLowerCase();
   const shown = rows.filter(
     ({ a }) =>
-      (!q || [a.name, a.title, a.company].some((t) => t.toLowerCase().includes(q))) && inRange(a.years, applied.exp) && inRange(a.notice, applied.notice),
+      (!q || [a.name, a.title, a.company].some((t) => t.toLowerCase().includes(q))) && inRange(a.years, draft.exp) && a.fit >= Number(draft.fit || 0),
   );
   const keyOf = (postId: string, a: Applicant) => postId + ":" + a.id;
   const free = (a: Applicant) => tab === "new" && !a.lockedBy && !gate;
@@ -234,6 +249,7 @@ export default function LinkedInJobView() {
       }));
     }
     setPicked([]);
+    setDone(true);
     say(`${pickable.length} candidate${pickable.length === 1 ? "" : "s"}`, ` shortlisted as set ${OPEN_SET} - moved to TA Follow-Up`);
   };
 
@@ -295,7 +311,6 @@ export default function LinkedInJobView() {
               <button type="button" onClick={() => openDialog("new")} className="flex items-center gap-1.5 text-small font-medium text-brand hover:opacity-70">
                 <PlusIcon /> Add a post
               </button>
-              <SubjectTester posts={posts} />
             </span>
           </div>
           {/* The opening's numbers in one quiet line. */}
@@ -342,7 +357,7 @@ export default function LinkedInJobView() {
         </aside>
 
         {/* The chosen post (or all posts). Its left border is the design's divider. */}
-        <section ref={side} className="mt-[max(0.7rem,0px)] md:mt-[1.75rem] flex min-h-0 flex-col gap-[max(1.25rem,12px)] short:overflow-y-auto short:[scrollbar-width:thin] border-l border-border pl-[max(1.875rem,14px)] max-md:mt-0 max-md:border-l-0 max-md:pl-0">
+        <section ref={side} className="mt-[max(0.7rem,0px)] md:mt-[3.1rem] flex min-h-0 flex-col gap-[max(1.25rem,12px)] short:overflow-y-auto short:[scrollbar-width:thin] border-l border-border pl-[max(1.875rem,14px)] max-md:mt-0 max-md:border-l-0 max-md:pl-0">
           {gate && <WorkdayBlocked what="shortlist applicants" />}
           {post ? (
             <PostHeader
@@ -388,48 +403,85 @@ export default function LinkedInJobView() {
               <input
                 value={draft.q}
                 onChange={(e) => setDraft((d) => ({ ...d, q: e.target.value }))}
-                onKeyDown={(e) => e.key === "Enter" && setApplied(draft)}
                 placeholder="Search by name, title or company"
                 aria-label="Search the applicants"
                 className="min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-ink-3"
               />
             </label>
-            <PillMenu options={EXPERIENCE} initial="" onChange={(exp) => setDraft((d) => ({ ...d, exp }))} mark="tick" pillClass={FIELD_PILL + " text-ink-2"} />
-            <PillMenu options={NOTICE} initial="" onChange={(notice) => setDraft((d) => ({ ...d, notice }))} mark="tick" pillClass={FIELD_PILL + " text-ink-2"} />
-            <button type="button" onClick={() => setApplied(draft)} className="h-[max(2.6rem,34px)] rounded-full border-[1.5px] border-brand px-[max(1.2rem,13px)] text-small font-medium text-brand transition-colors hover:bg-brand hover:text-white">
-              Apply
+            <button
+              type="button"
+              onClick={() => setFiltersOpen((v) => !v)}
+              aria-expanded={filtersOpen}
+              className={FIELD_PILL + " text-ink-2 hover:border-border-strong hover:text-ink aria-expanded:border-border-strong aria-expanded:text-ink"}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="size-[1.1em]" aria-hidden="true">
+                <path d="M4 6h16M7 12h10M10 18h4" />
+              </svg>
+              Filters{draft.exp || draft.fit ? ` · ${(draft.exp ? 1 : 0) + (draft.fit ? 1 : 0)}` : ""}
             </button>
             <span className="text-small text-ink-3">{shown.length} shown</span>
-            {tab === "new" && (
-              <button
-                type="button"
-                disabled={!pickable.length}
-                onClick={shortlistPicked}
-                title={pickable.length ? undefined : "Tick people by their initials first"}
-                className="ml-auto h-[max(2.6rem,34px)] rounded-full border border-border-strong bg-surface px-[max(1.2rem,13px)] text-small font-medium text-ink transition-colors hover:border-brand hover:bg-brand hover:text-white disabled:pointer-events-none disabled:opacity-50"
-              >
-                Shortlist selected{pickable.length ? ` (${pickable.length})` : ""}
-              </button>
-            )}
-          </div>
-
-          <ul className="min-h-0 flex-1 space-y-[max(1.25rem,10px)] overflow-y-auto pb-2 [scrollbar-width:none] short:flex-none short:overflow-visible">
-            {(fullKey === listKey ? shown : shown.slice(0, 8)).map(({ a, postId, postTitle }) => (
-              <li key={postId + a.id} className="flex flex-wrap items-center gap-x-[max(1.125rem,10px)] gap-y-3 rounded-md border border-border bg-surface px-[max(1.375rem,12px)] py-4 shadow-card">
-                {/* The initials tick the row for Shortlist selected (as in Scoops). */}
+            {tab === "new" &&
+              (selecting ? (
+                <span className="ml-auto flex items-center gap-2">
+                  {!done && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelecting(false);
+                        setPicked([]);
+                      }}
+                      className="h-[max(2.6rem,34px)] rounded-full px-[max(1rem,12px)] text-small text-ink-2 hover:bg-surface-2 hover:text-ink"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled={!pickable.length && !done}
+                    onClick={() => !done && shortlistPicked()}
+                    className={
+                      "flex h-[max(2.6rem,34px)] items-center gap-2 rounded-full px-[max(1.2rem,13px)] text-small font-medium text-white transition-colors disabled:pointer-events-none disabled:opacity-50 " +
+                      (done ? "bg-success" : "bg-brand hover:bg-brand-strong")
+                    }
+                  >
+                    {done ? (
+                      <>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" className="size-[1.2em]" aria-hidden="true">
+                          <path ref={tickPath} d="m5 12.5 4.5 4.5L19 7.5" />
+                        </svg>
+                        Shortlisted
+                      </>
+                    ) : (
+                      `Shortlist · ${pickable.length} selected`
+                    )}
+                  </button>
+                </span>
+              ) : (
                 <button
                   type="button"
-                  disabled={!free(a)}
-                  aria-pressed={picked.includes(keyOf(postId, a))}
-                  aria-label={`Select ${a.name}`}
-                  onClick={() => setPicked((p) => (p.includes(keyOf(postId, a)) ? p.filter((k) => k !== keyOf(postId, a)) : [...p, keyOf(postId, a)]))}
-                  className={
-                    "flex size-[max(3rem,36px)] shrink-0 items-center justify-center rounded-full text-body font-medium transition-colors disabled:cursor-default " +
-                    (picked.includes(keyOf(postId, a)) && free(a) ? "bg-brand text-white" : "bg-info-soft text-info enabled:hover:bg-info/20")
-                  }
+                  onClick={() => setSelecting(true)}
+                  className="ml-auto h-[max(2.6rem,34px)] rounded-full border border-border-strong bg-surface px-[max(1.2rem,13px)] text-small font-medium text-ink transition-colors hover:border-brand hover:bg-brand hover:text-white"
                 >
-                  {picked.includes(keyOf(postId, a)) && free(a) ? <Tick /> : initials(a.name)}
+                  Shortlist selected
                 </button>
+              ))}
+          </div>
+
+          <div className="flex min-h-0 flex-1 gap-[max(1.25rem,12px)] short:flex-none max-md:flex-col">
+          <ul className="min-h-0 min-w-0 flex-1 space-y-[max(1.25rem,10px)] overflow-y-auto pb-2 [scrollbar-width:none] short:flex-none short:overflow-visible">
+            {(fullKey === listKey ? shown : shown.slice(0, 8)).map(({ a, postId, postTitle }) => (
+              <li key={postId + a.id} className="flex flex-wrap items-center gap-x-[max(1.125rem,10px)] gap-y-3 rounded-md border border-border bg-surface px-[max(1.375rem,12px)] py-4 shadow-card">
+                {selecting && (
+                  <input
+                    type="checkbox"
+                    disabled={!free(a)}
+                    checked={picked.includes(keyOf(postId, a))}
+                    aria-label={`Select ${a.name}`}
+                    onChange={() => setPicked((p) => (p.includes(keyOf(postId, a)) ? p.filter((k) => k !== keyOf(postId, a)) : [...p, keyOf(postId, a)]))}
+                    className="size-[max(1.15rem,16px)] shrink-0 cursor-pointer accent-brand disabled:cursor-default disabled:opacity-30"
+                  />
+                )}
+                <span className="flex size-[max(3rem,36px)] shrink-0 items-center justify-center rounded-full bg-info-soft text-body font-medium text-info">{initials(a.name)}</span>
                 {/* The name opens the CV, with Download in its corner. */}
                 <button
                   type="button"
@@ -444,10 +496,20 @@ export default function LinkedInJobView() {
                 >
                   <span className="block truncate text-h3 font-medium text-ink hover:text-brand">{a.name}</span>
                   <span className="block truncate text-small text-ink-2">{a.title}</span>
+                  {a.skills && (
+                    <span className="mt-1 flex flex-wrap gap-1">
+                      {a.skills.slice(0, 3).map((k) => (
+                        <span key={k} className="rounded-full bg-surface-2 px-2 py-0.5 text-caption text-ink-2">
+                          {k}
+                        </span>
+                      ))}
+                    </span>
+                  )}
                 </button>
                 <div className="flex shrink-0 flex-col gap-1 text-small text-ink-2">
                   <p>L : {a.location}</p>
                   <p>C : {a.company}</p>
+                  <p>E : {a.years} years</p>
                 </div>
                 <div aria-hidden="true" className="min-w-px flex-1 max-md:hidden" />
                 <span className={CAPTION + " text-ink-3"}>
@@ -488,6 +550,8 @@ export default function LinkedInJobView() {
             )}
             {shown.length === 0 && <li className="pt-8 text-center text-small text-ink-3">{rows.length ? "No applicant matches these filters." : "No applicants here."}</li>}
           </ul>
+          {filtersOpen && <FilterDrawer value={draft} onChange={(v) => setDraft((d) => ({ ...d, ...v }))} onClose={() => setFiltersOpen(false)} />}
+          </div>
         </section>
       </div>
 
@@ -565,7 +629,7 @@ function PostHeader({
     <>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-3">
         {post.channel === "linkedin" ? (
-          <Image src="/li.svg" alt="LinkedIn" width={21} height={21} className="size-[max(1.3125rem,18px)] shrink-0 object-contain" />
+          <LinkedInIcon className="size-[max(1.5rem,20px)]" />
         ) : (
           <span className={CHIP + " bg-violet-soft text-violet"}>{post.channel === "facebook" ? "Meta" : "Email"}</span>
         )}
@@ -576,7 +640,7 @@ function PostHeader({
             {post.status === "live" ? "Pause" : post.status === "closed" ? "Reopen" : post.status === "draft" ? "Go live" : "Resume"}
           </button>
           <MoveCvs why={moveWhy} targets={targets} onMove={onMove} />
-          {canEdit && <PostMenu post={post} onEdit={onEdit} onClose={() => onStatus("closed")} onDelete={onDelete} />}
+          {canEdit && <PostMenu post={post} reopenWhy={liveWhy} onEdit={onEdit} onClose={() => onStatus("closed")} onReopen={() => onStatus("live")} onDelete={onDelete} />}
         </div>
       </div>
       {noRights ? (
@@ -625,7 +689,7 @@ function Detail({ label, value, wide, missing, link }: { label: string; value: s
  *  Escape closes it. */
 
 const MENU = "absolute right-0 top-full z-30 mt-2 min-w-[max(14rem,180px)] rounded-md border border-border bg-surface p-1.5 shadow-float";
-const ITEM = "flex w-full items-center rounded-sm px-3 py-2 text-left text-small text-ink hover:bg-surface-2";
+const ITEM = "flex w-full items-center gap-2.5 rounded-sm px-3 py-2 text-left text-small text-ink hover:bg-surface-2";
 
 /** Move CVs to another post: the design's button, opening the live posts to move into. */
 function MoveCvs({ why, targets, onMove }: { why: string; targets: Post[]; onMove: (to: Post) => void }) {
@@ -662,7 +726,7 @@ function MoveCvs({ why, targets, onMove }: { why: string; targets: Post[]; onMov
 }
 
 /** The post's ⋯ menu: Edit, Close, Delete (Delete asks once more). */
-function PostMenu({ post, onEdit, onClose, onDelete }: { post: Post; onEdit: () => void; onClose: () => void; onDelete: () => void }) {
+function PostMenu({ post, reopenWhy, onEdit, onClose, onReopen, onDelete }: { post: Post; reopenWhy: string; onEdit: () => void; onClose: () => void; onReopen: () => void; onDelete: () => void }) {
   const { open, setOpen, root, panel, shown } = useLiftMenu();
   const [sure, setSure] = useState(false);
   const pick = (fn: () => void) => () => {
@@ -690,14 +754,22 @@ function PostMenu({ post, onEdit, onClose, onDelete }: { post: Post; onEdit: () 
       {shown && (
         <div ref={panel} role="menu" className={MENU}>
           <button type="button" role="menuitem" onClick={pick(onEdit)} className={ITEM}>
+            <MenuIcon d="M4 20h4L19 9l-4-4L4 16v4ZM13.5 6.5l4 4" />
             Edit post
           </button>
-          {post.status !== "closed" && (
+          {post.status !== "closed" ? (
             <button type="button" role="menuitem" onClick={pick(onClose)} className={ITEM}>
+              <MenuIcon d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM9 9l6 6M15 9l-6 6" />
               Close post
             </button>
+          ) : (
+            <button type="button" role="menuitem" disabled={!!reopenWhy} title={reopenWhy || undefined} onClick={pick(onReopen)} className={ITEM + " disabled:cursor-default disabled:text-ink-3"}>
+              <MenuIcon d="M4 12a8 8 0 1 0 2.5-5.8M4 4v4.5h4.5" />
+              Reopen post
+            </button>
           )}
-          <button type="button" role="menuitem" onClick={sure ? pick(onDelete) : () => setSure(true)} className={ITEM + " text-danger"}>
+          <button type="button" role="menuitem" onClick={sure ? pick(onDelete) : () => setSure(true)} className={ITEM.replace("text-ink hover:bg-surface-2", "text-danger hover:bg-danger-soft")}>
+            <MenuIcon d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />
             {sure ? "Click again to delete · candidates stay on the opening" : "Delete post"}
           </button>
         </div>
@@ -714,8 +786,8 @@ function PostDialog({ ref: root, post, titles, onClose, onSave }: { ref: RefObje
   const me = useMe();
   const JD_APPROVED = useJdApproved();
   const [title, setTitle] = useState(post?.title ?? "");
-  const [channel, setChannel] = useState<Channel>(post?.channel ?? "linkedin");
-  const [liveNow, setLiveNow] = useState(JD_APPROVED);
+  const channel: Channel = post?.channel ?? "linkedin";
+  const liveNow = JD_APPROVED;
   useGSAP(
     () => {
       gsap.from("[data-veil]", { opacity: 0, duration: DUR.fast });
@@ -791,7 +863,7 @@ function PostDialog({ ref: root, post, titles, onClose, onSave }: { ref: RefObje
         role="dialog"
         aria-modal="true"
         aria-labelledby="post-title"
-        className="relative max-h-[calc(100dvh-32px)] w-[max(32rem,340px)] max-w-[calc(100vw-32px)] overflow-y-auto rounded-xl bg-surface px-[max(2.25rem,22px)] pb-[max(2.25rem,22px)] pt-[max(2rem,20px)] shadow-float"
+        className="relative max-h-[calc(100dvh-32px)] w-[max(32rem,340px)] max-w-[calc(100vw-32px)] overflow-y-auto rounded-lg bg-surface px-[max(2.25rem,22px)] pb-[max(2.25rem,22px)] pt-[max(2rem,20px)] shadow-float"
       >
         <h2 id="post-title" className="flex items-center gap-1.5 text-small font-medium text-brand">
           {isNew && <PlusIcon />}
@@ -802,24 +874,6 @@ function PostDialog({ ref: root, post, titles, onClose, onSave }: { ref: RefObje
             <span className={CAPTION + " mb-1 block pl-3 text-ink-3"}>Title candidates will see</span>
             <input autoFocus name="title" value={title} onChange={(e) => (e.target.setCustomValidity(""), setTitle(e.target.value))} placeholder="Job Name" aria-label="Job Name" className={FIELD} />
           </label>
-          {isNew && (
-            <div className="flex flex-wrap items-end gap-3">
-              <label className="block min-w-[12rem] flex-1">
-                <span className={CAPTION + " mb-1 block pl-3 text-ink-3"}>Where it is posted</span>
-                <select value={channel} onChange={(e) => setChannel(e.target.value as Channel)} className={FIELD + " cursor-pointer"}>
-                  {(Object.keys(CHANNEL_LABEL) as Channel[]).map((c) => (
-                    <option key={c} value={c}>
-                      {CHANNEL_LABEL[c]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className={"flex h-[max(2.375rem,40px)] items-center gap-2 text-small " + (JD_APPROVED ? "text-ink" : "text-ink-3")} title={JD_APPROVED ? undefined : "The job description is not approved yet"}>
-                <input type="checkbox" checked={liveNow} disabled={!JD_APPROVED} onChange={(e) => setLiveNow(e.target.checked)} className="size-4 accent-brand" />
-                It is live now
-              </label>
-            </div>
-          )}
           {channel === "linkedin" ? (
             <>
               {field("recruiterLink", "Recruiter link · files applications to this post", post?.recruiterLink, "linkedin.com/talent/hire/…")}
@@ -831,19 +885,24 @@ function PostDialog({ ref: root, post, titles, onClose, onSave }: { ref: RefObje
               {channel === "facebook" ? "Put it in the ad's pre-filled WhatsApp message." : "Ask applicants to put it in the email subject."}
             </p>
           )}
-          {field("aliases", "Also known as · old or boosted titles, comma between", post?.aliases.join(", "), "SAP Lead, S/4 Lead")}
-          <div className="grid grid-cols-2 gap-3">
-            {field("city", "City", post?.city, "Colombo")}
-            {field("country", "Country", post?.country, "Sri Lanka")}
-          </div>
-          <label className="block">
-            <span className={CAPTION + " mb-1 block pl-3 text-ink-3"}>Recruiter</span>
-            <select name="owner" defaultValue={post?.owner ?? me.first} disabled={!me.lead} title={me.lead ? undefined : "Only a TA Lead can give a post to another TA"} className={FIELD + " cursor-pointer"}>
-              {TEAM.map((t) => (
-                <option key={t}>{t}</option>
-              ))}
-            </select>
-          </label>
+          {!isNew && (
+            <>
+              {field("aliases", "Also known as · old or boosted titles, comma between", post?.aliases.join(", "), "SAP Lead, S/4 Lead")}
+              <div className="grid grid-cols-2 gap-3">
+                {field("city", "City", post?.city, "Colombo")}
+                {field("country", "Country", post?.country, "Sri Lanka")}
+              </div>
+              <label className="block">
+                <span className={CAPTION + " mb-1 block pl-3 text-ink-3"}>Recruiter</span>
+                <select name="owner" defaultValue={post?.owner ?? me.first} disabled={!me.lead} title={me.lead ? undefined : "Only a TA Lead can give a post to another TA"} className={FIELD + " cursor-pointer"}>
+                  {TEAM.map((t) => (
+                    <option key={t}>{t}</option>
+                  ))}
+                </select>
+              </label>
+            </>
+          )}
+
           <div className="mt-1 flex justify-end gap-3">
             <button type="button" onClick={onClose} className={GHOST}>
               Cancel
@@ -859,93 +918,55 @@ function PostDialog({ ref: root, post, titles, onClose, onSave }: { ref: RefObje
   );
 }
 
-/** Which post would an application email go to? The TA System files it by the
- *  LinkedIn job's number, then the title, then the other names, then a campaign's
- *  code. A small check behind the Posts ⋯ button (the old "Test a subject"). */
-function routeOf(subject: string, posts: Post[]) {
-  const s = subject.toLowerCase();
-  const live = posts.filter((p) => p.status === "live");
-  const num = (link: string) => link.match(/\d{6,}/)?.[0];
-  for (const p of live) {
-    const n = num(p.recruiterLink);
-    if (n && s.includes(n)) return { post: p, why: "its Recruiter link's number" };
-  }
-  for (const p of live) if (p.code && s.includes(p.code.toLowerCase())) return { post: p, why: "its campaign code" };
-  for (const p of live) if (s.includes(p.title.toLowerCase())) return { post: p, why: "its title" };
-  for (const p of live) {
-    const alias = p.aliases.find((x) => s.includes(x.toLowerCase()));
-    if (alias) return { post: p, why: `the other name "${alias}"` };
-  }
-  return null;
-}
-
-function SubjectTester({ posts }: { posts: Post[] }) {
-  const { open, setOpen, root, panel, shown } = useLiftMenu();
-  const [testing, setTesting] = useState(false);
-  const [subject, setSubject] = useState("");
-  const hit = subject.trim() ? routeOf(subject, posts) : undefined;
-  return (
-    <div ref={root} className="relative">
-      <button
-        type="button"
-        aria-label="More for posts"
-        aria-expanded={open}
-        onClick={() => {
-          setTesting(false);
-          setOpen((o) => !o);
-        }}
-        className="flex size-[max(1.9rem,26px)] items-center justify-center rounded-full text-ink-2 hover:bg-surface-2 hover:text-ink"
-      >
-        <svg viewBox="0 0 24 24" fill="currentColor" className="size-[1em]" aria-hidden="true">
-          <circle cx="5" cy="12" r="1.8" />
-          <circle cx="12" cy="12" r="1.8" />
-          <circle cx="19" cy="12" r="1.8" />
-        </svg>
-      </button>
-      {shown && (
-        <div ref={panel} role="menu" className={MENU + (testing ? " w-[max(22rem,280px)]" : "")}>
-          {!testing ? (
-            <button type="button" role="menuitem" onClick={() => setTesting(true)} className={ITEM}>
-              Test an application subject
-            </button>
-          ) : (
-            <div className="p-2">
-              <p className="text-caption font-medium text-ink-3">Paste an application email&rsquo;s subject</p>
-              <input
-                autoFocus
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                placeholder="New application: Head of Finance from Nimal Perera"
-                aria-label="An application email's subject"
-                className="mt-1.5 h-[max(2.4rem,32px)] w-full rounded-full border border-border px-3 text-small text-ink outline-none placeholder:text-ink-3 focus:ring-2 focus:ring-brand/30"
-              />
-              {hit !== undefined && (
-                <p className={"mt-2 text-small " + (hit ? "text-success" : "text-warn")}>
-                  {hit ? (
-                    <>
-                      Goes to <b className="font-medium">{hit.post.title}</b>, by {hit.why}.
-                    </>
-                  ) : (
-                    "No live post matches - it would go to the database."
-                  )}
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-const Tick = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" className="size-1/2" aria-hidden="true">
-    <path d="m5 12.5 4.5 4.5L19 7.5" />
-  </svg>
-);
-
 const PlusIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" className="size-[max(1rem,14px)]" aria-hidden="true">
     <path d="M12 5v14M5 12h14" />
   </svg>
 );
+
+const MenuIcon = ({ d }: { d: string }) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className="size-[1.1em] shrink-0" aria-hidden="true">
+    <path d={d} />
+  </svg>
+);
+
+/** The applicant filters, opening from the right side of the list: the list gives way
+ *  and gets narrower. Filters take effect as they are chosen. */
+function FilterDrawer({ value, onChange, onClose }: { value: { exp: string; fit: string }; onChange: (v: Partial<{ exp: string; fit: string }>) => void; onClose: () => void }) {
+  const box = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    if (box.current) gsap.from(box.current, { width: 0, opacity: 0, duration: DUR.base, ease: EASE.out, clearProps: "width,opacity" });
+  }, []);
+  const group = (label: string, name: "exp" | "fit", opts: { value: string; label: string }[]) => (
+    <fieldset className="flex flex-col gap-1">
+      <legend className="mb-1 text-caption font-medium text-ink-3">{label}</legend>
+      {opts.map((o) => (
+        <label key={o.value} className="flex cursor-pointer items-center gap-2.5 rounded-sm px-2 py-1.5 text-small text-ink hover:bg-surface-2">
+          <input type="radio" name={name} checked={value[name] === o.value} onChange={() => onChange({ [name]: o.value })} className="accent-brand" />
+          {o.label}
+        </label>
+      ))}
+    </fieldset>
+  );
+  return (
+    <aside ref={box} aria-label="Filters" onKeyDown={(e) => e.key === "Escape" && onClose()} className="flex w-[max(17rem,220px)] shrink-0 flex-col gap-4 overflow-y-auto rounded-md border border-border bg-surface p-4 max-md:w-auto">
+      <div className="flex items-center gap-2">
+        <p className="text-h3 font-medium text-ink">Filters</p>
+        <button type="button" onClick={() => onChange({ exp: "", fit: "" })} disabled={!value.exp && !value.fit} className="ml-auto text-small font-medium text-brand disabled:text-ink-3">
+          Clear all
+        </button>
+        <button type="button" onClick={onClose} aria-label="Close filters" className="flex size-7 items-center justify-center rounded-full text-ink-3 hover:bg-surface-2 hover:text-ink">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" className="size-3.5" aria-hidden="true">
+            <path d="M6 6l12 12M18 6 6 18" />
+          </svg>
+        </button>
+      </div>
+      {group("Experience", "exp", EXPERIENCE.map((o) => ({ value: o.value, label: o.label })))}
+      {group("Fit", "fit", [
+        { value: "", label: "Any fit" },
+        { value: "80", label: "Strong fit · 80 or more" },
+        { value: "60", label: "60 or more" },
+      ])}
+    </aside>
+  );
+}

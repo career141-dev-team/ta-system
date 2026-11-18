@@ -49,19 +49,6 @@ const JOBS: MenuOption[] = [
   { value: "all", label: "All my jobs", pillLabel: "All jobs" },
   { value: "this", label: "This job only" },
 ];
-const RECRUITERS: MenuOption[] = [
-  { value: "", label: "All recruiters", pillLabel: "Recruiter" },
-  { value: "mine", label: "Mine", hint: "Candidates you own" },
-  { value: "none", label: "Not owned yet", hint: "Nobody has shortlisted them" },
-];
-const PRIORITIES: MenuOption[] = [
-  { value: "", label: "All priorities", pillLabel: "Priority" },
-  { value: "P1", label: "P1", hint: "Fill in 2 weeks" },
-  { value: "P2", label: "P2", hint: "Fill in 3 weeks" },
-  { value: "P3", label: "P3", hint: "Fill in 1 month" },
-  { value: "P4", label: "P4", hint: "Fill in 1.5 months" },
-  { value: "P5", label: "P5", hint: "Fill in 2 months" },
-];
 const SOURCES: MenuOption[] = [
   { value: "", label: "All sources", pillLabel: "Source" },
   { value: "DA", label: "Direct applicant", hint: "Snippet, WhatsApp status or channel" },
@@ -75,12 +62,6 @@ const SOURCES: MenuOption[] = [
 const CHANNELS = SOURCES.slice(1).map((o) => o.value);
 // The TA System's own three list filters (CandidateList.tsx), which the design's
 // toolbar did not carry (FLOW-CHECK 2.11).
-const EXPERIENCE: MenuOption[] = [
-  { value: "", label: "Any experience", pillLabel: "Experience" },
-  { value: "5", label: "5+ years" },
-  { value: "10", label: "10+ years" },
-  { value: "15", label: "15+ years" },
-];
 const NOTICE: MenuOption[] = [
   { value: "", label: "Any notice", pillLabel: "Notice" },
   { value: "30", label: "30 days or less" },
@@ -93,8 +74,6 @@ const MARKS: MenuOption[] = [
   { value: "neither", label: "Neither" },
 ];
 
-/** Placeholder: this opening's priority tier, until it comes from the backend. */
-const OPENING_TIER = "P2";
 
 type Card = Person & {
   id: string;
@@ -216,10 +195,6 @@ export default function PipelineBoard() {
   // never waits on seven columns being drawn again.
   const searched = useDeferredValue(q);
   const [job, setJob] = useState("all");
-  const [recruiter, setRecruiter] = useState("");
-  const [priority, setPriority] = useState("");
-  const [source, setSource] = useState("");
-  const [exp, setExp] = useState("");
   const [noticeMax, setNoticeMax] = useState("");
   const [marks, setMarks] = useState("");
 
@@ -660,20 +635,15 @@ export default function PipelineBoard() {
   });
 
   const query = searched.trim().toLowerCase();
-  const filtering = !!(query || recruiter || priority || source || exp || noticeMax || marks);
+  const filtering = !!(query || noticeMax || marks);
   // ponytail: filters the sample cards in the browser; with the backend each
   // filter is part of the column's indexed, paged query instead.
   const match = useCallback(
     (p: Card) =>
       (!query || [p.name, p.title, p.company].some((s) => s.toLowerCase().includes(query))) &&
-      (recruiter !== "mine" || p.mine) &&
-      (recruiter !== "none" || !p.owned) &&
-      (!priority || priority === OPENING_TIER) &&
-      (!source || p.channel === source) &&
-      (!exp || p.yearsN >= Number(exp)) &&
       (!noticeMax || p.noticeDays <= Number(noticeMax)) &&
       (!marks || (marks === "addOn" ? !!p.addOn : marks === "backup" ? !!p.backup : !p.addOn && !p.backup)),
-    [query, recruiter, priority, source, exp, noticeMax, marks],
+    [query, noticeMax, marks],
   );
   // Each column's cards, worked out again only when the board or a filter changes.
   const columns = useMemo(
@@ -717,13 +687,9 @@ export default function PipelineBoard() {
           />
         </label>
         <PillMenu options={JOBS} initial={job} onChange={setJob} mark="tick" pillClass={TOOL_PILL} />
-        <PillMenu options={RECRUITERS} initial={recruiter} onChange={setRecruiter} mark="tick" pillClass={TOOL_PILL} />
-        <PillMenu options={PRIORITIES} initial={priority} onChange={setPriority} mark="tick" pillClass={TOOL_PILL} />
-        <PillMenu options={SOURCES} initial={source} onChange={setSource} mark="tick" pillClass={TOOL_PILL} />
         {/* The Figma list view keeps only the first four filters. */}
         {mode === "board" && (
           <>
-            <PillMenu options={EXPERIENCE} initial={exp} onChange={setExp} mark="tick" pillClass={TOOL_PILL} />
             <PillMenu options={NOTICE} initial={noticeMax} onChange={setNoticeMax} mark="tick" pillClass={TOOL_PILL} />
             <PillMenu options={MARKS} initial={marks} onChange={setMarks} mark="tick" pillClass={TOOL_PILL} />
           </>
@@ -1039,7 +1005,7 @@ const CandidateCard = memo(function CandidateCard({
         if (e.currentTarget.dataset.dragged) return;
         onOpenCv(p);
       }}
-      className="cursor-grab select-none rounded-md border border-border bg-white p-[max(1rem,12px)] data-[locked]:cursor-default data-[locked]:bg-canvas"
+      className="cursor-grab select-none rounded-md border border-border bg-white p-[max(1rem,12px)] data-[locked]:cursor-default"
     >
       <div className="flex items-start gap-[max(0.6rem,7px)]">
         <span className="flex size-[max(2.4rem,32px)] shrink-0 items-center justify-center rounded-full bg-info-soft text-chip font-semibold text-info">
@@ -1240,9 +1206,9 @@ const stroke = {
   "aria-hidden": true,
 };
 
-function LinkedInIcon() {
+export function LinkedInIcon({ className = "size-[max(1.25rem,16px)]" }: { className?: string } = {}) {
   return (
-    <svg viewBox="0 0 24 24" className="size-[max(1.25rem,16px)] shrink-0" aria-label="LinkedIn">
+    <svg viewBox="0 0 24 24" className={className + " shrink-0"} aria-label="LinkedIn">
       <rect width="24" height="24" rx="3" fill="#0a66c2" />
       <path
         fill="#fff"
