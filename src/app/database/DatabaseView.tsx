@@ -348,7 +348,7 @@ export default function DatabaseView() {
                 setMode(k);
                 newSearch();
               }}
-              className={"flex items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors max-md:items-center max-md:rounded-full max-md:py-1.5 " + (mode === k ? "bg-brand-soft text-brand" : "text-ink-2 hover:bg-surface-2 hover:text-ink")}
+              className={"flex items-start gap-2.5 rounded-sm px-2.5 py-2 text-left transition-colors max-md:items-center max-md:rounded-full max-md:py-1.5 " + (mode === k ? "bg-brand-soft text-brand" : "text-ink-2 hover:bg-surface-2 hover:text-ink")}
             >
               <span className="mt-0.5 shrink-0 max-md:mt-0">{icon}</span>
               <span className="min-w-0">

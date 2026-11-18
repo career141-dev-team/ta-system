@@ -168,15 +168,15 @@ export default function PillMenu({
         <div
           ref={panel}
           role="menu"
-          className="w-[max(15rem,200px)] rounded-2xl border border-border bg-white py-2 shadow-float"
+          className="w-[max(15rem,200px)] rounded-md border border-border bg-surface p-1.5 shadow-float"
         >
-          {title && <p className="px-4 pb-1 pt-1.5 text-pill font-semibold text-ink-2">{title}</p>}
+          {title && <p className="px-3 pb-1 pt-1.5 text-pill font-semibold text-ink-2">{title}</p>}
           <div data-glide className="relative" onMouseLeave={(e) => glide.out(glowOf(e.currentTarget))}>
             <span
               data-glow
               aria-hidden="true"
               style={{ opacity: 0 }}
-              className="pointer-events-none absolute inset-x-2 top-0 rounded-xl bg-surface-2"
+              className="pointer-events-none absolute inset-x-0 top-0 rounded-sm bg-surface-2"
             />
             {options.map((o) => (
               <button
@@ -190,7 +190,7 @@ export default function PillMenu({
                   setOpen(false);
                   onChange?.(o.value);
                 }}
-                className="relative flex w-full items-center gap-3 px-4 py-2 text-left"
+                className="relative flex w-full items-center gap-3 px-3 py-2 text-left"
               >
                 {o.dot && <Dot colour={o.dot} />}
                 <span className="min-w-0 flex-1">

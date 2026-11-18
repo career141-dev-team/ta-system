@@ -166,7 +166,7 @@ export default function Spotlight({
                   aria-selected={on}
                   onMouseMove={() => setAt(i)}
                   onClick={it.go}
-                  className={"flex w-full items-center gap-4 rounded-md px-4 py-3 text-left " + (on ? "bg-surface-2" : "")}
+                  className={"flex w-full items-center gap-4 rounded-sm px-4 py-3 text-left " + (on ? "bg-surface-2" : "")}
                 >
                   <Icon kind={it.icon} on={on} />
                   <span className="flex min-w-0 flex-1 flex-col">
