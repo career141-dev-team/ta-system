@@ -391,6 +391,7 @@ export function EodComposer({
   alreadyOut,
   openSetNote,
   needsResearchLink,
+  scoopsOnly = false,
   resend,
   submissionType = "eod",
   dailyDraft,
@@ -445,6 +446,8 @@ export function EodComposer({
   openSetNote: string | null;
   /** A TA's email to the directors must carry their ChatGPT research link (8 Oct); the server checks it too. */
   needsResearchLink: boolean;
+  /** Every candidate is a scoop: the link is optional (owner, 17 Nov). The server reads this again from the applications. */
+  scoopsOnly?: boolean;
   /** An email already sent, opened from its copy to correct and send again (8 Oct). */
   resend?: {
     copyId: string;
@@ -477,7 +480,7 @@ export function EodComposer({
   const [researchTouched, setResearchTouched] = useState(false);
   const researchCheck = validateResearchLink(researchLink);
   const [researchExcused, setResearchExcused] = useState(false);
-  const researchRequired = needsResearchLink && (midday || !!forDate || !(researchExcused && !researchLink.trim()));
+  const researchRequired = needsResearchLink && !scoopsOnly && (midday || !!forDate || !(researchExcused && !researchLink.trim()));
   const researchBlocked = research.saving || (researchRequired && (!researchCheck.ok || !researchConfirmed));
   const [shortlistDraft, setShortlistDraft] = useState<Record<string, CandidateDraft>>(() => candidateDraftsFromFields(initialRows, savedFields));
   // Added recipients are chips, like skills on LinkedIn: type the address, pick
@@ -691,6 +694,7 @@ export function EodComposer({
               <span className="font-normal text-ink-faint">(optional)</span>
             )}
           </h3>
+          {scoopsOnly && <p className="mt-2 text-xs text-ink-soft">Every candidate here is a scoop, so the link is not needed.</p>}
           {researchExcused && !researchLink.trim() && <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">Reason submitted in Today’s Checks. A link is excused for this workday.</p>}
           <p className="mt-1.5 max-w-[68ch] text-[12.5px] leading-relaxed text-ink-soft">
             Your TA Lead and the directors will open this from the email. In ChatGPT, open today&rsquo;s research

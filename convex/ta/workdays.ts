@@ -1276,7 +1276,7 @@ export const eodContext = internalQuery({
 });
 
 export const emailPreflight = internalMutation({
-  args: { actorId: v.string(), jobId: v.id("jobs"), link: v.string(), confirmed: v.boolean(), revised: v.optional(v.boolean()), workLocationId: v.optional(v.string()) },
+  args: { actorId: v.string(), jobId: v.id("jobs"), link: v.string(), confirmed: v.boolean(), revised: v.optional(v.boolean()), workLocationId: v.optional(v.string()), scoopsOnly: v.optional(v.boolean()) },
   handler: async (ctx, args) => {
     const user = await requireActor(ctx, args.actorId);
     if (!["ta", "ta_support"].includes(roleOf(user))) return { ok: true, blockers: [], workType: "100%" as const };
@@ -1287,7 +1287,8 @@ export const emailPreflight = internalMutation({
     await assignedJob(ctx, user, args.jobId);
     const link = validateResearchLink(args.link);
     const excused = !args.link.trim() && !!(await requiredChecks(ctx, day, entry)).eodChecks.find(c => c.key.startsWith("chatgpt:"))?.exception;
-    if (!excused && (!link.ok || !args.confirmed)) throw new Error(link.ok ? "Confirm your ChatGPT link before sending." : link.reason);
+    // Scoop CVs only (owner, 17 Nov): the link is not asked for; the server action read it from the applications.
+    if (!excused && !args.scoopsOnly && (!link.ok || !args.confirmed)) throw new Error(link.ok ? "Confirm your ChatGPT link before sending." : link.reason);
     if (link.ok && args.confirmed) {
       const notes = await ctx.db.query("taWorkdayCheckNotes").withIndex("by_user_job", q => q.eq("userId", user._id).eq("jobId", args.jobId)).first();
       const patch = { workdayId: day._id, chatgptLink: link.url, confirmedAt: notes?.workdayId === day._id && notes.chatgptLink === link.url ? notes.confirmedAt ?? Date.now() : Date.now(),

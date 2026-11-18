@@ -7,7 +7,7 @@ import { workdayDate } from "../../src/lib/workday";
 import { isEodCandidateEligible } from "../../src/lib/eodEligibility";
 import { workSessionStart } from "../../src/lib/workdayRequirements";
 import { dailySendProblem, sameCandidateList, EMAIL_RETENTION_MS, MISSED_EOD_DAYS, type DailyEmailSnapshot } from "../../src/lib/dailyEmail";
-import { validateResearchLink, checkResearchSubmission } from "../../src/lib/eod-format";
+import { validateResearchLink, checkResearchSubmission, scoopsOnly } from "../../src/lib/eod-format";
 import { dailyEmailsFor, finalizeDailyEmail, middayRequired } from "../lib/dailyEmail";
 import { requiredChecks } from "../lib/workdayChecks";
 import { refreshWorkdayChecks } from "./workdays";
@@ -35,6 +35,23 @@ async function workday(ctx: Ctx, user: Doc<"users">, jobId: Id<"jobs">) {
   if (worker(user) && (!day || day.date !== workdayDate(Date.now()) || !day.jobs.some(j => j.jobId === jobId)))
     throw new Error("Start today's workday and add this opening before sending.");
   return day?.date === workdayDate(Date.now()) && day.jobs.some(j => j.jobId === jobId) ? day : null;
+}
+
+/** "The candidate list changed" with the names (17 Nov): it named nobody, so a desk dropped out,
+ *  rejected and deleted the one candidate they had touched, again and again, while another blocked it. */
+async function listChanged(ctx: Ctx, onPage: readonly Id<"applications">[], ready: readonly Id<"applications">[]) {
+  const name = async (id: Id<"applications">) => {
+    const app = await ctx.db.get(id);
+    const person = app ? await ctx.db.get(app.candidateId) : null;
+    return person?.fullName?.trim() || "a candidate";
+  };
+  const say = async (ids: Id<"applications">[], what: string) =>
+    ids.length ? `${(await Promise.all(ids.map(name))).join(", ")} ${ids.length === 1 ? "is" : "are"} ${what}` : "";
+  const parts = [
+    await say(ready.filter(id => !onPage.includes(id)), "ready to send but not on your page"),
+    await say(onPage.filter(id => !ready.includes(id)), "on your page but no longer ready to send"),
+  ].filter(Boolean);
+  return `The candidate list changed${parts.length ? `: ${parts.join("; ")}` : ""}. Reload, review the updated list and send again.`;
 }
 
 export const saveAttachment = internalMutation({
@@ -194,11 +211,13 @@ export const begin = internalMutation({
       if (!file || file.userId !== user._id || file.jobId !== args.jobId || file.applicationId !== a.applicationId || !args.applicationIds.includes(file.applicationId)) throw new Error("The saved CV attachment does not belong to this email.");
     }
     const link = validateResearchLink(snapshot.researchLink);
+    // Every candidate a scoop: no ChatGPT link asked for (owner, 17 Nov). Read from the rows, not the caller.
+    const scoops = scoopsOnly(await Promise.all(args.applicationIds.map(id => ctx.db.get(id))));
     if (args.submissionType === "midday") {
-      if (!link.ok || !args.confirmed) throw new Error(link.ok ? "Confirm your ChatGPT link before sending." : link.reason);
+      if (!scoops && (!link.ok || !args.confirmed)) throw new Error(link.ok ? "Confirm your ChatGPT link before sending." : link.reason);
     } else {
       const check = checkResearchSubmission({ role: mapUser(user).role, kind: "director", link: snapshot.researchLink, confirmed: args.confirmed,
-        excused: !!setup?.eodChecks.find(c => c.key.startsWith("chatgpt:"))?.exception });
+        excused: !!setup?.eodChecks.find(c => c.key.startsWith("chatgpt:"))?.exception, scoopsOnly: scoops });
       if (!check.ok) throw new Error(check.reason);
     }
     if (!sameCandidateList(snapshot.rows.map(r => r.applicationId), args.applicationIds)) throw new Error("The email preview does not match its candidate list. Reload before sending.");
@@ -213,17 +232,16 @@ export const begin = internalMutation({
       const entry = day?.jobs.find(j => j.jobId === args.jobId);
       const currentWorkType = entry?.workType ?? "100%";
       const sessionStart = entry ? workSessionStart(entry) : null;
-      const eligible = apps.filter(a => inWorkLocation(a, locationId ?? "") && !sent.has(a._id) && (
-        args.submissionType === "eod"
-          ? isEodCandidateEligible({
-              stage: a.currentStage,
-              ownerTaId: a.ownerTaId,
-              isAddOn: a.isAddOn,
-              lastStageChangedAt: a.lastStageChangedAt,
-            }, { taId: worker(user) ? user._id : null, workType: currentWorkType, sessionStart, day: late ?? date })
-          : a.currentStage === "second_shortlist" && (!worker(user) || a.ownerTaId === user._id)
-      ));
-      if (!sameCandidateList(args.applicationIds, eligible.map(a => a._id))) throw new Error("The candidate list changed. Reload, review the updated list and send again.");
+      // Midday and EOD use the page's one rule (17 Nov). Midday used to take every unsent Director
+      // Review CV from any day while the page lists only today's, so one older CV - usually a missed
+      // end of day - refused every midday send for good, and no reload or drop-out could clear it.
+      const eligible = apps.filter(a => inWorkLocation(a, locationId ?? "") && !sent.has(a._id) && isEodCandidateEligible({
+        stage: a.currentStage,
+        ownerTaId: a.ownerTaId,
+        isAddOn: a.isAddOn,
+        lastStageChangedAt: a.lastStageChangedAt,
+      }, { taId: worker(user) ? user._id : null, workType: currentWorkType, sessionStart, day: late ?? date }));
+      if (!sameCandidateList(args.applicationIds, eligible.map(a => a._id))) throw new Error(await listChanged(ctx, args.applicationIds, eligible.map(a => a._id)));
       if (day && args.submissionType === "eod") {
         const blockers = setup!.eodChecks.filter(c => !["director_cv", "chatgpt", "midday_email"].includes(c.key.split(":")[0]) && c.status !== "complete" && !c.exception);
         if (blockers.length) throw new Error(`Complete Today's Checks: ${blockers.map(c => c.label).join("; ")}`);

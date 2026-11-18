@@ -245,7 +245,33 @@ async function main() {
   eq("in Sent Items -> found", await findSentMessage(["ta@career141.com"], "EOD 1", 0, token, sentItems([{ subject: " EOD 1 " }]).fetchImpl), "found");
   eq("not in Sent Items -> absent", await findSentMessage(["ta@career141.com", "job@career141.com"], "EOD 1", 0, token, sentItems([{ subject: "other" }]).fetchImpl), "absent");
   eq("Graph refuses -> unknown, never absent", await findSentMessage(["ta@career141.com"], "EOD 1", 0, token, sentItems([], 403).fetchImpl), "unknown");
-  eq("a full page without a match -> unknown", await findSentMessage(["ta@career141.com"], "EOD 1", 0, token, sentItems(Array.from({ length: 100 }, () => ({ subject: "x" }))).fetchImpl), "unknown");
+  eq("a full page of same-subject sends -> unknown", await findSentMessage(["ta@career141.com"], "EOD 1", 0, token, sentItems(Array.from({ length: 50 }, () => ({ subject: "x" }))).fetchImpl), "unknown");
+  // 17 Nov: Graph is asked for the subject itself, so a busy job@ box no longer makes every check "unknown".
+  let asked = "";
+  await findSentMessage(["ta@career141.com"], "SET 1 - O'NEIL - DOCTOR", 0, token, async (url: string) => { asked = decodeURIComponent(url); return { ok: true, status: 200, text: async () => JSON.stringify({ value: [] }) }; });
+  eq("asks Sent Items for the exact subject, quote doubled", asked.includes("$filter=subject eq 'SET 1 - O''NEIL - DOCTOR'"), true);
+  eq("same subject sent on an earlier day -> absent", await findSentMessage(["ta@career141.com"], "EOD 1", Date.parse("2026-11-16T06:00:00Z"), token, sentItems([{ subject: "EOD 1", sentDateTime: "2026-11-12T06:00:00Z" } as { subject: string }]).fetchImpl), "absent");
+  eq("same subject sent after the send started -> found", await findSentMessage(["ta@career141.com"], "EOD 1", Date.parse("2026-11-16T06:00:00Z"), token, sentItems([{ subject: "EOD 1", sentDateTime: "2026-11-16T06:01:00Z" } as { subject: string }]).fetchImpl), "found");
+
+  // ── 17 Nov: only the request that sends can leave an email "maybe sent" ──
+  const stepGraph = (fail: (url: string) => "throw" | number | null) => async (url: string) => {
+    const f = fail(url);
+    if (f === "throw") throw new Error("The operation was aborted due to timeout");
+    const s = f ?? (url.endsWith("/messages") ? 201 : 202);
+    return { ok: s >= 200 && s < 300, status: s, text: async () => JSON.stringify({ id: "draft-9" }) };
+  };
+  const oneCv = { ...mail, from: "ta@career141.com", attachmentMode: "draft" as const, attachments: [{ name: "A.pdf", contentType: "application/pdf", base64: Buffer.from("cv").toString("base64") }] };
+  env({ OUTREACH_LIVE: "true" });
+  let m = await sendFollowUpMail(oneCv, token, stepGraph(u => u.endsWith("/attachments") ? "throw" : null));
+  eq("CV upload times out -> not sent", !m.ok && m.maybeSent, false);
+  m = await sendFollowUpMail(oneCv, token, stepGraph(u => u.endsWith("/messages") ? 503 : null));
+  eq("draft creation 503 -> not sent", !m.ok && m.maybeSent, false);
+  m = await sendFollowUpMail(oneCv, token, stepGraph(u => u.endsWith("/send") ? "throw" : null));
+  eq("final send times out -> maybe sent", !m.ok && m.maybeSent, true);
+  m = await sendFollowUpMail(oneCv, token, stepGraph(u => u.endsWith("/send") ? 503 : null));
+  eq("final send 503 -> maybe sent", !m.ok && m.maybeSent, true);
+  m = await sendFollowUpMail(oneCv, token, stepGraph(u => u.endsWith("/send") ? 400 : null));
+  eq("final send 400 -> not sent", !m.ok && m.maybeSent, false);
   eq("no token -> unknown", await findSentMessage(["ta@career141.com"], "EOD 1", 0, async () => null, sentItems([]).fetchImpl), "unknown");
 
   // ── A queued message that should no longer go ─────────────────────────────

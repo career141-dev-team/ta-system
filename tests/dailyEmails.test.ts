@@ -84,11 +84,17 @@ try {
   await assert.rejects(() => run("saveDraft", { actorId: "other", id: first, revision: 1, fields: {} }), /your unsent/);
   await assert.rejects(() => run("createDraft", { actorId: "viewer", jobId: "job" }), /cannot access/);
   candidate("a"); candidate("b"); candidate("other-app", "other");
-  await assert.rejects(() => begin([], first), /candidate list changed/);
+  await assert.rejects(() => begin([], first), /candidate list changed: a, b are ready to send but not on your page\./);
+  // 17 Nov: an older unsent Director Review CV is a missed end of day's, not today's midday's -
+  // the page never lists it, so counting it here refused every midday send for good.
+  put("candidates", { _id: "c:old", fullName: "Old Person" });
+  put("applications", { _id: "old", candidateId: "c:old", jobId: "job", ownerTaId: "ta", currentStage: "second_shortlist", lastStageChangedAt: now - 9 * 86400000, sourceChannel: "Database", setNumber: 1 });
+  await assert.rejects(() => begin(["a", "b", "old"], first), /Old Person is on your page but no longer ready to send/);
   await assert.rejects(() => begin(["a", "b"], first, { confirmed: false }), /Confirm/);
   await assert.rejects(() => begin(["a", "b"], first, { snapshot: { ...snapshot(["a", "b"]), researchLink: "https://chatgpt.com/c/private" } }), /private/);
   // No JD, profiles or post, and attachments skipped: midday must still succeed with candidates in the table.
   await begin(["a", "b"], first, { snapshot: { ...snapshot(["a", "b"]), attachmentNames: [] } });
+  await db.delete("old"); await db.delete("c:old");
   await assert.rejects(() => begin(["a", "b"], first), /still sending/);
   await run("result", { id: first, status: "accepted" });
   await run("result", { id: first, status: "accepted" });

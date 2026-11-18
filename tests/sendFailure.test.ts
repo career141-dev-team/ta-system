@@ -23,6 +23,13 @@ for (const raw of [graph(500), graph(503), "Microsoft Graph could not be reached
   assert.equal(f.message, UNCERTAIN_SEND_MESSAGE);
 }
 
+// 17 Nov: the sender's own flag wins. A Microsoft fault while the draft or a CV was uploading sent nothing.
+assert.equal(plainSendFailure(graph(503), false).state, "not_sent");
+assert.match(plainSendFailure(graph(503), false).message, /being prepared.*Nothing was sent\./);
+assert.match(plainSendFailure("Microsoft Graph did not answer while the email from a@b.co was being prepared (timeout). Nothing was sent.", false).message, /being prepared/);
+assert.equal(plainSendFailure("Microsoft Graph could not be reached: timeout", true).state, "uncertain");
+assert.match(plainSendFailure("Could not load the saved CVs for this email: missing", false).message, /saved CVs/);
+
 assert.equal(plainSendFailure("Microsoft Graph sign-in failed: bad secret").state, "not_sent");
 assert.match(plainSendFailure("Microsoft Graph credentials are not configured (MS_TENANT_ID)").message, /mail connection/);
 // A plain sentence from the outbound lock goes through; an unreadable one is replaced.

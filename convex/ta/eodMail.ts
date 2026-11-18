@@ -99,17 +99,13 @@ export const send = internalAction({
         getGraphToken,
       );
     } catch (error) {
-      if (args.dailyEmailId) await ctx.runMutation(makeFunctionReference<"mutation">("ta/dailyEmails:result"), { id: args.dailyEmailId, status: "uncertain", error: (error as Error).message });
-      if (args.workdayMailId)
-        await ctx.runMutation(
-          makeFunctionReference<"mutation">("ta/workdays:mailResult"),
-          { id: args.workdayMailId, status: "uncertain" },
-        );
-      throw error;
+      // sendFollowUpMail never throws, so this is the saved CVs failing to load: before Microsoft, nothing sent
+      // (17 Nov). It used to be filed uncertain and thrown, which blocked the TA behind a reconcile.
+      result = { ok: false, error: `Could not load the saved CVs for this email: ${(error as Error).message}`, blocked: false, maybeSent: false };
     }
     if (args.dailyEmailId) await ctx.runMutation(makeFunctionReference<"mutation">("ta/dailyEmails:result"), {
       id: args.dailyEmailId,
-      status: result.ok ? "accepted" : /could not be reached|returned 5\d\d/i.test(result.error) ? "uncertain" : "failed",
+      status: result.ok ? "accepted" : result.maybeSent ? "uncertain" : "failed",
       ...(result.ok ? { delivered: { from: result.from, to: [result.to, ...(result.alsoTo ?? [])], cc: result.cc } } : { error: result.error }),
     });
     if (args.workdayMailId)
@@ -117,11 +113,7 @@ export const send = internalAction({
         makeFunctionReference<"mutation">("ta/workdays:mailResult"),
         {
           id: args.workdayMailId,
-          status: result.ok
-            ? "accepted"
-            : /could not be reached|returned 5\d\d/i.test(result.error)
-              ? "uncertain"
-              : "failed",
+          status: result.ok ? "accepted" : result.maybeSent ? "uncertain" : "failed",
         },
       );
     console.log(

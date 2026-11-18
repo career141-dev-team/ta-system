@@ -71,7 +71,16 @@ export interface FollowUpMail {
 
 export type MailResult =
   | { ok: true; to: string; alsoTo?: string[]; from: string; cc: string[]; note: string }
-  | { ok: false; error: string; blocked: boolean };
+  | {
+      ok: false; error: string; blocked: boolean;
+      /**
+       * True only when the request that actually sends (sendMail, or the draft's /send) got no answer or a 5xx, so
+       * the message may have gone (17 Nov). A failure while the draft was still being built or its CVs uploaded
+       * sent nothing: those used to read "could not be reached" or "returned 5xx" too, were filed uncertain, and
+       * blocked the TA behind a reconcile for an email that never left (Shihab's midday, 16 Nov).
+       */
+      maybeSent?: boolean;
+    };
 
 type FetchLike = (url: string, init: { method: string; headers: Record<string, string>; body?: string | Uint8Array }) => Promise<{
   ok: boolean;
@@ -102,7 +111,26 @@ async function sendDraftWithAttachments(
   alsoTo: string[],
   token: string,
   fetchImpl: FetchLike,
-): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+): Promise<{ ok: true } | { ok: false; status: number; error: string; maybeSent: boolean }> {
+  const notSent = (status: number, error: string) => ({ ok: false as const, status, error, maybeSent: false });
+  try {
+    return await buildAndSendDraft(mail, from, to, cc, alsoTo, token, fetchImpl, notSent);
+  } catch (e) {
+    // Only buildAndSendDraft's own steps throw here; the final /send catches for itself.
+    return notSent(0, `Microsoft Graph did not answer while the email from ${from} was being prepared (${(e as Error).message}). Nothing was sent.`);
+  }
+}
+
+async function buildAndSendDraft(
+  mail: FollowUpMail,
+  from: string,
+  to: string,
+  cc: string[],
+  alsoTo: string[],
+  token: string,
+  fetchImpl: FetchLike,
+  notSent: (status: number, error: string) => { ok: false; status: number; error: string; maybeSent: boolean },
+): Promise<{ ok: true } | { ok: false; status: number; error: string; maybeSent: boolean }> {
   const auth = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
   const message = sendMailPayload({ ...mail, attachments: undefined }, to, cc, alsoTo).message;
   const created = await fetchImpl(`${GRAPH_BASE}/users/${encodeURIComponent(from)}/messages`, {
@@ -110,14 +138,14 @@ async function sendDraftWithAttachments(
     headers: auth,
     body: JSON.stringify(message),
   });
-  if (!created.ok) return { ok: false, status: created.status, error: graphError("draft creation", from, created.status, await created.text()) };
+  if (!created.ok) return notSent(created.status, graphError("draft creation", from, created.status, await created.text()));
   let draftId = "";
   try {
     draftId = String(JSON.parse(await created.text()).id ?? "");
   } catch {
     // Handled by the explicit error below so the user sees the failed stage.
   }
-  if (!draftId) return { ok: false, status: 502, error: `Microsoft Graph created an email draft from ${from} without returning its ID.` };
+  if (!draftId) return notSent(502, `Microsoft Graph created an email draft from ${from} without returning its ID.`);
   const draft = `${GRAPH_BASE}/users/${encodeURIComponent(from)}/messages/${encodeURIComponent(draftId)}`;
 
   for (const attachment of mail.attachments ?? []) {
@@ -133,7 +161,7 @@ async function sendDraftWithAttachments(
           contentBytes: attachment.base64,
         }),
       });
-      if (!added.ok) return { ok: false, status: added.status, error: graphError(`attachment upload for ${attachment.name}`, from, added.status, await added.text()) };
+      if (!added.ok) return notSent(added.status, graphError(`attachment upload for ${attachment.name}`, from, added.status, await added.text()));
       continue;
     }
 
@@ -142,14 +170,14 @@ async function sendDraftWithAttachments(
       headers: auth,
       body: JSON.stringify({ AttachmentItem: { attachmentType: "file", name: attachment.name, size: bytes.byteLength } }),
     });
-    if (!session.ok) return { ok: false, status: session.status, error: graphError(`upload-session creation for ${attachment.name}`, from, session.status, await session.text()) };
+    if (!session.ok) return notSent(session.status, graphError(`upload-session creation for ${attachment.name}`, from, session.status, await session.text()));
     let uploadUrl = "";
     try {
       uploadUrl = String(JSON.parse(await session.text()).uploadUrl ?? "");
     } catch {
       // Handled below.
     }
-    if (!uploadUrl) return { ok: false, status: 502, error: `Microsoft Graph did not return an upload URL for ${attachment.name}.` };
+    if (!uploadUrl) return notSent(502, `Microsoft Graph did not return an upload URL for ${attachment.name}.`);
     for (let start = 0; start < bytes.byteLength; start += ATTACHMENT_CHUNK) {
       const end = Math.min(start + ATTACHMENT_CHUNK, bytes.byteLength) - 1;
       const chunk = bytes.slice(start, end + 1);
@@ -164,12 +192,18 @@ async function sendDraftWithAttachments(
         },
         body: chunk,
       });
-      if (!uploaded.ok) return { ok: false, status: uploaded.status, error: graphError(`byte upload for ${attachment.name}`, from, uploaded.status, await uploaded.text()) };
+      if (!uploaded.ok) return notSent(uploaded.status, graphError(`byte upload for ${attachment.name}`, from, uploaded.status, await uploaded.text()));
     }
   }
 
-  const sent = await fetchImpl(`${draft}/send`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
-  if (!sent.ok) return { ok: false, status: sent.status, error: graphError("draft send", from, sent.status, await sent.text()) };
+  // From here on the email may leave: no answer, or Microsoft's own 5xx, is the one honest "may have gone".
+  let sent: Awaited<ReturnType<FetchLike>>;
+  try {
+    sent = await fetchImpl(`${draft}/send`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+  } catch (e) {
+    return { ok: false, status: 0, error: `Microsoft Graph could not be reached: ${(e as Error).message}`, maybeSent: true };
+  }
+  if (!sent.ok) return { ok: false, status: sent.status, error: graphError("draft send", from, sent.status, await sent.text()), maybeSent: sent.status >= 500 };
   return { ok: true };
 }
 
@@ -177,7 +211,10 @@ async function sendDraftWithAttachments(
  * Whether a message with this subject reached the Sent Items of any of these mailboxes since `since`.
  * "unknown" when Graph could not answer for every mailbox: the caller must then leave the send alone.
  * Used to settle an end of day whose result never came back (Sameera, 9 Nov) without a person opening the mailbox.
- * shortcut: reads one page of 100; a full page without a match is "unknown", never "absent" (upgrade to paging if that happens).
+ *
+ * Asks Graph for the subject itself (17 Nov). It used to read the 100 latest sent messages and call a full page
+ * "unknown": job@ sends far more than 100 a day, so a send that never left could never be called "absent", and
+ * every uncertain email stayed "Needs review" for ever and blocked its TA (Shihab's midday, 16 Nov).
  */
 export async function findSentMessage(
   mailboxes: string[],
@@ -190,15 +227,19 @@ export async function findSentMessage(
   try { token = await getToken(); } catch { return "unknown"; }
   if (!token) return "unknown";
   const wanted = subject.trim();
+  if (!wanted) return "unknown";
+  const filter = `subject eq '${wanted.replace(/'/g, "''")}'`;
   let answered = 0;
   for (const mailbox of addressList(mailboxes)) {
     try {
-      const url = `${GRAPH_BASE}/users/${encodeURIComponent(mailbox)}/mailFolders/sentitems/messages?$filter=${encodeURIComponent(`sentDateTime ge ${new Date(since).toISOString()}`)}&$select=subject&$top=100`;
+      const url = `${GRAPH_BASE}/users/${encodeURIComponent(mailbox)}/mailFolders/sentitems/messages?$filter=${encodeURIComponent(filter)}&$select=subject,sentDateTime&$top=50`;
       const res = await fetchImpl(url, { method: "GET", headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) continue;
-      const value = (JSON.parse(await res.text()).value ?? []) as { subject?: string }[];
-      if (value.some((m) => (m.subject ?? "").trim() === wanted)) return "found";
-      if (value.length >= 100) continue;
+      const value = (JSON.parse(await res.text()).value ?? []) as { subject?: string; sentDateTime?: string }[];
+      // The same subject can be sent on another day: only one sent since this send started counts.
+      if (value.some((m) => (m.subject ?? "").trim() === wanted && (!m.sentDateTime || Date.parse(m.sentDateTime) >= since))) return "found";
+      // ponytail: one page of 50 same-subject sends; a full page without a recent one stays "unknown" (add paging if seen).
+      if (value.length >= 50) continue;
       answered++;
     } catch {
       // This mailbox did not answer; it counts as unknown below.
@@ -308,6 +349,7 @@ export async function sendFollowUpMail(
 
   const body = JSON.stringify(sendMailPayload(mail, decision.to, cc, alsoTo));
   let lastError = "";
+  let maybeSent = false;
   for (const [i, from] of senders.entries()) {
     try {
       if (mail.attachmentMode === "draft" && mail.attachments?.length) {
@@ -316,6 +358,7 @@ export async function sendFollowUpMail(
           return { ok: true, to: decision.to, alsoTo, from, cc, note: i > 0 ? `${note} [sent from ${from}: ${senders[0]} could not send]` : note };
         }
         lastError = draft.error;
+        maybeSent = draft.maybeSent;
         if (draft.status !== 403 && draft.status !== 404) break;
         continue;
       }
@@ -329,14 +372,16 @@ export async function sendFollowUpMail(
         return { ok: true, to: decision.to, alsoTo, from, cc, note: i > 0 ? `${note} [sent from ${from}: ${senders[0]} could not send]` : note };
       }
       lastError = `Microsoft Graph sendMail from ${from} returned ${res.status}: ${(await res.text()).slice(0, 500)}`;
+      maybeSent = res.status >= 500;
       // Only a mailbox Graph will not send as is worth trying the fallback for.
       if (res.status !== 403 && res.status !== 404) break;
     } catch (e) {
       lastError = `Microsoft Graph could not be reached: ${(e as Error).message}`;
+      maybeSent = true;
       break;
     }
   }
-  return { ok: false, error: lastError, blocked: false };
+  return { ok: false, error: lastError, blocked: false, maybeSent };
 }
 
 /**
