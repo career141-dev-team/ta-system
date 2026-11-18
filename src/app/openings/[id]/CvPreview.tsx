@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
-import { DUR, EASE, gsap, loadFlip, motionOK, useGSAP, type FlipPlugin } from "@/lib/gsap";
+import { DUR, EASE, gsap, motionOK, useGSAP } from "@/lib/gsap";
 import CvPages, { cvText } from "./CvPages";
 import { boxLines, runAgent, type Box, type BoxContent } from "./cvAgent";
 
@@ -76,35 +76,9 @@ export default function CvPreview({
   const [auraOpen, setAuraOpen] = useState(false);
   const own = useRef<HTMLDivElement>(null);
   const root = ref ?? own;
-  const [full, setFull] = useState(false);
-  // Flip arrives with the first preview (it is not in the board's download); the
-  // corner button works before it lands, only without the glide.
-  const flip = useRef<FlipPlugin | null>(null);
-  useEffect(() => {
-    loadFlip().then((f) => (flip.current = f));
-  }, []);
-  // The frame's size and place before a full-view change, for Flip to animate from.
-  const before = useRef<ReturnType<FlipPlugin["getState"]> | null>(null);
-
-  const toggleFull = () => {
-    const F = flip.current;
-    if (F) {
-      // Finish the frame's opening rise first: pressed during it, Flip took over
-      // mid-way and the frame stayed half-faded and lowered.
-      gsap.getTweensOf("[data-frame]").forEach((t) => t.progress(1));
-      before.current = F.getState("[data-frame]");
-    }
-    setFull((f) => !f);
-  };
-
-  // After the frame has its new size, glide it there from where it was.
-  useLayoutEffect(() => {
-    const state = before.current;
-    const F = flip.current;
-    if (!state || !F) return;
-    before.current = null;
-    F.from(state, { duration: DUR.slow, ease: EASE.inOut });
-  }, [full]);
+  // The full-view switch is gone with the corner buttons (owner, 18 Nov 2026); the
+  // frame keeps its one size.
+  const full = false;
 
   // Opened from a card (the Pipeline), the frame GROWS OUT OF THE CARD and shrinks
   // back into it on close, while the board behind zooms toward you, goes soft and
@@ -323,51 +297,8 @@ export default function CvPreview({
               "max-md:left-0 max-md:top-[7%] max-md:w-full max-md:rounded-t-lg max-md:px-2 max-md:pt-12")
         }
       >
-        <button
-          type="button"
-          onClick={toggleFull}
-          aria-pressed={full}
-          aria-label={full ? "Back to the smaller view" : "Full view"}
-          title={full ? "Back to the smaller view" : "Full view"}
-          className="absolute right-[max(1.6rem,12px)] top-[max(1rem,8px)] flex size-[max(2.4rem,30px)] items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/25"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-1/2" aria-hidden="true">
-            {full ? (
-              <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
-            ) : (
-              <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
-            )}
-          </svg>
-        </button>
-        {/* The candidate's own file: download it, or open it in a new tab, as the TA
-            System's CV view offers (FLOW-CHECK 5.1, 5.6). Plain links, no script. */}
-        {src && (
-          <div className="absolute right-[max(4.6rem,50px)] top-[max(1rem,8px)] flex gap-[max(0.6rem,8px)]">
-            <a
-              href={src}
-              target="_blank"
-              rel="noreferrer"
-              aria-label="Open this CV in a new tab"
-              title="Open in a new tab"
-              className="flex size-[max(2.4rem,30px)] items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/25"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-1/2" aria-hidden="true">
-                <path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
-              </svg>
-            </a>
-            <a
-              href={src}
-              download={name.replace(/\s+/g, "-") + "-CV.pdf"}
-              aria-label="Download this CV"
-              title="Download"
-              className="flex size-[max(2.4rem,30px)] items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/25"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-1/2" aria-hidden="true">
-                <path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M4 19h16" />
-              </svg>
-            </a>
-          </div>
-        )}
+        {/* No corner buttons (owner, 18 Nov 2026: the full view, open in a new tab and
+            download buttons "no need"). */}
         {/* The CV scrolls inside the dark frame; the scrollbar sits in the frame's right gutter.
             AURA shares the CV's box, so its chat opens exactly as wide as the CV. */}
         <div className="relative flex min-h-0 flex-1 flex-col">
