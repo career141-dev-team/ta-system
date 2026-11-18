@@ -48,6 +48,11 @@ const ALLOWED_PUBLIC = new Set<string>([
   "ui/manage:setQuestions",
   "ui/manage:acceptStrategies",
   "ui/manage:submitStrategies",
+  "ui/posts:addPost",
+  "ui/posts:updatePost",
+  "ui/posts:setPostStatus",
+  "ui/posts:deletePost",
+  "ui/posts:moveCvs",
 ]);
 
 const PUBLIC = /export\s+(?:const\s+(\w+)\s*=|(default))\s*(query|mutation|action)\s*\(/g;
