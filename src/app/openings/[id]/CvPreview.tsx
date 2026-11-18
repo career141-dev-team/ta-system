@@ -292,7 +292,7 @@ export default function CvPreview({
           "absolute flex flex-col bg-ink pr-[2%] shadow-[0_-20px_80px_rgba(0,0,0,0.25)] " +
           (full
             ? "inset-[max(1rem,8px)] rounded-lg pl-[3%] pt-[max(3.25rem,24px)]"
-            : "bottom-0 left-[10%] top-[5%] w-[80%] rounded-t-[3.75rem] pl-[4%] pt-[max(3.75rem,26px)] " +
+            : "bottom-0 left-[17%] top-[5%] w-[66%] rounded-t-[3.75rem] pl-[4%] pt-[max(3.75rem,26px)] " +
               // A phone: the sheet takes the whole width.
               "max-md:left-0 max-md:top-[7%] max-md:w-full max-md:rounded-t-lg max-md:px-2 max-md:pt-12")
         }
@@ -386,7 +386,7 @@ export default function CvPreview({
           className={
             "absolute bottom-[max(2rem,16px)] z-10 flex size-[max(4.5rem,54px)] items-center justify-center overflow-hidden rounded-full bg-black shadow-float ring-2 ring-white/15 transition-transform hover:scale-105 " +
             // Beside the frame on its right; over it when the frame fills the window.
-            (full ? "right-[max(2.5rem,20px)]" : "left-[calc(90%+max(1.25rem,10px))] max-md:left-auto max-md:right-3")
+            (full ? "right-[max(2.5rem,20px)]" : "left-[calc(83%+max(1.25rem,10px))] max-md:left-auto max-md:right-3")
           }
         >
           <Image src="/aura-mark.png" alt="" width={56} height={56} className="size-full" />
