@@ -187,6 +187,17 @@ eq("send: the ChatGPT rule is kept", sendSrc.includes("checkResearchSubmission")
   eq("aura: a hard time limit", /TIMEOUT_MS = 20_000/.test(aura), true);
   eq("aura: writes nothing but the ledger", /runMutation\((?!internal\.ui\.auraLedger\.record)/.test(aura), false);
   eq("desk: bounded reads only", /\.collect\(\)/.test(read("convex/ui/desk.ts")), false);
+
+  // Today's "things" (item 3): only what is on record, the board's own Director Review rule.
+  const { readyLine } = await import("../convex/ui/auraRules");
+  eq("things: line with salary and notice", readyLine("SAP Lead", 850_000, 30), "SAP Lead · expects LKR 850k · notice 1 month");
+  eq("things: nothing invented when unknown", readyLine("SAP Lead", null, null), "SAP Lead");
+  eq("things: notice 0 = can start now", readyLine("X", null, 0), "X · can start now");
+  eq("things: odd notice in days", readyLine("X", null, 45), "X · notice 45 days");
+  const deskSrc = read("convex/ui/desk.ts");
+  eq("things: ready uses the board's own blockers rule", deskSrc.includes("directorReviewBlockers(a, c)"), true);
+  eq("things: only this TA's own candidates", deskSrc.includes("a.ownerTaId as string | undefined) !== me"), true);
+  eq("things: read only", /ctx\.db\.(insert|patch|replace|delete)/.test(deskSrc), false);
 }
 
 console.log(`\nuidoor: ${pass} passed, ${fail} failed`);
