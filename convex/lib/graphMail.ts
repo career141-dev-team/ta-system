@@ -102,6 +102,12 @@ const SIMPLE_ATTACHMENT_LIMIT =3 * 1024 * 1024;
 // the last the same size.
 const ATTACHMENT_CHUNK = 3 * 1024 * 1024;
 
+// Node's fetch throws a bare "fetch failed"; the real reason (ENOTFOUND, ECONNREFUSED, a timeout...) is on `cause` (18 Nov).
+const why = (e: unknown) => {
+  const c = (e as { cause?: { code?: string; message?: string } }).cause;
+  return `${(e as Error).message}${c ? `: ${c.code ?? ""} ${c.message ?? ""}`.trimEnd() : ""}`;
+};
+
 function graphError(stage: string, from: string, status: number, body: string) {
   return `Microsoft Graph ${stage} from ${from} returned ${status}: ${body.slice(0, 500)}`;
 }
@@ -123,12 +129,12 @@ async function sendDraftWithAttachments(
   let last: Built = notSent(0, "");
   for (let attempt = 0; attempt <= pauseMs.length; attempt++) {
     if (attempt > 0) await new Promise((r) => setTimeout(r, pauseMs[attempt - 1]));
-    const built: { draftId?: string } = {};
+    const built: { draftId?: string; stage?: string } = {};
     try {
       last = await buildAndSendDraft(mail, from, to, cc, alsoTo, token, fetchImpl, notSent, built);
     } catch (e) {
       // Only buildAndSendDraft's own steps throw here; the final /send catches for itself.
-      last = notSent(0, `Microsoft Graph did not answer while the email from ${from} was being prepared (${(e as Error).message}). Nothing was sent.`);
+      last = notSent(0, `Microsoft Graph did not answer while the email from ${from} was being prepared, at ${built.stage ?? "the start"} (${why(e)}). Nothing was sent.`);
     }
     if (last.ok || last.maybeSent) return last;
     // A half-built draft would otherwise sit in the TA's Drafts folder.
@@ -154,10 +160,11 @@ async function buildAndSendDraft(
   token: string,
   fetchImpl: FetchLike,
   notSent: (status: number, error: string) => { ok: false; status: number; error: string; maybeSent: boolean },
-  built: { draftId?: string },
+  built: { draftId?: string; stage?: string },
 ): Promise<{ ok: true } | { ok: false; status: number; error: string; maybeSent: boolean }> {
   const auth = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
   const message = sendMailPayload({ ...mail, attachments: undefined }, to, cc, alsoTo).message;
+  built.stage = "draft creation";
   const created = await fetchImpl(`${GRAPH_BASE}/users/${encodeURIComponent(from)}/messages`, {
     method: "POST",
     headers: auth,
@@ -177,6 +184,7 @@ async function buildAndSendDraft(
   for (const attachment of mail.attachments ?? []) {
     const bytes = Uint8Array.from(Buffer.from(attachment.base64, "base64"));
     if (bytes.byteLength < SIMPLE_ATTACHMENT_LIMIT) {
+      built.stage = `attachment ${attachment.name}`;
       const added = await fetchImpl(`${draft}/attachments`, {
         method: "POST",
         headers: auth,
@@ -191,6 +199,7 @@ async function buildAndSendDraft(
       continue;
     }
 
+    built.stage = `upload session for ${attachment.name}`;
     const session = await fetchImpl(`${draft}/attachments/createUploadSession`, {
       method: "POST",
       headers: auth,
@@ -207,6 +216,7 @@ async function buildAndSendDraft(
     for (let start = 0; start < bytes.byteLength; start += ATTACHMENT_CHUNK) {
       const end = Math.min(start + ATTACHMENT_CHUNK, bytes.byteLength) - 1;
       const chunk = bytes.slice(start, end + 1);
+      built.stage = `byte upload ${start}-${end} of ${attachment.name}`;
       const uploaded = await fetchImpl(uploadUrl, {
         method: "PUT",
         // The upload URL is pre-authenticated; Graph explicitly forbids the
@@ -227,7 +237,7 @@ async function buildAndSendDraft(
   try {
     sent = await fetchImpl(`${draft}/send`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
   } catch (e) {
-    return { ok: false, status: 0, error: `Microsoft Graph could not be reached: ${(e as Error).message}`, maybeSent: true };
+    return { ok: false, status: 0, error: `Microsoft Graph could not be reached: ${why(e)}`, maybeSent: true };
   }
   if (!sent.ok) return { ok: false, status: sent.status, error: graphError("draft send", from, sent.status, await sent.text()), maybeSent: sent.status >= 500 };
   return { ok: true };
@@ -403,7 +413,7 @@ export async function sendFollowUpMail(
       // Only a mailbox Graph will not send as is worth trying the fallback for.
       if (res.status !== 403 && res.status !== 404) break;
     } catch (e) {
-      lastError = `Microsoft Graph could not be reached: ${(e as Error).message}`;
+      lastError = `Microsoft Graph could not be reached: ${why(e)}`;
       maybeSent = true;
       break;
     }

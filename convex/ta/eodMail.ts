@@ -116,11 +116,9 @@ export const send = internalAction({
           status: result.ok ? "accepted" : result.maybeSent ? "uncertain" : "failed",
         },
       );
-    console.log(
-      result.ok
-        ? `[End of day] Sent via Microsoft Graph from ${result.from} to ${[result.to, ...(result.alsoTo ?? [])].join(", ")}, cc ${result.cc.join(", ") || "nobody"}${result.note}`
-        : `[End of day] Not sent: ${result.error}`,
-    );
+    // console.error, so the dashboard flags a failed send as an error (18 Nov: it read as a normal log).
+    if (result.ok) console.log(`[End of day] Sent via Microsoft Graph from ${result.from} to ${[result.to, ...(result.alsoTo ?? [])].join(", ")}, cc ${result.cc.join(", ") || "nobody"}${result.note}`);
+    else console.error(`[End of day] Not sent: ${result.error}`);
     return result;
   },
 });
