@@ -16,10 +16,12 @@ import {
   reply,
   titleOf,
   type Chip,
+  type Panel,
   type Person,
   type Reply,
 } from "./aura";
-import { POOL } from "./aura";
+import { POOL, filterReply, panelOf } from "./aura";
+import FilterBar from "./FilterBar";
 import { petSay } from "@/lib/pet";
 
 // D1 · Database - search by chatting with AURA (owner's design, 14 Nov 2026).
@@ -185,7 +187,7 @@ export default function DatabaseView() {
 
   // `fresh` starts a new chat whatever is open; `as` searches in that mode (both for a
   // search arriving in the address, before the screen has caught up).
-  const send = (raw: string, opts: { fresh?: boolean; as?: Mode } = {}) => {
+  const send = (raw: string, opts: { fresh?: boolean; as?: Mode; panel?: Panel } = {}) => {
     const t = raw.trim();
     if (!t || thinking) return;
     const mode_ = opts.as ?? mode;
@@ -208,8 +210,9 @@ export default function DatabaseView() {
     // names is still the people check ("do we have ...").
     const parts = t.split(/\n|,|;/).filter((x) => x.trim());
     const names = /do we have/i.test(t) || (parts.length >= 2 && parts.every((x) => /^\s*[A-Z][a-z]+(?:\s+[A-Z][a-z.]+){1,3}\s*$/.test(x)));
-    const answer =
-      mode_ === "referees" && !names
+    const answer = opts.panel
+      ? filterReply(chips, opts.panel)
+      : mode_ === "referees" && !names
         ? refereeReply(t, chips)
         : reply(t, {
             chips,
@@ -469,6 +472,9 @@ export default function DatabaseView() {
           onFile={(name) => send(`Find people for this JD: ${name}`)}
           suggestions={thinking ? undefined : thread?.turns.find((t) => t.id === lastAura && t.from === "aura" && t.actions?.length) ? (thread.turns.find((t) => t.id === lastAura) as Extract<Turn, { from: "aura" }>).actions : undefined}
           onSuggest={send}
+          panel={panelOf(contextOf(thread?.turns ?? []).chips)}
+          hasPeople={mode === "people"}
+          onPanel={(p, said) => send(said, { panel: p })}
         />
       </section>
 
@@ -1012,7 +1018,13 @@ function Composer({
   mode,
   centred,
   onFile,
+  panel,
+  hasPeople,
+  onPanel,
 }: {
+  panel: Panel;
+  hasPeople: boolean;
+  onPanel: (p: Panel, said: string) => void;
   value: string;
   onChange: (v: string) => void;
   onSend: () => void;
@@ -1064,6 +1076,14 @@ function Composer({
   return (
     <div className="relative isolate px-[max(1.5rem,12px)] pb-[max(2.4rem,14px)]">
       <AuraBarGlow className="bottom-[max(1.2rem,8px)]" />
+      {hasPeople && (
+        <FilterBar
+          panel={panel}
+          busy={busy}
+          className={(centred ? "mx-auto" : "ml-[7.7rem] mr-auto") + " mb-3 max-w-[62.5rem] max-lg:ml-0"}
+          onApply={onPanel}
+        />
+      )}
       {/* AURA's suggested next steps sit right above the typing bar. */}
       {suggestions && suggestions.length > 0 && (
         <div className={(centred ? "mx-auto" : "ml-[7.7rem] mr-auto") + " mb-3 flex max-w-[62.5rem] max-lg:ml-0 flex-wrap gap-2"}>
