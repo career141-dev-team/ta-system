@@ -57,7 +57,7 @@ export default function TaTrackView() {
   const role = useRole();
   useSignedInPerson(); // the signed-in name, when it arrives
   if (!ready) return <CardsSkeleton />;
-  return <Track key={role} viewAll={role === "Lead" || role === "Director"} me={personOf(role).name.split(" ")[0]} />;
+  return <Track key={role} viewAll={role === "Lead" || role === "Admin" || role === "Director"} me={personOf(role).name.split(" ")[0]} />;
 }
 
 function Track({ viewAll, me }: { viewAll: boolean; me: string }) {

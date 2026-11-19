@@ -3,8 +3,10 @@
 // ponytail: kept in this browser; with sign-in it is the person's real role.
 import { useSyncExternalStore } from "react";
 
-export type Role = "TA" | "TA Support" | "Lead" | "Director" | "Ops";
-export const ROLES: Role[] = ["TA", "TA Support", "Lead", "Director", "Ops"];
+export type Role = "TA" | "TA Support" | "Lead" | "Admin" | "Director" | "Ops";
+// Admin is its own view (owner 19 Nov 2026): an admin keeps the team dashboard, a TA
+// Lead starts on the AURA chat. Rights stay the lead's (deskWide).
+export const ROLES: Role[] = ["TA", "TA Support", "Lead", "Admin", "Director", "Ops"];
 const KEY = "ta-ui:role";
 const subs = new Set<() => void>();
 /** The signed-in person (src/lib/backend.tsx), who wins over "View as" (18 Nov). */
@@ -25,8 +27,21 @@ export const useSignedInPerson = () =>
     () => signed,
     () => null,
   );
+/** TEMPORARY (owner 19 Nov 2026, while the new UI is built): a signed-in admin may
+ *  still "View as" any role, to check each role's screens on the live site. It only
+ *  changes what is drawn; the backend still judges every call by the real account.
+ *  Remove before the switch-over (Track E step E9). */
+export const canViewAs = () => !signed || signed.role === "Admin";
 const read = (): Role => {
-  if (signed) return signed.role;
+  if (signed && signed.role !== "Admin") return signed.role;
+  if (signed) {
+    try {
+      const r = localStorage.getItem(KEY) as Role | null;
+      return r && ROLES.includes(r) ? r : "Admin";
+    } catch {
+      return "Admin";
+    }
+  }
   try {
     const r = localStorage.getItem(KEY) as Role | null;
     return r && ROLES.includes(r) ? r : "TA";
@@ -59,6 +74,7 @@ export const PERSON: Record<Role, { name: string; title: string }> = {
   TA: { name: "Chathura Sampath", title: "Talent Acquisition" },
   "TA Support": { name: "Hasini Fernando", title: "TA Support" },
   Lead: { name: "Rashmi Jayawardena", title: "TA Lead" },
+  Admin: { name: "Desk Admin", title: "Admin" },
   Director: { name: "Nadeesha Perera", title: "Director" },
   Ops: { name: "Kavindi Silva", title: "Ops" },
 };
@@ -70,7 +86,7 @@ export const PERSON: Record<Role, { name: string; title: string }> = {
  *  Director, Ops (and admin). */
 /** Who the top bar names: the signed-in person, else the sample one for the role. */
 export const personOf = (role: Role): { name: string; title: string } =>
-  signed && signed.role === role ? { name: signed.name, title: signed.title } : PERSON[role];
+  !signed ? PERSON[role] : signed.role === role ? { name: signed.name, title: signed.title } : { name: signed.name, title: `${PERSON[role].title} view` };
 
 export function useMe() {
   const role = useRole();

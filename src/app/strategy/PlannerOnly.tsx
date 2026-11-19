@@ -15,7 +15,7 @@ export default function PlannerOnly({ children }: { children: ReactNode }) {
   // Nothing until the browser knows the role, so a lead never sees the notice flash.
   const ready = useSyncExternalStore(noop, () => true, () => false);
   if (!ready) return <div className="flex-1" />;
-  if (role === "Lead" || role === "Director") return <>{children}</>;
+  if (role === "Lead" || role === "Admin" || role === "Director") return <>{children}</>;
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-[max(1rem,10px)] px-6 text-center">
       <h1 className="text-h2 font-semibold text-ink">Strategies are planned by your TA Lead</h1>

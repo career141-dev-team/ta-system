@@ -623,7 +623,7 @@ export const DINUKA_DEMO: StrategyItem[] = [
 
 export function demoItemsForRole(role: Role): StrategyItem[] {
   if (role === "TA Support") return HASINI_DEMO.map((s) => ({ ...s, proofs: [...s.proofs] }));
-  if (role === "Lead" || role === "Director" || role === "Ops") {
+  if (role === "Lead" || role === "Admin" || role === "Director" || role === "Ops") {
     return [...CHATHURA_DEMO, ...DINUKA_DEMO].map((s) => ({ ...s, proofs: [...s.proofs] }));
   }
   return CHATHURA_DEMO.map((s) => ({ ...s, proofs: [...s.proofs] }));

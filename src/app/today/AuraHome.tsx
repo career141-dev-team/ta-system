@@ -1,0 +1,346 @@
+"use client";
+
+// The TA Lead, Director and Ops home (owner 19 Nov 2026): they do not start a workday.
+// They land on the same AURA screen a TA does - the greeting over AURA's living light -
+// but the button is Start chat. Pressing it opens the chat in place: a rail on the left
+// (the lead: every TA with their checks ring; the Director: sets to review; Ops: sets
+// with clients) and AURA in the middle, answering as cards. A rail row asks AURA about
+// that person. The full team board is one press away ("Team board"); an admin keeps
+// that board as their home (TodayScreen).
+// ponytail: sample desk and plain-word answers (homeAnswers.ts); with the backend, the
+// real desk read and the Haiku answer (E5), like the TA's Today chat.
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import { DUR, EASE, gsap, motionOK } from "@/lib/gsap";
+import { useMe } from "@/lib/role";
+import { petSay } from "@/lib/pet";
+import Today from "./Today";
+import Home from "./Homes";
+import { answer, brief, startStats, SUGGEST, TEAM, WAITING, WITH_CLIENT, type HomeRole } from "./homeAnswers";
+import type { Answer, Tone } from "./desk";
+
+const LINE: Record<HomeRole, string> = {
+  Lead: "Ask AURA how the team is doing, who is behind, and what needs your decision.",
+  Director: "Ask AURA which sets wait on you and where every candidate stands.",
+  Ops: "Ask AURA what waits on clients, which interviews to arrange, and what to chase.",
+};
+const CAPTION: Record<HomeRole, string> = {
+  Lead: "AURA reads every TA's day for you.",
+  Director: "AURA reads the sets and the stages for you.",
+  Ops: "AURA reads every client and interview for you.",
+};
+
+type Msg = { id: number; text?: string; reply?: Answer };
+// Kept for the visit: going to another page and back finds the chat as it was.
+const kept: Partial<Record<HomeRole, { open: boolean; msgs: Msg[] }>> = {};
+
+export default function AuraHome({ role }: { role: HomeRole }) {
+  const [open, setOpen] = useState(() => kept[role]?.open ?? false);
+  const [board, setBoard] = useState(false);
+  useEffect(() => {
+    kept[role] = { open, msgs: kept[role]?.msgs ?? [] };
+  }, [open, role]);
+
+  if (board)
+    return (
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <Home role={role} />
+        <button type="button" onClick={() => setBoard(false)} className="absolute left-[max(3.5rem,14px)] top-3 flex items-center gap-2 rounded-full bg-surface px-3.5 py-1.5 text-small text-ink-2 shadow-card hover:text-ink">
+          <Mark size="size-5" /> Back to AURA
+        </button>
+      </div>
+    );
+  if (!open) return <Today onStart={() => setOpen(true)} button="Start chat" line={LINE[role]} caption={CAPTION[role]} stats={startStats(role)} />;
+  return <Chat role={role} onBoard={() => setBoard(true)} />;
+}
+
+const TONE: Record<Tone, string> = {
+  brand: "bg-brand-soft text-brand",
+  warn: "bg-warn-soft text-warn",
+  danger: "bg-danger-soft text-danger",
+  muted: "bg-surface-2 text-ink-2",
+};
+const PILL = "shrink-0 whitespace-nowrap rounded-full px-[max(0.625rem,7px)] py-0.5 text-[max(0.8125rem,11.5px)] font-medium";
+const ASK =
+  "flex h-[max(2.5rem,32px)] items-center rounded-full border border-border bg-white px-[max(1rem,12px)] text-[max(0.875rem,12.5px)] text-ink transition-colors hover:border-border-strong";
+
+function Chat({ role, onBoard }: { role: HomeRole; onBoard: () => void }) {
+  const { first } = useMe();
+  const [msgs, setMsgs] = useState<Msg[]>(() => kept[role]?.msgs ?? []);
+  const [draft, setDraft] = useState("");
+  const root = useRef<HTMLDivElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
+  const seq = useRef(msgs.length);
+
+  useEffect(() => {
+    kept[role] = { open: true, msgs };
+    scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
+  }, [msgs, role]);
+
+  // Arriving from Start chat: the rail slides in, AURA's first words rise. Once.
+  useEffect(() => {
+    if (!root.current || !motionOK()) return;
+    const rail = root.current.querySelector("[data-rail]");
+    const says = root.current.querySelectorAll("[data-first]");
+    gsap.set(rail, { opacity: 0, x: -16 });
+    gsap.set(says, { opacity: 0, y: 12 });
+    const a = gsap.to(rail, { opacity: 1, x: 0, duration: DUR.slow, ease: EASE.out, clearProps: "opacity,transform" });
+    const b = gsap.to(says, { opacity: 1, y: 0, duration: DUR.slow, ease: EASE.out, stagger: 0.08, delay: 0.1, clearProps: "opacity,transform" });
+    return () => [a, b].forEach((t) => t.progress(1).kill());
+  }, []);
+
+  const send = (text: string) => {
+    const t = text.trim();
+    if (!t) return;
+    const id = ++seq.current;
+    setMsgs((m) => [...m, { id, text: t }]);
+    setDraft("");
+    petSay("working", "Reading the desk…");
+    // A short beat so the answer reads as AURA's turn; the backend read replaces it.
+    setTimeout(() => {
+      const a = answer(role, t);
+      setMsgs((m) => m.map((x) => (x.id === id ? { ...x, reply: a } : x)));
+      petSay("done", a.say);
+    }, 450);
+  };
+
+  return (
+    <div ref={root} className="flex min-h-0 flex-1 max-md:flex-col">
+      <Rail role={role} onAsk={send} onBoard={onBoard} />
+
+      <section className="flex min-h-0 flex-1 flex-col">
+        <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto flex min-h-full w-full max-w-[max(53.75rem,300px)] flex-col justify-end gap-[max(2rem,18px)] px-[max(1.5rem,14px)] pb-[max(1.5rem,14px)] pt-8">
+            <div data-first>
+              <Card a={{ ...brief(role), say: `Hi ${first}. ${brief(role).say}` }} />
+            </div>
+            {msgs.map((m) => (
+              <Fragment key={m.id}>
+                <p className="max-w-[80%] self-end rounded-lg rounded-br-xs bg-surface-2 px-[max(1.25rem,14px)] py-[max(0.875rem,9px)] text-[max(1rem,13.5px)] text-ink">{m.text}</p>
+                {m.reply ? <Card a={m.reply} /> : <Thinking />}
+              </Fragment>
+            ))}
+          </div>
+        </div>
+
+        <div data-first className="mx-auto w-full max-w-[max(53.75rem,300px)] px-[max(1.5rem,14px)] pb-[max(2.25rem,14px)]">
+          <div className="mb-[max(1.5rem,14px)] flex flex-wrap gap-[max(0.75rem,6px)]">
+            {SUGGEST[role].map((s) => (
+              <button key={s} type="button" onClick={() => send(s)} className={ASK}>
+                {s}
+              </button>
+            ))}
+          </div>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              send(draft);
+            }}
+            className="flex items-center gap-[max(0.75rem,8px)] rounded-full border border-border bg-white py-[max(0.375rem,4px)] pl-[max(1.25rem,14px)] pr-[max(0.375rem,4px)] shadow-float has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-brand/30"
+          >
+            <input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder={role === "Lead" ? "Ask about the team — “How is Dilini doing?”" : "Ask AURA"}
+              aria-label="Talk to AURA"
+              className="min-w-0 flex-1 bg-transparent text-[max(1rem,13.5px)] text-ink outline-none placeholder:text-ink-3"
+            />
+            <button type="submit" aria-label="Send" disabled={!draft.trim()} className="flex size-[max(2.75rem,34px)] shrink-0 items-center justify-center rounded-full bg-brand text-white transition-opacity disabled:opacity-40">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="size-[45%]">
+                <path d="M12 19V5m0 0-6 6m6-6 6 6" />
+              </svg>
+            </button>
+          </form>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/** The left rail: who the person is responsible for, each row asks AURA about them. */
+function Rail({ role, onAsk, onBoard }: { role: HomeRole; onAsk: (q: string) => void; onBoard: () => void }) {
+  const started = TEAM.filter((t) => t.day.started).length;
+  const head =
+    role === "Lead"
+      ? { title: "The team", sub: `Today · ${started} of ${TEAM.length} started` }
+      : role === "Director"
+        ? { title: "For your review", sub: `${WAITING.length} sets waiting` }
+        : { title: "With clients", sub: `${WITH_CLIENT.length} sets out` };
+  const rows: { key: string; lead: ReactNode; main: string; sub: string; subClass?: string; ask: string }[] =
+    role === "Lead"
+      ? TEAM.map((t) => ({
+          key: t.name,
+          lead: <Ring done={t.day.done} of={t.day.of} eod={!!t.day.eod} />,
+          main: t.name,
+          sub: t.day.eod ? `EOD sent ${t.day.eod}` : t.day.started ? `Started ${t.day.started} · ${t.day.done} of ${t.day.of}` : "Not started",
+          subClass: t.day.eod ? "text-brand" : t.day.started ? "text-ink-3" : "text-danger",
+          ask: `How is ${t.name.split(" ")[0]} doing?`,
+        }))
+      : role === "Director"
+        ? WAITING.map((w) => ({ key: w.who, lead: <Initials s={w.who} />, main: w.who, sub: `${w.title} · set ${w.set}`, ask: `Tell me about ${w.who}` }))
+        : WITH_CLIENT.map((w) => ({ key: w.who, lead: <Initials s={w.who} />, main: w.who, sub: `${w.client} · ${w.days ? `${w.days}d quiet` : "sent today"}`, subClass: w.days >= 3 ? "text-danger" : "text-ink-3", ask: `Tell me about ${w.who}` }));
+
+  return (
+    <aside
+      data-rail
+      className="flex w-[max(21.25rem,230px)] shrink-0 flex-col gap-[max(1.5rem,14px)] overflow-y-auto border-r border-border pb-[max(2.25rem,16px)] pl-[max(2.25rem,18px)] pr-[max(1.75rem,14px)] pt-[max(2.5rem,18px)] [scrollbar-width:thin] max-md:max-h-[38dvh] max-md:w-full max-md:gap-3 max-md:border-b max-md:border-r-0 max-md:p-4"
+    >
+      <div>
+        <h1 className="text-[max(1.75rem,20px)] leading-tight text-ink">{head.title}</h1>
+        <p className="mt-1 text-[max(0.875rem,12px)] text-ink-3">{head.sub}</p>
+      </div>
+      <ul className="flex flex-col gap-[max(0.25rem,2px)] max-md:flex-row max-md:overflow-x-auto max-md:[scrollbar-width:none]">
+        {rows.map((r) => (
+          <li key={r.key} className="shrink-0">
+            <button type="button" onClick={() => onAsk(r.ask)} title={r.ask} className="flex w-full items-center gap-[max(0.875rem,10px)] rounded-md px-[max(0.75rem,8px)] py-[max(0.7rem,7px)] text-left transition-colors hover:bg-surface-2/70">
+              {r.lead}
+              <span className="min-w-0">
+                <span className="block truncate text-[max(1rem,13.5px)] font-medium text-ink">{r.main}</span>
+                <span className={"block truncate text-[max(0.875rem,12px)] " + (r.subClass ?? "text-ink-3")}>{r.sub}</span>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <button type="button" onClick={onBoard} className="mt-auto flex items-center justify-between rounded-md bg-surface-2 px-4 py-3 text-left transition-colors hover:bg-surface-3 max-md:mt-0">
+        <span>
+          <span className="block text-[max(0.875rem,12px)] font-medium text-ink">Team board</span>
+          <span className="block text-[max(0.8125rem,11.5px)] text-ink-3">Everything on one page</span>
+        </span>
+        <svg data-nudge viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-4 text-ink-3" aria-hidden="true">
+          <path d="M5 12h14M13 6l6 6-6 6" />
+        </svg>
+      </button>
+    </aside>
+  );
+}
+
+/** A TA's checks as a ring: green when the EOD is sent, amber under half, red not started. */
+function Ring({ done, of, eod }: { done: number; of: number; eod: boolean }) {
+  const share = of ? done / of : 0;
+  const tone = eod ? "stroke-brand" : !of ? "stroke-danger" : share < 0.5 ? "stroke-warn" : "stroke-info";
+  return (
+    <span className="relative flex size-[max(2.5rem,30px)] shrink-0 items-center justify-center">
+      <svg viewBox="0 0 36 36" className="absolute inset-0 size-full -rotate-90" aria-hidden="true">
+        <circle cx="18" cy="18" r="15" fill="none" strokeWidth="3.5" className="stroke-surface-2" />
+        <circle cx="18" cy="18" r="15" fill="none" strokeWidth="3.5" strokeLinecap="round" pathLength={100} strokeDasharray={`${Math.max(of ? 4 : 0, share * 100)} 100`} className={tone} />
+      </svg>
+      <span className="text-[max(0.6875rem,10px)] font-medium tabular-nums text-ink-2">{of ? `${done}/${of}` : "–"}</span>
+    </span>
+  );
+}
+
+const Initials = ({ s }: { s: string }) => (
+  <span className="flex size-[max(2.5rem,30px)] shrink-0 items-center justify-center rounded-full bg-brand-soft text-[max(0.75rem,11px)] font-medium text-brand" aria-hidden="true">
+    {s
+      .split(" ")
+      .map((w) => w[0])
+      .slice(0, 2)
+      .join("")}
+  </span>
+);
+
+const Mark = ({ size = "size-[max(2.5rem,30px)]" }: { size?: string }) => (
+  <span className={"flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-black " + size}>
+    <Image src="/aura-mark.png" alt="" width={56} height={56} className="size-full" />
+  </span>
+);
+
+/** AURA thinking: its mark breathes (never spins). */
+function Thinking() {
+  const glow = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!glow.current || !motionOK()) return;
+    const t = gsap.to(glow.current, { scale: 1.35, opacity: 0.15, duration: 0.9, ease: "sine.inOut", repeat: -1, yoyo: true });
+    return () => void t.kill();
+  }, []);
+  return (
+    <div role="status" className="flex items-center gap-[max(0.875rem,10px)]">
+      <span className="relative flex size-[max(2.5rem,30px)] shrink-0">
+        <span ref={glow} aria-hidden="true" className="absolute inset-0 rounded-full bg-[conic-gradient(from_0deg,var(--color-aura-1),var(--color-aura-2),var(--color-aura-3),var(--color-aura-4),var(--color-aura-1))] opacity-40" />
+        <span className="relative">
+          <Mark />
+        </span>
+      </span>
+      <p className="text-[max(1rem,13.5px)] text-ink-3">Reading the desk…</p>
+    </div>
+  );
+}
+
+/** AURA's answer: the sentence, then numbers, chips, what is behind, and rows. */
+function Card({ a }: { a: Answer }) {
+  const card = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = card.current;
+    if (!el || !motionOK()) return;
+    const parts = el.querySelectorAll("[data-part]");
+    gsap.set(parts, { opacity: 0, x: -8 });
+    const t = gsap.to(parts, { opacity: 1, x: 0, duration: DUR.base, ease: EASE.out, stagger: 0.05, clearProps: "opacity,transform" });
+    return () => void t.progress(1).kill();
+  }, []);
+  const body = a.stats || a.chips?.length || a.warn?.length || a.rows?.length;
+  return (
+    <div className="flex flex-col gap-[max(0.875rem,9px)]">
+      <div className="flex items-center gap-[max(0.875rem,10px)]">
+        <Mark />
+        <p className="text-[max(1.125rem,14px)] font-medium text-ink">{a.say}</p>
+      </div>
+      {body ? (
+        <div ref={card} className="rounded-lg border border-border bg-white px-[max(1.5rem,14px)] py-[max(1rem,10px)] md:ml-[max(3.375rem,0px)]">
+          {a.stats && (
+            <div data-part className="flex flex-wrap gap-x-[max(2.5rem,18px)] gap-y-2 pb-[max(0.75rem,8px)]">
+              {a.stats.map(([v, l]) => (
+                <p key={l} className="flex items-baseline gap-1.5">
+                  <span className="text-[max(1.5rem,18px)] font-semibold tabular-nums text-ink">{v}</span>
+                  <span className="text-[max(0.875rem,12px)] text-ink-3">{l}</span>
+                </p>
+              ))}
+            </div>
+          )}
+          {a.chips?.length || a.warn?.length ? (
+            <div data-part className="flex flex-wrap gap-1.5 pb-[max(0.75rem,8px)]">
+              {a.chips?.map((c) => (
+                <span key={c} className={PILL + " bg-surface-2 font-normal text-ink-2"}>
+                  {c}
+                </span>
+              ))}
+              {a.warn?.map((w) => (
+                <span key={w} className={PILL + " bg-warn-soft text-warn"}>
+                  {w}
+                </span>
+              ))}
+            </div>
+          ) : null}
+          {a.rows && a.rows.length > 0 && (
+            <ol className="divide-y divide-border">
+              {a.rows.map((l) => {
+                const row = (
+                  <>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[max(1rem,13.5px)] font-medium text-ink">{l.main}</span>
+                      {l.meta && <span className="block truncate text-[max(0.8125rem,11.5px)] text-ink-3">{l.meta}</span>}
+                    </span>
+                    {l.tag && <span className={PILL + " " + TONE[l.tag.tone]}>{l.tag.text}</span>}
+                  </>
+                );
+                const cls = "flex items-center gap-[max(1rem,10px)] py-[max(0.7rem,8px)]";
+                return (
+                  <li key={l.main + (l.meta ?? "")} data-part>
+                    {l.href ? (
+                      <Link href={l.href} className={cls + " -mx-2 rounded-md px-2 transition-colors hover:bg-surface-2/60"}>
+                        {row}
+                      </Link>
+                    ) : (
+                      <div className={cls}>{row}</div>
+                    )}
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}

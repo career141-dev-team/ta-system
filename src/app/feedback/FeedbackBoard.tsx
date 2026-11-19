@@ -37,7 +37,7 @@ export default function FeedbackBoard() {
   // a lead, Director or Ops person sees everyone's and moves them on.
   const role = useRole();
   useSignedInPerson(); // the signed-in name, when it arrives
-  const lead = role === "Lead" || role === "Director";
+  const lead = role === "Lead" || role === "Admin" || role === "Director";
   const me = personOf(role).name.split(" ")[0];
   const all = useItems();
   const mine = lead ? all : all.filter((x) => x.by === me);

@@ -31,8 +31,21 @@ function readNow() {
 }
 
 /** T1 · Today: the greeting, what is waiting, and Start workday over a soft glow.
- *  Start workday opens T2 (TodayScreen). */
-export default function Today({ onStart }: { onStart: () => void }) {
+ *  Start workday opens T2 (TodayScreen). The TA Lead, Director and Ops start on the
+ *  same screen with "Start chat" and their own line and numbers (AuraHome, 19 Nov). */
+export default function Today({
+  onStart,
+  button = "Start workday",
+  line = WAITING,
+  caption = "AURA will brief you and plan the day with you.",
+  stats = STATS,
+}: {
+  onStart: () => void;
+  button?: string;
+  line?: string;
+  caption?: string;
+  stats?: readonly (readonly [string, string])[];
+}) {
   const root = useRef<HTMLDivElement>(null);
   const [part, date] = useSyncExternalStore(noop, readNow, () => "morning|").split("|");
   const { first } = useMe();
@@ -91,7 +104,7 @@ export default function Today({ onStart }: { onStart: () => void }) {
           ))}
         </h1>
         <p data-line className="mt-[max(1.25rem,8px)] text-[max(1.125rem,14px)] text-ink-2">
-          {WAITING}
+          {line}
         </p>
 
         <button
@@ -107,15 +120,15 @@ export default function Today({ onStart }: { onStart: () => void }) {
           <span className="flex size-[max(3.5rem,38px)] shrink-0 items-center justify-center overflow-hidden rounded-full bg-black">
             <Image src="/aura-mark.png" alt="" width={56} height={56} priority className="size-full" />
           </span>
-          Start workday
+          {button}
         </button>
         <p data-caption className="mt-[max(1.75rem,12px)] text-[max(0.875rem,12px)] text-ink-3">
-          AURA will brief you and plan the day with you.
+          {caption}
         </p>
       </div>
 
       <ul className="relative mb-[max(3.5rem,18px)] flex shrink-0 flex-wrap items-baseline justify-center gap-x-[max(2.5rem,18px)] gap-y-1">
-        {STATS.map(([n, label]) => (
+        {stats.map(([n, label]) => (
           <li key={label} data-stat className="flex items-baseline gap-[max(0.5rem,6px)]">
             <span className="text-[max(1rem,14px)] font-medium text-ink">
               <Count n={parseInt(n)} />
