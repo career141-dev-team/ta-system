@@ -6,8 +6,8 @@
  * are the rules for what may come in and what goes back.
  */
 
-/** The only page allowed to call it from a browser. */
-export const UI_ORIGINS = ["https://new.career141.com"];
+/** The only page allowed to call it from a browser (src/lib/uiCors.ts). */
+export { UI_ORIGINS } from "./uiCors";
 
 /**
  * The old send form's own field names and nothing else - a browser cannot slip
