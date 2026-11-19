@@ -136,6 +136,9 @@ export const door = {
   askToday: makeFunctionReference<"action">("ui/aura:askToday"),
   // The lead's AURA home (19 Nov): every TA's day, decisions and open roles.
   leadDesk: makeFunctionReference<"query">("ui/lead:desk"),
+  // The Director's and Ops's AURA homes (19 Nov).
+  directorDesk: makeFunctionReference<"query">("ui/homes:director"),
+  opsDesk: makeFunctionReference<"query">("ui/homes:ops"),
   scoopUploadUrl: makeFunctionReference<"mutation">("ui/opening:scoopUploadUrl"),
   queueScoop: makeFunctionReference<"mutation">("ui/opening:queueScoop"),
   refreshChecks: makeFunctionReference<"mutation">("ui/day:refreshChecks"),
