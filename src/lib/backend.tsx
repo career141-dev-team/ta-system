@@ -19,6 +19,8 @@ import { ConvexProviderWithClerk } from "convex/react-clerk";
 import { makeFunctionReference } from "convex/server";
 import { createContext, useContext, useEffect, type ReactNode } from "react";
 import { setSignedIn, type Role } from "@/lib/role";
+import { goLive, setLiveDay } from "@/lib/workday";
+import { setLiveAlerts, type Alert } from "@/app/alerts/data";
 
 const URL = process.env.NEXT_PUBLIC_CONVEX_URL ?? "";
 const CLERK_KEY = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "";
@@ -55,6 +57,8 @@ export function Backend({ children }: { children: ReactNode }) {
         <SignedIn>
           <Live.Provider value={true}>
             <WhoIsLooking />
+            <LiveWorkday />
+            <LiveBell />
             {children}
           </Live.Provider>
         </SignedIn>
@@ -87,6 +91,19 @@ export const door = {
   deletePost: makeFunctionReference<"mutation">("ui/posts:deletePost"),
   moveCvs: makeFunctionReference<"mutation">("ui/posts:moveCvs"),
   postsList: makeFunctionReference<"query">("ui/posts:list"),
+  today: makeFunctionReference<"query">("ui/day:today"),
+  scoopUploadUrl: makeFunctionReference<"mutation">("ui/opening:scoopUploadUrl"),
+  queueScoop: makeFunctionReference<"mutation">("ui/opening:queueScoop"),
+  refreshChecks: makeFunctionReference<"mutation">("ui/day:refreshChecks"),
+  startDay: makeFunctionReference<"mutation">("ui/day:start"),
+  addPosition: makeFunctionReference<"mutation">("ui/day:addPosition"),
+  setWorkType: makeFunctionReference<"mutation">("ui/day:setWorkType"),
+  excuseCheck: makeFunctionReference<"mutation">("ui/day:excuseCheck"),
+  saveCheck: makeFunctionReference<"mutation">("ui/day:saveCheck"),
+  setWorkingStage: makeFunctionReference<"mutation">("ui/day:setWorkingStage"),
+  bell: makeFunctionReference<"query">("ui/day:bell"),
+  markRead: makeFunctionReference<"mutation">("ui/day:markRead"),
+  markAllRead: makeFunctionReference<"mutation">("ui/day:markAllRead"),
 };
 
 /** The board's columns in the backend's words, in the same order as the UI's STAGES. */
@@ -138,5 +155,57 @@ function WhoIsLooking() {
     const role = ROLE_OF[me.role] ?? "TA";
     setSignedIn({ role, name: me.name, title: me.role === "admin" ? "Admin" : TITLE_OF[role] });
   }, [me]);
+  return null;
+}
+
+/** One position on today's workday, as ta/workdays:dashboard sends it. */
+export type DayCheck = { key: string; label: string; status?: string; progress?: string; exception?: { reason: string } };
+export type DayJob = { jobId: string; title: string; workType: "100%" | "Follow-up" | "Add-on"; eodSentAt?: number; checks: DayCheck[]; eodChecks?: DayCheck[] };
+export type DayView = { id: string; date: string; startedAt: number; finishedAt: number | null; jobs: DayJob[]; staleChecklists?: string[] };
+export type DayPayload = {
+  canWork: boolean; active: DayView | null; history: DayView[]; lastFinishedAt: number | null; lastFinishedDate: string | null;
+  options: { id: string; title: string; workType?: "100%" | "Follow-up" | "Add-on" }[];
+};
+export type DoorDay = Answer<{ view: DayPayload }>;
+
+const colomboToday = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Colombo" });
+
+/** Today's real workday into src/lib/workday.ts, so every screen's gate and Today follow it. */
+function LiveWorkday() {
+  goLive();
+  const got = useQuery(door.today, {}) as DoorDay | undefined;
+  const refresh = useMutation(door.refreshChecks);
+  useEffect(() => {
+    if (!got?.ok) return void (got && setLiveDay("none", null));
+    const v = got.view;
+    // A day closed by today's EOD is no longer "active": it is the newest in history.
+    const day = v.active ?? v.history.find((d) => d.date === colomboToday()) ?? null;
+    setLiveDay(day ? { id: day.id, startedAt: day.startedAt, finishedAt: day.finishedAt } : "none", v);
+    // Positions computed live: ask for one stored recompute (the old route's step).
+    if (v.active?.staleChecklists?.length) void refresh({ workdayId: v.active.id, jobIds: v.active.staleChecklists }).catch(() => {});
+  }, [got, refresh]);
+  return null;
+}
+
+type DoorBell = Answer<{ rows: { unreadCount: number; notifications: { id: string; type: string; title: string; body: string; jobId: string | null; read: boolean }[] } }>;
+// Notifications that ask for something to be done sit under "Needs you"; the rest are updates.
+const NEEDS = new Set(["strategy_assigned", "workday_exception", "opening_access_requested", "eod_stuck", "eod_reminder", "workday_expired", "eod_lead_digest"]);
+const ICON: Record<string, Alert["icon"]> = { strategy_assigned: "task", workday_exception: "task", eod_reminder: "task", opening_changed: "person", candidate_placed: "person" };
+
+/** The person's real notifications into the bell (src/app/alerts/data.ts). */
+function LiveBell() {
+  const got = useQuery(door.bell, { limit: 30 }) as DoorBell | undefined;
+  const one = useMutation(door.markRead);
+  const all = useMutation(door.markAllRead);
+  useEffect(() => {
+    if (!got?.ok) return;
+    setLiveAlerts(
+      got.rows.notifications.map((n) => ({
+        id: n.id, title: n.title, body: n.body, unread: !n.read, needs: NEEDS.has(n.type), icon: ICON[n.type] ?? "bell",
+        href: n.jobId ? `/openings/demo?job=${n.jobId}` : "/today",
+      })),
+      (id) => void (id ? one({ notificationId: id }) : all({})).catch(() => {}),
+    );
+  }, [got, one, all]);
   return null;
 }

@@ -142,6 +142,30 @@ export default function ScoopsView() {
   }
   const claim = useDoorMutation(door.shortlist);
   const takeOff = useDoorMutation(door.removeFromOpening);
+  const uploadUrl = useDoorMutation(door.scoopUploadUrl);
+  const queueScoop = useDoorMutation(door.queueScoop);
+  // Signed in: each CV goes to the backend's file store, then into the scoop reading
+  // queue (ui/opening:queueScoop re-checks size and type); it joins the list once read.
+  const sendScoops = async (files: File[]) => {
+    let sent = 0;
+    let why = "";
+    for (const f of files) {
+      try {
+        const u = (await uploadUrl({})) as { ok: boolean; url?: string; message?: string } | undefined;
+        if (!u?.ok || !u.url) throw new Error(u?.message ?? "Could not start the upload.");
+        const res = await fetch(u.url, { method: "POST", headers: { "Content-Type": f.type || "application/octet-stream" }, body: f });
+        if (!res.ok) throw new Error("The file did not upload. Try again.");
+        const { storageId } = (await res.json()) as { storageId: string };
+        const q = (await queueScoop({ openingId: job!, storageId, fileName: f.name })) as DoorDone | undefined;
+        if (q && !q.ok) throw new Error(q.message);
+        sent++;
+      } catch (e) {
+        why = e instanceof Error ? e.message : "The file did not upload.";
+      }
+    }
+    if (sent) say(` - each one joins the list once it is read.`, `${sent} CV${sent === 1 ? "" : "s"} sent for reading`);
+    if (why) say(`${files.length - sent} not sent: ${why}`, undefined, true);
+  };
   const [mode, setMode] = useState<"list" | "read">("list");
   const [chosen, setChosen] = useState(SCOOPS[0].id);
   const [picked, setPicked] = useState<string[]>([]);
@@ -341,7 +365,7 @@ export default function ScoopsView() {
   const addFiles = (files: FileList | File[]) => {
     if (!CAN_ACT) return;
     if (gate) return say(gate + " Start it on Today, then upload scoops.", undefined, true);
-    if (live) return say("Uploading scoops is not switched on here yet - do it in AURA for now.", undefined, true);
+    if (live) return void sendScoops(Array.from(files).filter((f) => CV_FILE.test(f.name) && f.size <= MAX_BYTES).slice(0, MAX_FILES));
     const all = Array.from(files);
     const fits = all.filter((f) => CV_FILE.test(f.name) && f.size <= MAX_BYTES);
     const ok = fits.slice(0, MAX_FILES);

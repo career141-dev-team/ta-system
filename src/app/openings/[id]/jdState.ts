@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { door, jobFromAddress, useDoorQuery, useLive, type Answer } from "@/lib/backend";
 
 // Whether this opening's job description is approved - one fact every view of the
 // opening reads, as in the TA System, where approval is what lets a post go live,
@@ -9,8 +10,9 @@ import { useSyncExternalStore } from "react";
 let approved = false;
 const subs = new Set<() => void>();
 
-export const useJdApproved = () =>
-  useSyncExternalStore(
+// Signed in (19 Nov, D4): the opening's own JD status from ui/opening:summary.
+export function useJdApproved() {
+  const local = useSyncExternalStore(
     (f) => {
       subs.add(f);
       return () => void subs.delete(f);
@@ -18,6 +20,11 @@ export const useJdApproved = () =>
     () => approved,
     () => false,
   );
+  const live = useLive();
+  const job = live ? jobFromAddress() : null;
+  const got = useDoorQuery(door.summary, job ? { openingId: job } : "skip") as Answer<{ opening: { jd: { status: string | null } } }> | undefined;
+  return live ? !!got?.ok && got.opening.jd.status === "approved" : local;
+}
 
 export function setJdApproved(v: boolean) {
   approved = v;

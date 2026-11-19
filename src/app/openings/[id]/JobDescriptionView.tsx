@@ -9,6 +9,7 @@ import { BackButton } from "./PipelineBoard";
 import Toast from "./Toast";
 import { useLiftMenu } from "./liftMenu";
 import { useMe } from "@/lib/role";
+import { door, jobFromAddress, useDoorQuery, useLive, type Answer } from "@/lib/backend";
 
 // The Job Description view (shane123-tech's branch, Figma): the draft on the left; on
 // the right the approval bar, a chat to change the draft, and what candidates are
@@ -35,7 +36,44 @@ const CHIP = "rounded-full px-3 py-1 text-caption font-medium";
 /** A field that looks like the text it edits, with a quiet outline. */
 const EDIT = "w-full resize-none rounded-sm border border-border bg-surface px-2 py-1.5 outline-none focus:border-brand focus:ring-2 focus:ring-brand/20";
 
+// Signed in (19 Nov, D4): the opening's real JD from ui/opening:summary, read-only
+// until editing, approving and versions move into the door (D7). The design's
+// editor below stays the preview.
 export default function JobDescriptionView() {
+  return useLive() ? <LiveJd /> : <SampleJd />;
+}
+
+function LiveJd() {
+  const job = jobFromAddress();
+  const got = useDoorQuery(door.summary, job ? { openingId: job } : "skip") as
+    | Answer<{ opening: { title: string | null; jd: { markdown: string | null; status: string | null; approvedAt: number | null } } }>
+    | undefined;
+  return (
+    <div className="flex min-h-0 flex-1 flex-col px-[max(1.5rem,14px)] pb-[max(1.4rem,12px)] pt-[max(1.4rem,14px)] max-md:pt-11">
+      <BackButton />
+      <article className="mx-auto mt-6 w-full max-w-[56rem] min-h-0 flex-1 overflow-y-auto rounded-lg border border-border bg-surface px-[max(2.5rem,16px)] py-[max(2rem,14px)]">
+        {!got ? (
+          <p className="text-small text-ink-3">Loading the job description…</p>
+        ) : !got.ok ? (
+          <p className="text-small text-danger">{got.message}</p>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-h2 text-ink">{got.opening.title}</h1>
+              <span className={CHIP + (got.opening.jd.status === "approved" ? " bg-brand-soft text-brand-strong" : " bg-warn-soft text-warn")}>
+                {got.opening.jd.status === "approved" ? "Approved" : "Not approved yet"}
+              </span>
+            </div>
+            <p className="mt-1 text-small text-ink-3">Editing and approving here is not switched on yet - do it in AURA for now.</p>
+            <div className="mt-6 whitespace-pre-wrap text-body text-ink-2">{got.opening.jd.markdown?.trim() || "No job description yet."}</div>
+          </>
+        )}
+      </article>
+    </div>
+  );
+}
+
+function SampleJd() {
   // Shared with LinkedIn Job, Snippets and Database CVs (jdState).
   const approved = useJdApproved();
   const setApproved = setJdApproved;

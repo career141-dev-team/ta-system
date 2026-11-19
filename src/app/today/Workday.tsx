@@ -6,9 +6,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { DUR, EASE, gsap, useGSAP } from "@/lib/gsap";
 import { PERSON, useMe } from "@/lib/role";
-import { useDayEnd } from "@/lib/workday";
+import { useDayEnd, useLiveDesk } from "@/lib/workday";
+import { door, useDoorMutation, type DayPayload, type DoorDone } from "@/lib/backend";
 import ChecksList from "./ChecksList";
-import { checksFor, progress, type CheckKey } from "./checks";
+import { checksFor, KNOWN, progress, type Check, type CheckKey } from "./checks";
 import PillMenu, { type MenuOption } from "../openings/[id]/PillMenu";
 import { aboutTheDay, planDay, type Plan } from "./plan";
 import { answer, DESK, rank, startLine, type Answer, type Desk, type Tone } from "./desk";
@@ -106,12 +107,23 @@ const minute = (cb: () => void) => {
   return () => clearInterval(t);
 };
 
-export default function Workday({ startedAt }: { startedAt: number }) {
+export default function Workday({ startedAt }: { startedAt: number | null }) {
   const root = useRef<HTMLDivElement>(null);
   const { first } = useMe();
   // Rashmi's strategies, from the Strategy Planner's store: accepting one here is seen there.
   const rows = useRows();
   const me = TAS.find((t) => t.first === first)?.id;
+  // Signed in (19 Nov, D4): the day, its positions and their checks are the
+  // backend's (ui/day:today, via src/lib/workday.ts); every pick and excuse saves
+  // through ui/day and the backend's own rules. The AURA chat stays as it was.
+  const desk = useLiveDesk() as DayPayload | null;
+  const liveDay = desk?.active ?? null;
+  const startDay = useDoorMutation(door.startDay);
+  const addPos = useDoorMutation(door.addPosition);
+  const saveType = useDoorMutation(door.setWorkType);
+  const excuse = useDoorMutation(door.excuseCheck);
+  const answered = (run: Promise<unknown>, ok?: () => void) =>
+    void (run as Promise<DoorDone | undefined>).then((d) => (d && !d.ok ? setRefusal(d.message) : (setRefusal(""), ok?.())));
   const part = useSyncExternalStore(
     minute,
     () => {
@@ -124,24 +136,40 @@ export default function Workday({ startedAt }: { startedAt: number }) {
 
   // The positions on today's workday and each one's work type; the rest are "also
   // yours". The design opens with two picked.
-  const [picked, setPicked] = useState<Record<string, WorkType>>({ sap: "100%", fin: "Follow-up" });
-  const [active, setActive] = useState("sap");
+  const [pickedLocal, setPicked] = useState<Record<string, WorkType>>({ sap: "100%", fin: "Follow-up" });
+  const [activeRaw, setActive] = useState(desk ? "" : "sap");
   const [refusal, setRefusal] = useState("");
   // Openings this TA created from "Add a position" (sample: kept for the visit).
   const [made, setMade] = useState<Position[]>([]);
-  const positions = [...POSITIONS, ...made];
+  const positions = desk
+    ? [
+        ...(liveDay?.jobs ?? []).map((j) => ({ ...fresh(j.jobId, j.title, ""), type: j.workType })),
+        ...desk.options.filter((o) => !liveDay?.jobs.some((j) => j.jobId === o.id)).map((o) => ({ ...fresh(o.id, o.title, ""), type: o.workType ?? ("100%" as WorkType) })),
+      ]
+    : [...POSITIONS, ...made];
+  const picked: Record<string, WorkType> = desk ? Object.fromEntries((liveDay?.jobs ?? []).map((j) => [j.jobId, j.workType])) : pickedLocal;
+  const active = desk ? (picked[activeRaw] ? activeRaw : liveDay?.jobs[0]?.jobId ?? "") : activeRaw;
   const [newOpening, setNewOpening] = useState(false);
   // "Couldn't complete this task" reasons, per position and check.
   const [excuses, setExcuses] = useState<Record<string, string>>({});
   // The day ends by itself at the first 100% End of day email; that position's EOD is in.
   const dayEnd = useDayEnd();
-  const checksOf = (id: string) => {
+  const checksOf = (id: string): Check[] => {
+    if (desk) {
+      const job = liveDay?.jobs.find((j) => j.jobId === id);
+      return (job?.checks ?? []).flatMap((c) => {
+        const base = KNOWN.get(c.key.split(":")[0]);
+        return base ? [{ ...base, label: c.label || base.label, todo: c.progress || base.todo, done: c.status === "complete", excuse: c.exception?.reason, full: c.key }] : [];
+      });
+    }
     // ponytail: the demo opening is the SAP one, so its EOD finishing the day is SAP's.
     const done = [...(DONE[id] ?? []), ...(dayEnd && id === "sap" ? (["daily_email", "midday_email", "chatgpt"] as CheckKey[]) : [])];
     return checksFor(picked[id] ?? "100%", done).map((c) => ({ ...c, excuse: excuses[`${id}:${c.key}`] }));
   };
-  const eodSent = (id: string) => checksOf(id).some((c) => c.key === "daily_email" && c.done);
-  const [things, setThings] = useState(THINGS);
+  const eodSent = (id: string) =>
+    desk ? !!liveDay?.jobs.find((j) => j.jobId === id)?.eodSentAt : checksOf(id).some((c) => c.key === "daily_email" && c.done);
+  // Signed in, the sample "things" (Kasun, the HR JD, Rashmi's strategy) are not shown.
+  const [things, setThings] = useState(desk ? [] : THINGS);
   // What the person said, and AURA's answer: a plan, "not yet" for anything that
   // is not about the day, or nothing while it is still thinking.
   const [chat, setChat] = useState<{ id: number; text: string; reply?: Plan | Answer | "na" }[]>([]);
@@ -163,6 +191,7 @@ export default function Workday({ startedAt }: { startedAt: number }) {
 
   const toggle = (p: Position) => {
     setRefusal("");
+    if (picked[p.id] && desk) return setRefusal("A position stays on today's workday once it is added.");
     if (picked[p.id]) {
       if (eodSent(p.id)) return setRefusal("This position's EOD has been sent. It stays on today's workday.");
       // A day needs at least one position (old Workday: no day without one).
@@ -177,6 +206,11 @@ export default function Workday({ startedAt }: { startedAt: number }) {
     if (Object.keys(picked).length >= MAX_DAY) return setRefusal(`At most ${MAX_DAY} positions a day.`);
     if (p.type === "100%" && Object.values(picked).filter((t) => t === "100%").length >= MAX_FULL)
       return setRefusal(`At most ${MAX_FULL} positions at 100% a day. Make another one Follow-up first.`);
+    if (desk) {
+      // The first pick starts the day; the rest join it.
+      const run = liveDay ? addPos({ workdayId: liveDay.id, jobId: p.id, workType: p.type }) : startDay({ jobId: p.id, workType: p.type });
+      return answered(run, () => setActive(p.id));
+    }
     setPicked({ ...picked, [p.id]: p.type });
     if (!active) setActive(p.id);
   };
@@ -190,6 +224,7 @@ export default function Workday({ startedAt }: { startedAt: number }) {
       return;
     }
     setRefusal("");
+    if (desk && liveDay) return answered(saveType({ workdayId: liveDay.id, jobId: id, workType: type }));
     setPicked({ ...picked, [id]: type });
   };
 
@@ -240,9 +275,9 @@ export default function Workday({ startedAt }: { startedAt: number }) {
     { scope: root },
   );
 
-  const startedLabel = new Date(startedAt).toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit" });
+  const startedLabel = startedAt ? new Date(startedAt).toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit" }) : "";
   // The clock stops at the first 100% EOD.
-  const mins = now ? Math.max(0, (dayEnd ? Math.floor(dayEnd / 60_000) : now) - Math.floor(startedAt / 60_000)) : 0;
+  const mins = now && startedAt ? Math.max(0, (dayEnd ? Math.floor(dayEnd / 60_000) : now) - Math.floor(startedAt / 60_000)) : 0;
   const endLabel = dayEnd ? new Date(dayEnd).toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit" }) : "";
   const worked = `${Math.floor(mins / 60)}h ${mins % 60}m`;
 
@@ -256,7 +291,7 @@ export default function Workday({ startedAt }: { startedAt: number }) {
         <div>
           <h1 className="text-[max(1.75rem,20px)] leading-tight text-ink">Today</h1>
           <p className="mt-1 text-[max(0.875rem,12px)] text-ink-3">
-            Started {startedLabel} &middot; {worked}
+            {startedAt ? <>Started {startedLabel} &middot; {worked}</> : "Pick your first position below to start the day"}
           </p>
         </div>
 
@@ -277,7 +312,7 @@ export default function Workday({ startedAt }: { startedAt: number }) {
               <Ring value={progress(checksOf(p.id))} color={RING[picked[p.id]]} />
               <span className="min-w-0">
                 {/* ponytail: every position opens the one built opening until the backend sends ids. */}
-                <Link href="/openings/demo" onClick={(e) => e.stopPropagation()} className="block truncate text-[max(1rem,13.5px)] font-medium text-ink hover:underline">
+                <Link href={desk ? `/openings/demo?job=${p.id}` : "/openings/demo"} onClick={(e) => e.stopPropagation()} className="block truncate text-[max(1rem,13.5px)] font-medium text-ink hover:underline">
                   {p.title}
                 </Link>
                 <span className="block truncate text-[max(0.875rem,12px)] text-ink-3">
@@ -291,14 +326,15 @@ export default function Workday({ startedAt }: { startedAt: number }) {
               </span>
             </div>
           ))}
-          <button
+          {/* Signed in, a new opening is made on Openings (not switched on here yet). */}
+          {!desk && <button
             type="button"
             onClick={() => setNewOpening(true)}
             className="flex shrink-0 items-center gap-2 px-[max(0.75rem,8px)] py-2 text-left text-[max(0.875rem,12px)] text-ink-2 transition-colors hover:text-ink"
           >
             <span aria-hidden="true" className="text-[1.2em] leading-none">+</span>
             Add a position
-          </button>
+          </button>}
           {/* The same sheet as Openings. A TA's new opening is theirs (old system:
               a TA creates self-assigned), so it joins today's workday as Follow-up
               unless the day is full; then it waits under "Also yours". */}
@@ -325,7 +361,9 @@ export default function Workday({ startedAt }: { startedAt: number }) {
             checks={checksOf(active)}
             lead={PERSON.Lead.name.split(" ")[0]}
             onExcuse={(key, reason) =>
-              setExcuses((e) => {
+              desk && liveDay
+                ? answered(excuse({ workdayId: liveDay.id, jobId: active, key: checksOf(active).find((c) => c.key === key)?.full ?? key, reason: reason ?? "", withdraw: !reason }))
+                : setExcuses((e) => {
                 const next = { ...e };
                 if (reason) next[`${active}:${key}`] = reason;
                 else delete next[`${active}:${key}`];

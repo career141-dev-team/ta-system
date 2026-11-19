@@ -1,6 +1,7 @@
 "use client";
 
-import { startWorkday, useWorkday } from "@/lib/workday";
+import { useState } from "react";
+import { startWorkday, useLiveDesk, useWorkday } from "@/lib/workday";
 import Today from "./Today";
 import Workday from "./Workday";
 import Home from "./Homes";
@@ -14,11 +15,16 @@ export default function TodayScreen() {
   // "pending" while the page is drawn on the server and hydrates, so neither screen
   // flashes before the browser knows which one it is.
   const started = useWorkday();
+  // Signed in, the backend starts a day with its first position (ta/workdays:start),
+  // so Start shows the positions to pick; the first pick starts the day.
+  const live = useLiveDesk() !== null;
+  const [choosing, setChoosing] = useState(false);
   // A lead, Director or Ops person has their own home (no workday of their own).
   const role = useRole();
   if (!worksADay(role)) return <Home key={role} role={role as "Lead" | "Director" | "Ops"} />;
 
   if (started === "pending") return <div className="flex-1" />;
+  if (started === "none" && live) return choosing ? <Workday startedAt={null} /> : <Today onStart={() => setChoosing(true)} />;
   if (started === "none") return <Today onStart={startWorkday} />;
   return <Workday startedAt={started} />;
 }

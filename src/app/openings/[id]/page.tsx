@@ -1,7 +1,8 @@
 import OpeningCards from "./OpeningCards";
 import LiveName from "./LiveName";
+import { StagePill, StatusPill } from "./LivePills";
 import RowLink from "./RowLink";
-import PillMenu, { type MenuOption } from "./PillMenu";
+import { type MenuOption } from "./PillMenu";
 import Notch from "./Notch";
 import OpeningView from "./OpeningView";
 import { ATS_ROWS, HH_ROWS } from "./rows";
@@ -109,15 +110,9 @@ export default async function OpeningPage({ params }: PageProps<"/openings/[id]"
         <span className="text-title font-semibold"><LiveName field="client" sample={OPENING.client} /></span>
         <RefereeBadge />
         <Divider />
-        <PillMenu options={STATUS} initial={OPENING.status} pillClass={PILL} />
+        <StatusPill options={STATUS} sample={OPENING.status} pillClass={PILL} />
         <Divider />
-        <PillMenu
-          options={STAGE}
-          initial={OPENING.stage}
-          prefix="Stage:"
-          title="Working Stage"
-          pillClass={PILL}
-        />
+        <StagePill options={STAGE} sample={OPENING.stage} pillClass={PILL} />
       </div>
 
       {/* The lists keep their size and the page scrolls to the cards under them (owner,

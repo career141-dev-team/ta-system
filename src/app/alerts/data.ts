@@ -25,6 +25,16 @@ function set(next: Alert[]) {
   alerts = next;
   listeners.forEach((f) => f());
 }
-export const markRead = (id?: string) => set(alerts.map((a) => (!id || a.id === id ? { ...a, unread: false } : a)));
+// Signed in (19 Nov, D4): the bell is the person's real notifications, put here by
+// backend.tsx (LiveBell) from ui/day:bell; reading one also saves it there.
+let saveRead: ((id?: string) => void) | null = null;
+export function setLiveAlerts(next: Alert[], save: (id?: string) => void) {
+  saveRead = save;
+  set(next);
+}
+export const markRead = (id?: string) => {
+  saveRead?.(id);
+  set(alerts.map((a) => (!id || a.id === id ? { ...a, unread: false } : a)));
+};
 /** A new update rings the bell (newest first). */
 export const pushAlert = (a: Omit<Alert, "id" | "unread">) => set([{ ...a, id: `a${Date.now()}`, unread: true }, ...alerts]);

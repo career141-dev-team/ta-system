@@ -19,7 +19,29 @@ const todayKey = () => new Date().toLocaleDateString("en-CA"); // 2026-11-13
 // Start workday still works for this visit.
 let memory: number | undefined;
 
+// Signed in (19 Nov, D4): the day is the backend's, pushed here by backend.tsx
+// (LiveWorkday) from ui/day:today. `undefined` = sample mode (the browser's own
+// note below); `null` = live but not read yet.
+export type LiveDay = { id: string; startedAt: number; finishedAt: number | null } | "none";
+let live: LiveDay | null | undefined;
+/** The whole ui/day:today answer, for Today's rail and checks. */
+let liveDesk: unknown = null;
+
+export function setLiveDay(day: LiveDay | null, desk: unknown) {
+  live = day;
+  liveDesk = desk;
+  window.dispatchEvent(new Event(CHANGED));
+}
+/** Live mode only: the day before it is read is "pending", not "none". */
+export function goLive() {
+  if (live === undefined) live = null;
+}
+const readDesk = () => liveDesk;
+/** ui/day:today's answer when signed in; null in sample mode or before it is read. */
+export const useLiveDesk = () => useSyncExternalStore(subscribe, readDesk, () => null);
+
 function read(): string {
+  if (live !== undefined) return live === null ? "pending" : live === "none" ? "none" : String(live.startedAt);
   try {
     const v = JSON.parse(localStorage.getItem(KEY) ?? "null") as { day?: string; at?: number } | null;
     if (v?.day === todayKey() && v.at) return String(v.at);
@@ -58,6 +80,7 @@ export function startWorkday() {
 // be sent. Kept beside the start, for today only.
 let memoryEnd: number | undefined;
 function readEnd(): number {
+  if (live !== undefined) return live && live !== "none" ? live.finishedAt ?? 0 : 0;
   try {
     const v = JSON.parse(localStorage.getItem(KEY) ?? "null") as { day?: string; end?: number } | null;
     if (v?.day === todayKey() && v.end) return v.end;

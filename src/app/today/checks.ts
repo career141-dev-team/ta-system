@@ -28,6 +28,8 @@ export type Check = {
   done: boolean;
   /** "Couldn't complete this task": the reason the lead reads. */
   excuse?: string;
+  /** Signed in: the backend's own key for this check ("chatgpt:<id>"), sent back on an excuse. */
+  full?: string;
 };
 
 const ALL: Omit<Check, "done">[] = [
@@ -40,6 +42,9 @@ const ALL: Omit<Check, "done">[] = [
   { key: "midday_email", label: "Midday email", todo: "Send the midday email", view: "Midday & EOD" },
   { key: "daily_email", label: "End of day email", todo: "Send the End of day email", view: "Midday & EOD" },
 ];
+
+/** The checks a TA's drawer shows, by key (the candidate checks stay hidden, as in the old system). */
+export const KNOWN = new Map(ALL.map((c) => [c.key as string, c]));
 
 const RETURNING: CheckKey[] = ["director_cv", "chatgpt", "daily_email"];
 /** The old system's canExcuseCheck: only these can be excused with a reason. */
