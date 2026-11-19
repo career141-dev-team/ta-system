@@ -7,7 +7,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useSwap } from "@/lib/gsap";
 import { useWorkdayGate } from "@/lib/workday";
-import { BackButton } from "./PipelineBoard";
+import { BackButton, LinkedInIcon } from "./PipelineBoard";
 import Toast from "./Toast";
 import WorkdayBlocked from "./WorkdayBlocked";
 import FindCvButton from "./FindCvButton";
@@ -662,13 +662,7 @@ function Card({
           aria-label={`${x.name} on LinkedIn`}
           className="shrink-0 rounded-xs hover:opacity-80"
         >
-          <Image
-            src="/li.svg"
-            alt=""
-            width={18}
-            height={18}
-            className="size-[max(1.1rem,15px)]"
-          />
+          <LinkedInIcon className="size-[max(1.1rem,15px)]" />
         </a>
         <span className="ml-auto shrink-0 text-caption text-ink-3">
           Round{" "}
