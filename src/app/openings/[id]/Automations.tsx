@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { DUR, HOVER_IN, HOVER_OUT, gsap, useExit, useGSAP } from "@/lib/gsap";
 import Toast from "./Toast";
-import { door, jobFromAddress, useDoorMutation, useDoorQuery, useLive, type Answer, type DoorDone } from "@/lib/backend";
+import { LIVE, door, jobFromAddress, useDoorMutation, useDoorQuery, useLive, type Answer, type DoorDone } from "@/lib/backend";
 
 // The opening's Automations (owner's design, 13 Nov 2026), as the TA System has them
 // (follow-up skill, Flows F and I):
@@ -40,7 +40,10 @@ const LIFT_OUT = { opacity: 0, y: -6, scale: 0.97 };
 /** The Automations pill on the Pipeline and the panel it lifts open under it. */
 export default function Automations({ pillClass, icon }: { pillClass: string; icon: ReactNode }) {
   const [open, setOpen] = useState(false);
-  const [saved, setSaved] = useState(SAVED);
+  // Live, nothing is shown until the real settings arrive: opening the panel on the
+  // sample and pressing Save would have written the sample questions onto a real
+  // opening (19 Nov audit).
+  const [saved, setSaved] = useState(() => (LIVE && jobFromAddress() ? { on: false, questions: [] as string[] } : SAVED));
   // Live: the opening's real switch and questions (ui/opening:summary); saving goes
   // through ui/opening:setFollowUp and ui/manage:setQuestions, which re-check the rules.
   const live = useLive();
@@ -81,6 +84,7 @@ export default function Automations({ pillClass, icon }: { pillClass: string; ic
     // Only one dropdown open at a time (the filters' menus listen for this too).
     window.dispatchEvent(new CustomEvent("pillmenu:open", { detail: me }));
     held.current = false;
+    if (job && !real?.ok) return say("", real ? real.message : "Still reading this opening's settings. Try again in a moment.");
     setOn(saved.on);
     setQs(toQs(saved.questions));
     setProblem(null);

@@ -13,7 +13,7 @@ export type StageDef = { name: string; dot: string; count: number; closed?: bool
 // has them and TAs use them every day (FLOW-CHECK 2.1).
 export const STAGES: StageDef[] = [
   { name: "TA Follow-Up", dot: "#14b8c4", count: 96 },
-  { name: "Ai Follow-Up", dot: "#e8b417", count: 96 },
+  { name: "AI Follow-Up", dot: "#e8b417", count: 96 },
   { name: "Director Review", dot: "#6366f1", count: 12 },
   { name: "Director Shortlist", dot: "#2f80ed", count: 96 },
   { name: "Client Shortlist", dot: "#a43ee0", count: 96 },
@@ -31,7 +31,7 @@ const CLOSED = ["Rejected", "Dropped out"];
  *  Follow-Up by hand: the assistant takes candidates there itself. */
 const NEXT: Record<string, string[]> = {
   "TA Follow-Up": ["Director Review"],
-  "Ai Follow-Up": ["TA Follow-Up", "Director Review"],
+  "AI Follow-Up": ["TA Follow-Up", "Director Review"],
   "Director Review": ["Director Shortlist", "TA Follow-Up"],
   "Director Shortlist": ["Client Shortlist"],
   "Client Shortlist": ["Interview", "Offer"],
@@ -63,7 +63,7 @@ const list = (a: string[]) => (a.length < 2 ? a.join("") : a.slice(0, -1).join("
 export function checkMove(card: MoveCard, from: string, to: string, role: string): Verdict {
   if (from === to) return { ok: false, why: "Already in " + to + "." };
   if (card.owned === false) return { ok: false, why: "Nobody has shortlisted them yet. Shortlist them first." };
-  if (to === "Ai Follow-Up") return { ok: false, why: "Nobody is moved into Ai Follow-Up by hand. The assistant takes candidates there itself." };
+  if (to === "AI Follow-Up") return { ok: false, why: "Nobody is moved into AI Follow-Up by hand. The assistant takes candidates there itself." };
   if (CLOSED.includes(to)) {
     if (CLOSED.includes(from)) return { ok: false, why: `Already ${from.toLowerCase()}. Move them back to TA Follow-Up first.` };
     if (from === "Placed" && !decides(role)) return { ok: false, why: "Only a TA Lead or an admin can move someone out of Placed." };

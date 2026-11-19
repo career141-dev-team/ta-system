@@ -45,6 +45,7 @@ export default function OpeningsView() {
   const real = useDoorQuery(door.openings, live ? {} : "skip") as DoorOpenings | undefined;
   const [seen, setSeen] = useState<DoorOpenings | undefined>(undefined);
   const [refusal, setRefusal] = useState<string | null>(null);
+  const loadingList = live && !real;
   if (real !== seen) {
     setSeen(real);
     if (real?.ok) setRows(real.openings as Opening[]);
@@ -169,8 +170,7 @@ export default function OpeningsView() {
       {/* The lists */}
       <div ref={body} className="-mx-2 mt-[clamp(14px,4dvh,44px)] min-h-0 flex-1 overflow-y-auto px-2 pb-10">
         {refusal && <p className="mb-4 text-small text-danger">{refusal}</p>}
-        <ResultLine shown={all} total={rows.length} noun="openings" active={active} onReset={reset} className="mb-4" />
-        {live && !real && <p role="status" className="mb-4 text-small text-ink-3">Loading openings…</p>}
+        {!loadingList && <ResultLine shown={all} total={rows.length} noun="openings" active={active} onReset={reset} className="mb-4" />}
         {!refusal && (live ? !!real : true) && all === 0 && <NoResults noun="openings" filtered={active > 0} onReset={reset} />}
         <div className="flex flex-col gap-[clamp(18px,4dvh,44px)]">
           {(tab === "all" ? ORDER.filter((l) => show.includes(l)) : [tab]).map((l) => {
@@ -180,7 +180,7 @@ export default function OpeningsView() {
               <section key={l} aria-label={STATUS[l].label} className="flex flex-col gap-[max(1.125rem,12px)]">
                 <div className="flex items-center gap-3">
                   <h2 className="text-h2 font-normal text-ink">{STATUS[l].label}</h2>
-                  <Count n={list.length} className="text-body text-ink-3" />
+                  {loadingList ? <span className="shimmer h-4 w-6 rounded-sm" /> : <Count n={list.length} className="text-body text-ink-3" />}
                   {tab === "all" && list.length > 4 && (
                     <button type="button" onClick={() => setTab(l)} className="ml-auto flex items-center gap-1.5 text-small text-ink-2 hover:text-ink">
                       See more
@@ -190,7 +190,20 @@ export default function OpeningsView() {
                     </button>
                   )}
                 </div>
-                {shown.length ? (
+                {loadingList ? (
+                  // Card-shaped shimmers while the list is read (owner, 19 Nov 2026: "No active
+                  // openings" while loading looked final).
+                  <div role="status" aria-label="Loading" className="grid grid-cols-4 gap-[max(1.5rem,12px)] max-lg:grid-cols-2 max-sm:grid-cols-1">
+                    {[0, 1, 2, 3].map((k) => (
+                      <div key={k} className="flex h-[max(10.5rem,140px)] flex-col gap-3 rounded-lg border border-border bg-white p-5">
+                        <span className="shimmer h-3 w-2/5 rounded-sm" />
+                        <span className="shimmer h-4 w-4/5 rounded-sm" />
+                        <span className="shimmer h-4 w-3/5 rounded-sm" />
+                        <span className="shimmer mt-auto h-3 w-1/3 rounded-sm" />
+                      </div>
+                    ))}
+                  </div>
+                ) : shown.length ? (
                   <div className="grid grid-cols-4 gap-[max(1.5rem,12px)] max-lg:grid-cols-2 max-sm:grid-cols-1">
                     {shown.map((o) => (
                       <Card

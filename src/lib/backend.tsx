@@ -20,6 +20,7 @@ import { ConvexProviderWithClerk } from "convex/react-clerk";
 import { makeFunctionReference } from "convex/server";
 import { createContext, useContext, useEffect, type ReactNode } from "react";
 import { setSignedIn, type Role } from "@/lib/role";
+import { useBusy } from "@/lib/busy";
 import { goLive, setLiveDay } from "@/lib/workday";
 import { setLiveAlerts, type Alert } from "@/app/alerts/data";
 import LoginScreen from "@/app/signin/LoginScreen";
@@ -40,13 +41,20 @@ const noMutation = async () => undefined;
 // which dropped the whole page onto "This page couldn't load" (19 Nov). The hook is called
 // first, so the rule of hooks holds; a failed answer reads as "still loading" and the next
 // answer from the backend replaces it.
+// 19 Nov (later): a failed read now says so (READ_FAILED, one object so a screen comparing
+// answers does not loop) instead of reading as "loading" for ever, and every read still
+// waiting keeps the tab's loading bar running (src/lib/busy.ts) - one place for every screen.
+const READ_FAILED = { ok: false as const, message: "Could not read this just now. Reload the page to try again." };
 const safeQuery = ((query: Parameters<typeof useQuery>[0], args: Parameters<typeof useQuery>[1]) => {
+  let answer: unknown;
   try {
-    return useQuery(query, args);
+    answer = useQuery(query, args);
   } catch (error) {
-    console.warn("[door] a read failed, waiting for the next answer:", error instanceof Error ? error.message.split("\n")[0] : error);
-    return undefined;
+    console.warn("[door] a read failed:", error instanceof Error ? error.message.split("\n")[0] : error);
+    answer = READ_FAILED;
   }
+  useBusy(args !== "skip" && answer === undefined);
+  return answer;
 }) as typeof useQuery;
 export const useDoorQuery = (LIVE ? safeQuery : () => undefined) as typeof useQuery;
 export const useDoorMutation = (LIVE ? useMutation : () => noMutation) as typeof useMutation;

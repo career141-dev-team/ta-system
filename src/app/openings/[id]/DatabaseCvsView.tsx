@@ -1,5 +1,6 @@
 "use client";
 
+import { ViewSkeleton } from "@/app/Skeleton";
 import { door, jobFromAddress, useDoorMutation, useDoorQuery, useLive, type Answer, type DoorDone, cvUrl, OLD_SERVER, saveLiveFile } from "@/lib/backend";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import Image from "next/image";
@@ -267,6 +268,8 @@ export default function DatabaseCvsView() {
   const pill = "flex h-[2.23rem] shrink-0 items-center justify-center rounded-full px-[1.14rem] text-[max(0.777rem,10.5px)] font-medium";
   const keyHint = "rounded-xs bg-white/15 px-1.5 py-0.5 text-caption font-medium text-white";
 
+  // Still reading this opening: a skeleton of the view, never an empty list that looks final (19 Nov).
+  if (job && real === undefined) return <ViewSkeleton />;
   return (
     <div ref={root} className="flex min-h-0 flex-1 flex-col px-[max(1.5rem,14px)] pb-[max(1.25rem,12px)] pt-[max(1.4rem,14px)] max-md:pt-11">
       <div className="flex flex-wrap items-center gap-x-[max(1.25rem,12px)] gap-y-2">

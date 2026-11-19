@@ -1,5 +1,6 @@
 "use client";
 
+import { ViewSkeleton } from "@/app/Skeleton";
 import { door, jobFromAddress, useDoorMutation, useDoorQuery, useLive, type Answer, type DoorDone, cvUrl } from "@/lib/backend";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
@@ -398,6 +399,8 @@ export default function LinkedInJobView() {
   const todayAll = live.reduce((n, p) => n + p.today, 0);
   const rejected = STAGES.find((s) => s.name === "Rejected")!;
 
+  // Still reading this opening: a skeleton of the view, never an empty list that looks final (19 Nov).
+  if (job && realPosts === undefined) return <ViewSkeleton />;
   return (
     <div className="flex min-h-0 flex-1 flex-col px-[max(1.5rem,14px)] pb-[max(2.5rem,12px)] pt-[max(1.4rem,14px)] max-md:overflow-y-auto max-md:pt-11">
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,27.5rem)_minmax(0,1fr)] gap-x-[max(1.75rem,14px)] max-md:grid-cols-1 max-md:gap-y-6">
