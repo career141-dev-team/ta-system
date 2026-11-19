@@ -42,3 +42,41 @@ export const initials = (name: string) =>
     .slice(0, 2)
     .map((w) => w[0]!.toUpperCase())
     .join("");
+
+// ----- The Director's and Ops's desks (ui/homes, 19 Nov) -----
+
+/** Each board column in the words the old Director dashboard used. */
+export const STAGE_WORDS: Record<string, string> = {
+  ta_follow_up: "TA Follow-up",
+  ai_follow_up: "AI Follow-up",
+  director_review: "Director Review",
+  director_shortlist: "Director shortlist",
+  client_shortlist: "Client shortlist",
+  interview: "Interview",
+  offer: "Offer",
+  placed: "Placed",
+};
+
+/** An interview time as the homes write it: "Mon 17 Nov, 10:30" (Colombo). */
+export function interviewWhen(ms: number): string {
+  const d = new Date(ms);
+  const day = d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "Asia/Colombo" }).replace(",", "");
+  return `${day}, ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Colombo" })}`;
+}
+
+/** What Ops should chase: a client quiet 3+ days on a candidate, and an interview within
+ *  two days that nobody has confirmed. Quietest client first, then soonest interview. */
+export function chaseOf(
+  withClient: { who: string; client: string; days: number }[],
+  interviews: { who: string; at: number; confirmed: boolean }[],
+  now: number,
+): { what: string; action: string }[] {
+  const quiet = withClient
+    .filter((w) => w.days >= 3)
+    .sort((a, b) => b.days - a.days)
+    .map((w) => ({ what: `${w.client} has not answered on ${w.who} for ${w.days} days`, action: "Chase the client" }));
+  const soon = interviews
+    .filter((i) => !i.confirmed && i.at - now <= 2 * 86_400_000)
+    .map((i) => ({ what: `${i.who}'s interview is ${interviewWhen(i.at)} — not confirmed yet`, action: `Call ${i.who.split(" ")[0]}` }));
+  return [...quiet, ...soon].slice(0, 20);
+}

@@ -215,6 +215,29 @@ eq("send: the ChatGPT rule is kept", sendSrc.includes("checkResearchSubmission")
   eq("lead: signed in and desk-wide only", leadSrc.includes("uiUser(ctx)") && leadSrc.includes("isDeskWideUser(user)"), true);
   eq("lead: bounded reads only", /\.collect\(\)/.test(leadSrc), false);
   eq("lead: read only", /ctx\.db\.(insert|patch|replace|delete)/.test(leadSrc), false);
+
+  // The Director's and Ops's desks (19 Nov).
+  const { chaseOf, interviewWhen, STAGE_WORDS } = await import("../convex/ui/leadRules");
+  const at = Date.UTC(2026, 10, 17, 5, 0); // Tue 17 Nov, 10:30 Colombo
+  eq("homes: interview time in Colombo", interviewWhen(at), "Tue 17 Nov, 10:30");
+  eq("homes: Director Review in the old words", STAGE_WORDS.director_review, "Director Review");
+  const chase = chaseOf(
+    [
+      { who: "Ruwan J", client: "Dialog", days: 4 },
+      { who: "Tharu B", client: "JKH", days: 1 },
+    ],
+    [
+      { who: "Pasindu Silva", at: at, confirmed: false },
+      { who: "Hiruni F", at: at, confirmed: true },
+      { who: "Later P", at: at + 5 * 86_400_000, confirmed: false },
+    ],
+    at - 86_400_000,
+  );
+  eq("homes: chase a client quiet 3+ days, then an unconfirmed interview within 2 days", chase.map((c) => c.action), ["Chase the client", "Call Pasindu"]);
+  const homesSrc = read("convex/ui/homes.ts");
+  eq("homes: signed in and desk-wide only", homesSrc.includes("uiUser(ctx)") && homesSrc.includes("isDeskWideUser(user)"), true);
+  eq("homes: bounded reads only", /\.collect\(\)/.test(homesSrc), false);
+  eq("homes: read only", /ctx\.db\.(insert|patch|replace|delete)/.test(homesSrc), false);
 }
 
 console.log(`\nuidoor: ${pass} passed, ${fail} failed`);

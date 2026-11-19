@@ -63,6 +63,8 @@ const ALLOWED_PUBLIC = new Set<string>([
   "ui/desk:things",
   "ui/aura:askToday",
   "ui/lead:desk",
+  "ui/homes:director",
+  "ui/homes:ops",
   "ui/day:refreshChecks",
   "ui/day:start",
   "ui/day:addPosition",

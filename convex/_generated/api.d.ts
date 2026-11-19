@@ -304,6 +304,7 @@ import type * as ui_day from "../ui/day.js";
 import type * as ui_desk from "../ui/desk.js";
 import type * as ui_email from "../ui/email.js";
 import type * as ui_emailSend from "../ui/emailSend.js";
+import type * as ui_homes from "../ui/homes.js";
 import type * as ui_lead from "../ui/lead.js";
 import type * as ui_leadRules from "../ui/leadRules.js";
 import type * as ui_me from "../ui/me.js";
@@ -617,6 +618,7 @@ declare const fullApi: ApiFromModules<{
   "ui/desk": typeof ui_desk;
   "ui/email": typeof ui_email;
   "ui/emailSend": typeof ui_emailSend;
+  "ui/homes": typeof ui_homes;
   "ui/lead": typeof ui_lead;
   "ui/leadRules": typeof ui_leadRules;
   "ui/me": typeof ui_me;
@@ -864,6 +866,7 @@ declare const fullApi: ApiFromModules<{
   "ui/desk": typeof ui_desk;
   "ui/email": typeof ui_email;
   "ui/emailSend": typeof ui_emailSend;
+  "ui/homes": typeof ui_homes;
   "ui/lead": typeof ui_lead;
   "ui/leadRules": typeof ui_leadRules;
   "ui/me": typeof ui_me;
