@@ -17,7 +17,7 @@ import { short, type DayPosition, type Plan, type Step } from "./plan";
 import { askForPopups } from "../PlanReminders";
 
 type TaskState = "planned" | "doing" | "done" | "skipped" | "carried";
-type Task = { key: string; title: string; kind: string; jobId: string | null; startMin: number; minutes: number; priority: string; state: TaskState; reason: string | null };
+type Task = { key: string; title: string; kind: string; jobId: string | null; startMin: number; minutes: number; priority: string; state: TaskState; reason: string | null; doneBy?: "system" | "ta" | null };
 type DayPlanView = { state: "draft" | "approved" | "closed"; finishMin: number; tasks: Task[]; tally: { done: number; of: number; open: number } };
 type Answer = { ok: true; message: string } | { ok: false; message: string };
 
@@ -227,6 +227,7 @@ function DayPlanCard() {
                 </span>
                 <span className={"min-w-0 flex-1 text-[max(1rem,13.5px)] " + (done || gone ? "text-ink-3 line-through" : "text-ink")}>{t.title}</span>
                 {late && <span className="shrink-0 rounded-full bg-warn-soft px-2 py-0.5 text-[max(0.75rem,11px)] font-medium text-warn">Running over</span>}
+                {done && t.doneBy === "system" && <span className="shrink-0 rounded-full bg-brand-soft px-2 py-0.5 text-[max(0.75rem,11px)] font-medium text-brand-strong">Sent</span>}
                 {t.state === "carried" && <span className="shrink-0 rounded-full bg-surface-2 px-2 py-0.5 text-[max(0.75rem,11px)] font-medium text-ink-2">Tomorrow</span>}
                 {t.state === "skipped" && !closed && (
                   <button type="button" onClick={() => setTask(t.key, "planned")} className="shrink-0 text-[max(0.8125rem,11.5px)] text-ink-3 hover:text-ink">

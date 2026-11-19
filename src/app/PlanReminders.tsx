@@ -15,7 +15,7 @@ import { petSay, type PetMood } from "@/lib/pet";
 type Reminder = { at: number; text: string; key?: string; moment: string };
 type Read = { ok: true; plan: { lastReminder: Reminder | null } | null } | { ok: false } | undefined;
 
-const MOOD: Record<string, PetMood> = { start: "working", near: "waiting", over: "failed", still: "waiting", approve: "waiting" };
+const MOOD: Record<string, PetMood> = { start: "working", near: "waiting", over: "failed", still: "waiting", approve: "waiting", done: "done" };
 const SEEN = "ta-ui:aura-reminder-seen";
 
 /** Ask once, from a press (browsers only allow it then): may AURA pop up when the tab is hidden? */
