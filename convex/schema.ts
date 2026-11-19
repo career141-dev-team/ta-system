@@ -172,6 +172,10 @@ export default defineSchema({
     finishMin: v.number(),
     approvedAt: v.optional(v.number()),
     closedAt: v.optional(v.number()),
+    // Phase 2 (reminders): the one scheduled wake-up of this plan, and the day the
+    // "not approved yet" line was said (once).
+    wakeId: v.optional(v.id("_scheduled_functions")),
+    draftNudgedAt: v.optional(v.number()),
     version: v.number(),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -196,6 +200,8 @@ export default defineSchema({
     doneAt: v.optional(v.number()),
     reason: v.optional(v.string()),
     history: v.array(v.object({ at: v.number(), by: v.string(), what: v.string() })),
+    // Phase 2: which reminders this task has had (start / nearly / overdue / pending), so none repeats.
+    reminded: v.optional(v.array(v.string())),
   }).index("by_plan", ["planId"]),
   taSourcingRuns: defineTable({
     jobId: v.id("jobs"), userId: v.optional(v.id("users")), round: v.number(),
@@ -2330,7 +2336,9 @@ export default defineSchema({
       // Something the Ops System wants a TA to know (5 Nov): a client's
       // decision, a cancelled interview, an advert closed. News passed by
       // hand is the oldest complaint on the board.
-      v.literal("from_ops")
+      v.literal("from_ops"),
+      // AURA's day-plan reminders (phase 2, 19 Nov): the pet, the bell and a pop-up.
+      v.literal("aura_reminder")
     ),
     title: v.string(),
     body: v.string(),

@@ -78,3 +78,79 @@ export function planTally(tasks: { state: TaskState }[]): { done: number; of: nu
 /** A line for a task's history. */
 export type HistoryLine = { at: number; by: string; what: string };
 export const historyOf = (history: HistoryLine[] | undefined, line: HistoryLine): HistoryLine[] => [...(history ?? []), line].slice(-50);
+
+// ── Phase 2: reminders (owner 19 Nov 2026, AURA-DAY-AGENT §6) ─────────────────
+// Each open task gets at most four reminders, each once: at its start (if not begun),
+// nearly due (80% of its time gone, at least 5 minutes before the end), overdue
+// (5 minutes after the end) and still pending (30 minutes after that). Nothing before
+// the plan is approved; done, skipped and carried tasks get nothing.
+// ponytail: no snooze / quiet mode yet - phase 3 (talking to AURA) is what sets them.
+
+export type Moment = "start" | "nearly" | "overdue" | "pending";
+const URGENCY: Record<Moment, number> = { start: 1, nearly: 2, pending: 3, overdue: 4 };
+const RANK: Record<string, number> = { high: 0, normal: 1, low: 2 };
+
+export type RemindTask = { key: string; title: string; startMin: number; minutes: number; priority: string; state: TaskState; reminded?: string[] };
+
+/** When each of a task's reminders falls, in minutes after Colombo midnight. */
+export function momentsOf(t: Pick<RemindTask, "startMin" | "minutes" | "state">): { moment: Moment; at: number }[] {
+  const end = t.startMin + t.minutes;
+  const nearly = Math.min(t.startMin + Math.round(t.minutes * 0.8), end - 5);
+  return [
+    // Already on it: no "next" nudge.
+    ...(t.state === "planned" ? [{ moment: "start" as const, at: t.startMin }] : []),
+    ...(nearly > t.startMin ? [{ moment: "nearly" as const, at: nearly }] : []),
+    { moment: "overdue", at: end + 5 },
+    { moment: "pending", at: end + 35 },
+  ];
+}
+
+const open = (t: RemindTask) => t.state === "planned" || t.state === "doing";
+
+/** The words of one reminder. */
+export function reminderText(t: RemindTask, moment: Moment, nowMin: number): string {
+  const end = t.startMin + t.minutes;
+  if (moment === "start") return `Next: ${t.title} (${t.minutes} min).`;
+  if (moment === "nearly") return `${Math.max(1, end - nowMin)} minutes left on ${t.title}.`;
+  if (moment === "overdue") return `${t.title} ran over. Need more time, or move it?`;
+  return `${t.title} is still open.`;
+}
+
+/**
+ * The one reminder to send now, or null. A task late enough for a later moment drops
+ * its earlier ones (`also`), so a closed laptop never comes back to a pile; of several
+ * tasks, the most urgent wins and the rest wait for the next wake-up (§6: one at a time).
+ */
+export function dueReminder(tasks: RemindTask[], nowMin: number): { key: string; moment: Moment; text: string; also: Moment[] } | null {
+  let best: { t: RemindTask; moment: Moment; also: Moment[] } | null = null;
+  for (const t of tasks) {
+    if (!open(t)) continue;
+    const due = momentsOf(t).filter((m) => m.at <= nowMin && !(t.reminded ?? []).includes(m.moment));
+    if (!due.length) continue;
+    const last = due[due.length - 1].moment;
+    const pick = { t, moment: last, also: due.slice(0, -1).map((m) => m.moment) };
+    // More urgent moment, then higher priority, then the earlier task.
+    const wins = (x: typeof pick, y: typeof pick) =>
+      URGENCY[x.moment] - URGENCY[y.moment] || (RANK[y.t.priority] ?? 1) - (RANK[x.t.priority] ?? 1) || y.t.startMin - x.t.startMin;
+    if (!best || wins(pick, best) > 0) best = pick;
+  }
+  return best && { key: best.t.key, moment: best.moment, text: reminderText(best.t, best.moment, nowMin), also: best.also };
+}
+
+/** When the next reminder falls (minutes after Colombo midnight), or null when none is left. */
+export function nextReminderMin(tasks: RemindTask[]): number | null {
+  let next: number | null = null;
+  for (const t of tasks) {
+    if (!open(t)) continue;
+    for (const m of momentsOf(t)) if (!(t.reminded ?? []).includes(m.moment) && (next === null || m.at < next)) next = m.at;
+  }
+  return next;
+}
+
+/** §4: a plan still a draft an hour after the day started is mentioned once. */
+export const DRAFT_NUDGE_AFTER_MIN = 60;
+export const DRAFT_NUDGE_TEXT = "Your plan is not approved yet. Approve it so I can keep you on time.";
+
+/** Minutes after Colombo midnight, and a plan minute back to a clock time. */
+export const colomboMin = (now: number) => Math.floor(((now + 5.5 * 3600_000) % 86_400_000) / 60_000);
+export const atOf = (date: string, min: number) => Date.parse(`${date}T00:00:00+05:30`) + min * 60_000;

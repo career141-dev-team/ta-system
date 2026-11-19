@@ -4,13 +4,14 @@
 // the signed-in TA's plan for today - drafted with AURA, approved by the TA (only
 // after Start workday, owner's Decision 2), ticked task by task, closed at the end
 // with what is open carried. Only the TA's own plan is read or changed here; the
-// lead's read-only view comes in phase 5. Reminders (phase 2) start from `approvedAt`.
+// lead's read-only view comes in phase 5. Reminders (phase 2, planRemind.ts) are re-armed after every change here.
 
 import { v } from "convex/values";
 import { mutation, query, type MutationCtx, type QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { workdayDate } from "../../src/lib/workday";
 import { NotSignedIn, uiUser } from "./me";
+import { rearm } from "./planRemind";
 import { DEFAULT_FINISH, draftRefusal, historyOf, planTally, taskMoveRefusal, type TaskState } from "./planRules";
 
 type Refused = { ok: false; message: string };
@@ -118,6 +119,7 @@ export const saveDraft = mutation({
         history: [{ at: now, by: "ta", what: "Planned with AURA" }],
       });
     }
+    await rearm(ctx, plan._id);
     return { ok: true as const, message: "Draft saved." };
   },
 });
@@ -138,6 +140,8 @@ export const approve = mutation({
     const tasks = await tasksOf(ctx, plan._id);
     if (!tasks.length) return refused("The plan has no tasks yet.");
     await ctx.db.patch(plan._id, { state: "approved", approvedAt: now, workdayId: day._id, version: plan.version + 1, updatedAt: now });
+    // Reminders start now, never before approval (§4, §6).
+    await rearm(ctx, plan._id);
     return { ok: true as const, message: "Plan approved. AURA will keep you on it." };
   },
 });
@@ -165,6 +169,7 @@ export const setTask = mutation({
       history: historyOf(task.history, { at: now, by: "ta", what: words }),
     });
     await ctx.db.patch(plan._id, { version: plan.version + 1, updatedAt: now });
+    await rearm(ctx, plan._id);
     return { ok: true as const, message: args.state === "done" ? `“${task.title}” done.` : "Saved." };
   },
 });
@@ -186,6 +191,7 @@ export const close = mutation({
       await ctx.db.patch(t._id, { state: "carried", history: historyOf(t.history, { at: now, by: "ta", what: "Carried to the next day" }) });
     }
     await ctx.db.patch(plan._id, { state: "closed", closedAt: now, version: plan.version + 1, updatedAt: now });
+    await rearm(ctx, plan._id); // a closed plan has no wake-up
     return { ok: true as const, message: carried ? `Plan closed. ${carried} open ${carried === 1 ? "task carries" : "tasks carry"} to tomorrow.` : "Plan closed. Everything is done." };
   },
 });

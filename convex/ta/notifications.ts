@@ -30,6 +30,8 @@ const NOTIFICATION_TYPE = v.union(
   v.literal("eod_stuck"), v.literal("eod_reminder"), v.literal("eod_lead_digest"), v.literal("workday_expired"),
   // A priority tier or a status was changed on an opening (2 Nov).
   v.literal("opening_changed"),
+  // AURA's day-plan reminders (convex/ui/planRemind.ts, 19 Nov).
+  v.literal("aura_reminder"),
 );
 
 export const create = internalMutation({
