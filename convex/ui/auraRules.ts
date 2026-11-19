@@ -112,3 +112,22 @@ export function trimHistory(history: Turn[]): Turn[] {
     .slice(-6)
     .map((t) => ({ role: t.role, text: t.text.slice(0, 1500) }));
 }
+
+/** One card in Today's "things" list (ui/desk:things). */
+export type Thing = {
+  kind: "ready" | "strategy" | "jd";
+  id: string;
+  jobId: string;
+  applicationId?: string;
+  title: string;
+  sub: string;
+  at: number;
+};
+
+/** "SAP Lead · expects LKR 850k · notice 1 month" - only what is on record. */
+export function readyLine(opening: string, expected: number | null, noticeDays: number | null): string {
+  const parts = [opening];
+  if (expected) parts.push(`expects LKR ${expected >= 1000 ? `${Math.round(expected / 1000)}k` : expected}`);
+  if (noticeDays !== null) parts.push(noticeDays === 0 ? "can start now" : noticeDays % 30 === 0 ? `notice ${noticeDays / 30} month${noticeDays === 30 ? "" : "s"}` : `notice ${noticeDays} days`);
+  return parts.join(" · ");
+}
