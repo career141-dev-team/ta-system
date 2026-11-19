@@ -288,6 +288,7 @@ Repo hard rules that apply: never run `convex deploy/run/import/env set` against
 - 2026-10-29 Reviewers' panel: today's open days only, listed as summaries; a day's checklist is built when its row is opened (`summaryView`, `TeamDayChecks`, index `by_finished_date`).
 - 2026-10-30 `e3ed042` missed end of day for a past day (`forDate`) is sent outside the workday and never completes or reopens a day.
 - 2026-11-02 an expired day bells its leads (`workday_expired`); 17:30/18:30 reminders about today's missing EODs (`convex/ta/eodReminders.ts`); a stuck send bells the admins and the job's lead (`eod_stuck`).
+- 2026-11-19 AURA's day plan, phase 1 (`convex/ui/plan.ts`, `convex/ui/planRules.ts`; tables `auraDayPlans` + `auraPlanTasks`, private to the partner API): one plan per TA per Colombo day, drafted in the new UI, approved only after Start workday (a started, unfinished `taWorkdays` row for today; the plan stores its `workdayId`), tasks ticked by the TA, closed with open tasks `carried`. It does not change the workday itself: a plan never starts, finishes or completes a day. Reminders (phase 2) and evidence-based ticks (phase 4) come later.
 
 <!-- skill-meta
 verified-commit: 27f32abc

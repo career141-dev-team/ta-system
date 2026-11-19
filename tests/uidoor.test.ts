@@ -238,6 +238,30 @@ eq("send: the ChatGPT rule is kept", sendSrc.includes("checkResearchSubmission")
   eq("homes: signed in and desk-wide only", homesSrc.includes("uiUser(ctx)") && homesSrc.includes("isDeskWideUser(user)"), true);
   eq("homes: bounded reads only", /\.collect\(\)/.test(homesSrc), false);
   eq("homes: read only", /ctx\.db\.(insert|patch|replace|delete)/.test(homesSrc), false);
+
+  // AURA's day plan, phase 1 (19 Nov): draft -> approved -> closed, nothing deleted after approval.
+  const { draftRefusal, taskMoveRefusal, planTally, hm } = await import("../convex/ui/planRules");
+  const t = (o: Partial<{ key: string; title: string; kind: string; startMin: number; minutes: number; priority: string; jobId: string; dependsOn: string }> = {}) =>
+    ({ key: "a", title: "Review suggestions", kind: "cv_review", startMin: 540, minutes: 30, priority: "normal", ...o });
+  const jobs = new Set(["j1"]);
+  eq("plan: a good draft saves", draftRefusal([t(), t({ key: "b", jobId: "j1", dependsOn: "a" })], 1020, jobs), null);
+  eq("plan: a task needs a name", draftRefusal([t({ title: "  " })], 1020, jobs), "Every task needs a name.");
+  eq("plan: 5 minutes at least", draftRefusal([t({ minutes: 2 })], 1020, jobs), "“Review suggestions” must take between 5 minutes and 8 hours.");
+  eq("plan: only your own positions", draftRefusal([t({ jobId: "other" })], 1020, jobs), "“Review suggestions” is on a position you are not assigned to.");
+  eq("plan: a dependency must be in the plan", draftRefusal([t({ dependsOn: "zzz" })], 1020, jobs), "“Review suggestions” waits on a task that is not in the plan.");
+  eq("plan: finish between 6:00 and 23:59", draftRefusal([t()], 5 * 60, jobs), "The finish time must be between 6:00 and 23:59.");
+  eq("plan: tick a planned task", taskMoveRefusal("planned", "done", "approved"), null);
+  eq("plan: undo a tick", taskMoveRefusal("done", "planned", "approved"), null);
+  eq("plan: skipping needs a reason", taskMoveRefusal("planned", "skipped", "approved", " "), "Say why it is skipped.");
+  eq("plan: a closed plan does not change", taskMoveRefusal("planned", "done", "closed"), "Today's plan is closed.");
+  eq("plan: a carried task stays carried", taskMoveRefusal("carried", "done", "approved"), "That task cannot change like that.");
+  eq("plan: skipped tasks are not counted", planTally([{ state: "done" }, { state: "planned" }, { state: "skipped" }]), { done: 1, of: 2, open: 1 });
+  eq("plan: clock", hm(545), "9:05");
+  const planSrc = read("convex/ui/plan.ts");
+  eq("plan: approve only after Start workday", planSrc.includes("Start your workday first, then approve the plan."), true);
+  eq("plan: tasks are deleted only while the plan is a draft", planSrc.indexOf('plan.state !== "draft"') > 0 && planSrc.indexOf('plan.state !== "draft"') < planSrc.indexOf("ctx.db.delete"), true);
+  eq("plan: closing carries open tasks, never marks them done", /state: "carried"/.test(planSrc) && !/state: "done", history: historyOf\(t\.history, \{ at: now, by: "ta", what: "Carried/.test(planSrc), true);
+  eq("plan: bounded reads only", /\.collect\(\)/.test(planSrc), false);
 }
 
 console.log(`\nuidoor: ${pass} passed, ${fail} failed`);

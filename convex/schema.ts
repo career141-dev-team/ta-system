@@ -157,6 +157,46 @@ export default defineSchema({
     computedAt: v.number(), staleAt: v.optional(v.number()), pendingAt: v.optional(v.number()),
     actorId: v.optional(v.id("users")), view: v.optional(v.any()),
   }).index("by_workday_job", ["workdayId", "jobId"]),
+  /*
+   * AURA's day plan (owner 19 Nov 2026, ta-system-ui docs/AURA-DAY-AGENT.md): one plan
+   * per TA per Colombo day, drafted with AURA, approved by the TA, closed at the end.
+   * Reminders (phase 2) read only approved plans. `version` goes up on every change,
+   * so a reminder made for an older plan is thrown away. Times are minutes after
+   * Colombo midnight.
+   */
+  auraDayPlans: defineTable({
+    userId: v.id("users"),
+    date: v.string(),
+    workdayId: v.optional(v.id("taWorkdays")),
+    state: v.union(v.literal("draft"), v.literal("approved"), v.literal("closed")),
+    finishMin: v.number(),
+    approvedAt: v.optional(v.number()),
+    closedAt: v.optional(v.number()),
+    version: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_user_date", ["userId", "date"]),
+  /* One task of a day plan. Never deleted: skipped and carried keep their reason, and
+   * every change is a line in `history`. */
+  auraPlanTasks: defineTable({
+    planId: v.id("auraDayPlans"),
+    userId: v.id("users"),
+    key: v.string(),
+    order: v.number(),
+    title: v.string(),
+    detail: v.optional(v.string()),
+    kind: v.string(),
+    jobId: v.optional(v.id("jobs")),
+    startMin: v.number(),
+    minutes: v.number(),
+    priority: v.string(),
+    dependsOn: v.optional(v.string()),
+    state: v.union(v.literal("planned"), v.literal("doing"), v.literal("done"), v.literal("skipped"), v.literal("carried")),
+    doneBy: v.optional(v.union(v.literal("system"), v.literal("ta"))),
+    doneAt: v.optional(v.number()),
+    reason: v.optional(v.string()),
+    history: v.array(v.object({ at: v.number(), by: v.string(), what: v.string() })),
+  }).index("by_plan", ["planId"]),
   taSourcingRuns: defineTable({
     jobId: v.id("jobs"), userId: v.optional(v.id("users")), round: v.number(),
     count: v.number(), at: v.number(),
