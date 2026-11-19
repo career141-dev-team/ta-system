@@ -26,6 +26,11 @@ ok("CV file runs the old CV route as a PDF", () => {
   assert.ok(s.includes('from "@/app/api/cv/[candidateId]/route"') && s.includes('set("view", "pdf")'));
   assert.ok(!/cvBytes|mayOpenCv/.test(s), "access stays in the old route");
 });
+ok("the CV route asks who is signed in before loading anything", () => {
+  const s = read("src/app/api/ui/cv/route.ts");
+  assert.ok(s.indexOf("currentUser()") > 0 && s.indexOf("currentUser()") < s.indexOf("primeStore("));
+});
+
 ok("Prepared CV runs the old prepared-cv route", () => {
   assert.ok(read("src/app/api/ui/prepared-cv/route.ts").includes('from "@/app/api/prepared-cv/[appId]/route"'));
 });
