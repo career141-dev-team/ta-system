@@ -3,6 +3,9 @@
 import { useRef, useState } from "react";
 import Toast from "../openings/[id]/Toast";
 import { deskWide, useRole } from "@/lib/role";
+import PillMenu from "../openings/[id]/PillMenu";
+import { useFilters, matchesAll } from "@/lib/filters";
+import { NoResults, ResultLine, SearchField } from "../FilterBits";
 
 // The Bin (owner 14 Nov 2026: "Bin we can add"; old system /bin). Openings and clients
 // deleted in the last 7 days, then gone for good. Restore puts one back exactly as it
@@ -28,10 +31,17 @@ const goesOn = (left: number) => {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 };
 
+const PILL = "flex h-[max(2.4rem,33px)] items-center gap-2 whitespace-nowrap rounded-full border border-border bg-surface px-[max(1rem,13px)] text-small text-ink-2";
+
 export default function Bin() {
   const role = useRole();
   const [items, setItems] = useState(SAMPLE);
   const [sure, setSure] = useState<string | null>(null);
+  // Search, what and who deleted it are kept for the visit; Reset clears them (src/lib/filters.ts).
+  const { f, set, reset, active } = useFilters("bin", { q: "", what: "", by: "" });
+  const people = [...new Set(items.map((x) => x.by))].sort();
+  const match = (x: Gone) => matchesAll(f.q, x.name, x.client, x.by) && (!f.what || x.kind === f.what) && (!f.by || x.by === f.by);
+  const shownCount = items.filter(match).length;
   const [toast, setToast] = useState<{ key: number; bold: string; rest: string } | null>(null);
   const seq = useRef(0);
   const gone = (x: Gone, rest: string) => {
@@ -41,7 +51,7 @@ export default function Bin() {
   };
 
   const section = (kind: Kind, title: string) => {
-    const list = items.filter((x) => x.kind === kind);
+    const list = items.filter((x) => x.kind === kind && match(x));
     return (
       <section>
         <h2 className="mb-3 text-h3 font-medium text-ink">
@@ -81,7 +91,7 @@ export default function Bin() {
             })}
           </ul>
         ) : (
-          <p className="text-small text-ink-3">No {kind === "opening" ? "openings" : "clients"} in the Bin.</p>
+          <NoResults noun={kind === "opening" ? "openings in the Bin" : "clients in the Bin"} filtered={active > 0} onReset={reset} />
         )}
       </section>
     );
@@ -93,6 +103,12 @@ export default function Bin() {
         <p className="text-small text-ink-2">
           Things stay here for {DAYS} days, then are deleted for good. Restore puts one back exactly as it was. Candidates are never deleted.
         </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <SearchField value={f.q} onChange={(q) => set({ q })} placeholder="Find by name, client or who deleted it" label="Search the Bin" />
+          <PillMenu options={[{ value: "", label: "Openings and clients" }, { value: "opening", label: "Openings" }, { value: "client", label: "Clients" }]} initial={f.what} onChange={(what) => set({ what })} mark="tick" pillClass={PILL} />
+          <PillMenu options={[{ value: "", label: "Anyone" }, ...people.map((p) => ({ value: p, label: p }))]} initial={f.by} onChange={(by) => set({ by })} prefix="Deleted by:" mark="tick" pillClass={PILL} />
+          <ResultLine shown={shownCount} total={items.length} noun="in the Bin" active={active} onReset={reset} />
+        </div>
         {section("opening", "Openings")}
         {section("client", "Clients")}
       </div>

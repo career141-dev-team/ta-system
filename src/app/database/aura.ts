@@ -210,6 +210,52 @@ export const reasonOf = (p: Person) =>
 export const fitOf = (score: number) =>
   score >= 75 ? "Strong" : score >= 60 ? "Worth a look" : "Loose";
 
+export const CITIES = [...new Set(POOL.map((p) => p.city))].sort();
+
+/** What the Filters panel holds; the chips under an answer are its words. */
+export type Panel = { city: string; notice: number | null; years: number; strong: boolean; sort: "match" | "years" | "notice" };
+export const NO_PANEL: Panel = { city: "", notice: null, years: 0, strong: false, sort: "match" };
+
+const panelChip = (l: string) => CITIES.includes(l) || /^(Notice|Fit: |\d+\+ years$)/.test(l);
+
+/** The panel as it stands, read back from the chips of the last answer. */
+export function panelOf(chips: Chip[]): Panel {
+  const p = { ...NO_PANEL };
+  for (const c of chips) {
+    const n = c.label.match(/^Notice ≤ (\d+) month/);
+    if (CITIES.includes(c.label)) p.city = c.label;
+    else if (n) p.notice = Number(n[1]);
+    else if (c.label === "Notice: immediate") p.notice = 0;
+    else if (c.label === "Fit: strong") p.strong = true;
+    else if (/^\d+\+ years$/.test(c.label)) p.years = Number(c.label.match(/^\d+/)![0]);
+  }
+  return p;
+}
+
+/** The panel applied on top of the chips it does not own (SAP, CIMA...): same chips, same people list. */
+export function filterReply(before: Chip[], p: Panel): Reply {
+  const mine: Chip[] = [
+    p.city && { label: p.city, added: true, test: "" },
+    p.notice !== null && { label: p.notice === 0 ? "Notice: immediate" : `Notice ≤ ${p.notice} month${p.notice > 1 ? "s" : ""}`, added: true, test: "" },
+    p.years > 0 && { label: `${p.years}+ years`, added: true, test: "" },
+    p.strong && { label: "Fit: strong", added: true, test: "" },
+  ].filter(Boolean) as Chip[];
+  const chips = [...before.filter((c) => !panelChip(c.label)).map((c) => ({ ...c, added: false })), ...mine];
+  const people = sift(chips).sort((a, b) =>
+    p.sort === "years" ? b.years - a.years : p.sort === "notice" ? a.notice - b.notice : b.score - a.score,
+  );
+  if (!chips.length) return { text: "No filters on. Say what you are looking for, or pick filters.", warn: true };
+  return {
+    text: people.length
+      ? `${people.length} ${people.length === 1 ? "person matches" : "people match"} ${chips.map((c) => c.label).join(" · ")}.`
+      : "Nobody matches all of those. Take one off to widen it.",
+    chips,
+    people,
+    actions: next(people, chips),
+    warn: !people.length,
+  };
+}
+
 export type Chip = { label: string; added: boolean; test: string };
 export type Action = { label: string; prompt: string };
 export type Ref = { asked: string; found?: Person };
@@ -273,6 +319,12 @@ const FILTERS: {
 ];
 
 const keepOf = (c: Chip) => {
+  // Chips made by the Filters panel carry their rule in the label.
+  const notice = c.label.match(/^Notice ≤ (\d+) month/);
+  if (notice) return (p: Person) => p.notice <= Number(notice[1]);
+  if (c.label === "Notice: immediate") return (p: Person) => p.notice === 0;
+  if (c.label === "Fit: strong") return (p: Person) => fitOf(p.score) === "Strong";
+  if (CITIES.includes(c.label)) return (p: Person) => p.city === c.label;
   const f = FILTERS.find((x) =>
     x.label === "years" ? /\+ years$/.test(c.label) : x.label === c.label,
   );
