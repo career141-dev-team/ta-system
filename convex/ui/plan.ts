@@ -12,6 +12,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import { workdayDate } from "../../src/lib/workday";
 import { NotSignedIn, uiUser } from "./me";
 import { DEFAULT_FINISH, draftRefusal, historyOf, planTally, taskMoveRefusal, type TaskState } from "./planRules";
+import { arm } from "./planRemind";
 
 type Refused = { ok: false; message: string };
 const refused = (message: string): Refused => ({ ok: false, message });
@@ -36,6 +37,8 @@ const shape = (plan: Doc<"auraDayPlans">, tasks: Doc<"auraPlanTasks">[]) => ({
   finishMin: plan.finishMin,
   approvedAt: plan.approvedAt ?? null,
   version: plan.version,
+  quietUntil: plan.quietUntil ?? null,
+  lastReminder: plan.lastReminder ?? null,
   tally: planTally(tasks),
   tasks: tasks.map((t) => ({
     key: t.key,
@@ -50,6 +53,7 @@ const shape = (plan: Doc<"auraDayPlans">, tasks: Doc<"auraPlanTasks">[]) => ({
     state: t.state,
     doneBy: t.doneBy ?? null,
     reason: t.reason ?? null,
+    snoozedUntil: t.snoozedUntil ?? null,
   })),
 });
 
@@ -118,6 +122,7 @@ export const saveDraft = mutation({
         history: [{ at: now, by: "ta", what: "Planned with AURA" }],
       });
     }
+    await arm(ctx, plan._id);
     return { ok: true as const, message: "Draft saved." };
   },
 });
@@ -138,6 +143,7 @@ export const approve = mutation({
     const tasks = await tasksOf(ctx, plan._id);
     if (!tasks.length) return refused("The plan has no tasks yet.");
     await ctx.db.patch(plan._id, { state: "approved", approvedAt: now, workdayId: day._id, version: plan.version + 1, updatedAt: now });
+    await arm(ctx, plan._id);
     return { ok: true as const, message: "Plan approved. AURA will keep you on it." };
   },
 });
@@ -165,6 +171,7 @@ export const setTask = mutation({
       history: historyOf(task.history, { at: now, by: "ta", what: words }),
     });
     await ctx.db.patch(plan._id, { version: plan.version + 1, updatedAt: now });
+    await arm(ctx, plan._id);
     return { ok: true as const, message: args.state === "done" ? `“${task.title}” done.` : "Saved." };
   },
 });
@@ -186,6 +193,30 @@ export const close = mutation({
       await ctx.db.patch(t._id, { state: "carried", history: historyOf(t.history, { at: now, by: "ta", what: "Carried to the next day" }) });
     }
     await ctx.db.patch(plan._id, { state: "closed", closedAt: now, version: plan.version + 1, updatedAt: now });
+    await arm(ctx, plan._id); // a closed plan has no wake-up: this cancels it
     return { ok: true as const, message: carried ? `Plan closed. ${carried} open ${carried === 1 ? "task carries" : "tasks carry"} to tomorrow.` : "Plan closed. Everything is done." };
+  },
+});
+
+/** "Stop reminding me for N minutes": one task (its key) or the whole plan. The task
+ *  itself is not touched - only its reminders wait (docs/AURA-DAY-AGENT.md section 7). */
+export const snooze = mutation({
+  args: { key: v.optional(v.string()), minutes: v.number() },
+  handler: async (ctx, args) => {
+    const w = await who(ctx);
+    if (!w.ok) return w;
+    if (!Number.isInteger(args.minutes) || args.minutes < 5 || args.minutes > 240) return refused("Snooze for 5 minutes to 4 hours.");
+    const now = Date.now();
+    const plan = await planOf(ctx, w.user._id, workdayDate(now));
+    if (!plan || plan.state !== "approved") return refused("There is no approved plan to quiet.");
+    const until = now + args.minutes * 60_000;
+    if (args.key) {
+      const task = (await tasksOf(ctx, plan._id)).find((t) => t.key === args.key);
+      if (!task) return refused("That task is not in today's plan. Reload the page.");
+      await ctx.db.patch(task._id, { snoozedUntil: until, history: historyOf(task.history, { at: now, by: "ta", what: `Reminders paused for ${args.minutes} min` }) });
+    } else await ctx.db.patch(plan._id, { quietUntil: until });
+    await ctx.db.patch(plan._id, { version: plan.version + 1, updatedAt: now });
+    await arm(ctx, plan._id);
+    return { ok: true as const, message: `No reminders${args.key ? " for that task" : ""} for ${args.minutes} minutes.` };
   },
 });

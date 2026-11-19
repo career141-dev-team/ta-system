@@ -70,6 +70,7 @@ const ALLOWED_PUBLIC = new Set<string>([
   "ui/plan:approve",
   "ui/plan:setTask",
   "ui/plan:close",
+  "ui/plan:snooze",
   "ui/day:refreshChecks",
   "ui/day:start",
   "ui/day:addPosition",

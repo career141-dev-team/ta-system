@@ -262,6 +262,36 @@ eq("send: the ChatGPT rule is kept", sendSrc.includes("checkResearchSubmission")
   eq("plan: tasks are deleted only while the plan is a draft", planSrc.indexOf('plan.state !== "draft"') > 0 && planSrc.indexOf('plan.state !== "draft"') < planSrc.indexOf("ctx.db.delete"), true);
   eq("plan: closing carries open tasks, never marks them done", /state: "carried"/.test(planSrc) && !/state: "done", history: historyOf\(t\.history, \{ at: now, by: "ta", what: "Carried/.test(planSrc), true);
   eq("plan: bounded reads only", /\.collect\(\)/.test(planSrc), false);
+
+  // Phase 2, reminders (19 Nov): four moments per task, each once, one at a time, no old burst.
+  const { momentsOf, dueNow, nextWake, dayStartOf, reminderText } = await import("../convex/ui/planRules");
+  const d0 = dayStartOf("2026-11-19");
+  const M = 60_000;
+  const task = (o: Record<string, unknown> = {}) => ({ key: "a", title: "SAP review", kind: "cv_review", startMin: 540, minutes: 30, state: "planned" as const, ...o });
+  eq("remind: Colombo midnight", new Date(d0).toISOString(), "2026-11-18T18:30:00.000Z");
+  eq("remind: four moments for a 30 min task", momentsOf(task(), d0).map((m) => [m.moment, (m.at - d0) / M]), [["start", 540], ["near", 564], ["over", 575], ["still", 605]]);
+  eq("remind: a short task has no 'nearly due'", momentsOf(task({ minutes: 5 }), d0).map((m) => m.moment), ["start", "over", "still"]);
+  eq("remind: a task already started gets no 'starting'", momentsOf(task({ state: "doing" }), d0)[0].moment, "near");
+  eq("remind: done tasks are quiet", momentsOf(task({ state: "done" }), d0), []);
+  const atStart = dueNow([task()], d0, d0 + 540 * M + 30_000);
+  eq("remind: at the start, 'Next: ...'", atStart.deliver?.text, "Next: SAP review (30 min).");
+  eq("remind: sent once", dueNow([task({ reminded: ["a:start"] })], d0, d0 + 541 * M).deliver, null);
+  const late = dueNow([task()], d0, d0 + 576 * M);
+  eq("remind: overdue wins over older moments", late.deliver?.moment, "over");
+  eq("remind: and marks the older ones too", late.mark.get("a"), ["start", "over", "near"]);
+  const midday = dueNow([task(), task({ key: "b", title: "x", startMin: 700 })], d0, d0 + 702 * M);
+  eq("remind: old moments are marked, not sent (no burst after approving late)", midday.deliver?.key, "b");
+  eq("remind: the old task's moments are only marked", (midday.mark.get("a") ?? []).length, 4);
+  eq("remind: quiet plan sends nothing", dueNow([task()], d0, d0 + 540 * M, d0 + 600 * M).deliver, null);
+  eq("remind: a snoozed task waits", dueNow([task({ snoozedUntil: d0 + 560 * M })], d0, d0 + 545 * M).deliver, null);
+  eq("remind: next wake is the next moment", (nextWake([task()], d0, d0 + 500 * M)! - d0) / M, 540);
+  eq("remind: next wake respects snooze", (nextWake([task({ snoozedUntil: d0 + 550 * M })], d0, d0 + 541 * M)! - d0) / M, 550);
+  eq("remind: nothing left, no wake", nextWake([task({ state: "done" })], d0, d0 + 500 * M), null);
+  eq("remind: midday wording", reminderText(task({ kind: "midday_email" }), "start", d0, d0), "Time for the Midday email.");
+  const remindSrc = read("convex/ui/planRemind.ts");
+  eq("remind: one wake-up per plan (the old one is cancelled)", remindSrc.includes("ctx.scheduler.cancel(plan.wakeJobId)"), true);
+  eq("remind: an older plan's wake-up does nothing", remindSrc.includes("plan.version !== args.version"), true);
+  eq("remind: every plan change re-arms", (read("convex/ui/plan.ts").match(/await arm\(ctx, plan\._id\)/g) ?? []).length >= 5, true);
 }
 
 console.log(`\nuidoor: ${pass} passed, ${fail} failed`);
