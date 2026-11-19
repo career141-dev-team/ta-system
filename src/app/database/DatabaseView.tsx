@@ -7,6 +7,7 @@ import { gsap, motionOK, swapIn, useGSAP } from "@/lib/gsap";
 import { useWorkdayGate } from "@/lib/workday";
 import { useLiftMenu } from "../openings/[id]/liftMenu";
 import { jdText } from "../openings/[id]/jdState";
+import AuraBarGlow from "../AuraBarGlow";
 import { refereeReply, toCsv, type Referee } from "./referees";
 import {
   JOBS,
@@ -1059,7 +1060,8 @@ function Composer({
     onSend();
   };
   return (
-    <div className="px-[max(1.5rem,12px)] pb-[max(2.4rem,14px)]">
+    <div className="relative isolate px-[max(1.5rem,12px)] pb-[max(2.4rem,14px)]">
+      <AuraBarGlow className="bottom-[max(1.2rem,8px)]" />
       {/* AURA's suggested next steps sit right above the typing bar. */}
       {suggestions && suggestions.length > 0 && (
         <div className={(centred ? "mx-auto" : "ml-[7.7rem] mr-auto") + " mb-3 flex max-w-[62.5rem] max-lg:ml-0 flex-wrap gap-2"}>

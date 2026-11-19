@@ -13,8 +13,11 @@ export type Profile = {
   company: string;
   about: string;
   skills: string[];
-  experience: { title: string; company: string; period: string }[];
-  education: { school: string; degree: string }[];
+  experience: { title: string; company: string; period: string; kind?: string; length?: string; current?: boolean }[];
+  education: { school: string; degree: string; years?: string }[];
+  /** "5 yrs 9 mos": the months worked, overlapping jobs counted once. */
+  total?: string;
+  languages?: string[];
 };
 
 type Raw = Record<string, unknown>;
@@ -25,9 +28,31 @@ const when = (d: unknown) => {
   return [str(x?.month).slice(0, 3), x?.year ? String(x.year) : ""].filter(Boolean).join(" ");
 };
 
-function toProfile(p: Raw): Profile {
+const MONTHS = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
+/** A LinkedIn date as a month count; no year means "today" when endless. */
+const monthNo = (d: unknown, endless = false) => {
+  const x = d as Raw | undefined;
+  const y = Number(x?.year);
+  if (!y) return endless ? new Date().getFullYear() * 12 + new Date().getMonth() : null;
+  return y * 12 + Math.max(MONTHS.indexOf(str(x?.month).slice(0, 3).toLowerCase()), 0);
+};
+const span = (n: number) => [Math.floor(n / 12) && `${Math.floor(n / 12)} yr${n >= 24 ? "s" : ""}`, n % 12 && `${n % 12} mo${n % 12 > 1 ? "s" : ""}`].filter(Boolean).join(" ") || "1 mo";
+/** Month range of one job, end inclusive; null when its start is unknown. */
+const range = (e: Raw) => {
+  const a = monthNo(e.startDate);
+  const b = monthNo(e.endDate, !(e.endDate as Raw | undefined)?.year);
+  return a !== null && b !== null && b >= a ? ([a, b + 1] as const) : null;
+};
+
+export function toProfile(p: Raw): Profile {
   const jobs = arr(p.experience);
   const now = jobs[0];
+  let months = 0;
+  let end = -Infinity;
+  for (const [a, b] of jobs.map(range).filter((v) => v !== null).sort((u, v) => u[0] - v[0])) {
+    months += Math.max(0, b - Math.max(a, end));
+    end = Math.max(end, b);
+  }
   return {
     name: [str(p.firstName), str(p.lastName)].filter(Boolean).join(" ") || str(p.name),
     headline: str(p.headline),
@@ -40,8 +65,18 @@ function toProfile(p: Raw): Profile {
       title: str(e.position),
       company: str(e.companyName),
       period: [when(e.startDate), str((e.endDate as Raw | undefined)?.text) || when(e.endDate) || "Present"].filter(Boolean).join(" – "),
+      kind: str(e.employmentType) || undefined,
+      length: (() => {
+        const r = range(e);
+        return r ? span(r[1] - r[0]) : undefined;
+      })(),
+      current: !(e.endDate as Raw | undefined)?.year,
     })),
-    education: arr(p.education).slice(0, 5).map((e) => ({ school: str(e.schoolName), degree: [str(e.degree), str(e.fieldOfStudy)].filter(Boolean).join(", ") })),
+    education: arr(p.education).slice(0, 5).map((e) => ({ school: str(e.schoolName), degree: [str(e.degree), str(e.fieldOfStudy)].filter(Boolean).join(", "),
+      years: [(e.startDate as Raw | undefined)?.year, (e.endDate as Raw | undefined)?.year].filter(Boolean).join(" – ") || undefined,
+    })),
+    total: months ? span(months) : undefined,
+    languages: arr(p.languages).map((l) => (typeof l === "string" ? l : str(l.name))).filter(Boolean).slice(0, 6),
   };
 }
 
