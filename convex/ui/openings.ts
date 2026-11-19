@@ -12,10 +12,9 @@
 import { query, type QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { isGone } from "../../src/lib/bin";
-import { colomboDaysBetween } from "../../src/lib/calendar";
 import { isDeskWideUser } from "../ta/guard";
 import { NotSignedIn, uiUser } from "./me";
-import { openingCard, type CardStatus } from "./rules";
+import { daysOpen, openingCard, type CardStatus } from "./rules";
 
 // ponytail: per-status ceilings; the page shows the newest of each. If a desk
 // ever holds more open openings than this, page the list instead.
@@ -70,7 +69,7 @@ export const list = query({
           title: j.title,
           status: j.status,
           priorityTier: j.priorityTier ?? null,
-          days: j.assignedAt ? colomboDaysBetween(j.assignedAt, now) : 0,
+          days: daysOpen(j, now),
           team: ((j.assignedTaIds ?? []) as string[]).flatMap((id) => nameOf.get(id) ?? []),
           made: j._creationTime,
           website: !!j.websiteListedAt,

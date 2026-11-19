@@ -18,7 +18,7 @@ import { directorReviewBlockers } from "../ta/stages";
 import { projectApplication } from "../ta/model/projections";
 import { isGone } from "../../src/lib/bin";
 import { mayReadOpening, NotSignedIn, uiUser } from "./me";
-import { BACKEND_STAGES, BOARD_STAGES, cardLimit, COUNT_CAP, inWords, moveRefusal, toCard, type BoardStage } from "./rules";
+import { BACKEND_STAGES, BOARD_STAGES, cardLimit, columnCount, COUNT_CAP, inWords, moveRefusal, toCard, type BoardStage } from "./rules";
 
 const LABEL: Record<BoardStage, string> = {
   ta_follow_up: "TA Follow-Up",
@@ -110,8 +110,7 @@ export const board = query({
             );
           }),
         );
-        const count = Math.min(rows.length, COUNT_CAP);
-        return { stage, label: LABEL[stage], count, capped: rows.length > COUNT_CAP, cards };
+        return { stage, label: LABEL[stage], ...columnCount(rows.length), cards };
       }),
     );
 

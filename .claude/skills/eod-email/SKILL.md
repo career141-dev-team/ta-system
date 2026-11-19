@@ -269,6 +269,7 @@ Pre-merge checklist:
 Repo hard rules that apply here: no `convex deploy/run/import/env set` against live; work on a `<person>/<topic>` branch and merge by PR; no secrets; real candidates are real (outbound via `convex/lib/outreachSafety.ts` and `convex/lib/outboundGuard.ts`; never set `OUTREACH_LIVE`); live changes only through `.github/workflows/deploy-production.yml`.
 
 ## History
+- 19 Nov 2026 (ui-reads-fast PR): `eligibleApplications` (convex/lib/eodCompose.ts) reads only `second_shortlist` through `by_job_stage` - the only stage `isEodCandidateEligible` lets through, so the same rows in the same order - instead of the whole opening's applications (twice per compose, 1.9 s); `effortRow`'s "sets" reads the TA's own candidates through `by_workday_owner`. `ta/dailyEmails:list` takes `recent` (the new UI's ui/email:emails): the last 31 days by `by_job_date`, without the sent HTML and draft fields (it was every email ever, 2.8 s and 81 KB). The old app passes neither, so begin, the send and the old screens are unchanged.
 
 Short hashes from `git log`; dates are commit dates.
 - 2026-09-14 7470f4f - initial platform: first EOD email builder (two tables, spec section 10).

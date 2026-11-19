@@ -9,10 +9,11 @@
 import { query } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { isGone } from "../../src/lib/bin";
-import { colomboDayStart, colomboDaysBetween } from "../../src/lib/calendar";
+import { colomboDayStart } from "../../src/lib/calendar";
 import { PRIORITY_TARGET } from "../../src/data/types";
 import { directorReviewBlockers } from "../ta/stages";
 import { NotSignedIn, uiUser } from "./me";
+import { daysOpen } from "./rules";
 import { readyLine, type DeskPosition, type Thing } from "./auraRules";
 
 const MAX_POSITIONS = 30;
@@ -62,7 +63,7 @@ export const desk = query({
           title: j.title,
           client: j.clientName,
           priority: j.priorityTier ?? null,
-          day: j.assignedAt ? colomboDaysBetween(j.assignedAt, now) : 0,
+          day: daysOpen(j, now),
           target: PRIORITY_TARGET[tier]?.days ?? null,
           skills: j.requiredSkills.slice(0, 8),
           years: [j.experienceMinYears, j.experienceMaxYears ?? null],

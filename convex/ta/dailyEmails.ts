@@ -116,12 +116,23 @@ export const sent = internalQuery({
 });
 
 export const list = internalQuery({
-  args: { actorId: v.string(), jobId: v.id("jobs") },
+  args: { actorId: v.string(), jobId: v.id("jobs"),
+    /**
+     * The new UI (ui/email:emails, 19 Nov): the last 31 days only, read by date,
+     * and without the sent HTML and draft fields it never shows. Every email the
+     * opening ever had, each with its whole HTML, was 2.8 s and 81 KB a read.
+     */
+    recent: v.optional(v.boolean()) },
   handler: async (ctx, args) => {
     const user = await access(ctx, args.actorId, args.jobId, true);
-    const rows = await ctx.db.query("dailyEmails").withIndex("by_job", q => q.eq("jobId", args.jobId)).collect();
+    const since = workdayDate(Date.now() - 31 * 86400000);
+    const rows = args.recent
+      ? await ctx.db.query("dailyEmails").withIndex("by_job_date", q => q.eq("jobId", args.jobId).gte("date", since)).collect()
+      : await ctx.db.query("dailyEmails").withIndex("by_job", q => q.eq("jobId", args.jobId)).collect();
     return rows.filter(e => !worker(user) || e.userId === user._id).map(e =>
-      e.expiresAt && e.expiresAt <= Date.now() ? { ...e, fields: {}, snapshot: undefined } : e);
+      e.expiresAt && e.expiresAt <= Date.now() ? { ...e, fields: {}, snapshot: undefined }
+        : args.recent ? { ...e, fields: {}, snapshot: e.snapshot ? { ...(e.snapshot as DailyEmailSnapshot), html: "" } : undefined }
+        : e);
   },
 });
 

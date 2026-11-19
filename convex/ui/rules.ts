@@ -1,4 +1,5 @@
 import type { ShortlistRow } from "../../src/lib/eod-format";
+import { colomboDaysBetween } from "../../src/lib/calendar";
 // convex/ui/rules.ts
 //
 // The plain rules of the new UI's door (convex/ui), kept free of Convex so a
@@ -218,6 +219,22 @@ export function strategyRowsToSubmit(
   }
   if (out.length === 0) return { ok: false, message: "None of those strategies are yours to update." };
   return { ok: true, rows: out };
+}
+
+/**
+ * Day N of an opening, counted as the old app counts it (src/data/convex/map.ts):
+ * from `assignedAt`, else from when the opening was created. 19 Nov: the door read
+ * `assignedAt` alone, which openings from the old system never carry, so every
+ * card on new.career141.com said "Day 0".
+ */
+export function daysOpen(j: { assignedAt?: number; createdAt?: string }, now: number): number {
+  const from = j.assignedAt ?? (Date.parse(j.createdAt ?? "") || 0);
+  return from ? colomboDaysBetween(from, now) : 0;
+}
+
+/** A board column's count from the rows read (each backend stage reads COUNT_CAP + 1): "500+" past the cap. */
+export function columnCount(read: number): { count: number; capped: boolean } {
+  return { count: Math.min(read, COUNT_CAP), capped: read > COUNT_CAP };
 }
 
 /** The Openings page's lists: a stored status in the UI's words. */

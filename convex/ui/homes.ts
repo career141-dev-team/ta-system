@@ -8,8 +8,13 @@
 //   - ops: candidates sitting with clients and for how long, interviews coming
 //     up (confirmed or not), and what to chase - a client quiet 3+ days, an
 //     interview within two days nobody has confirmed.
-// Desk-wide people only, read only, bounded: each stage read stops at 500
-// candidates, names are looked up for at most 50 rows per list.
+// Desk-wide people only, read only, bounded: 300 open roles, each role's stage
+// read stops at 100 candidates, names are looked up for at most 50 rows per list.
+//
+// 19 Nov: each stage was read desk-wide (by_stage, 500 newest - mostly closed
+// roles' candidates) and every role met was read whole (a jobs row is fat) only to
+// be thrown away when it was not open. Now the open roles are read once and each
+// role's stage from its own index (by_job_stage): only open work is read.
 
 import { query, type QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -20,7 +25,9 @@ import { NotSignedIn, uiUser } from "./me";
 import { BACKEND_STAGES, type BoardStage } from "./rules";
 import { chaseOf, interviewWhen, STAGE_WORDS } from "./leadRules";
 
-const STAGE_CAP = 500;
+const MAX_ROLES = 300;
+// ponytail: a role with more than this many candidates at one stage counts this many.
+const PER_ROLE_CAP = 100;
 const ROWS = 50;
 
 type Gate = { ok: false; message: string } | { ok: true; user: Doc<"users"> };
@@ -34,17 +41,20 @@ async function who(ctx: QueryCtx): Promise<Gate> {
   return isDeskWideUser(user) ? { ok: true, user } : { ok: false, message: "Only a TA Lead, Director, Ops or an admin sees the whole desk." };
 }
 
-/** Candidates at these backend stages on open roles, newest first, with their role. */
-async function atStages(ctx: QueryCtx, stages: string[], jobs: Map<string, Doc<"jobs"> | null>) {
-  const rows = (await Promise.all(stages.map((s) => ctx.db.query("applications").withIndex("by_stage", (q) => q.eq("currentStage", s as never)).order("desc").take(STAGE_CAP)))).flat();
-  for (const a of rows) if (!jobs.has(a.jobId as string)) jobs.set(a.jobId as string, null);
-  await Promise.all(
-    [...jobs].filter(([, j]) => j === null).map(async ([id]) => {
-      const j = await ctx.db.get(id as Id<"jobs">);
-      jobs.set(id, j && j.status === "active" && !isGone(j) ? j : null);
-    }),
+/** The open roles, read once. */
+const openRoles = async (ctx: QueryCtx) =>
+  (await ctx.db.query("jobs").withIndex("by_status", (q) => q.eq("status", "active")).order("desc").take(MAX_ROLES)).filter((j) => !isGone(j));
+
+/** Candidates at these backend stages on the open roles, newest first, with their role. */
+async function atStages(ctx: QueryCtx, stages: string[], open: Doc<"jobs">[]) {
+  const rows = await Promise.all(
+    open.flatMap((j) =>
+      stages.map(async (s) =>
+        (await ctx.db.query("applications").withIndex("by_job_stage", (q) => q.eq("jobId", j._id).eq("currentStage", s as never)).order("desc").take(PER_ROLE_CAP)).map((a) => ({ a, j })),
+      ),
+    ),
   );
-  return rows.filter((a) => jobs.get(a.jobId as string)).map((a) => ({ a, j: jobs.get(a.jobId as string)! }));
+  return rows.flat().sort((x, y) => y.a._creationTime - x.a._creationTime);
 }
 
 const nameOf = async (ctx: QueryCtx, id: Id<"candidates">) => (await ctx.db.get(id))?.fullName?.trim() || "A candidate";
@@ -54,9 +64,9 @@ export const director = query({
   handler: async (ctx) => {
     const gate = await who(ctx);
     if (!gate.ok) return gate;
-    const jobs = new Map<string, Doc<"jobs"> | null>();
+    const open = await openRoles(ctx);
     const board = ["ta_follow_up", "ai_follow_up", "director_review", "director_shortlist", "client_shortlist", "interview", "offer", "placed"] as BoardStage[];
-    const byStage = await Promise.all(board.map((s) => atStages(ctx, BACKEND_STAGES[s], jobs)));
+    const byStage = await Promise.all(board.map((s) => atStages(ctx, BACKEND_STAGES[s], open)));
     const stages = board.map((s, i) => [STAGE_WORDS[s], byStage[i].length] as [string, number]);
 
     const review = byStage[board.indexOf("director_review")].slice(0, ROWS);
@@ -70,8 +80,7 @@ export const director = query({
     );
 
     // Each client with open roles; a set is a set number a TA has sent on one of them.
-    // ponytail: sets counted from the candidates read above (500 per stage).
-    const open = (await ctx.db.query("jobs").withIndex("by_status", (q) => q.eq("status", "active")).take(300)).filter((j) => !isGone(j));
+    // ponytail: sets counted from the candidates read above (100 per role per stage).
     const sets = new Map<string, Set<string>>();
     for (const { a, j } of byStage.flat()) if (typeof a.setNumber === "number") (sets.get(j.clientName) ?? sets.set(j.clientName, new Set()).get(j.clientName)!).add(`${j._id}:${a.ownerTaId}:${a.setNumber}`);
     const clientNames = [...new Set(open.map((j) => j.clientName))];
@@ -90,8 +99,8 @@ export const ops = query({
     const gate = await who(ctx);
     if (!gate.ok) return gate;
     const now = Date.now();
-    const jobs = new Map<string, Doc<"jobs"> | null>();
-    const [withClientRows, interviewRows] = await Promise.all([atStages(ctx, BACKEND_STAGES.client_shortlist, jobs), atStages(ctx, BACKEND_STAGES.interview, jobs)]);
+    const open = await openRoles(ctx);
+    const [withClientRows, interviewRows] = await Promise.all([atStages(ctx, BACKEND_STAGES.client_shortlist, open), atStages(ctx, BACKEND_STAGES.interview, open)]);
 
     const withClient = await Promise.all(
       withClientRows

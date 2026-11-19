@@ -40,7 +40,10 @@ export async function eligibleApplications(
   const sent = new Set<string>(rounds.filter((r) => r.kind === "director" && !r.recoveryReopenedAt).flatMap((r) => r.applicationIds));
   const mine = await ctx.db.query("dailyEmails").withIndex("by_user_job_date", (q) => q.eq("userId", o.userId).eq("jobId", o.jobId)).collect();
   for (const e of mine.filter((e) => e.status === "accepted" && !e.recoveryReopenedAt)) for (const id of e.applicationIds) sent.add(id);
-  const apps = await ctx.db.query("applications").withIndex("by_jobId", (q) => q.eq("jobId", o.jobId)).collect();
+  // Only Director Review can be eligible (isEodCandidateEligible; Convex stores it as
+  // second_shortlist), so only that stage is read - same rows, same order. 19 Nov:
+  // the whole opening's applications were read here, twice per compose (1.9 s).
+  const apps = await ctx.db.query("applications").withIndex("by_job_stage", (q) => q.eq("jobId", o.jobId).eq("currentStage", "second_shortlist")).collect();
   return apps.filter(
     (a) =>
       inWorkLocation(a, o.locationId ?? "") &&
@@ -115,8 +118,9 @@ export async function effortRow(
   }
   const kind = await workingStage(ctx, o.jobId, o.user._id);
   // The set this TA's latest CV went into.
-  const mine = await ctx.db.query("applications").withIndex("by_jobId", (q) => q.eq("jobId", o.jobId)).collect();
-  const sets = mine.filter((a) => (a.ownerTaId as string | undefined) === me && typeof a.setNumber === "number").map((a) => a.setNumber as number);
+  // Their own candidates only (job + owner index), not the whole opening (19 Nov).
+  const mine = await ctx.db.query("applications").withIndex("by_workday_owner", (q) => q.eq("jobId", o.jobId).eq("ownerTaId", o.user._id)).collect();
+  const sets = mine.filter((a) => typeof a.setNumber === "number").map((a) => a.setNumber as number);
   return {
     date: new Date(o.at).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Asia/Colombo" }),
     assignee: o.user.fullName,

@@ -11,12 +11,17 @@
 //     when she leads none (as the old dashboard);
 //   - every open role: its TAs, LinkedIn, follow-up count, day N.
 // Desk-wide people only (TA Lead, Director, Ops, admin). Read only. Bounded: 300
-// active roles, 40 TAs, 150 newest applications per role, 50 posts per role.
+// active roles, 40 TAs, 50 posts per role, each TA's own 100 newest candidates
+// per role, 200 follow-ups per role.
+//
+// 19 Nov, measured live: this read never answered (30 s+). It read the newest 150
+// applications of EVERY assigned role (~45,000 rows) to find each TA's own few.
+// Now a TA's own candidates come straight from their index (by_workday_owner:
+// job + owner) and a role's follow-ups from by_job_stage - only the rows counted.
 
 import { query } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { isGone } from "../../src/lib/bin";
-import { colomboDaysBetween } from "../../src/lib/calendar";
 import { PRIORITY_TARGET } from "../../src/data/types";
 import { mapUser } from "../../src/data/convex/map";
 import { linkedinStatus } from "../../src/lib/linkedinStatus";
@@ -24,11 +29,13 @@ import { workdayDate, type WorkdayJobView } from "../../src/lib/workday";
 import { isDeskWideUser } from "../ta/guard";
 import { NotSignedIn, uiUser } from "./me";
 import { clock, decisionOf, IN_PIPELINE, initials, tally, type Decision } from "./leadRules";
+import { daysOpen } from "./rules";
 
 const MAX_ROLES = 300;
 const MAX_TAS = 40;
-// ponytail: the newest 150 applications of a role; a role with more counts what it read.
-const APPS_PER_ROLE = 150;
+// ponytail: a TA's newest 100 own candidates per role, and 200 follow-ups per role; past that it counts what it read.
+const OWN_PER_ROLE = 100;
+const FOLLOW_UP_CAP = 200;
 const ALERTS_CAP = 50;
 
 export type TeamTa = {
@@ -70,16 +77,16 @@ export const desk = query({
     const people = (await ctx.db.query("users").take(400)).filter((u) => u.isActive && ["ta", "ta_support"].includes(mapUser(u as never).role)).slice(0, MAX_TAS);
     const nameOf = new Map(people.map((u) => [u._id as string, u.fullName]));
 
-    // Each role's posts and newest applications, read once and shared by its TAs.
+    // Each role's posts and follow-up count, read once and shared by its TAs.
     const assigned = jobs.filter((j) => (tasOf.get(j._id as string) ?? []).length > 0);
     const reads = new Map(
       await Promise.all(
         assigned.map(async (j) => {
-          const [posts, apps] = await Promise.all([
+          const [posts, followUps] = await Promise.all([
             ctx.db.query("jobPosts").withIndex("by_opening", (q) => q.eq("openingId", j._id)).take(50),
-            ctx.db.query("applications").withIndex("by_jobId", (q) => q.eq("jobId", j._id)).order("desc").take(APPS_PER_ROLE),
+            ctx.db.query("applications").withIndex("by_job_stage", (q) => q.eq("jobId", j._id).eq("currentStage", "follow_up")).take(FOLLOW_UP_CAP),
           ]);
-          return [j._id as string, { posts, apps }] as const;
+          return [j._id as string, { posts, fu: followUps.length }] as const;
         }),
       ),
     );
@@ -89,7 +96,14 @@ export const desk = query({
       people.map(async (u): Promise<TeamTa> => {
         const me = u._id as string;
         const mine = assigned.filter((j) => (tasOf.get(j._id as string) ?? []).some((id) => (id as string) === me));
-        const apps = mine.flatMap((j) => reads.get(j._id as string)?.apps ?? []).filter((a) => (a.ownerTaId as string | undefined) === me);
+        // Their own candidates on their roles, newest shortlisted first.
+        const apps = (
+          await Promise.all(
+            mine.map((j) =>
+              ctx.db.query("applications").withIndex("by_workday_owner", (q) => q.eq("jobId", j._id).eq("ownerTaId", u._id)).order("desc").take(OWN_PER_ROLE),
+            ),
+          )
+        ).flat();
         const [workday, unread] = await Promise.all([
           ctx.db.query("taWorkdays").withIndex("by_user_date", (q) => q.eq("userId", u._id).eq("date", today)).first(),
           ctx.db.query("notifications").withIndex("by_user_and_read", (q) => q.eq("userId", u._id).eq("read", false)).take(ALERTS_CAP),
@@ -141,7 +155,7 @@ export const desk = query({
           client: j.clientName,
           tas: (tasOf.get(j._id as string) ?? []).length,
           jdPending: j.jdStatus === "pending_ta_approval",
-          day: j.assignedAt ? colomboDaysBetween(j.assignedAt, now) : 0,
+          day: daysOpen(j, now),
           target: PRIORITY_TARGET[tier]?.days ?? null,
           tier: j.priorityTier ?? null,
         });
@@ -158,8 +172,8 @@ export const desk = query({
         client: j.clientName,
         tas: names.length ? names.join(", ") : "Unassigned",
         on: li(id) === "connected",
-        fu: (reads.get(id)?.apps ?? []).filter((a) => a.currentStage === "follow_up").length,
-        days: j.assignedAt ? colomboDaysBetween(j.assignedAt, now) : 0,
+        fu: reads.get(id)?.fu ?? 0,
+        days: daysOpen(j, now),
       };
     });
 
