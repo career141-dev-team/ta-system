@@ -20,7 +20,7 @@ import { arrivals, onArrival, type Arrival } from "./pipelineInbox";
 import { useWorkdayGate } from "@/lib/workday";
 import { useFilters } from "@/lib/filters";
 import { NoResults } from "@/app/FilterBits";
-import { door, jobFromAddress, STAGE_KEYS, useDoorMutation, useDoorQuery, useLive, type DoorBoard, type DoorCard, type DoorDone } from "@/lib/backend";
+import { door, jobFromAddress, STAGE_KEYS, useDoorMutation, useDoorQuery, useLive, type DoorBoard, type DoorCard, type DoorDone, cvUrl } from "@/lib/backend";
 
 // The CV preview is its own download, fetched while the screen is idle (OpeningView).
 const CvPreview = dynamic(() => import("./CvPreview"), { ssr: false });
@@ -138,6 +138,8 @@ const fromDoor = (c: DoorCard): Card => ({
   backup: c.backup,
   yearsN: c.years ?? 0,
   noticeDays: c.noticeDays ?? 0,
+  // The candidate's own CV (D6); none when the backend says it is still missing.
+  ...(c.missing.includes("a CV") ? {} : { cv: cvUrl({ app: c.id }) }),
 });
 
 /** Moves whose details (dates, package, signed offer letter) the backend does not check yet (PR 1b). */
@@ -854,6 +856,8 @@ export default function PipelineBoard() {
           title={cvFor.title}
           // Sample: the two demo CVs in public/cvs; the real board reads each candidate's own.
           src={cvFileOf(cvFor)}
+          appId={live ? cvFor.id : undefined}
+          openingId={jobId ?? undefined}
           // What the desk holds for the green box; a detail still missing is left out.
           start={{
             designation: cvFor.title,

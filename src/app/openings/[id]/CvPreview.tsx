@@ -1,5 +1,6 @@
 "use client";
 
+import { OLD_SERVER, cvHeaders, preparedCvUrl, saveLiveFile, useLive } from "@/lib/backend";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
@@ -55,8 +56,13 @@ export default function CvPreview({
   src,
   start = NO_DETAILS,
   from,
+  appId,
+  openingId,
   onClose,
 }: {
+  /** Signed in: the application this CV is on, so the green box's place is saved (D6). */
+  appId?: string;
+  openingId?: string;
   /** The card this CV was opened from: the frame grows out of it and back into it. */
   from?: HTMLElement | null;
   /** The opener's handle on the preview, so it can play the preview's exit (useExit). */
@@ -71,6 +77,52 @@ export default function CvPreview({
 }) {
   // The green box AURA puts on page 1 when asked; dragged by hand too.
   const [box, setBox] = useState<Box | null>(null);
+  // Signed in (D6): where the box sits is saved on the application, as the old
+  // Prepared CV tab saves it (savePreparedCvBox through /api/ui/prepared-cv-box),
+  // so the Prepared CV and the End of day email stamp it there. The page's size in
+  // points comes from the Prepared CV's own layout (?layout=1).
+  const live = useLive();
+  const page = useRef<{ width: number; height: number } | null>(null);
+  const firstBox = useRef(true);
+  useEffect(() => {
+    if (firstBox.current) {
+      firstBox.current = false;
+      return;
+    }
+    if (!live || !appId || !openingId) return;
+    const t = setTimeout(async () => {
+      const layout = preparedCvUrl(appId, { layout: "1" });
+      if (!page.current) {
+        const got = await fetch(layout, { headers: await cvHeaders(layout) }).then((res) => (res.ok ? res.json() : null)).catch(() => null);
+        page.current = (got as { page?: { width: number; height: number } } | null)?.page ?? { width: 595, height: 842 };
+      }
+      const pg = page.current;
+      const url = `${OLD_SERVER}/api/ui/prepared-cv-box`;
+      await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(await cvHeaders(url)) },
+        body: JSON.stringify(
+          box
+            ? { appId, openingId, x: (box.x * pg.width) / 100, y: (box.y * pg.height) / 100, width: (box.w * pg.width) / 100 }
+            : { appId, openingId, reset: "1" },
+        ),
+      }).catch(() => undefined);
+    }, 900);
+    return () => clearTimeout(t);
+  }, [box, live, appId, openingId]);
+  // The Prepared CV as the email will attach it: the CV with this box's details stamped.
+  const downloadPrepared = () => {
+    if (!appId || !box) return;
+    const c = box.content;
+    const details: Record<string, string> = { download: "1" };
+    if (c.designation) details.designation = c.designation;
+    if (c.company) details.company = c.company;
+    if (c.currentSalary) details.current = c.currentSalary;
+    if (c.expectedSalary) details.expected = c.expectedSalary;
+    if (c.notice) details.notice = c.notice;
+    details.notes = c.notes.join("\n");
+    void saveLiveFile(preparedCvUrl(appId, details), `${name} - Prepared CV.pdf`);
+  };
   // AURA's round button sits outside the CV's frame (owner, 16 Nov 2026); pressed, its
   // chat opens across the bottom of the CV, as wide as the CV.
   const [auraOpen, setAuraOpen] = useState(false);
@@ -376,6 +428,18 @@ export default function CvPreview({
         <CvAgent open={auraOpen} onClose={() => setAuraOpen(false)} src={src} start={start} box={box} setBox={setBox} sampleText={sampleText(name, title)} />
         </div>
       </section>
+      {live && appId && box && !auraOpen && (
+        <button
+          type="button"
+          onClick={downloadPrepared}
+          className={
+            "absolute bottom-[max(7.5rem,82px)] z-10 rounded-full bg-white px-[max(1rem,12px)] py-[max(0.6rem,7px)] text-small font-medium text-ink shadow-float hover:bg-surface-2 " +
+            (full ? "right-[max(2.5rem,20px)]" : "left-[calc(83%+max(1.25rem,10px))] max-md:left-auto max-md:right-3")
+          }
+        >
+          Prepared CV
+        </button>
+      )}
       {!auraOpen && (
         <button
           data-aura-button

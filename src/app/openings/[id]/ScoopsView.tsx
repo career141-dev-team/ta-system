@@ -1,6 +1,6 @@
 "use client";
 
-import { door, jobFromAddress, useDoorMutation, useDoorQuery, useLive, type Answer, type DoorDone } from "@/lib/backend";
+import { door, jobFromAddress, useDoorMutation, useDoorQuery, useLive, type Answer, type DoorDone, cvUrl } from "@/lib/backend";
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { DUR, EASE, gsap, useExit, useGSAP, swapIn, useSwap } from "@/lib/gsap";
@@ -134,7 +134,7 @@ export default function ScoopsView() {
     if (real?.ok)
       setList(
         real.people.map((p) => ({
-          id: p.id, name: p.name, title: p.title ?? "", company: p.company ?? "", location: p.location ?? "",
+          id: p.id, cv: cvUrl({ app: p.id }), name: p.name, title: p.title ?? "", company: p.company ?? "", location: p.location ?? "",
           years: p.years ?? 0, notice: p.noticeDays ?? 0, sentDay: dayWords(p.addedAt),
           sentBy: p.sentBy ? first(real.names[p.sentBy]) : undefined,
           mine: !!p.ownerId && p.ownerId === real.me,
@@ -836,7 +836,7 @@ export default function ScoopsView() {
         </div>
       )}
       {notice && <Toast key={notice.n} bold={notice.bold} rest={notice.rest} warn={notice.warn} />}
-      {readingShown && reading && <CvPreview key={cvN} ref={cvBox} from={cvFrom} name={reading.name} title={reading.title} src={reading.cv} onClose={() => setReadingOpen(false)} />}
+      {readingShown && reading && <CvPreview key={cvN} ref={cvBox} from={cvFrom} name={reading.name} title={reading.title} src={reading.cv} appId={job ? reading.id : undefined} openingId={job ?? undefined} onClose={() => setReadingOpen(false)} />}
     </div>
   );
 }

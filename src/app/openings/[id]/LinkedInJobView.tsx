@@ -1,6 +1,6 @@
 "use client";
 
-import { door, jobFromAddress, useDoorMutation, useDoorQuery, useLive, type Answer, type DoorDone } from "@/lib/backend";
+import { door, jobFromAddress, useDoorMutation, useDoorQuery, useLive, type Answer, type DoorDone, cvUrl } from "@/lib/backend";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
@@ -253,7 +253,7 @@ export default function LinkedInJobView() {
       const by = NONE();
       for (const x of realApps.people)
         by[tabOf(x.stage)].push({
-          id: x.id, name: x.name, title: x.title ?? "", location: x.location ?? "", company: x.company ?? "", applied: ago(x.addedAt),
+          id: x.id, cv: cvUrl({ app: x.id }), name: x.name, title: x.title ?? "", location: x.location ?? "", company: x.company ?? "", applied: ago(x.addedAt),
           fit: 0, years: x.years ?? 0, notice: x.noticeDays ?? 0,
           lockedBy: x.ownerId && x.ownerId !== realApps.me ? firstName(realApps.names[x.ownerId]) ?? "another TA" : undefined,
         });
@@ -655,7 +655,7 @@ export default function LinkedInJobView() {
       </div>
 
       {notice && <Toast key={notice.n} bold={notice.bold} rest={notice.rest} warn={notice.warn} />}
-      {readingShown && reading && <CvPreview key={cvN} ref={cvBox} from={cvFrom} name={reading.name} title={reading.title} src={reading.cv} onClose={() => setReadingOpen(false)} />}
+      {readingShown && reading && <CvPreview key={cvN} ref={cvBox} from={cvFrom} name={reading.name} title={reading.title} src={reading.cv} appId={job ? reading.id : undefined} openingId={job ?? undefined} onClose={() => setReadingOpen(false)} />}
       {dialogShown && editing && <PostDialog ref={dialog} post={editing === "new" ? null : editing} titles={allPosts.filter((p) => editing === "new" || p.id !== editing.id).map((p) => p.title.toLowerCase())} onClose={() => setDialogOpen(false)} onSave={savePost} />}
       {askShown && ask && (
         <MoveForm

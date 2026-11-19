@@ -1,5 +1,6 @@
 "use client";
 
+import { cvHeaders } from "@/lib/backend";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
 import { DUR, gsap } from "@/lib/gsap";
@@ -21,7 +22,10 @@ const pdfjs = () =>
 function openPdf(src: string) {
   let p = docs.get(src);
   if (!p) {
-    p = pdfjs().then((m) => m.getDocument({ url: src }).promise);
+    // An old-server CV (D6) goes with the person's session; one plain GET, no ranges.
+    p = Promise.all([pdfjs(), cvHeaders(src)]).then(([m, httpHeaders]) =>
+      m.getDocument({ url: src, httpHeaders, disableRange: true, disableStream: true }).promise,
+    );
     docs.set(src, p);
     p.catch(() => docs.delete(src));
   }

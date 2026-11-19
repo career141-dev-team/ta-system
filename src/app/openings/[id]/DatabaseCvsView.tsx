@@ -1,6 +1,6 @@
 "use client";
 
-import { door, jobFromAddress, useDoorMutation, useDoorQuery, useLive, type Answer, type DoorDone } from "@/lib/backend";
+import { door, jobFromAddress, useDoorMutation, useDoorQuery, useLive, type Answer, type DoorDone, cvUrl, OLD_SERVER, saveLiveFile } from "@/lib/backend";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
@@ -96,7 +96,7 @@ export default function DatabaseCvsView() {
     if (real?.ok)
       setRows(
         real.results.map((m) => ({
-          id: m.cvId, name: m.name, title: m.title ?? "", company: m.company ?? "", city: m.location ?? "",
+          id: m.cvId, cv: cvUrl({ candidate: m.cvId }), name: m.name, title: m.title ?? "", company: m.company ?? "", city: m.location ?? "",
           years: m.years ?? 0, notice: m.noticeDays == null ? 0 : Math.round(m.noticeDays / 30), tags: [], score: Math.round(m.overallScore),
         })),
       );
@@ -518,7 +518,7 @@ export default function DatabaseCvsView() {
             </div>
             <div className="flex shrink-0 items-center gap-[0.52rem]">
               {picked.cv && (
-                <a href={picked.cv} download className={pill + " gap-[0.415rem] border border-border-strong bg-surface text-ink hover:bg-surface-2"}>
+                <a href={picked.cv} download onClick={(e) => { if (picked.cv?.startsWith(OLD_SERVER)) { e.preventDefault(); void saveLiveFile(picked.cv, `${picked.name} - CV.pdf`); } }} className={pill + " gap-[0.415rem] border border-border-strong bg-surface text-ink hover:bg-surface-2"}>
                   <svg viewBox="0 0 12 12" className="size-[0.725rem] text-ink-2" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <path d="M6 1.5v6M3.4 5.4 6 8l2.6-2.6M1.8 10h8.4" />
                   </svg>

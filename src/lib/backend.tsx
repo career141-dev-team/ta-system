@@ -52,6 +52,36 @@ export const useSignedHeaders = (LIVE
 
 /** The old server, where the email's CV files and workbook are made (D5 step 3). */
 export const OLD_SERVER = "https://ta-system.career141.com";
+
+/** A candidate's CV as a PDF (D6): by application, or a database match by candidate. */
+export const cvUrl = (q: { app?: string; candidate?: string }) =>
+  `${OLD_SERVER}/api/ui/cv?${q.app ? `app=${encodeURIComponent(q.app)}` : `candidate=${encodeURIComponent(q.candidate ?? "")}`}`;
+/** The Prepared CV (the CV with the CAREER141 box stamped), with one-off box details. */
+export const preparedCvUrl = (app: string, extra: Record<string, string> = {}) =>
+  `${OLD_SERVER}/api/ui/prepared-cv?${new URLSearchParams({ app, ...extra })}`;
+
+// pdf.js and downloads read old-server files with the person's session: the signed-in
+// app registers how to get it (CvSession below), the CV viewer asks for it.
+let cvSession: () => Promise<Record<string, string>> = async () => ({});
+export const cvHeaders = (url: string) => (url.startsWith(OLD_SERVER) ? cvSession() : Promise.resolve({}));
+/** Save an old-server file (a CV, a Prepared CV) under a name, with the session. */
+export async function saveLiveFile(url: string, name: string): Promise<boolean> {
+  const res = await fetch(url, { headers: await cvHeaders(url) }).catch(() => null);
+  if (!res?.ok) return false;
+  const a = document.createElement("a");
+  a.href = globalThis.URL.createObjectURL(await res.blob());
+  a.download = name;
+  a.click();
+  setTimeout(() => globalThis.URL.revokeObjectURL(a.href), 10_000);
+  return true;
+}
+function CvSession() {
+  const session = useSessionHeaders();
+  useEffect(() => {
+    cvSession = session;
+  }, [session]);
+  return null;
+}
 /** Headers with the person's plain Clerk session, which the old server reads like its own cookie. */
 export const useSessionHeaders = (LIVE
   ? () => {
@@ -93,6 +123,7 @@ export function Backend({ children }: { children: ReactNode }) {
           <Live.Provider value={true}>
             <WhoIsLooking />
             <LiveWorkday />
+            <CvSession />
             <LiveBell />
             <KeepSignedIn />
             {children}
