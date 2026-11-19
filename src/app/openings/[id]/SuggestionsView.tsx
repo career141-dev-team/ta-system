@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useFilters } from "@/lib/filters";
+import { jobFromAddress } from "@/lib/backend";
 import Image from "next/image";
 import Link from "next/link";
 import { useSwap } from "@/lib/gsap";
@@ -241,8 +243,11 @@ export default function SuggestionsView() {
 
   // Search, order and a page at a time - only once a tab holds more than a page
   // of cards, so the design's six-card screen stays as drawn.
-  const [q, setQ] = useState("");
-  const [order, setOrder] = useState<"strength" | "recent">("strength");
+  // Search and sort are kept per opening for the visit (src/lib/filters.ts).
+  const { f: kept, set: setKept } = useFilters("suggestions:" + (typeof window === "undefined" ? "" : (jobFromAddress() ?? "demo")), { q: "", order: "strength" as "strength" | "recent" }, ["order"]);
+  const { q, order } = kept;
+  const setQ = (v: string) => setKept({ q: v });
+  const setOrder = (fn: (o: "strength" | "recent") => "strength" | "recent") => setKept({ order: fn(order) });
   const [more, setMore] = useState(0);
   const inTab = people.filter((x) => x.status === tab);
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);

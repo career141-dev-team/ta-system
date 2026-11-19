@@ -18,6 +18,8 @@ import { STAGES, checkMove, movesFrom, type Needs } from "./pipelineRules";
 import WorkdayBlocked from "./WorkdayBlocked";
 import { arrivals, onArrival, type Arrival } from "./pipelineInbox";
 import { useWorkdayGate } from "@/lib/workday";
+import { useFilters } from "@/lib/filters";
+import { NoResults } from "@/app/FilterBits";
 import { door, jobFromAddress, STAGE_KEYS, useDoorMutation, useDoorQuery, useLive, type DoorBoard, type DoorCard, type DoorDone } from "@/lib/backend";
 
 // The CV preview is its own download, fetched while the screen is idle (OpeningView).
@@ -207,15 +209,23 @@ const TOOL_PILL =
 const onScreen = (sel: string) => [...document.querySelectorAll<HTMLElement>(sel)].find((el) => el.getClientRects().length > 0) ?? null;
 
 export default function PipelineBoard() {
-  const [mode, setMode] = useState<"board" | "list">("board");
-  const [q, setQ] = useState("");
+  // Filters are kept per opening for the visit (Back, reload and tab switches find them
+  // as left) and Reset puts them all back - src/lib/filters.ts.
+  const { f, set, reset, active } = useFilters(
+    "pipeline:" + (typeof window === "undefined" ? "" : (jobFromAddress() ?? "demo")),
+    { mode: "board" as "board" | "list", q: "", job: "all", source: "", noticeMax: "", marks: "" },
+    ["mode"],
+  );
+  const { mode, q, job, source, noticeMax, marks } = f;
+  const setMode = (v: "board" | "list") => set({ mode: v });
+  const setQ = (v: string) => set({ q: v });
+  const setJob = (v: string) => set({ job: v });
+  const setSource = (v: string) => set({ source: v });
+  const setNoticeMax = (v: string) => set({ noticeMax: v });
+  const setMarks = (v: string) => set({ marks: v });
   // The box shows each key at once; the board filters a beat behind, so typing
   // never waits on seven columns being drawn again.
   const searched = useDeferredValue(q);
-  const [job, setJob] = useState("all");
-  const [source, setSource] = useState("");
-  const [noticeMax, setNoticeMax] = useState("");
-  const [marks, setMarks] = useState("");
 
   // The board itself: the cards of each stage, by stage name. Dragging a card onto
   // another column moves it there (owner, 12 Nov 2026: "track and drop everyone
@@ -763,6 +773,11 @@ export default function PipelineBoard() {
           </>
         )}
 
+        {active > 0 && (
+          <button type="button" onClick={reset} className="h-[max(2.4rem,33px)] rounded-full px-3 text-[max(0.85rem,12.5px)] font-medium text-brand-strong hover:bg-surface-2">
+            Reset{active > 1 ? ` (${active})` : ""}
+          </button>
+        )}
         <div className="ml-auto flex items-center rounded-full bg-surface-2 p-[3px] text-[max(0.85rem,12.5px)]">
           {(
             [
@@ -788,6 +803,12 @@ export default function PipelineBoard() {
       </div>
 
       {gate && mode === "board" && <WorkdayBlocked what="move candidates" className="mx-[max(1.5rem,14px)] mb-[max(1rem,10px)]" />}
+
+      {filtering && columns.every((c) => !c.cards.length) && (
+        <div className="px-[max(1.5rem,14px)]">
+          <NoResults noun="candidates" filtered onReset={reset} />
+        </div>
+      )}
 
       {mode === "board" ? (
         // Columns side by side; the row scrolls sideways, each column scrolls itself.

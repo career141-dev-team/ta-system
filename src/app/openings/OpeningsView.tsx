@@ -7,6 +7,8 @@ import { DUR, EASE, gsap, useExit, useSwap, useTabGlide } from "@/lib/gsap";
 import { useMe } from "@/lib/role";
 import { door, useDoorQuery, useLive, type DoorOpenings } from "@/lib/backend";
 import Count from "@/app/Count";
+import { useFilters } from "@/lib/filters";
+import { NoResults, ResultLine } from "@/app/FilterBits";
 import Toast from "./[id]/Toast";
 import { LIFT_OUT, useLiftMenu } from "./[id]/liftMenu";
 import { OPENINGS, ORDER, STATUS, TARGET, inList, type List, type Opening } from "./data";
@@ -49,11 +51,16 @@ export default function OpeningsView() {
     setRefusal(real && !real.ok ? real.message : null);
   }
   const notYet = (what: string) => setToast({ bold: what, rest: " is not switched on here yet - do it in AURA for now.", n: ++said.current });
-  const [tab, setTab] = useState<Tab>("all");
-  const [show, setShow] = useState<List[]>(ORDER);
-  const [client, setClient] = useState("");
-  const [ta, setTa] = useState("");
-  const [sort, setSort] = useState<Sort>("new");
+  // Tab, lists shown, client, TA and sort are kept for the visit (Back and reload find
+  // them) and Reset clears them - src/lib/filters.ts. The sort is not counted as a filter.
+  const { f, set, reset, active } = useFilters("openings", { tab: "all" as Tab, show: ORDER as string[], client: "", ta: "", sort: "new" as Sort }, ["tab", "sort"]);
+  const { tab, client, ta, sort } = f;
+  const show = f.show as List[];
+  const setTab = (v: Tab) => set({ tab: v });
+  const setShow = (v: List[]) => set({ show: v });
+  const setClient = (v: string) => set({ client: v });
+  const setTa = (v: string) => set({ ta: v });
+  const setSort = (v: Sort) => set({ sort: v });
   const [spot, setSpot] = useState(false);
   const [sheet, setSheet] = useState<string | null>(null);
   const [toast, setToast] = useState<{ bold?: string; rest: string; n: number } | null>(null);
@@ -162,6 +169,9 @@ export default function OpeningsView() {
       {/* The lists */}
       <div ref={body} className="-mx-2 mt-[clamp(14px,4dvh,44px)] min-h-0 flex-1 overflow-y-auto px-2 pb-10">
         {refusal && <p className="mb-4 text-small text-danger">{refusal}</p>}
+        <ResultLine shown={all} total={rows.length} noun="openings" active={active} onReset={reset} className="mb-4" />
+        {live && !real && <p role="status" className="mb-4 text-small text-ink-3">Loading openings…</p>}
+        {!refusal && (live ? !!real : true) && all === 0 && <NoResults noun="openings" filtered={active > 0} onReset={reset} />}
         <div className="flex flex-col gap-[clamp(18px,4dvh,44px)]">
           {(tab === "all" ? ORDER.filter((l) => show.includes(l)) : [tab]).map((l) => {
             const list = of(l);

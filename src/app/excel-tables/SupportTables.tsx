@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { useFilters } from "@/lib/filters";
 import { useSwap } from "@/lib/gsap";
 import { FIELD_PILL } from "../openings/[id]/filters";
 import PillMenu, { type MenuOption } from "../openings/[id]/PillMenu";
@@ -70,9 +71,12 @@ const sheetLabel = (s: number | null) => (s === null ? "Not in a sheet" : `L${s}
 export default function SupportTables() {
   const [pos, setPos] = useState<Pos | null>(null);
   const [tab, setTab] = useState<"tables" | "eod">("tables");
-  const [by, setBy] = useState("all");
-  const [sheet, setSheet] = useState<string>("all");
-  const [q, setQ] = useState("");
+  // Who, sheet and search are kept for the visit; Reset clears them (src/lib/filters.ts).
+  const { f, set, reset, active } = useFilters("support-tables", { by: "all", sheet: "all", q: "" });
+  const { by, sheet, q } = f;
+  const setBy = (v: string) => set({ by: v });
+  const setSheet = (v: string) => set({ sheet: v });
+  const setQ = (v: string) => set({ q: v });
   const stage = useRef<HTMLDivElement>(null);
   useSwap(stage, (pos?.id ?? "") + tab);
 
@@ -174,6 +178,11 @@ export default function SupportTables() {
                   <span className="shrink-0 whitespace-nowrap px-1 text-small text-ink-3">
                     {shown.length} {shown.length === 1 ? "person" : "people"}
                   </span>
+                  {active > 0 && (
+                    <button type="button" onClick={reset} className="shrink-0 rounded-full px-3 py-1.5 text-small font-medium text-brand-strong hover:bg-surface-2">
+                      Reset{active > 1 ? ` (${active})` : ""}
+                    </button>
+                  )}
                 </div>
                 <div className="mt-[max(0.9rem,10px)] flex min-h-0 flex-1 gap-[max(1.25rem,10px)] max-lg:flex-col">
                   <section aria-label="L counts by TA" className="flex min-h-0 w-[max(17rem,220px)] shrink-0 flex-col rounded-md bg-surface-2 p-[max(1rem,10px)] max-lg:max-h-[38%] max-lg:w-auto">

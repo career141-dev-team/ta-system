@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { useFilters } from "@/lib/filters";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -33,11 +34,15 @@ export default function Planner() {
   const rows = useRows();
   const c = counts(rows);
   const router = useRouter();
-  const [view, setView] = useState<"board" | "matrix" | "week">("board");
-  const [only, setOnly] = useState<"unplanned" | "waiting" | null>(null);
-  const [who, setWho] = useState<TaId | "all">("all");
-  const [p, setP] = useState(0);
-  const [sort, setSort] = useState<Sort>("recent");
+  // View, count filter, TA, priority and sort are kept for the visit (src/lib/filters.ts).
+  const { f: kept, set: setKept } = useFilters("planner", { view: "board" as "board" | "matrix" | "week", only: "" as "" | "unplanned" | "waiting", who: "all" as TaId | "all", p: 0, sort: "recent" as Sort }, ["view", "sort"]);
+  const { view, who, p, sort } = kept;
+  const only = kept.only || null;
+  const setView = (v: "board" | "matrix" | "week") => setKept({ view: v });
+  const setOnly = (v: "unplanned" | "waiting" | null) => setKept({ only: v ?? "" });
+  const setWho = (v: TaId | "all") => setKept({ who: v });
+  const setP = (v: number) => setKept({ p: v });
+  const setSort = (v: Sort) => setKept({ sort: v });
   const [toast, setToast] = useState<{ key: number; bold: string; rest: string } | null>(null);
   const stage = useRef<HTMLDivElement>(null);
   useSwap(stage, view + (only ?? ""));

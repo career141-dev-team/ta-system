@@ -41,6 +41,12 @@ export default function PillMenu({
   mark?: "now" | "tick";
 }) {
   const [value, setValue] = useState(initial);
+  // A filter that is reset or restored from outside moves the pill with it.
+  const [seenInitial, setSeenInitial] = useState(initial);
+  if (initial !== seenInitial) {
+    setSeenInitial(initial);
+    setValue(initial);
+  }
   const [open, setOpen] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   // Only one menu open at a time: opening this one tells the others to close at

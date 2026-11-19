@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import { DUR, EASE, gsap, useExit, useGSAP, useSwap } from "@/lib/gsap";
 import { useMe } from "@/lib/role";
+import { useFilters } from "@/lib/filters";
 import { useWorkdayGate } from "@/lib/workday";
 import { BackButton, LinkedInIcon } from "./PipelineBoard";
 import MoveForm from "./MoveForm";
@@ -213,7 +214,8 @@ export default function LinkedInJobView() {
   useSwap(side, `${chosen}-${tab}`);
   // The TA System's list tools, as in Scoops: search and filters on Apply (or Enter),
   // tick several by their initials and Shortlist selected, a click reads the CV.
-  const [draft, setDraft] = useState({ q: "", exp: "", fit: "" });
+  // Search, experience and fit are kept per opening for the visit (src/lib/filters.ts).
+  const { f: draft, set: setFilters } = useFilters("linkedin:" + (typeof window === "undefined" ? "" : (jobFromAddress() ?? "demo")), { q: "", exp: "", fit: "" });
   const [filtersOpen, setFiltersOpen] = useState(false);
   // "Shortlist selected" turns the tickboxes on; the button then shows the count and
   // runs the shortlist, with a drawn tick (as in Scoops).
@@ -499,7 +501,7 @@ export default function LinkedInJobView() {
               </svg>
               <input
                 value={draft.q}
-                onChange={(e) => setDraft((d) => ({ ...d, q: e.target.value }))}
+                onChange={(e) => setFilters({ q: e.target.value })}
                 placeholder="Search by name, title or company"
                 aria-label="Search the applicants"
                 className="min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-ink-3"
@@ -647,7 +649,7 @@ export default function LinkedInJobView() {
             )}
             {shown.length === 0 && <li className="pt-8 text-center text-small text-ink-3">{rows.length ? "No applicant matches these filters." : "No applicants here."}</li>}
           </ul>
-          {filtersOpen && <FilterDrawer value={draft} onChange={(v) => setDraft((d) => ({ ...d, ...v }))} onClose={() => setFiltersOpen(false)} />}
+          {filtersOpen && <FilterDrawer value={draft} onChange={setFilters} onClose={() => setFiltersOpen(false)} />}
           </div>
         </section>
       </div>

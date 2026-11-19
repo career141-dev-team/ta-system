@@ -4,6 +4,8 @@ import { useRef, useState, type ReactNode } from "react";
 import Toast from "../openings/[id]/Toast";
 import PillMenu, { type MenuOption } from "../openings/[id]/PillMenu";
 import { useRole, useSignedInPerson } from "@/lib/role";
+import { useFilters, matchesAll } from "@/lib/filters";
+import { SearchField, NoResults, ResultLine } from "@/app/FilterBits";
 
 // People and roles (owner 18 Nov 2026: "get the details from old AURA, with our design
 // guidelines"). Everything the old /people page does (src/app/people/page.tsx and
@@ -64,6 +66,7 @@ const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
 const phoneOk = (s: string) => !s.trim() || /^\+?[\d\s-]{9,18}$/.test(s.trim());
 const initials = (n: string) => n.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("");
 
+const FILTER_PILL = "flex h-[max(2.4rem,33px)] items-center gap-2 whitespace-nowrap rounded-full border border-border bg-surface px-[max(1rem,13px)] text-small text-ink-2";
 const FIELD = "w-full rounded-sm border border-border bg-surface px-3 py-2 text-small text-ink outline-none placeholder:text-ink-3 focus:border-brand disabled:bg-surface-2 disabled:text-ink-3";
 const PRIMARY = "rounded-full bg-brand px-4 py-2 text-small font-medium text-white hover:bg-brand-strong disabled:opacity-50";
 const QUIET = "rounded-full border border-border-strong px-4 py-2 text-small font-medium text-ink hover:bg-surface-2";
@@ -98,8 +101,11 @@ export default function People() {
   const [people, setPeople] = useState(SAMPLE);
   const [invites, setInvites] = useState(INVITES);
   const [others, setOthers] = useState(OTHERS);
-  const [q, setQ] = useState("");
-  const [showGone, setShowGone] = useState(false);
+  // Search, role and country are kept for the visit; Reset clears them (src/lib/filters.ts).
+  const { f, set: setF, reset, active: nFilters } = useFilters("people", { q: "", role: "", country: "", showGone: false as boolean }, ["showGone"]);
+  const { q, role: roleF, country: countryF, showGone } = f;
+  const setQ = (v: string) => setF({ q: v });
+  const setShowGone = (fn: boolean | ((v: boolean) => boolean)) => setF({ showGone: typeof fn === "function" ? fn(showGone) : fn });
   const [panel, setPanel] = useState<"invite" | "add" | null>(null);
   const [editing, setEditing] = useState<Person | null>(null);
   const [draft, setDraft] = useState<Person>({ id: "", name: "", email: "", phone: "", role: "ta", country: "Sri Lanka", inbox: "", active: true });
@@ -112,8 +118,9 @@ export default function People() {
   const seq = useRef(0);
   const say = (bold: string | undefined, rest: string, warn?: boolean) => setToast({ key: ++seq.current, bold, rest, warn });
 
-  const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  const matching = people.filter((p) => words.every((w) => [p.name, p.email, p.phone, ROLE_LABEL[p.role]].join(" ").toLowerCase().includes(w)));
+  const matching = people.filter(
+    (p) => matchesAll(q, p.name, p.email, p.phone, ROLE_LABEL[p.role]) && (!roleF || p.role === roleF) && (!countryF || p.country === countryF),
+  );
   const active = matching.filter((p) => p.active);
   const gone = matching.filter((p) => !p.active);
   const shown = showGone ? [...active, ...gone] : active;
@@ -206,13 +213,19 @@ export default function People() {
             <h2 className="text-h3 font-medium text-ink">
               People <span className="text-ink-3">{active.length}</span>
             </h2>
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find by name, email, mobile or role" aria-label="Find a person" className={FIELD + " ml-auto max-w-[18rem] rounded-full"} />
+            <SearchField value={q} onChange={setQ} placeholder="Find by name, email, mobile or role" label="Find a person" className="ml-auto w-[max(18rem,200px)] max-md:w-full" />
             {canEdit && (
               <>
                 <button type="button" onClick={() => openPanel("invite")} className={PRIMARY}>{panel === "invite" ? "Cancel" : "Invite someone"}</button>
                 <button type="button" onClick={() => openPanel("add")} className={QUIET}>{panel === "add" ? "Cancel" : "Add without invite"}</button>
               </>
             )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <PillMenu options={[{ value: "", label: "Any role" }, ...ROLE_MENU]} initial={roleF} onChange={(v) => setF({ role: v })} mark="tick" pillClass={FILTER_PILL} />
+            <PillMenu options={[{ value: "", label: "Any country" }, ...COUNTRY_MENU]} initial={countryF} onChange={(v) => setF({ country: v })} mark="tick" pillClass={FILTER_PILL} />
+            <ResultLine shown={matching.length} total={people.length} noun="people" active={nFilters} onReset={reset} />
           </div>
 
           {panel && (
@@ -268,7 +281,7 @@ export default function People() {
               )}
             </ul>
           ) : (
-            <p className="rounded-md bg-canvas px-5 py-6 text-center text-small text-ink-3">{q ? "Nobody matches that search." : "Nobody on the desk yet."}</p>
+            <NoResults noun="people" filtered={nFilters > 0} onReset={reset} />
           )}
           {gone.length > 0 && (
             <button type="button" onClick={() => setShowGone((v) => !v)} className="self-start text-small text-ink-2 hover:text-ink">
