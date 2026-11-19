@@ -19,7 +19,10 @@ import { openingCard, type CardStatus } from "./rules";
 
 // ponytail: per-status ceilings; the page shows the newest of each. If a desk
 // ever holds more open openings than this, page the list instead.
-const CAP: Record<Doc<"jobs">["status"], number> = { active: 300, draft: 100, on_hold: 100, filled: 100, cancelled: 100 };
+// 19 Nov: the finished lists were 100 each - a jobs row is fat (embedding), 700 rows
+// timed out the 1 s limit on a cold backend ("Function execution timed out"), so
+// only the open work keeps its big ceiling; the page already says when a list is capped.
+const CAP: Record<Doc<"jobs">["status"], number> = { active: 300, draft: 40, on_hold: 60, filled: 40, cancelled: 40 };
 
 async function deskRows(ctx: QueryCtx) {
   const rows: Doc<"jobs">[] = [];
