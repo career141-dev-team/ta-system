@@ -13,12 +13,14 @@
 // UI runs on its sample data exactly as before, so a build without them (a
 // design preview) never tries to sign anyone in.
 
-import { ClerkProvider, SignedIn, SignedOut, SignIn, useAuth } from "@clerk/clerk-react";
+import { ClerkProvider, SignedIn, SignedOut, useAuth, useClerk, useSignIn } from "@clerk/clerk-react";
+import { isClerkAPIResponseError } from "@clerk/clerk-react/errors";
 import { ConvexReactClient, useMutation, useQuery } from "convex/react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
 import { makeFunctionReference } from "convex/server";
 import { createContext, useContext, useEffect, type ReactNode } from "react";
 import { setSignedIn, type Role } from "@/lib/role";
+import LoginScreen from "@/app/signin/LoginScreen";
 
 const URL = process.env.NEXT_PUBLIC_CONVEX_URL ?? "";
 const CLERK_KEY = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "";
@@ -35,6 +37,15 @@ const noMutation = async () => undefined;
 export const useDoorQuery = (LIVE ? useQuery : () => undefined) as typeof useQuery;
 export const useDoorMutation = (LIVE ? useMutation : () => noMutation) as typeof useMutation;
 
+// The sign-in screen's Clerk hook, with the same stand-in for a build without a backend.
+export const useDoorSignIn = (LIVE ? useSignIn : () => ({ isLoaded: false, signIn: undefined, setActive: undefined })) as typeof useSignIn;
+
+/** A Clerk failure in a sentence the person can act on. */
+export function errorText(e: unknown): string {
+  if (isClerkAPIResponseError(e)) return e.errors[0]?.longMessage ?? e.errors[0]?.message ?? "Could not sign in.";
+  return "Could not sign in. Check your connection and try again.";
+}
+
 const Live = createContext(false);
 /** Whether this screen should read the backend instead of its sample data. */
 export const useLive = () => useContext(Live);
@@ -44,17 +55,15 @@ export function Backend({ children }: { children: ReactNode }) {
   return (
     <ClerkProvider publishableKey={CLERK_KEY} afterSignOutUrl="/">
       <ConvexProviderWithClerk client={client} useAuth={useAuth}>
-        {/* Clerk's own sign-in box until the owner's login design arrives (18 Nov).
-            The same accounts as AURA; "hash" routing so the static build needs no
-            sign-in page of its own. */}
+        {/* The owner's sign-in screen (src/app/signin/LoginScreen.tsx), Clerk underneath:
+            the same accounts as AURA. */}
         <SignedOut>
-          <div className="flex min-h-dvh items-center justify-center p-4">
-            <SignIn routing="hash" />
-          </div>
+          <LoginScreen />
         </SignedOut>
         <SignedIn>
           <Live.Provider value={true}>
             <WhoIsLooking />
+            <KeepSignedIn />
             {children}
           </Live.Provider>
         </SignedIn>
@@ -129,6 +138,19 @@ export function useSignedIn(): Me | undefined | null {
 /** The backend's role words in the UI's roles. Admin works as a lead does (desk-wide). */
 const ROLE_OF: Record<string, Role> = { ta: "TA", ta_support: "TA Support", ta_lead: "Lead", admin: "Lead", director: "Director", ops: "Ops" };
 const TITLE_OF: Record<Role, string> = { TA: "Talent Acquisition", "TA Support": "TA Support", Lead: "TA Lead", Director: "Director", Ops: "Ops" };
+
+/** "Keep me signed in" off: Clerk keeps a session for days, so when the box was left unticked
+ *  the session ends with the browser - a new browser session (no mark in sessionStorage) signs out. */
+function KeepSignedIn() {
+  const { signOut } = useClerk();
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("ta-ui:keep") === "0" && !sessionStorage.getItem("ta-ui:here")) void signOut();
+      sessionStorage.setItem("ta-ui:here", "1");
+    } catch {}
+  }, [signOut]);
+  return null;
+}
 
 /** Tells every screen who is signed in: their real name and role from the backend. */
 function WhoIsLooking() {
