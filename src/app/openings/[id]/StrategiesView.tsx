@@ -1,5 +1,7 @@
 "use client";
 
+import { door, jobFromAddress, useDoorMutation, useDoorQuery, useLive, type Answer, type DoorDone } from "@/lib/backend";
+import LiveName from "./LiveName";
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { useSwap } from "@/lib/gsap";
@@ -18,7 +20,7 @@ import Toast from "./Toast";
 // TAs' strategies show read-only; one the lead struck for this job shows crossed out;
 // a lead manages them in the Strategy Planner. Nothing here waits on Start workday,
 // as in the old system.
-const LEAD = "Rashmi";
+const SAMPLE_LEAD = "Rashmi";
 // The demo opening this tab sits in (S5 design, 14 Nov 2026).
 const JOB = "Senior Manager — SAP Business Transformation";
 
@@ -88,20 +90,60 @@ const shown = (iso?: string) => (iso ? new Date(`${iso}T00:00`).toLocaleDateStri
 
 /** The Strategies view: the lead's new strategies to accept, then each one to do,
  *  mark done with a note and proofs, and submit. */
+type DoorRows = Answer<{
+  rows: { id: string; name: string; doneAt: number | null; submittedAt: number | null; note: string | null; proofs: number; mine: boolean; waiting: boolean }[];
+}>;
+const isoOf = (t: number | null) => (t ? new Date(t).toISOString().slice(0, 10) : undefined);
+
 export default function StrategiesView() {
   const SEES_WHOLE_JOB = useMe().lead;
-  const [list, setList] = useState(STRATEGIES);
+  // Live: this person's strategies on the opening (ui/opening:strategies); Accept and
+  // Submit go through ui/manage, which keeps the old rules.
+  const live = useLive();
+  const job = live ? jobFromAddress() : null;
+  const LEAD = live ? "your TA Lead" : SAMPLE_LEAD;
+  const [list, setList] = useState(live ? [] : STRATEGIES);
+  const real = useDoorQuery(door.strategies, job ? { openingId: job } : "skip") as DoorRows | undefined;
+  const [seenReal, setSeenReal] = useState<DoorRows | undefined>(undefined);
+  if (real !== seenReal) {
+    setSeenReal(real);
+    if (real?.ok)
+      setList(
+        real.rows
+          .filter((r) => r.mine)
+          .map((r) => ({
+            id: r.id, title: r.name, due: "", note: r.note ?? "", sent: !!r.submittedAt, doneOn: isoOf(r.doneAt),
+            status: r.waiting ? "new" : r.doneAt || r.submittedAt ? "done" : "open",
+            proofs: Array.from({ length: r.proofs }, (_, i) => ({ id: `${r.id}-${i}`, tone: "plain" as const })),
+          })),
+      );
+  }
+  const others = live ? [] : OTHERS;
+  const acceptAll = useDoorMutation(door.acceptStrategies);
+  const submitAll = useDoorMutation(door.submitStrategies);
   const [toast, setToast] = useState<{ key: number; bold: string; rest: string } | null>(null);
 
   const fresh = list.filter((s) => s.status === "new");
   const ready = list.filter((s) => s.status === "done" && !s.sent);
   const patch = (id: string, p: Partial<Strategy>) => setList((l) => l.map((s) => (s.id === id ? { ...s, ...p } : s)));
 
-  const accept = () => setList((l) => l.map((s) => (s.status === "new" ? { ...s, status: "open" } : s)));
+  const accept = async () => {
+    if (job) {
+      const done = (await acceptAll({ openingId: job })) as DoorDone | undefined;
+      if (done) setToast({ key: Date.now(), bold: "", rest: done.message });
+      if (done && !done.ok) return;
+    }
+    setList((l) => l.map((s) => (s.status === "new" ? { ...s, status: "open" } : s)));
+  };
   // shortcut: any done strategy can be submitted, even with no note or proof; add the
   // TA System's rule for what a done strategy needs when the backend is wired.
-  const submit = () => {
+  const submit = async () => {
     const n = ready.length;
+    if (job) {
+      const rows = ready.map((s) => ({ rowId: s.id, used: true, date: s.doneOn ?? "", note: s.note }));
+      const done = (await submitAll({ openingId: job, rows })) as DoorDone | undefined;
+      if (done && !done.ok) return setToast({ key: Date.now(), bold: "Not sent", rest: ` - ${done.message}` });
+    }
     setList((l) => l.map((s) => (s.status === "done" ? { ...s, sent: true } : s)));
     setToast({ key: Date.now(), bold: `${n} ${n === 1 ? "strategy" : "strategies"}`, rest: ` sent to ${LEAD}` });
   };
@@ -117,10 +159,10 @@ export default function StrategiesView() {
       <div className="mt-[max(3.47rem,50px)] min-h-0 flex-1 overflow-y-auto px-[max(5rem,48px)] pb-[10.5rem] [scrollbar-width:none] max-md:mt-4 max-md:px-[14px]">
         <div className="mx-auto flex max-w-[68.75rem] flex-col gap-[max(1.5rem,12px)]">
           <header>
-            <h1 className="text-[max(1.75rem,20px)] leading-tight text-ink">Your strategies for {JOB}</h1>
+            <h1 className="text-[max(1.75rem,20px)] leading-tight text-ink">Your strategies for <LiveName field="title" sample={JOB} /></h1>
             <p className="text-small text-ink-3">
               From {LEAD}
-              {fresh.length ? ` · ${fresh.length} waiting for you to accept` : " · accepted 9 Nov"}
+              {fresh.length ? ` · ${fresh.length} waiting for you to accept` : live ? "" : " · accepted 9 Nov"}
             </p>
           </header>
           {SEES_WHOLE_JOB && (
@@ -150,7 +192,7 @@ export default function StrategiesView() {
           {list.map((s) => (
             <StrategyCard key={s.id} s={s} patch={(p) => patch(s.id, p)} />
           ))}
-          {OTHERS.map((o) =>
+          {others.map((o) =>
             o.state === "struck" ? (
               <p key={o.id} className="px-[max(1.625rem,16px)] text-small text-ink-3">
                 <span className="line-through">{o.title}</span> · Not for this job. Your TA Lead has said it cannot be used here.
@@ -212,7 +254,7 @@ function StrategyCard({ s, patch }: { s: Strategy; patch: (p: Partial<Strategy>)
               type="button"
               disabled={s.sent}
               onClick={() => patch({ status: "open", doneOn: undefined })}
-              title={s.sent ? `Sent to ${LEAD}. Change the note or proofs and submit again to update it.` : "Mark as not done"}
+              title={s.sent ? `Sent to your TA Lead. Change the note or proofs and submit again to update it.` : "Mark as not done"}
               className="flex items-center gap-2 whitespace-nowrap rounded-full bg-brand py-1.5 pl-1.5 pr-4 text-small font-medium text-white transition-colors enabled:hover:bg-brand-strong"
             >
               <span className="flex size-6.5 shrink-0 items-center justify-center rounded-full bg-surface text-brand">

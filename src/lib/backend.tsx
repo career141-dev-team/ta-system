@@ -71,6 +71,22 @@ export const door = {
   shortlist: makeFunctionReference<"mutation">("ui/pipeline:shortlist"),
   openings: makeFunctionReference<"query">("ui/openings:list"),
   summary: makeFunctionReference<"query">("ui/opening:summary"),
+  setFollowUp: makeFunctionReference<"mutation">("ui/opening:setFollowUp"),
+  setQuestions: makeFunctionReference<"mutation">("ui/manage:setQuestions"),
+  scoops: makeFunctionReference<"query">("ui/opening:scoops"),
+  matches: makeFunctionReference<"query">("ui/opening:matches"),
+  strategies: makeFunctionReference<"query">("ui/opening:strategies"),
+  postApplicants: makeFunctionReference<"query">("ui/opening:postApplicants"),
+  acceptStrategies: makeFunctionReference<"mutation">("ui/manage:acceptStrategies"),
+  submitStrategies: makeFunctionReference<"mutation">("ui/manage:submitStrategies"),
+  removeFromOpening: makeFunctionReference<"mutation">("ui/manage:removeFromOpening"),
+  notForJob: makeFunctionReference<"mutation">("ui/manage:notForJob"),
+  addPost: makeFunctionReference<"mutation">("ui/posts:addPost"),
+  updatePost: makeFunctionReference<"mutation">("ui/posts:updatePost"),
+  setPostStatus: makeFunctionReference<"mutation">("ui/posts:setPostStatus"),
+  deletePost: makeFunctionReference<"mutation">("ui/posts:deletePost"),
+  moveCvs: makeFunctionReference<"mutation">("ui/posts:moveCvs"),
+  postsList: makeFunctionReference<"query">("ui/posts:list"),
 };
 
 /** The board's columns in the backend's words, in the same order as the UI's STAGES. */

@@ -1,5 +1,6 @@
 "use client";
 
+import { door, jobFromAddress, useDoorMutation, useDoorQuery, useLive, type Answer, type DoorDone } from "@/lib/backend";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -77,11 +78,33 @@ const keep = (f: Filters) => (p: Person) => {
   );
 };
 
+type DoorMatches = Answer<{
+  results: { cvId: string; overallScore: number; name: string; title: string | null; company: string | null; location: string | null; years: number | null; noticeDays: number | null }[];
+}>;
+
 export default function DatabaseCvsView() {
   const gate = useWorkdayGate();
   const jdApproved = useJdApproved();
-  const [rows, setRows] = useState<Person[]>(() => [...POOL].sort((a, b) => b.score - a.score));
-  const [f, setF] = useState<Filters>({ ...ANY, fit: "strong", notice: 1, city: "Colombo" });
+  const live = useLive();
+  const job = live ? jobFromAddress() : null;
+  const [rows, setRows] = useState<Person[]>(() => (live ? [] : [...POOL].sort((a, b) => b.score - a.score)));
+  // Live: the opening's real matches (ui/opening:matches), best first; anyone taken
+  // off with "Not for this job" is already left out by the backend.
+  const real = useDoorQuery(door.matches, job ? { openingId: job } : "skip") as DoorMatches | undefined;
+  const [seenReal, setSeenReal] = useState<DoorMatches | undefined>(undefined);
+  if (real !== seenReal) {
+    setSeenReal(real);
+    if (real?.ok)
+      setRows(
+        real.results.map((m) => ({
+          id: m.cvId, name: m.name, title: m.title ?? "", company: m.company ?? "", city: m.location ?? "",
+          years: m.years ?? 0, notice: m.noticeDays == null ? 0 : Math.round(m.noticeDays / 30), tags: [], score: Math.round(m.overallScore),
+        })),
+      );
+  }
+  const notForJob = useDoorMutation(door.notForJob);
+  // Real matches start unfiltered: the design's sample filters would hide most of them.
+  const [f, setF] = useState<Filters>(live ? { ...ANY } : { ...ANY, fit: "strong", notice: 1, city: "Colombo" });
   const [fOpen, setFOpen] = useState(false);
   const fBtn = useRef<HTMLButtonElement>(null);
   const [pickedId, setPickedId] = useState(rows[0]?.id ?? "");
@@ -124,6 +147,7 @@ export default function DatabaseCvsView() {
   };
   const shortlist = (p: Person) => {
     if (gate) return say(gate, undefined, true);
+    if (live) return say("Shortlisting from the database is not switched on here yet - do it in AURA for now.", undefined, true);
     if (CLAIMED[p.id]) return say(`${CLAIMED[p.id]} already claimed ${p.name}.`, undefined, true);
     // They show on the Pipeline board, in TA Follow-Up (source: the database).
     sendToPipeline({ name: p.name, title: p.title, company: p.company, location: p.city, years: p.years, notice: p.notice, cv: p.cv, channel: "SCOOP" });
@@ -136,11 +160,21 @@ export default function DatabaseCvsView() {
     // Asks once: the second press takes them off.
     if (sure !== p.id) return setSure(p.id);
     setSure("");
+    if (job) {
+      // Saved for good in the backend, so there is no Undo here.
+      void (notForJob({ openingId: job, candidateId: p.id }) as Promise<DoorDone | undefined>).then((done) => {
+        if (done && !done.ok) return say(done.message, undefined, true);
+        leave(p);
+        say(" taken off this job's matches.", p.name);
+      });
+      return;
+    }
     leave(p);
     setUndo(p);
   };
   const rerun = () => {
     if (matching) return;
+    if (live) return say("Running matching again is not switched on here yet - do it in AURA for now.", undefined, true);
     // Matching reads the approved JD; the TA System refuses it before approval.
     if (!jdApproved) return say("Approve the job description first - matching reads it.", undefined, true);
     setMatching(true);

@@ -1,5 +1,6 @@
 "use client";
 
+import { door, jobFromAddress, useDoorMutation, useDoorQuery, useLive, type Answer, type DoorDone } from "@/lib/backend";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
@@ -141,11 +142,53 @@ const count = (p: Post, t: Tab) => p.applicants[t].length + p.more[t];
 
 /** The LinkedIn Job view: the opening's posts on the left, the chosen post's (or all
  *  posts') applicants on the right, each to be shortlisted or marked not a fit. */
+type DoorPosts = Answer<{
+  me: string;
+  posts: { id: string; title: string; status: Status; channel: string; aliases: string[]; city: string; country: string; code: string | null; link: string; publicLink: string; owner: string; today: number }[];
+}>;
+type DoorApps = Answer<{
+  me: string;
+  names: Record<string, string>;
+  people: { id: string; name: string; title: string | null; company: string | null; location: string | null; years: number | null; noticeDays: number | null; ownerId: string | null; addedAt: number; stage: string }[];
+}>;
+// A post's applicant by its stage: still to look at, shortlisted (any stage after), or turned down.
+const tabOf = (stage: string): Tab => (stage === "new_cvs" || stage === "matched_candidates" ? "new" : stage === "rejected" ? "notfit" : "shortlisted");
+const firstName = (n?: string) => n?.split(" ")[0];
+const ago = (t: number) => {
+  const h = Math.floor((Date.now() - t) / 3_600_000);
+  return h < 1 ? "Applied just now" : h < 24 ? `Applied ${h} h ago` : h < 48 ? "Applied yesterday" : `Applied ${Math.floor(h / 24)} days ago`;
+};
+
 export default function LinkedInJobView() {
+  // Live: the opening's posts (ui/posts:list) and the chosen post's applicants
+  // (ui/opening:postApplicants); every button saves through the backend's rules.
+  const isLive = useLive();
+  const job = isLive ? jobFromAddress() : null;
+  const doAdd = useDoorMutation(door.addPost);
+  const doUpdate = useDoorMutation(door.updatePost);
+  const doStatus = useDoorMutation(door.setPostStatus);
+  const doDelete = useDoorMutation(door.deletePost);
+  const doMove = useDoorMutation(door.moveCvs);
+  const doShortlist = useDoorMutation(door.shortlist);
+  const doReject = useDoorMutation(door.move);
   // A post goes live only with the JD approved: the opening's one flag (jdState).
   const JD_APPROVED = useJdApproved();
   const me = useMe();
-  const [allPosts, setPosts] = useState(POSTS);
+  const [allPosts, setPosts] = useState(isLive ? [] : POSTS);
+  const realPosts = useDoorQuery(door.postsList, job ? { openingId: job } : "skip") as DoorPosts | undefined;
+  const [seenPosts, setSeenPosts] = useState<DoorPosts | undefined>(undefined);
+  if (realPosts !== seenPosts) {
+    setSeenPosts(realPosts);
+    if (realPosts?.ok)
+      setPosts((old) =>
+        realPosts.posts.map((p) => ({
+          id: p.id, title: p.title, aliases: p.aliases, city: p.city, country: p.country, owner: p.owner,
+          channel: (["linkedin", "facebook", "email_campaign"].includes(p.channel) ? p.channel : "linkedin") as Channel,
+          code: p.code ?? undefined, recruiterLink: p.link, publicLink: p.publicLink, status: p.status, today: p.today,
+          more: ZERO(), applicants: old.find((o) => o.id === p.id)?.applicants ?? NONE(),
+        })),
+      );
+  }
   // The TA System's visibility: a lead sees every post, a TA only the posts they own
   // (plus the All posts pool of those). Other TAs' claimed people still show, locked.
   const posts = allPosts.filter((p) => me.lead || p.owner === me.first);
@@ -200,6 +243,28 @@ export default function LinkedInJobView() {
   const all = chosen === ALL;
   const post = all ? undefined : (posts.find((p) => p.id === chosen) ?? posts[0]);
   const listKey = `${chosen}-${tab}`;
+  const realApps = useDoorQuery(door.postApplicants, job && post ? { openingId: job, postId: post.id, limit: 200 } : "skip") as DoorApps | undefined;
+  const [seenApps, setSeenApps] = useState<DoorApps | undefined>(undefined);
+  if (realApps !== seenApps) {
+    setSeenApps(realApps);
+    if (realApps?.ok && post) {
+      const by = NONE();
+      for (const x of realApps.people)
+        by[tabOf(x.stage)].push({
+          id: x.id, name: x.name, title: x.title ?? "", location: x.location ?? "", company: x.company ?? "", applied: ago(x.addedAt),
+          fit: 0, years: x.years ?? 0, notice: x.noticeDays ?? 0,
+          lockedBy: x.ownerId && x.ownerId !== realApps.me ? firstName(realApps.names[x.ownerId]) ?? "another TA" : undefined,
+        });
+      const pid = post.id;
+      setPosts((l) => l.map((p) => (p.id === pid ? { ...p, applicants: by } : p)));
+    }
+  }
+  // One backend answer: a refusal in words, or nothing (the lists re-read themselves).
+  const saved = async (call: Promise<unknown>, bold: string, rest: string) => {
+    const d = (await call) as DoorDone | undefined;
+    if (d && !d.ok) say("Not saved", ` - ${d.message}`, true);
+    else say(bold, rest);
+  };
   const live = posts.filter((p) => p.status === "live");
   // The applicants on show: one post's, or every post's together (one pool).
   const rows: { a: Applicant; postId: string; postTitle: string }[] = (all ? posts : post ? [post] : []).flatMap((p) =>
@@ -228,6 +293,12 @@ export default function LinkedInJobView() {
     sendToPipeline({ name: a.name, title: a.title, company: a.company, location: a.location, years: a.years, notice: a.notice, cv: a.cv, channel: "L" });
   const send = (a: Applicant, postId: string, to: Tab, reason?: string) => {
     if (gate) return;
+    if (job) {
+      setPicked((p) => p.filter((k) => k !== keyOf(postId, a)));
+      if (to === "shortlisted") void saved(doShortlist({ applicationId: a.id }), a.name, " shortlisted - moved to TA Follow-Up");
+      else void saved(doReject({ applicationId: a.id, stage: "rejected", reason: reason ?? "" }), a.name, ` marked not a fit: ${reason}`);
+      return;
+    }
     patch(postId, (p) => ({
       ...p,
       applicants: { ...p.applicants, new: p.applicants.new.filter((x) => x.id !== a.id), [to]: [a, ...p.applicants[to]] },
@@ -241,6 +312,17 @@ export default function LinkedInJobView() {
 
   const shortlistPicked = () => {
     if (gate || !pickable.length) return;
+    if (job) {
+      const n = pickable.length;
+      void Promise.all(pickable.map(({ a }) => doShortlist({ applicationId: a.id }) as Promise<DoorDone | undefined>)).then((all) => {
+        const no = all.find((d) => d && !d.ok);
+        if (no && !no.ok) say("Not all saved", ` - ${no.message}`, true);
+        else say(`${n} candidate${n === 1 ? "" : "s"}`, " shortlisted - moved to TA Follow-Up");
+      });
+      setPicked([]);
+      setDone(true);
+      return;
+    }
     for (const { a, postId } of pickable) {
       toBoard(a);
       patch(postId, (p) => ({
@@ -255,10 +337,15 @@ export default function LinkedInJobView() {
 
   const setStatus = (p: Post, status: Status) => {
     if (status === "live" && !JD_APPROVED) return;
+    if (job) return void saved(doStatus({ postId: p.id, status }), p.title, ` is ${STATUS_LABEL[status].toLowerCase()} now`);
     patch(p.id, (x) => ({ ...x, status }));
     say(p.title, ` is ${STATUS_LABEL[status].toLowerCase()} now`);
   };
   const remove = (p: Post) => {
+    if (job) {
+      setChosen(ALL);
+      return void saved(doDelete({ postId: p.id }), p.title, " deleted");
+    }
     setPosts((list) => list.filter((x) => x.id !== p.id));
     setChosen(ALL);
     say(p.title, " deleted");
@@ -266,6 +353,7 @@ export default function LinkedInJobView() {
   // Move CVs: a paused post's applicants join a live post (the TA System's rule).
   const moveCvs = (from: Post, to: Post) => {
     const moved = (["new", "shortlisted", "notfit"] as Tab[]).reduce((n, t) => n + count(from, t), 0);
+    if (job) return void saved(doMove({ fromPostId: from.id, toPostId: to.id }), "CVs", ` moved from ${from.title} to ${to.title}`);
     setPosts((list) =>
       list.map((p) =>
         p.id === from.id
@@ -283,6 +371,15 @@ export default function LinkedInJobView() {
   };
 
   const savePost = (p: Post, isNew: boolean) => {
+    if (job) {
+      setDialogOpen(false);
+      // ponytail: the dialog picks the owner by name and the backend wants a person's id,
+      // so changing who owns a post stays in AURA until the dialog lists real people.
+      const call = isNew
+        ? doAdd({ openingId: job, title: p.title, channel: p.channel, live: p.status === "live", link: p.recruiterLink })
+        : doUpdate({ postId: p.id, title: p.title, city: p.city, country: p.country, aliases: p.aliases, link: p.recruiterLink, publicLink: p.publicLink });
+      return void saved(call, p.title, isNew ? " added" : " saved");
+    }
     if (isNew) {
       setPosts((list) => [p, ...list]);
       choose(p.id);
