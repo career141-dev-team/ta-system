@@ -1,6 +1,7 @@
 "use client";
 
-import { door, jobFromAddress, OLD_SERVER, useDoorAction, useDoorQuery, useLive, useSessionHeaders, type Answer } from "@/lib/backend";
+import { door, jobFromAddress, OLD_SERVER, useDoorMutation, useDoorQuery, useLive, useSessionHeaders, useSignedIn, type Answer } from "@/lib/backend";
+import { useLiveDesk } from "@/lib/workday";
 import { useEffect, useRef, useState } from "react";
 import { DUR, EASE, gsap, motionOK, useGSAP, useSwap } from "@/lib/gsap";
 import { PERSON, useMe } from "@/lib/role";
@@ -59,6 +60,10 @@ type Mail = {
   rebuild?: boolean;
   /** A missed day's End of day: the research link, but no checks and no midday rule. */
   missed?: boolean;
+  /** Signed in: the backend's own row (dailyEmails) this is. */
+  liveId?: string;
+  /** Signed in, a missed day: that day as YYYY-MM-DD, which the send names. */
+  forDate?: string;
   subject: string | null;
   to: string[];
   cc: string[];
@@ -330,6 +335,29 @@ const fromRow = (r: Row): Cand => ({
   id: r.applicationId, name: r.name, age: r.age, notice: r.notice, company: r.currentCompany, designation: r.currentDesignation,
   current: r.currentRemuneration, expected: r.expectedRemuneration, cv: "ready", extra: {}, edited: [], notes: r.notes.join("\n"),
 });
+
+/** A daily email row from the backend (ui/email:emails), as this screen draws it. */
+type LiveEmail = { _id: string; userId: string; date: string; submissionType: Kind; number: number; status: "draft" | "sending" | "accepted" | "failed" | "uncertain"; acceptedAt?: number; startedAt?: number; snapshot?: { subject?: string; rows?: Row[]; to?: string[]; cc?: string[] } };
+type DoorEmails = Answer<{ emails: LiveEmail[]; missed: { date: string; count: number }[] }>;
+const LIVE_STATUS: Record<LiveEmail["status"], Status> = { draft: "draft", sending: "sending", accepted: "sent", failed: "failed", uncertain: "uncertain" };
+const dayOf = (iso: string) => fmtDay(new Date(`${iso}T12:00:00+05:30`));
+function fromLive(e: LiveEmail, meId: string | undefined, meName: string): Mail | null {
+  if (e.status === "draft") return null;
+  return newMail(e.submissionType, e.number, {
+    id: e._id,
+    liveId: e._id,
+    status: LIVE_STATUS[e.status],
+    day: dayOf(e.date),
+    by: e.userId === meId ? meName : "Another TA",
+    sentAt: e.acceptedAt ?? e.startedAt,
+    subject: e.snapshot?.subject ?? null,
+    to: e.snapshot?.to ?? [],
+    cc: e.snapshot?.cc ?? [],
+    rows: (e.snapshot?.rows ?? []).map(fromRow),
+  });
+}
+/** Where each End of day check is done, by the backend check's key. */
+const CHECK_VIEW: [RegExp, WorkView][] = [[/^jd/, "jd"], [/^linkedin/, "linkedin-job"], [/^suggest/, "hh-suggestions"], [/^excel/, "hh-tables"]];
 const KEYS = ["lEffort", "sets", "da", "scoop", "l", "post", "addOns", "backUp"] as const;
 const fromEffort = (e: Record<string, number | string | null>): Effort =>
   Object.fromEntries(KEYS.map((k) => [k, Number(e[k] ?? 0) || 0])) as Effort;
@@ -343,7 +371,32 @@ export default function DailyEmailView() {
   // is the next step, so Send says so.
   const signedIn = useLive();
   const job = signedIn ? jobFromAddress() : null;
-  const [mails, setMails] = useState<Mail[]>(() => (signedIn ? [newMail("eod", 1)] : [newMail("eod", 1), ...HISTORY]));
+  const [localMails, setMails] = useState<Mail[]>(() => (signedIn ? [newMail("eod", 1)] : [newMail("eod", 1), ...HISTORY]));
+  // Signed in (D5 step 4): the opening's real emails - sent, failed, not confirmed -
+  // and the days that missed their End of day, from ui/email:emails. The screen's
+  // own drafts stay here; what the backend holds is shown as it is, read only.
+  const whoami = useSignedIn();
+  const emailsRead = useDoorQuery(door.emails, job ? { jobId: job } : "skip") as DoorEmails | undefined;
+  const history = emailsRead?.ok ? emailsRead.emails.flatMap((e) => fromLive(e, whoami?.ok ? whoami.id : undefined, me.name) ?? []) : [];
+  const liveMiddaysToday = history.filter((h) => h.kind === "midday" && h.day === TODAY).length;
+  const liveEodToday = history.some((h) => h.kind === "eod" && h.day === TODAY && h.status !== "failed");
+  const mails: Mail[] = signedIn
+    ? [
+        ...history,
+        // A draft's midday number follows the ones already sent today; one End of day a day.
+        ...localMails
+          .filter((m) => !(liveEodToday && m.kind === "eod" && m.status === "draft" && m.day === TODAY && !m.missed && !m.revisedOf))
+          .map((m) => (m.kind === "midday" && m.status === "draft" && m.day === TODAY ? { ...m, n: m.n + liveMiddaysToday } : m)),
+      ]
+    : localMails;
+  const settleMail = useDoorMutation(door.settle);
+  // The positions on today's workday carry this opening's End of day checks.
+  const liveDay = useLiveDesk() as { active?: { jobs: { jobId: string; eodChecks?: { key: string; label: string; status?: string; progress?: string; exception?: { reason: string } }[] }[] } | null } | null;
+  const checks = signedIn
+    ? (liveDay?.active?.jobs.find((j) => j.jobId === job)?.eodChecks ?? [])
+        .filter((c) => !/^(chatgpt|daily_email|midday)/.test(c.key))
+        .map((c) => ({ key: c.key, label: c.label, view: (CHECK_VIEW.find(([re]) => re.test(c.key))?.[1] ?? "pipeline") as WorkView, done: c.status === "complete" || !!c.exception, note: c.exception ? `Excused: ${c.exception.reason}` : c.progress }))
+    : CHECKS;
   const [openId, setOpenId] = useState<string | null>(null);
   const [tab, setTab] = useState<Kind>("midday");
   const [cands, setCands] = useState(signedIn ? [] : CANDS);
@@ -357,11 +410,20 @@ export default function DailyEmailView() {
       setMails((all) => all.map((m) => (m.status === "draft" && !m.rows ? { ...m, to: [...e.to], cc: [...e.cc], effort: fromEffort(e.effort), subject: m.subject ?? e.subject } : m)));
     }
   }
+  const [missedFor, setMissedFor] = useState<string | null>(null);
+  const realMissed = useDoorQuery(door.compose, job && missedFor ? { jobId: job, forDate: missedFor } : "skip") as DoorCompose | undefined;
+  const [seenMissed, setSeenMissed] = useState<DoorCompose | undefined>(undefined);
+  if (realMissed !== seenMissed) {
+    setSeenMissed(realMissed);
+    if (realMissed?.ok && missedFor) {
+      const e = realMissed.email;
+      setMails((all) => all.map((m) => (m.forDate === missedFor && m.status === "draft" && !m.rows ? { ...m, rows: e.rows.map(fromRow), subject: m.subject ?? e.subject } : m)));
+    }
+  }
   const [link, setLink] = useState("");
   // Signed in: the backend's rule asks the TA to confirm the link (the old system's
   // tick); the design has none, so a small line under the box carries it.
   const [linkConfirmed, setLinkConfirmed] = useState(false);
-  const sendMidday = useDoorAction(door.sendMidday);
   const session = useSessionHeaders();
   // The email as the backend built it, to tell the TA's changes from the record's.
   const built = real?.ok ? real.email : null;
@@ -388,7 +450,7 @@ export default function DailyEmailView() {
   const middays = today
     .filter((m) => m.kind === "midday")
     .sort((a, b) => a.n - b.n);
-  const eod = today.find((m) => m.kind === "eod")!;
+  const eod = (today.find((m) => m.kind === "eod" && m.status !== "failed") ?? today.find((m) => m.kind === "eod"))!;
   const eodSent = eod.status === "sent";
   const middaySent = middays.some((m) => m.status === "sent");
   // Candidates sent in any email today leave the next one (as in the TA System).
@@ -457,7 +519,7 @@ export default function DailyEmailView() {
       if (!linkOk && !(me.lead && isEod)) left.push("the research link");
       // Only a TA is held to the checks and to "midday before End of day".
       if (isEod && !mail.missed && !me.lead) {
-        CHECKS.filter((c) => !c.done).forEach((c) => left.push(c.label));
+        checks.filter((c) => !c.done).forEach((c) => left.push(c.label));
         if (MIDDAY_REQUIRED && !middaySent) left.push("a midday email first");
       }
     }
@@ -489,7 +551,7 @@ export default function DailyEmailView() {
   const steps =
     mail && !readOnly && !mail.revisedOf
       ? [
-          ...(isEod && !mail.missed && !me.lead ? CHECKS.map((c) => c.done) : []),
+          ...(isEod && !mail.missed && !me.lead ? checks.map((c) => c.done) : []),
           ...(isEod && !mail.missed && !me.lead && MIDDAY_REQUIRED ? [middaySent] : []),
           ...(me.lead && isEod ? [] : [linkOk]),
         ]
@@ -657,10 +719,10 @@ export default function DailyEmailView() {
   const send = () => {
     if (!mail || left.length) return;
     if (signedIn) {
-      // A Midday without CVs is sent by the backend, which builds the email itself.
-      // An End of day, or a Midday with its CVs, needs the Prepared CV PDFs and the
-      // workbook, which only the old server makes: it gets the old page's own form
-      // and runs the old send, every rule included (D5 step 3).
+      // Every send - Midday with or without CVs, End of day, a missed day - goes to the
+      // old server with the old page's own form, and the old send runs, every rule
+      // included: the CV files and workbook (D5 step 3) and saving the TA's edits
+      // back to the candidate after it goes (D5 step 4).
       if (!linkConfirmed && !linkOk) return say("Add your ChatGPT link and confirm it first.", undefined, true);
       // The backend builds the table from the records: typed-in rows and added columns cannot go with it yet.
       if (rows.some((r) => r.manual) || mail.cols.length) return say("Typed-in rows and added columns cannot be sent from this screen yet. Take them out, or send this one in AURA.", undefined, true);
@@ -671,14 +733,16 @@ export default function DailyEmailView() {
       patch(mail.id, { status: "sending", rows: rows.map((r) => ({ ...r })) });
       const done = (d: { ok: boolean; message: string } | undefined) => {
         if (d?.ok) {
-          patch(mail.id, { status: "sent", sentAt: Date.now() });
+          // The backend's own row now shows it (ui/email:emails); this draft goes.
+          setMails((all) => all.filter((m) => m.id !== mail.id));
+          setOpenId(null);
           say(` ${d.message}`, isEod ? "End of day email" : `Midday ${mail.n}`);
         } else {
           patch(mail.id, { status: "draft" });
           say(d?.message ?? "Nothing was sent. Try again.", undefined, true);
         }
       };
-      if (isEod || !mail.noCvs) {
+      {
         const cells: Record<string, string> = {};
         for (const e of edits) cells[`shortlist_${e.applicationId}_${e.field}`] = e.value;
         void session()
@@ -689,6 +753,8 @@ export default function DailyEmailView() {
               body: JSON.stringify({
                 openingId: job!,
                 submissionType: isEod ? "eod" : "midday",
+                ...(!isEod && mail.noCvs ? { skipAttachments: "yes" } : {}),
+                ...(mail.forDate ? { forDate: mail.forDate } : {}),
                 applicationIds: rows.map((c) => c.id).join(","),
                 subject: mail.subject ?? autoSubject(rows.length),
                 introText: mail.intro ?? (rows.length ? INTRO_CVS : INTRO_ACTIVITY),
@@ -705,16 +771,7 @@ export default function DailyEmailView() {
           .then((res) => res.json() as Promise<{ ok: boolean; message: string }>)
           .catch(() => ({ ok: false, message: "The email could not reach the server. Check whether it went (Sent in the last 31 days) before trying again." }))
           .then(done);
-        return;
       }
-      void (sendMidday({
-        jobId: job!, edits, subject: mail.subject ?? autoSubject(rows.length),
-        intro: mail.intro ?? (rows.length ? INTRO_CVS : INTRO_ACTIVITY), outro: mail.outro,
-        extraTo: mail.to.filter((a) => !built?.to.includes(a)).join(","),
-        extraCc: mail.cc.filter((a) => !built?.cc.includes(a)).join(","),
-        removed: [...was].filter((a) => !now.has(a)).join(","),
-        link: link.trim(), confirmed: linkConfirmed,
-      }) as Promise<{ ok: boolean; message: string } | undefined>).then(done);
       return;
     }
     const snapshot = rows.map((r) => ({ ...r }));
@@ -758,6 +815,15 @@ export default function DailyEmailView() {
     open(r);
   };
   const missedDay = (day: string) => {
+    if (signedIn) {
+      const iso = (emailsRead?.ok ? emailsRead.missed : []).find((x) => dayOf(x.date) === day)?.date;
+      if (!iso) return say("That day is no longer open for a late End of day.", undefined, true);
+      const m = newMail("eod", 1, { day, missed: true, forDate: iso, to: [...(built?.to ?? TO)], cc: [...(built?.cc ?? CC)] });
+      setMails((all) => [m, ...all]);
+      setMissedFor(iso);
+      open(m);
+      return;
+    }
     const m = newMail("eod", 1, {
       day,
       missed: true,
@@ -1111,6 +1177,7 @@ export default function DailyEmailView() {
           {showSent ? (
             <SentList
               mails={mails}
+              missedLive={signedIn ? (emailsRead?.ok ? emailsRead.missed : []) : undefined}
               onOpen={open}
               onMissed={missedDay}
               onClose={() => setShowSent(false)}
@@ -1124,7 +1191,11 @@ export default function DailyEmailView() {
                 onRevise={() => reviseOf(mail)}
                 onRetry={() => patch(mail.id, { status: "draft" })}
                 onSettle={(sent, why) =>
-                  patch(mail.id, { status: sent ? "sent" : "failed", sentAt: sent ? (mail.sentAt ?? Date.now()) : undefined, settledWhy: why })
+                  mail.liveId
+                    ? void (settleMail({ id: mail.liveId, accepted: sent, reason: why }) as Promise<{ ok: boolean; message: string } | undefined>).then((d) =>
+                        say(d?.message ?? "Could not settle it. Try again.", undefined, !d?.ok),
+                      )
+                    : patch(mail.id, { status: sent ? "sent" : "failed", sentAt: sent ? (mail.sentAt ?? Date.now()) : undefined, settledWhy: why })
                 }
               />
 
@@ -1187,7 +1258,7 @@ export default function DailyEmailView() {
                   )}
                   <ul className="mt-[max(0.7rem,6px)] space-y-[max(0.55rem,5px)] text-small">
                     {isEod && !mail.missed &&
-                      CHECKS.map((c) => (
+                      checks.map((c) => (
                         <Check
                           key={c.key}
                           done={c.done}
@@ -1573,8 +1644,11 @@ function SentList({
   onOpen,
   onMissed,
   onClose,
+  missedLive,
 }: {
   mails: Mail[];
+  /** Signed in: the backend's days with candidates never sent in an End of day. */
+  missedLive?: { date: string; count: number }[];
   onOpen: (m: Mail) => void;
   onMissed: (day: string) => void;
   onClose: () => void;
@@ -1599,10 +1673,10 @@ function SentList({
   );
   // Only days that had candidates not yet sent (sample: 2 and 5 days back).
   const UNSENT: Record<number, number> = { 2: 3, 5: 1 };
-  const missed = Object.keys(UNSENT)
-    .map(Number)
-    .map((n) => ({ d: daysAgo(n), cvs: UNSENT[n] }))
-    .filter((x) => !eodDays.has(x.d));
+  const missed = (missedLive
+    ? missedLive.map((x) => ({ d: dayOf(x.date), cvs: x.count }))
+    : Object.keys(UNSENT).map(Number).map((n) => ({ d: daysAgo(n), cvs: UNSENT[n] }))
+  ).filter((x) => !eodDays.has(x.d));
   const label = (x: { d: string; cvs: number }) => `Missed · ${x.d} · ${x.cvs} CV${x.cvs === 1 ? "" : "s"}`;
   const [day, setDay] = useState(missed[0]?.d ?? "");
   const chip: Record<Status, string> = {
