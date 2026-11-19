@@ -119,6 +119,7 @@ export const door = {
   sendMidday: makeFunctionReference<"action">("ui/emailSend:sendMidday"),
   // AURA on Today (E5 group 1): the TA's desk, and one question to Claude Haiku.
   desk: makeFunctionReference<"query">("ui/desk:desk"),
+  things: makeFunctionReference<"query">("ui/desk:things"),
   askToday: makeFunctionReference<"action">("ui/aura:askToday"),
   scoopUploadUrl: makeFunctionReference<"mutation">("ui/opening:scoopUploadUrl"),
   queueScoop: makeFunctionReference<"mutation">("ui/opening:queueScoop"),

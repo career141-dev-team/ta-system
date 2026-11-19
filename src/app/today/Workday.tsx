@@ -72,7 +72,18 @@ type Thing = {
   sub: string;
   action?: string;
   href?: string;
+  /** Signed in: a done row with no way back (an accepted strategy). */
+  noUndo?: boolean;
 };
+
+/** A "thing" from the backend (ui/desk:things). */
+type DoorThing = { kind: "ready" | "strategy" | "jd"; id: string; jobId: string; applicationId?: string; title: string; sub: string; at: number };
+const fromDoorThing = (t: DoorThing): Thing =>
+  t.kind === "ready"
+    ? { id: t.id, done: false, icon: "check", title: t.title, doneTitle: t.title.replace(" is ready for Director Review", " moved to Director Review"), sub: t.sub, action: "Move to Director Review" }
+    : t.kind === "strategy"
+      ? { id: t.id, done: false, icon: "target", title: t.title, doneTitle: "Strategies accepted", sub: t.sub, action: "Accept", noUndo: true }
+      : { id: t.id, done: false, icon: "doc", title: t.title, sub: t.sub, action: "Review JD", href: `/openings/demo?job=${t.jobId}&view=jd` };
 
 const THINGS: Thing[] = [
   {
@@ -181,8 +192,18 @@ export default function Workday({ startedAt }: { startedAt: number | null }) {
   };
   const eodSent = (id: string) =>
     desk ? !!liveDay?.jobs.find((j) => j.jobId === id)?.eodSentAt : checksOf(id).some((c) => c.key === "daily_email" && c.done);
-  // Signed in, the sample "things" (Kasun, the HR JD, Rashmi's strategy) are not shown.
-  const [things, setThings] = useState(desk ? [] : THINGS);
+  // Signed in, the "things" are the backend's (ui/desk:things, item 3 of E5 group 1):
+  // each button runs a door the screens already use, and a row done here stays on
+  // screen as done (with Undo for a move) even after the backend drops it.
+  const [sampleThings, setThings] = useState(desk ? [] : THINGS);
+  const thingsRead = useDoorQuery(door.things, desk ? {} : "skip") as { ok: true; things: DoorThing[] } | { ok: false; message: string } | undefined;
+  const liveThings = thingsRead?.ok ? thingsRead.things : [];
+  const [doneLive, setDoneLive] = useState<Record<string, Thing>>({});
+  const things: Thing[] = desk
+    ? [...liveThings.filter((t) => !doneLive[t.id]).map(fromDoorThing), ...Object.values(doneLive)]
+    : sampleThings;
+  const moveCard = useDoorMutation(door.move);
+  const accept = useDoorMutation(door.acceptStrategies);
   // What the person said, and AURA's answer: a plan, "not yet" for anything that
   // is not about the day, or nothing while it is still thinking.
   const [chat, setChat] = useState<{ id: number; text: string; reply?: Plan | Answer | "na" }[]>([]);
@@ -241,7 +262,31 @@ export default function Workday({ startedAt }: { startedAt: number | null }) {
     setPicked({ ...picked, [id]: type });
   };
 
-  const flip = (id: string) => setThings((ts) => ts.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
+  const flip = (id: string) => {
+    if (!desk) return setThings((ts) => ts.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
+    const kept = doneLive[id];
+    const src = liveThings.find((t) => t.id === id);
+    const thing = kept ?? (src ? fromDoorThing(src) : undefined);
+    if (!thing) return;
+    const appId = id.replace(/^ready:/, "");
+    // Done -> Undo: only a move goes back (to TA Follow-Up).
+    const run = kept
+      ? moveCard({ applicationId: appId, stage: "ta_follow_up" })
+      : src?.kind === "ready"
+        ? moveCard({ applicationId: appId, stage: "director_review" })
+        : src?.kind === "strategy"
+          ? accept({ openingId: src.jobId })
+          : null;
+    if (!run) return;
+    answered(run, () =>
+      setDoneLive((d) => {
+        const next = { ...d };
+        if (kept) delete next[id];
+        else next[id] = { ...thing, done: true };
+        return next;
+      }),
+    );
+  };
 
   // About the day (or the first thing said, or a change to the plan): AURA plans it
   // after a short think. Anything else: it says plainly it is not connected yet.
@@ -450,13 +495,17 @@ export default function Workday({ startedAt }: { startedAt: number | null }) {
         <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto flex min-h-full w-full max-w-[max(53.75rem,300px)] flex-col justify-end gap-[max(2rem,18px)] px-[max(1.5rem,14px)] pb-[max(1.5rem,14px)] pt-8">
             <Say>
-              {part}, {first}. {WORDS[things.length] ?? things.length} things need you before we plan.
+              {things.length
+                ? <>{part}, {first}. {WORDS[things.length] ?? things.length} {things.length === 1 ? "thing needs" : "things need"} you before we plan.</>
+                : <>{part}, {first}. Nothing is waiting on you right now.</>}
             </Say>
-            <div data-say className="flex flex-col gap-[max(0.5rem,5px)] rounded-lg bg-surface-2 p-[max(0.5rem,5px)]">
-              {things.map((t) => (
-                <ThingRow key={t.id} thing={t} onFlip={() => flip(t.id)} />
-              ))}
-            </div>
+            {things.length > 0 && (
+              <div data-say className="flex flex-col gap-[max(0.5rem,5px)] rounded-lg bg-surface-2 p-[max(0.5rem,5px)]">
+                {things.map((t) => (
+                  <ThingRow key={t.id} thing={t} onFlip={() => flip(t.id)} />
+                ))}
+              </div>
+            )}
 
             <Say>Which positions are you on today?</Say>
             <div data-picks className="relative z-10 -mt-[max(0.75rem,6px)] flex flex-wrap gap-[max(0.75rem,8px)] pl-[max(3.375rem,0px)] max-md:pl-0">
@@ -813,7 +862,7 @@ function ThingRow({ thing: t, onFlip }: { thing: Thing; onFlip: () => void }) {
         <span className="block text-[max(0.875rem,12px)] text-ink-3">{t.sub}</span>
       </span>
       {t.done ? (
-        t.doneTitle && (
+        t.doneTitle && !t.noUndo && (
           <button type="button" onClick={flip} className="shrink-0 text-[max(0.875rem,12px)] text-ink-3 hover:text-ink">
             Undo
           </button>
