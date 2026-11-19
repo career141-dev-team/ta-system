@@ -15,7 +15,7 @@
 
 import { ClerkProvider, SignedIn, SignedOut, useAuth, useClerk, useSignIn } from "@clerk/clerk-react";
 import { isClerkAPIResponseError } from "@clerk/clerk-react/errors";
-import { ConvexReactClient, useMutation, useQuery } from "convex/react";
+import { ConvexReactClient, useAction, useMutation, useQuery } from "convex/react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
 import { makeFunctionReference } from "convex/server";
 import { createContext, useContext, useEffect, type ReactNode } from "react";
@@ -38,6 +38,7 @@ const client = LIVE ? new ConvexReactClient(URL) : null;
 const noMutation = async () => undefined;
 export const useDoorQuery = (LIVE ? useQuery : () => undefined) as typeof useQuery;
 export const useDoorMutation = (LIVE ? useMutation : () => noMutation) as typeof useMutation;
+export const useDoorAction = (LIVE ? useAction : () => noMutation) as typeof useAction;
 
 // The sign-in screen's Clerk hook, with the same stand-in for a build without a backend.
 export const useDoorSignIn = (LIVE ? useSignIn : () => ({ isLoaded: false, signIn: undefined, setActive: undefined })) as typeof useSignIn;
@@ -105,6 +106,7 @@ export const door = {
   postsList: makeFunctionReference<"query">("ui/posts:list"),
   today: makeFunctionReference<"query">("ui/day:today"),
   compose: makeFunctionReference<"query">("ui/email:compose"),
+  sendMidday: makeFunctionReference<"action">("ui/emailSend:sendMidday"),
   scoopUploadUrl: makeFunctionReference<"mutation">("ui/opening:scoopUploadUrl"),
   queueScoop: makeFunctionReference<"mutation">("ui/opening:queueScoop"),
   refreshChecks: makeFunctionReference<"mutation">("ui/day:refreshChecks"),

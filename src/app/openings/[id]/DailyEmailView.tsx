@@ -1,6 +1,6 @@
 "use client";
 
-import { door, jobFromAddress, useDoorQuery, useLive, type Answer } from "@/lib/backend";
+import { door, jobFromAddress, useDoorAction, useDoorQuery, useLive, type Answer } from "@/lib/backend";
 import { useEffect, useRef, useState } from "react";
 import { DUR, EASE, gsap, motionOK, useGSAP, useSwap } from "@/lib/gsap";
 import { PERSON, useMe } from "@/lib/role";
@@ -355,6 +355,12 @@ export default function DailyEmailView() {
     }
   }
   const [link, setLink] = useState("");
+  // Signed in: the backend's rule asks the TA to confirm the link (the old system's
+  // tick); the design has none, so a small line under the box carries it.
+  const [linkConfirmed, setLinkConfirmed] = useState(false);
+  const sendMidday = useDoorAction(door.sendMidday);
+  // The email as the backend built it, to tell the TA's changes from the record's.
+  const built = real?.ok ? real.email : null;
   const [linkOk, setLinkOk] = useState(false);
   const [linkSaving, setLinkSaving] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
@@ -646,7 +652,36 @@ export default function DailyEmailView() {
 
   const send = () => {
     if (!mail || left.length) return;
-    if (signedIn) return say("Sending from this screen comes in the next step. Send this one in AURA for now.", undefined, true);
+    if (signedIn) {
+      // A Midday without CVs is sent by the backend, which builds the email itself;
+      // only the TA's own changes go with it. An EOD, or a Midday with its CVs, is next.
+      if (isEod || !mail.noCvs) return say("From this screen you can send a Midday with \"Send without CV attachments\" ticked. Send this one in AURA for now.", undefined, true);
+      if (!linkConfirmed && !linkOk) return say("Add your ChatGPT link and confirm it first.", undefined, true);
+      // The backend builds the table from the records: typed-in rows and added columns cannot go with it yet.
+      if (rows.some((r) => r.manual) || mail.cols.length) return say("Typed-in rows and added columns cannot be sent from this screen yet. Take them out, or send this one in AURA.", undefined, true);
+      const was = new Set([...(built?.to ?? []), ...(built?.cc ?? [])]);
+      const now = new Set([...mail.to, ...mail.cc]);
+      const field: Record<string, string> = { name: "name", age: "age", notice: "notice", notes: "notes", company: "currentCompany", designation: "currentDesignation", current: "currentRemuneration", expected: "expectedRemuneration" };
+      const edits = rows.flatMap((c) => Object.entries(field).map(([k, f]) => ({ applicationId: c.id, field: f, value: String((c as unknown as Record<string, unknown>)[k] ?? "") })));
+      patch(mail.id, { status: "sending", rows: rows.map((r) => ({ ...r })) });
+      void (sendMidday({
+        jobId: job!, edits, subject: mail.subject ?? autoSubject(rows.length),
+        intro: mail.intro ?? (rows.length ? INTRO_CVS : INTRO_ACTIVITY), outro: mail.outro,
+        extraTo: mail.to.filter((a) => !built?.to.includes(a)).join(","),
+        extraCc: mail.cc.filter((a) => !built?.cc.includes(a)).join(","),
+        removed: [...was].filter((a) => !now.has(a)).join(","),
+        link: link.trim(), confirmed: linkConfirmed,
+      }) as Promise<{ ok: boolean; message: string } | undefined>).then((d) => {
+        if (d?.ok) {
+          patch(mail.id, { status: "sent", sentAt: Date.now() });
+          say(` ${d.message}`, `Midday ${mail.n}`);
+        } else {
+          patch(mail.id, { status: "draft" });
+          say(d?.message ?? "Nothing was sent. Try again.", undefined, true);
+        }
+      });
+      return;
+    }
     const snapshot = rows.map((r) => ({ ...r }));
     patch(mail.id, { status: "sending", rows: snapshot });
     // ponytail: a stand-in delay; with the backend this is the durable send
@@ -1180,6 +1215,12 @@ export default function DailyEmailView() {
                         <p className="mt-1.5 pl-2 text-caption text-danger">
                           {linkError}
                         </p>
+                      )}
+                      {signedIn && (
+                        <label className="mt-1.5 flex items-start gap-2 pl-2 text-caption text-ink-2">
+                          <input type="checkbox" checked={linkConfirmed} onChange={(e) => setLinkConfirmed(e.target.checked)} className="mt-0.5 accent-[var(--color-brand)]" />
+                          I opened this link in a private window and it holds no candidate details.
+                        </label>
                       )}
                     </>
                   ) : (
