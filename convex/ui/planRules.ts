@@ -78,3 +78,81 @@ export function planTally(tasks: { state: TaskState }[]): { done: number; of: nu
 /** A line for a task's history. */
 export type HistoryLine = { at: number; by: string; what: string };
 export const historyOf = (history: HistoryLine[] | undefined, line: HistoryLine): HistoryLine[] => [...(history ?? []), line].slice(-50);
+
+// ----- Phase 2: reminders (docs/AURA-DAY-AGENT.md section 6) -----
+// For each open task, at most four moments, each sent once: starting, nearly due,
+// overdue, still pending. One reminder reaches the TA at a time; a moment more than
+// 15 minutes old when it is first looked at is marked and never sent (no burst of old
+// reminders after approving mid-day). Snoozed tasks and a quiet plan wait.
+
+export type Moment = "start" | "near" | "over" | "still";
+export type RemTask = { key: string; title: string; kind: string; startMin: number; minutes: number; state: TaskState; snoozedUntil?: number; reminded?: string[] };
+const MIN = 60_000;
+export const FRESH_MS = 15 * MIN;
+const RANK: Record<Moment, number> = { over: 0, still: 1, near: 2, start: 3 };
+
+/** Colombo midnight of a plan's date, in ms. */
+export const dayStartOf = (date: string) => Date.parse(`${date}T00:00:00+05:30`);
+
+/** When each reminder of one task falls. */
+export function momentsOf(t: RemTask, dayStart: number): { moment: Moment; at: number }[] {
+  if (t.state !== "planned" && t.state !== "doing") return [];
+  const start = dayStart + t.startMin * MIN;
+  const end = start + t.minutes * MIN;
+  const out: { moment: Moment; at: number }[] = [];
+  if (t.state === "planned") out.push({ moment: "start", at: start });
+  if (t.minutes >= 10) out.push({ moment: "near", at: Math.min(start + 0.8 * t.minutes * MIN, end - 5 * MIN) });
+  out.push({ moment: "over", at: end + 5 * MIN }, { moment: "still", at: end + 35 * MIN });
+  return out;
+}
+
+/** The words of a reminder: short, about this task only. */
+export function reminderText(t: RemTask, moment: Moment, now: number, dayStart: number): string {
+  const left = Math.max(1, Math.round((dayStart + (t.startMin + t.minutes) * MIN - now) / MIN));
+  if (moment === "start") {
+    if (t.kind === "midday_email") return "Time for the Midday email.";
+    if (t.kind === "eod_email") return "Time to prepare your end-of-day email.";
+    return `Next: ${t.title} (${t.minutes} min).`;
+  }
+  if (moment === "near") return `${left} minutes left on ${t.title}.`;
+  if (moment === "over") return `${t.title} ran over. Need more time, or move it?`;
+  return `${t.title} is still open.`;
+}
+
+const id = (key: string, m: Moment) => `${key}:${m}`;
+
+/** What to send now (at most one) and which moments to mark as handled. */
+export function dueNow(tasks: RemTask[], dayStart: number, now: number, quietUntil?: number): { deliver: { key: string; moment: Moment; text: string } | null; mark: Map<string, Moment[]> } {
+  const mark = new Map<string, Moment[]>();
+  if (quietUntil && now < quietUntil) return { deliver: null, mark };
+  const due = tasks
+    .flatMap((t) => momentsOf(t, dayStart).map((m) => ({ t, ...m })))
+    .filter((d) => d.at <= now && !(d.t.reminded ?? []).includes(id(d.t.key, d.moment)) && !(d.t.snoozedUntil && now < d.t.snoozedUntil));
+  const fresh = due.filter((d) => now - d.at <= FRESH_MS).sort((a, b) => RANK[a.moment] - RANK[b.moment] || a.at - b.at);
+  const add = (key: string, m: Moment) => mark.set(key, [...(mark.get(key) ?? []), m]);
+  for (const d of due) if (now - d.at > FRESH_MS) add(d.t.key, d.moment);
+  const first = fresh[0];
+  if (!first) return { deliver: null, mark };
+  add(first.t.key, first.moment);
+  // A task that ran over does not also get its older "nearly due" or "starting".
+  for (const d of fresh) if (d.t.key === first.t.key && RANK[d.moment] > RANK[first.moment]) add(d.t.key, d.moment);
+  return { deliver: { key: first.t.key, moment: first.moment, text: reminderText(first.t, first.moment, now, dayStart) }, mark };
+}
+
+/** When the plan should next wake: the earliest unsent moment still ahead (or one
+ *  more fresh one waiting its turn, two minutes on), after any snooze or quiet. */
+export function nextWake(tasks: RemTask[], dayStart: number, now: number, quietUntil?: number): number | null {
+  let best: number | null = null;
+  for (const t of tasks)
+    for (const m of momentsOf(t, dayStart)) {
+      if ((t.reminded ?? []).includes(id(t.key, m.moment))) continue;
+      if (now - m.at > FRESH_MS) continue;
+      let at = Math.max(m.at, t.snoozedUntil ?? 0, quietUntil ?? 0);
+      if (at <= now) at = now + 2 * MIN;
+      if (best === null || at < best) best = at;
+    }
+  return best;
+}
+
+/** The "plan not approved yet" nudge: one hour after the workday started. */
+export const NUDGE_AFTER_MS = 60 * MIN;

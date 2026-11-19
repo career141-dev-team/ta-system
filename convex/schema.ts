@@ -175,6 +175,13 @@ export default defineSchema({
     version: v.number(),
     createdAt: v.number(),
     updatedAt: v.number(),
+    // Phase 2, reminders (19 Nov): the one scheduled wake-up, quiet time, the last
+    // reminder (the screen's pet speaks it), and the once-only "not approved" nudge.
+    wakeJobId: v.optional(v.id("_scheduled_functions")),
+    wakeAt: v.optional(v.number()),
+    quietUntil: v.optional(v.number()),
+    nudged: v.optional(v.boolean()),
+    lastReminder: v.optional(v.object({ at: v.number(), text: v.string(), key: v.optional(v.string()), moment: v.string() })),
   }).index("by_user_date", ["userId", "date"]),
   /* One task of a day plan. Never deleted: skipped and carried keep their reason, and
    * every change is a line in `history`. */
@@ -196,6 +203,9 @@ export default defineSchema({
     doneAt: v.optional(v.number()),
     reason: v.optional(v.string()),
     history: v.array(v.object({ at: v.number(), by: v.string(), what: v.string() })),
+    // Phase 2: "stop reminding me about this for 30 minutes", and which reminders went.
+    snoozedUntil: v.optional(v.number()),
+    reminded: v.optional(v.array(v.string())),
   }).index("by_plan", ["planId"]),
   taSourcingRuns: defineTable({
     jobId: v.id("jobs"), userId: v.optional(v.id("users")), round: v.number(),
@@ -2325,6 +2335,8 @@ export default defineSchema({
       // blocked the TA until they asked; a missed EOD surfaced next morning; an expired day closed
       // silently. Raised by ta/eodCopies.flagStuckSends, ta/eodReminders.ts and closeWorkday.
       v.literal("eod_stuck"), v.literal("eod_reminder"), v.literal("eod_lead_digest"), v.literal("workday_expired"),
+      // AURA's day-plan reminders (19 Nov): one per task moment, from the TA's approved plan.
+      v.literal("aura_reminder"),
       // A priority tier or a status was changed on an opening (2 Nov).
       v.literal("opening_changed"),
       // Something the Ops System wants a TA to know (5 Nov): a client's
