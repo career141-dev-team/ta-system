@@ -128,5 +128,11 @@ eq("day: the ChatGPT link keeps its confirm rule", daySrc.includes("checkResearc
 eq("day: refresh only on your own workday", daySrc.includes("That workday is not yours."), true);
 eq("day: the bell reads only your own", daySrc.includes("userId: w.user._id"), true);
 
+// The email screen before the send (ui/email, D5a): no door may send mail yet.
+const emailSrc = fs.readFileSync(path.join("convex", "ui", "email.ts"), "utf8");
+eq("email: nothing here sends (no begin, no eodMail)", /dailyEmails\.begin|eodMail/.test(emailSrc.replace(/\/\/.*$/gm, "")), false);
+eq("email: the browser never names the scoop-only exemption", /scoopsOnly/.test(emailSrc.replace(/\/\/.*$|\*.*$/gm, "")), false);
+eq("email: settling an uncertain send uses the backend's rule", emailSrc.includes("internal.ta.dailyEmails.reconcile"), true);
+
 console.log(`\nuidoor: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
