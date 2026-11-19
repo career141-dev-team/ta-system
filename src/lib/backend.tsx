@@ -36,7 +36,19 @@ const client = LIVE ? new ConvexReactClient(URL) : null;
 // env values (the live design preview). LIVE never changes in a build, so a screen uses
 // these two: the real hooks when live, harmless stand-ins when not.
 const noMutation = async () => undefined;
-export const useDoorQuery = (LIVE ? useQuery : () => undefined) as typeof useQuery;
+// A backend that is slow for a moment (a restart, a 1 s limit) makes Convex's useQuery THROW,
+// which dropped the whole page onto "This page couldn't load" (19 Nov). The hook is called
+// first, so the rule of hooks holds; a failed answer reads as "still loading" and the next
+// answer from the backend replaces it.
+const safeQuery = ((query: Parameters<typeof useQuery>[0], args: Parameters<typeof useQuery>[1]) => {
+  try {
+    return useQuery(query, args);
+  } catch (error) {
+    console.warn("[door] a read failed, waiting for the next answer:", error instanceof Error ? error.message.split("\n")[0] : error);
+    return undefined;
+  }
+}) as typeof useQuery;
+export const useDoorQuery = (LIVE ? safeQuery : () => undefined) as typeof useQuery;
 export const useDoorMutation = (LIVE ? useMutation : () => noMutation) as typeof useMutation;
 export const useDoorAction = (LIVE ? useAction : () => noMutation) as typeof useAction;
 /** Headers that prove who is asking, for our own money-spending routes (src/lib/signedIn.ts). */
