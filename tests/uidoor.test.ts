@@ -23,8 +23,9 @@ for (const f of files) {
   const src = read(`${dir}/${f}`);
   eq(`${f}: no actorId argument (the person is the Clerk identity only)`, /actorId\s*:\s*v\./.test(src), false);
   const publicFns = (src.match(/=\s*(query|mutation|action)\(\{/g) ?? []).length;
-  // `act(ctx` (ui/day.ts) runs `who(ctx)` before anything else.
-  const checked = (src.match(/await (uiUser|openFor|forOpening|manager|postFor|who)\(ctx|=> act\(ctx/g) ?? []).length;
+  // `act(ctx` (ui/day.ts) runs `who(ctx)` before anything else; an action
+  // (ui/aura.ts) asks ui/me:whoAmI, which is uiUser, as its first read.
+  const checked = (src.match(/await (uiUser|openFor|forOpening|manager|postFor|who)\(ctx|=> act\(ctx|ctx\.runQuery\(api\.ui\.me\.whoAmI/g) ?? []).length;
   if (publicFns) eq(`${f}: every public function asks uiUser first`, checked >= publicFns, true);
 }
 eq("unverified email is never matched", matchableEmail({ tokenIdentifier: "t", subject: "s", email: "a@b.com", emailVerified: false }), null);
@@ -166,6 +167,27 @@ eq("send: through the old reservation and its guards", sendSrc.includes("interna
 eq("send: through the old sender (test mode, outbound lock)", sendSrc.includes("internal.ta.eodMail.send"), true);
 eq("send: only a Midday, and without attachments", sendSrc.includes('submissionType: "midday"') && sendSrc.includes("attachments: [], savedIds: []") && !/submissionType:\s*"eod"/.test(sendSrc), true);
 eq("send: the ChatGPT rule is kept", sendSrc.includes("checkResearchSubmission"), true);
+
+// ── AURA on Today (E5 group 1, 19 Nov) ────────────────────────────────────
+{
+  const { AI_DAY_LIMIT_USD, cleanReply, costOf, trimHistory } = await import("../convex/ui/auraRules");
+  const ids = new Set(["j1"]);
+  eq("aura: daily limit is $5", AI_DAY_LIMIT_USD, 5);
+  eq("aura: Haiku 5.5 price (1M in + 1M out = $0.60)", Math.round(costOf(1_000_000, 1_000_000) * 100) / 100, 0.6);
+  eq("aura: a plan keeps its steps", cleanReply({ kind: "plan", headline: "Close SAP by lunch", steps: [{ at: "9:00", what: "Review", where: "j1", tone: "brand" }] }, ids), { kind: "plan", headline: "Close SAP by lunch", steps: [{ at: "9:00", what: "Review", tone: "brand", where: "j1" }] });
+  eq("aura: an unknown position id is dropped, not trusted", (cleanReply({ kind: "answer", say: "x", rows: [{ main: "a", where: "evil" }] }, ids) as { rows: { where?: string }[] }).rows[0].where, undefined);
+  eq("aura: a bad tone becomes none", (cleanReply({ kind: "plan", headline: "h", steps: [{ at: "9", what: "w", tone: "<b>" }] }, ids) as { steps: { tone: string }[] }).steps[0].tone, "none");
+  eq("aura: an answer without words is refused", cleanReply({ kind: "answer", say: " " }, ids), null);
+  eq("aura: an unknown shape is refused", cleanReply({ kind: "send_email" }, ids), null);
+  eq("aura: rows capped at 6", (cleanReply({ kind: "answer", say: "x", rows: Array.from({ length: 20 }, () => ({ main: "r" })) }, ids) as { rows: unknown[] }).rows.length, 6);
+  eq("aura: history keeps the last 6 turns", trimHistory(Array.from({ length: 10 }, (_, i) => ({ role: "user" as const, text: `t${i}` }))).length, 6);
+  const aura = read("convex/ui/aura.ts");
+  eq("aura: asks who first, then checks the key and the daily limit", aura.indexOf("api.ui.me.whoAmI") < aura.indexOf("anthropicOn()") && aura.includes("spentToday"), true);
+  eq("aura: every call is written to the ledger", aura.includes("internal.ui.auraLedger.record"), true);
+  eq("aura: a hard time limit", /TIMEOUT_MS = 20_000/.test(aura), true);
+  eq("aura: writes nothing but the ledger", /runMutation\((?!internal\.ui\.auraLedger\.record)/.test(aura), false);
+  eq("desk: bounded reads only", /\.collect\(\)/.test(read("convex/ui/desk.ts")), false);
+}
 
 console.log(`\nuidoor: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
