@@ -11,7 +11,7 @@ import { internalMutation, mutation, query, type MutationCtx, type QueryCtx } fr
 import type { Doc, Id } from "../_generated/dataModel";
 import { workdayDate } from "../../src/lib/workday";
 import { NotSignedIn, uiUser } from "./me";
-import { applyChange, dayStartOf, DEFAULT_FINISH, draftRefusal, historyOf, planTally, taskMoveRefusal, type Change, type TaskState } from "./planRules";
+import { applyChange, dayStartOf, DEFAULT_FINISH, draftRefusal, historyOf, planTally, taskMoveRefusal, withDayEmails, type Change, type TaskState } from "./planRules";
 import { arm } from "./planRemind";
 
 type Refused = { ok: false; message: string };
@@ -92,6 +92,8 @@ export const saveDraft = mutation({
     const finishMin = args.finishMin ?? DEFAULT_FINISH;
     const mine = await ctx.db.query("jobAssignments").withIndex("by_userId_isActive", (q) => q.eq("userId", me).eq("isActive", true)).take(100);
     const why = draftRefusal(args.tasks, finishMin, new Set(mine.map((a) => a.jobId as string)));
+    // Every plan carries the Midday and the EOD, the EOD just before the finish (phase 4).
+    const tasks = why ? [] : withDayEmails(args.tasks, finishMin);
     if (why) return refused(why);
 
     let plan = await planOf(ctx, me, date);
@@ -104,7 +106,7 @@ export const saveDraft = mutation({
       const id = await ctx.db.insert("auraDayPlans", { userId: me, date, state: "draft", finishMin, version: 1, createdAt: now, updatedAt: now });
       plan = (await ctx.db.get(id))!;
     }
-    for (const [i, t] of args.tasks.entries()) {
+    for (const [i, t] of tasks.entries()) {
       await ctx.db.insert("auraPlanTasks", {
         planId: plan._id,
         userId: me,
@@ -247,7 +249,7 @@ export const applyTalk = internalMutation({
     const nowMin = Math.floor((now - dayStartOf(plan.date)) / 60_000);
     const change = args.change as Change;
     const result = applyChange(
-      rows.map((t) => ({ key: t.key, title: t.title, startMin: t.startMin, minutes: t.minutes, state: t.state as TaskState })),
+      rows.map((t) => ({ key: t.key, title: t.title, startMin: t.startMin, minutes: t.minutes, state: t.state as TaskState, kind: t.kind })),
       change,
       plan.finishMin,
       nowMin,
@@ -289,7 +291,9 @@ export const applyTalk = internalMutation({
         history: historyOf(row.history, { at: now, by: "ta", what: `${what}. ${said}` }),
       });
     }
-    await ctx.db.patch(plan._id, { finishMin: result.finishMin, version: plan.version + 1, updatedAt: now });
+    // A new finish means a new time for the lead to hear about a missing EOD (phase 4).
+    const newFinish = result.finishMin !== plan.finishMin ? { leadTold: undefined } : {};
+    await ctx.db.patch(plan._id, { finishMin: result.finishMin, ...newFinish, version: plan.version + 1, updatedAt: now });
     await arm(ctx, plan._id);
     return { ok: true as const, message: [result.say, ...result.clashes].join(" ") };
   },

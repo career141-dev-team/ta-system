@@ -3,7 +3,9 @@
 // Who still has an end-of-day email to send today. Nothing reminded a TA, so a
 // forgotten EOD surfaced the next morning when the lead opened the panel, and
 // the day had already closed as "expired" (2 Nov). Two daily crons
-// (convex/crons.ts): 17:30 Colombo tells each TA, 18:30 tells each lead.
+// (convex/crons.ts): 17:30 Colombo tells each TA, 18:30 tells each lead. A TA with an
+// approved AURA day plan is left to the plan, which tells them 30 minutes before their
+// own planned finish and their lead 30 minutes after it (ui/planRemind, 19 Nov).
 //
 // Reads only today's open days through `by_finished_date` (the dashboard's own
 // bounded read), never a TA's history. Only 100% positions count: a returning
@@ -22,10 +24,13 @@ interface Outstanding extends OutstandingEod {
   workdayId: Id<"taWorkdays">;
 }
 
-/** Every 100% position on today's open days whose EOD is not accepted yet. */
-async function outstandingToday(ctx: MutationCtx): Promise<Outstanding[]> {
+/** Every 100% position on today's open days whose EOD is not accepted yet - one TA's
+ *  when `userId` is given (AURA's plan asks at that TA's own finish, phase 4). */
+export async function outstandingToday(ctx: MutationCtx, userId?: Id<"users">): Promise<Outstanding[]> {
   const today = workdayDate(Date.now());
-  const days = await ctx.db.query("taWorkdays").withIndex("by_finished_date", (q) => q.eq("finishedAt", undefined).eq("date", today)).take(100);
+  const days = userId
+    ? (await ctx.db.query("taWorkdays").withIndex("by_user_date", (q) => q.eq("userId", userId).eq("date", today)).take(1)).filter((d) => !d.finishedAt)
+    : await ctx.db.query("taWorkdays").withIndex("by_finished_date", (q) => q.eq("finishedAt", undefined).eq("date", today)).take(100);
   const out: Outstanding[] = [];
   for (const day of days) {
     const user = await ctx.db.get(day.userId);
@@ -42,7 +47,19 @@ async function outstandingToday(ctx: MutationCtx): Promise<Outstanding[]> {
   return out;
 }
 
-async function bell(ctx: MutationCtx, userId: Id<"users">, type: Doc<"notifications">["type"], text: { title: string; body: string }, jobId?: Id<"jobs">) {
+/** TAs with an approved AURA plan today: their EOD reminder and the lead's bell follow
+ *  their own planned finish (ui/planRemind), not 17:30 / 18:30 (owner, Decision 1, 19 Nov). */
+async function withoutPlan(ctx: MutationCtx, rows: Outstanding[]): Promise<Outstanding[]> {
+  const today = workdayDate(Date.now());
+  const planned = new Set<string>();
+  for (const userId of new Set(rows.map((r) => r.userId))) {
+    const plan = await ctx.db.query("auraDayPlans").withIndex("by_user_date", (q) => q.eq("userId", userId).eq("date", today)).first();
+    if (plan?.state === "approved") planned.add(userId);
+  }
+  return rows.filter((r) => !planned.has(r.userId));
+}
+
+export async function bell(ctx: MutationCtx, userId: Id<"users">, type: Doc<"notifications">["type"], text: { title: string; body: string }, jobId?: Id<"jobs">) {
   await ctx.db.insert("notifications", { userId, type, ...text, ...(jobId ? { jobId } : {}), read: false, createdAt: new Date().toISOString() });
 }
 
@@ -50,7 +67,7 @@ async function bell(ctx: MutationCtx, userId: Id<"users">, type: Doc<"notificati
 export const remindMissingEods = internalMutation({
   args: {},
   handler: async (ctx) => {
-    const rows = await outstandingToday(ctx);
+    const rows = await withoutPlan(ctx, await outstandingToday(ctx));
     const byTa = new Map<Id<"users">, Outstanding[]>();
     for (const row of rows) byTa.set(row.userId, [...(byTa.get(row.userId) ?? []), row]);
     for (const [userId, list] of byTa) {
@@ -65,7 +82,7 @@ export const remindMissingEods = internalMutation({
 export const digestMissingEods = internalMutation({
   args: {},
   handler: async (ctx) => {
-    const rows = await outstandingToday(ctx);
+    const rows = await withoutPlan(ctx, await outstandingToday(ctx));
     const digests = leadDigestByLead(rows);
     for (const [leadId, text] of digests) await bell(ctx, leadId as Id<"users">, "eod_lead_digest", text);
     return { leads: digests.size, positions: rows.length };

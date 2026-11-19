@@ -182,6 +182,8 @@ export default defineSchema({
     quietUntil: v.optional(v.number()),
     nudged: v.optional(v.boolean()),
     lastReminder: v.optional(v.object({ at: v.number(), text: v.string(), key: v.optional(v.string()), moment: v.string() })),
+    // Phase 4 (19 Nov): the lead was told this TA's EOD is missing after the planned finish.
+    leadTold: v.optional(v.boolean()),
   }).index("by_user_date", ["userId", "date"]),
   /* One task of a day plan. Never deleted: skipped and carried keep their reason, and
    * every change is a line in `history`. */

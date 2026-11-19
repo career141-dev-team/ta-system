@@ -4,6 +4,7 @@ import { workdayDate } from "../../src/lib/workday";
 import { EMAIL_RETENTION_MS, type DailyEmailSnapshot } from "../../src/lib/dailyEmail";
 import { autoCompleteWorkday } from "../ta/workdays";
 import { raiseOpsEvent } from "./opsEvents";
+import { tickFromEmail } from "../ui/planEvidence";
 
 export async function middayRequired(ctx: QueryCtx | MutationCtx, date: string) {
   const policy = await ctx.db.query("dailyEmailPolicy").withIndex("by_key", q => q.eq("key", "midday")).first();
@@ -63,6 +64,8 @@ export async function finalizeDailyEmail(ctx: MutationCtx, email: Doc<"dailyEmai
     const receipt = await ctx.db.get(email.receiptId);
     if (receipt) await autoCompleteWorkday(ctx, receipt.workdayId);
   }
+  // AURA's day plan ticks its Midday / EOD task from this, the email's own record (phase 4, 19 Nov).
+  if (!email.parentId) await tickFromEmail(ctx, email.userId, email.date, email.submissionType, email.jobId, at);
 }
 
 export async function dailyEmailsFor(ctx: QueryCtx | MutationCtx, userId: Id<"users">, jobId: Id<"jobs">, date = workdayDate(Date.now())) {
