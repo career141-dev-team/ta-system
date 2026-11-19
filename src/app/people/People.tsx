@@ -4,6 +4,8 @@ import { useRef, useState, type ReactNode } from "react";
 import Toast from "../openings/[id]/Toast";
 import PillMenu, { type MenuOption } from "../openings/[id]/PillMenu";
 import { useRole, useSignedInPerson } from "@/lib/role";
+import { useFilters, matchesAll } from "@/lib/filters";
+import { NoResults } from "@/app/FilterBits";
 
 // People and roles (owner 18 Nov 2026: "get the details from old AURA, with our design
 // guidelines"). What the old /people page does for people (src/app/people/page.tsx and
@@ -137,9 +139,13 @@ export default function People() {
   const [people, setPeople] = useState(SAMPLE);
   const [invites, setInvites] = useState(INVITES);
   const [others, setOthers] = useState(OTHERS);
-  const [q, setQ] = useState("");
-  const [group, setGroup] = useState<Group>("all");
-  const [showGone, setShowGone] = useState(false);
+  // Search, role group and "who have left" are kept for the visit; Reset clears them
+  // (src/lib/filters.ts, the one filter rule across screens).
+  const { f, set: setF, reset, active: nFilters } = useFilters("people", { q: "", group: "all" as Group, showGone: false as boolean }, ["showGone"]);
+  const { q, group, showGone } = f;
+  const setQ = (v: string) => setF({ q: v });
+  const setGroup = (v: Group) => setF({ group: v });
+  const setShowGone = (fn: (v: boolean) => boolean) => setF({ showGone: fn(showGone) });
   const [panel, setPanel] = useState<"invite" | "add" | null>(null);
   const [editing, setEditing] = useState<Person | null>(null);
   const [draft, setDraft] = useState<Person>({ id: "", name: "", email: "", phone: "", role: "ta", country: "Sri Lanka", inbox: "", active: true });
@@ -149,8 +155,7 @@ export default function People() {
   const say = (bold: string | undefined, rest: string, warn?: boolean) => setToast({ key: ++seq.current, bold, rest, warn });
 
   const onDesk = people.filter((p) => p.active);
-  const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  const matching = people.filter((p) => IN_GROUP[group](p.role) && words.every((w) => [p.name, p.email, p.phone, ROLE_LABEL[p.role]].join(" ").toLowerCase().includes(w)));
+  const matching = people.filter((p) => IN_GROUP[group](p.role) && matchesAll(q, p.name, p.email, p.phone, ROLE_LABEL[p.role]));
   const active = matching.filter((p) => p.active);
   const gone = matching.filter((p) => !p.active);
   const shown = showGone ? [...active, ...gone] : active;
@@ -340,7 +345,7 @@ export default function People() {
                 )}
               </ul>
             ) : (
-              <p className="py-10 text-center text-small text-ink-3">{q || group !== "all" ? "Nobody matches that." : "Nobody on the desk yet."}</p>
+              <NoResults noun="people" filtered={nFilters > 0} onReset={reset} />
             )}
             {gone.length > 0 && (
               <button type="button" onClick={() => setShowGone((v) => !v)} className="mt-3 self-start text-small text-ink-2 hover:text-ink">

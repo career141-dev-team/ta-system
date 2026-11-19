@@ -11,6 +11,8 @@ import Toast from "./Toast";
 import { sendToPipeline } from "./pipelineInbox";
 import WorkdayBlocked from "./WorkdayBlocked";
 import { FIELD_PILL } from "./filters";
+import { useFilters } from "@/lib/filters";
+import { jobFromAddress } from "@/lib/backend";
 import { useLiftMenu } from "./liftMenu";
 import { useOpeningView } from "./view";
 import type { Profile } from "@/lib/linkedinProfile";
@@ -224,12 +226,20 @@ export default function ExcelTablesView() {
   const [sheets, setSheets] = useState<Sheet[]>(SHEETS);
   // "all" shows every sheet at once.
   const [sheet, setSheet] = useState<number | null | "all">(3);
-  const [interest, setInterest] = useState<Interest | "all">("all");
-  const [eyeOnly, setEyeOnly] = useState(false);
-  const [addOnsOnly, setAddOnsOnly] = useState(false);
-  const [q, setQ] = useState("");
-  const [by, setBy] = useState(ME);
-  const [added, setAdded] = useState("today");
+  // Interest tab, eye-marked / add-on ticks, search, who and when are kept per
+  // opening for the visit; Reset puts them back (src/lib/filters.ts).
+  const { f: kept, set: setKept, reset: resetFilters, active: nFilters } = useFilters(
+    "excel:" + (typeof window === "undefined" ? "" : (jobFromAddress() ?? "demo")),
+    { interest: "all" as string, eyeOnly: false as boolean, addOnsOnly: false as boolean, q: "", by: ME as string, added: "today" },
+  );
+  const { eyeOnly, addOnsOnly, q, by, added } = kept;
+  const interest = kept.interest as Interest | "all";
+  const setInterest = (v: Interest | "all") => setKept({ interest: v });
+  const setEyeOnly = (v: boolean | ((x: boolean) => boolean)) => setKept({ eyeOnly: typeof v === "function" ? v(eyeOnly) : v });
+  const setAddOnsOnly = (v: boolean | ((x: boolean) => boolean)) => setKept({ addOnsOnly: typeof v === "function" ? v(addOnsOnly) : v });
+  const setQ = (v: string) => setKept({ q: v });
+  const setBy = (v: string) => setKept({ by: v });
+  const setAdded = (v: string) => setKept({ added: v });
   const [ticked, setTicked] = useState<string[]>([]);
   const [undo, setUndo] = useState<{ sheet: Sheet; ids: string[] } | null>(
     null,
@@ -685,6 +695,11 @@ export default function ExcelTablesView() {
             mark="tick"
             pillClass={FIELD_PILL + " text-ink-2"}
           />
+          {nFilters > 0 && (
+            <button type="button" onClick={resetFilters} className="h-[max(2.4rem,33px)] shrink-0 rounded-full px-3 text-small font-medium text-brand-strong hover:bg-surface-2">
+              Reset{nFilters > 1 ? ` (${nFilters})` : ""}
+            </button>
+          )}
         </div>
       </div>
 

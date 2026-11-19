@@ -7,6 +7,8 @@ import { DUR, EASE, gsap, useExit, useGSAP, swapIn, useSwap } from "@/lib/gsap";
 import { BackButton } from "./PipelineBoard";
 import CvPages, { warmPdf } from "./CvPages";
 import PillMenu, { type MenuOption } from "./PillMenu";
+import { useFilters } from "@/lib/filters";
+import { NoResults } from "@/app/FilterBits";
 import Toast from "./Toast";
 import { sendToPipeline } from "./pipelineInbox";
 import { EXPERIENCE, inRange } from "./filters";
@@ -187,8 +189,12 @@ export default function ScoopsView() {
   }, [done]);
   const [notice, setNotice] = useState<{ bold?: string; rest: string; n: number; warn?: boolean } | null>(null);
   const [sentBy, setSentBy] = useState("");
-  const [draft, setDraft] = useState<Filters>(NO_FILTERS);
-  const [applied, setApplied] = useState<Filters>(NO_FILTERS);
+  // Filters work as you type or pick (no Apply), are kept per opening for the visit,
+  // and Reset clears them - src/lib/filters.ts.
+  const { f: applied, set: setFilters, reset: resetFilters, active: nFilters } = useFilters(
+    "scoops:" + (typeof window === "undefined" ? "" : (jobFromAddress() ?? "demo")),
+    NO_FILTERS,
+  );
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -643,26 +649,24 @@ export default function ScoopsView() {
                 <path d="m20 20-3.5-3.5" />
               </svg>
               <input
-                value={draft.q}
-                onChange={(e) => setDraft((d) => ({ ...d, q: e.target.value }))}
-                onKeyDown={(e) => e.key === "Enter" && setApplied(draft)}
+                value={applied.q}
+                onChange={(e) => setFilters({ q: e.target.value })}
                 placeholder="Search by name, title or company"
                 aria-label="Search the scoops"
                 className="min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-ink-2"
               />
             </label>
-            <PillMenu options={EXPERIENCE} initial="" onChange={(exp) => setDraft((d) => ({ ...d, exp }))} mark="tick" pillClass={FIELD_PILL + " text-ink-2"} />
-            <PillMenu options={WHO} initial="" onChange={(who) => setDraft((d) => ({ ...d, who }))} mark="tick" pillClass={FIELD_PILL + " text-ink-2"} />
-            <button
-              type="button"
-              onClick={() => setApplied(draft)}
-              className="h-[max(2.6rem,34px)] rounded-full border-[1.5px] border-brand px-[max(1.3rem,14px)] text-[max(0.9rem,12.5px)] font-medium text-brand transition-colors hover:bg-brand hover:text-white"
-            >
-              Apply
-            </button>
+            <PillMenu options={EXPERIENCE} initial={applied.exp} onChange={(exp) => setFilters({ exp })} mark="tick" pillClass={FIELD_PILL + " text-ink-2"} />
+            <PillMenu options={WHO} initial={applied.who} onChange={(who) => setFilters({ who })} mark="tick" pillClass={FIELD_PILL + " text-ink-2"} />
+            {nFilters > 0 && (
+              <button type="button" onClick={resetFilters} className="h-[max(2.6rem,34px)] rounded-full px-3 text-[max(0.9rem,12.5px)] font-medium text-brand-strong hover:bg-surface-2">
+                Reset{nFilters > 1 ? ` (${nFilters})` : ""}
+              </button>
+            )}
             <span className="text-[max(0.9rem,12px)] text-ink-2">{shown.length} in scoops</span>
           </div>
 
+          {shown.length === 0 && <NoResults noun="scoops" filtered={nFilters > 0} onReset={resetFilters} />}
           <ul className="mt-[max(1.1rem,10px)] min-h-0 flex-1 space-y-[max(0.95rem,8px)] overflow-y-auto pb-2 [scrollbar-width:none]" aria-label="Scoops">
             {shown.map((s) => (
               <li
