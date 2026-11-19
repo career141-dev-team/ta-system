@@ -115,8 +115,10 @@ export async function POST(req: Request) {
     return answer(req, { ok: r.ok, message: r.message }, r.ok ? 200 : r.status);
   }
   // A placement's letter is stored first, so a failed upload places nobody (docs/19 7.9).
+  // The letter id is only ever the one stored here, never one the browser names.
   let withLetter = body;
-  if (letter && body && typeof body === "object" && (body as { action?: unknown }).action === "place") {
+  if (body && typeof body === "object" && (body as { action?: unknown }).action === "place") {
+    if (!letter) return answer(req, { ok: false, message: "A placement needs the signed offer letter." }, 400);
     const stored = await storeOfferLetter(letter);
     if (!stored.ok) return answer(req, stored, 400);
     withLetter = { ...(body as object), offerLetterFileId: stored.fileId };

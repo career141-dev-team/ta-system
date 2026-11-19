@@ -38,6 +38,8 @@ ok("every form button runs the old action; interview and closing the shared writ
 ok("a placement's letter is stored before the record is written", () => {
   assert.ok(route.indexOf("storeOfferLetter(letter)") < route.indexOf("writeCandidateClosing("));
   assert.ok(read("src/app/actions.ts").includes('from "@/lib/candidates/offerLetter"'));
+  // A placement with no file is refused; the browser cannot name a letter id itself.
+  assert.ok(route.includes('if (!letter) return answer(req, { ok: false, message: "A placement needs the signed offer letter." }, 400)'));
 });
 ok("who is asking comes first; CORS only for the new UI", () => {
   const get = route.slice(route.indexOf("export async function GET"));
