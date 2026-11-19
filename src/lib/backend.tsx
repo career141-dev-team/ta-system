@@ -39,6 +39,16 @@ const noMutation = async () => undefined;
 export const useDoorQuery = (LIVE ? useQuery : () => undefined) as typeof useQuery;
 export const useDoorMutation = (LIVE ? useMutation : () => noMutation) as typeof useMutation;
 export const useDoorAction = (LIVE ? useAction : () => noMutation) as typeof useAction;
+/** Headers that prove who is asking, for our own money-spending routes (src/lib/signedIn.ts). */
+export const useSignedHeaders = (LIVE
+  ? () => {
+      const { getToken } = useAuth();
+      return async (): Promise<Record<string, string>> => {
+        const token = await getToken({ template: "convex" });
+        return token ? { Authorization: `Bearer ${token}` } : {};
+      };
+    }
+  : () => async () => ({})) as () => () => Promise<Record<string, string>>;
 
 // The sign-in screen's Clerk hook, with the same stand-in for a build without a backend.
 export const useDoorSignIn = (LIVE ? useSignIn : () => ({ isLoaded: false, signIn: undefined, setActive: undefined })) as typeof useSignIn;

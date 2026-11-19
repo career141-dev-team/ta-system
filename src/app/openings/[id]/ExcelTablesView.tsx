@@ -14,6 +14,7 @@ import { FIELD_PILL } from "./filters";
 import { useLiftMenu } from "./liftMenu";
 import { useOpeningView } from "./view";
 import type { Profile } from "@/lib/linkedinProfile";
+import { useSignedHeaders } from "@/lib/backend";
 
 // Headhunting > Excel Tables: the LinkedIn people a TA is working, sheet by sheet
 // (owner's design "Excel Tables", 13 Nov 2026). The rules are the old TA System's
@@ -216,6 +217,7 @@ const INPUT =
   "w-full rounded-sm border border-border-strong bg-surface px-2.5 py-1.5 text-small outline-none focus:border-brand";
 
 export default function ExcelTablesView() {
+  const signed = useSignedHeaders();
   const gate = useWorkdayGate();
   const [rows, setRows] = useState(START);
   const [sheets, setSheets] = useState<Sheet[]>(SHEETS);
@@ -594,7 +596,7 @@ export default function ExcelTablesView() {
           try {
             const res = await fetch("/api/linkedin-profile", {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: { "Content-Type": "application/json", ...(await signed()) },
               body: JSON.stringify({ url: link }),
             });
             const data = await res.json().catch(() => {

@@ -3,9 +3,10 @@
 // src/app/api/linkedin-search/route.ts runs locally - both call src/lib/linkedinSearch.ts.
 // APIFY_TOKEN is a Secret in Cloudflare (Pages > ta-system-ui > Settings > Variables
 // and Secrets); it never reaches the browser.
-// ponytail: no sign-in yet, so anyone with the link can search; spend is held by one
-// page + 10 profiles a search and Apify's own monthly usage limit. Gate it when sign-in exists.
+// Signed-in AURA users only (src/lib/signedIn.ts); spend is held by one page + 10
+// profiles a search (~$0.14) and Apify's own monthly usage limit.
 import { linkedinSearch } from "../../src/lib/linkedinSearch";
+import { refuseUnlessSignedIn } from "../../src/lib/signedIn";
 
 export const onRequestPost = async ({ request, env }: { request: Request; env: { APIFY_TOKEN?: string } }) =>
-  linkedinSearch(env.APIFY_TOKEN, await request.json().catch(() => null));
+  (await refuseUnlessSignedIn(request)) ?? linkedinSearch(env.APIFY_TOKEN, await request.json().catch(() => null));

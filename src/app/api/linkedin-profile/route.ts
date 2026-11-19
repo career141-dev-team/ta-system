@@ -1,8 +1,8 @@
 // Server-side only: the Apify token never reaches the browser (APIFY_TOKEN in .env.local).
-// ponytail: no sign-in check yet (the app has none); each call spends about $0.004 of Apify
-// credit. Gate it when sign-in exists.
+// Signed-in AURA users only (src/lib/signedIn.ts), about $0.004 each.
 import { linkedinProfile } from "@/lib/linkedinProfile";
+import { refuseUnlessSignedIn } from "@/lib/signedIn";
 
 export async function POST(req: Request) {
-  return linkedinProfile(process.env.APIFY_TOKEN, await req.json().catch(() => null));
+  return (await refuseUnlessSignedIn(req)) ?? linkedinProfile(process.env.APIFY_TOKEN, await req.json().catch(() => null));
 }

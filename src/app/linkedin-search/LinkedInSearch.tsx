@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { gsap, motionOK, swapIn, useGSAP } from "@/lib/gsap";
 import type { Found, SearchResult } from "@/lib/linkedinSearch";
 import { EMPTY, chipsOf, isEmpty, readAsk, type Ask } from "./read";
+import { useSignedHeaders } from "@/lib/backend";
 
 // LinkedIn Search as a chat with AURA (owner, 17 Nov 2026: "looks like a prompt chat
 // box, not a form"). The TA says who they need; AURA shows what it read, searches one
@@ -24,6 +25,7 @@ const TRY = [
 const NEXT = ["Now 6+ years", "Only Colombo", "New search"];
 
 export default function LinkedInSearch() {
+  const signed = useSignedHeaders();
   const [turns, setTurns] = useState<Turn[]>([]);
   const [ask, setAsk] = useState<Ask>(EMPTY);
   const [text, setText] = useState("");
@@ -72,7 +74,7 @@ export default function LinkedInSearch() {
     setTurns((t) => [...t, me]);
     setBusy(true);
     try {
-      const res = await fetch("/api/linkedin-search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(next) });
+      const res = await fetch("/api/linkedin-search", { method: "POST", headers: { "Content-Type": "application/json", ...(await signed()) }, body: JSON.stringify(next) });
       const data = await res.json().catch(() => {
         throw new Error("LinkedIn search needs the server. It runs on a local copy with APIFY_TOKEN set, or on the dev link once the key is set in Cloudflare.");
       });
