@@ -79,7 +79,11 @@ export type LeadDesk = {
   decide: { title: string; client: string; why: string; red?: boolean }[];
   roles: { title: string; client: string; tas: string; on: boolean; fu: number; days: number }[];
 };
-export const SAMPLE_DESK: LeadDesk = { team: TEAM, decide: DECIDE, roles: ROLES };
+/** The Director's and Ops's desks (ui/homes:director, ui/homes:ops), same shapes as the sample. */
+export type DirectorDesk = { waiting: typeof WAITING; stages: [string, number][]; clients: { name: string; open: number; sets: number; value?: number }[] };
+export type OpsDesk = { withClient: typeof WITH_CLIENT; interviews: typeof INTERVIEWS; chase: typeof CHASE };
+export type Desk = LeadDesk & DirectorDesk & OpsDesk;
+export const SAMPLE_DESK: Desk = { team: TEAM, decide: DECIDE, roles: ROLES, waiting: WAITING, stages: STAGES, clients: CLIENTS, withClient: WITH_CLIENT, interviews: INTERVIEWS, chase: CHASE };
 
 const first = (t: TaToday) => t.name.split(" ")[0];
 const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
@@ -162,46 +166,46 @@ function leadAnswer(q: string, d: LeadDesk): Answer {
   return { say: "I can tell you how each TA is doing, who has not started, the checks, CVs, alerts, EODs, open roles and what needs your decision. Try a name, like “How is Chathura doing?”" };
 }
 
-function directorAnswer(q: string): Answer {
-  const w = WAITING.find((x) => q.includes(x.who.toLowerCase()) || q.includes(x.who.split(" ")[0].toLowerCase()));
+function directorAnswer(q: string, d: Desk): Answer {
+  const w = d.waiting.find((x) => q.includes(x.who.toLowerCase()) || q.includes(x.who.split(" ")[0].toLowerCase()));
   if (w) return { say: `${w.who} is set ${w.set} for ${w.title} at ${w.client}, sent by ${w.ta}.`, rows: [{ main: w.who, meta: `${w.title} · ${w.client} · set ${w.set}`, tag: { text: "Review", tone: "warn" } }] };
   if (has(q, "set", "review", "waiting", "shortlist", "me")) {
-    return { say: `${plural(WAITING.length, "set")} ${WAITING.length === 1 ? "waits" : "wait"} on your review.`, rows: WAITING.map((w) => ({ main: w.who, meta: `${w.title} · ${w.client} · set ${w.set} · ${w.ta}`, tag: { text: "Review", tone: "warn" } })) };
+    return { say: `${plural(d.waiting.length, "set")} ${d.waiting.length === 1 ? "waits" : "wait"} on your review.`, rows: d.waiting.map((w) => ({ main: w.who, meta: `${w.title} · ${w.client} · set ${w.set} · ${w.ta}`, tag: { text: "Review", tone: "warn" } })) };
   }
   if (has(q, "where", "stage", "pipeline", "everyone", "candidate")) {
-    return { say: `${STAGES.reduce((n, [, v]) => n + v, 0)} candidates across the stages.`, rows: STAGES.map(([s, n]) => ({ main: s, meta: plural(n, "candidate") })) };
+    return { say: `${d.stages.reduce((n, [, v]) => n + v, 0)} candidates across the stages.`, rows: d.stages.map(([s, n]) => ({ main: s, meta: plural(n, "candidate") })) };
   }
   if (has(q, "client", "company")) {
-    return { say: `${plural(CLIENTS.length, "client")} with open roles.`, rows: CLIENTS.map((c) => ({ main: c.name, meta: `${plural(c.open, "open role")} · ${plural(c.sets, "set")} sent` })) };
+    return { say: `${plural(d.clients.length, "client")} with open roles.`, rows: d.clients.map((c) => ({ main: c.name, meta: `${plural(c.open, "open role")} · ${plural(c.sets, "set")} sent` })) };
   }
   return { say: "Ask me which sets wait on your review, where every candidate is, or how each client stands." };
 }
 
-function opsAnswer(q: string): Answer {
-  const w = WITH_CLIENT.find((x) => q.includes(x.who.toLowerCase()) || q.includes(x.who.split(" ")[0].toLowerCase()));
+function opsAnswer(q: string, d: Desk): Answer {
+  const w = d.withClient.find((x) => q.includes(x.who.toLowerCase()) || q.includes(x.who.split(" ")[0].toLowerCase()));
   if (w) return { say: `${w.who}'s set for ${w.title} is with ${w.client}${w.days ? `, ${plural(w.days, "day")} without an answer` : ", sent today"}.`, rows: [{ main: w.who, meta: `${w.title} · ${w.client}`, tag: w.days >= 3 ? { text: "Chase the client", tone: "danger" } : { text: "Waiting", tone: "muted" } }] };
   if (has(q, "interview")) {
-    return { say: `${plural(INTERVIEWS.length, "interview")} to coordinate.`, rows: INTERVIEWS.map((i) => ({ main: i.who, meta: `${i.title} · ${i.when}`, tag: i.confirmed ? { text: "Confirmed", tone: "brand" } : { text: "Not confirmed", tone: "warn" } })) };
+    return { say: `${plural(d.interviews.length, "interview")} to coordinate.`, rows: d.interviews.map((i) => ({ main: i.who, meta: `${i.title} · ${i.when}`, tag: i.confirmed ? { text: "Confirmed", tone: "brand" } : { text: "Not confirmed", tone: "warn" } })) };
   }
   if (has(q, "chase", "first", "to do", "todo", "next")) {
-    return { say: `${plural(CHASE.length, "thing")} to chase.`, rows: CHASE.map((c) => ({ main: c.action, meta: c.what, tag: { text: "Chase", tone: "warn" } })) };
+    return { say: `${plural(d.chase.length, "thing")} to chase.`, rows: d.chase.map((c) => ({ main: c.action, meta: c.what, tag: { text: "Chase", tone: "warn" } })) };
   }
   if (has(q, "client", "feedback", "waiting", "position", "my")) {
-    return { say: `${plural(WITH_CLIENT.length, "set")} with clients.`, rows: WITH_CLIENT.map((w) => ({ main: w.who, meta: `${w.title} · ${w.client}`, tag: w.days >= 3 ? { text: `${w.days} days quiet`, tone: "danger" } : { text: w.days ? `${plural(w.days, "day")}` : "Today", tone: "muted" } })) };
+    return { say: `${plural(d.withClient.length, "set")} with clients.`, rows: d.withClient.map((w) => ({ main: w.who, meta: `${w.title} · ${w.client}`, tag: w.days >= 3 ? { text: `${w.days} days quiet`, tone: "danger" } : { text: w.days ? `${plural(w.days, "day")}` : "Today", tone: "muted" } })) };
   }
   return { say: "Ask me what waits on client feedback, the interviews to arrange, or what to chase first." };
 }
 
 /** AURA's first words when the chat opens. */
-export function brief(role: HomeRole, d: LeadDesk = SAMPLE_DESK): Answer {
+export function brief(role: HomeRole, d: Desk = SAMPLE_DESK): Answer {
   if (role === "Lead") return leadBrief(d);
-  if (role === "Director") return { ...directorAnswer("review"), say: `${plural(WAITING.length, "set")} ${WAITING.length === 1 ? "waits" : "wait"} on your review today.` };
-  return { ...opsAnswer("chase"), say: `${plural(CHASE.length, "thing")} to chase and ${plural(INTERVIEWS.filter((i) => !i.confirmed).length, "interview")} not confirmed.` };
+  if (role === "Director") return { ...directorAnswer("review", d), say: `${plural(d.waiting.length, "set")} ${d.waiting.length === 1 ? "waits" : "wait"} on your review today.` };
+  return { ...opsAnswer("chase", d), say: `${plural(d.chase.length, "thing")} to chase and ${plural(d.interviews.filter((i) => !i.confirmed).length, "interview")} not confirmed.` };
 }
 
-export function answer(role: HomeRole, text: string, d: LeadDesk = SAMPLE_DESK): Answer {
+export function answer(role: HomeRole, text: string, d: Desk = SAMPLE_DESK): Answer {
   const q = text.toLowerCase();
-  return role === "Lead" ? leadAnswer(q, d) : role === "Director" ? directorAnswer(q) : opsAnswer(q);
+  return role === "Lead" ? leadAnswer(q, d) : role === "Director" ? directorAnswer(q, d) : opsAnswer(q, d);
 }
 
 export const SUGGEST: Record<HomeRole, string[]> = {
@@ -211,7 +215,7 @@ export const SUGGEST: Record<HomeRole, string[]> = {
 };
 
 /** The three numbers under Start chat. */
-export function startStats(role: HomeRole, d: LeadDesk = SAMPLE_DESK): [string, string][] {
+export function startStats(role: HomeRole, d: Desk = SAMPLE_DESK): [string, string][] {
   if (role === "Lead")
     return [
       [String(d.team.filter((t) => t.day.started).length), `of ${d.team.length} TAs started`],
@@ -220,13 +224,13 @@ export function startStats(role: HomeRole, d: LeadDesk = SAMPLE_DESK): [string, 
     ];
   if (role === "Director")
     return [
-      [String(WAITING.length), "sets to review"],
-      [String(STAGES.find(([s]) => s === "Interview")?.[1] ?? 0), "in interviews"],
-      [String(STAGES.find(([s]) => s === "Placed")?.[1] ?? 0), "placed"],
+      [String(d.waiting.length), "sets to review"],
+      [String(d.stages.find(([s]) => s === "Interview")?.[1] ?? 0), "in interviews"],
+      [String(d.stages.find(([s]) => s === "Placed")?.[1] ?? 0), "placed"],
     ];
   return [
-    [String(WITH_CLIENT.length), "with clients"],
-    [String(INTERVIEWS.length), "interviews to arrange"],
-    [String(CHASE.length), "to chase"],
+    [String(d.withClient.length), "with clients"],
+    [String(d.interviews.length), "interviews to arrange"],
+    [String(d.chase.length), "to chase"],
   ];
 }
