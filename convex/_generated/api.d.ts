@@ -299,6 +299,7 @@ import type * as templates_messageTemplates from "../templates/messageTemplates.
 import type * as ui_manage from "../ui/manage.js";
 import type * as ui_me from "../ui/me.js";
 import type * as ui_opening from "../ui/opening.js";
+import type * as ui_openings from "../ui/openings.js";
 import type * as ui_pipeline from "../ui/pipeline.js";
 import type * as ui_posts from "../ui/posts.js";
 import type * as ui_rules from "../ui/rules.js";
@@ -602,6 +603,7 @@ declare const fullApi: ApiFromModules<{
   "ui/manage": typeof ui_manage;
   "ui/me": typeof ui_me;
   "ui/opening": typeof ui_opening;
+  "ui/openings": typeof ui_openings;
   "ui/pipeline": typeof ui_pipeline;
   "ui/posts": typeof ui_posts;
   "ui/rules": typeof ui_rules;
@@ -839,6 +841,7 @@ declare const fullApi: ApiFromModules<{
   "ui/manage": typeof ui_manage;
   "ui/me": typeof ui_me;
   "ui/opening": typeof ui_opening;
+  "ui/openings": typeof ui_openings;
   "ui/pipeline": typeof ui_pipeline;
   "ui/posts": typeof ui_posts;
   "ui/rules": typeof ui_rules;

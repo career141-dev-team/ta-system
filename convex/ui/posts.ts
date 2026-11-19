@@ -9,7 +9,7 @@
 // link, the workday checks refresh, and the mailbox re-read for a new link.
 
 import { v } from "convex/values";
-import { mutation, type MutationCtx } from "../_generated/server";
+import { mutation, query, type MutationCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import { mapUser } from "../../src/data/convex/map";
@@ -19,7 +19,7 @@ import { makeCampaignCode } from "../../src/lib/routing";
 import { linkedinPostUrl } from "../../src/lib/workdayRequirements";
 import { linkedinJobId } from "../lib/postRouting";
 import { refreshWorkdayChecks } from "../ta/workdays";
-import { NotSignedIn, uiUser } from "./me";
+import { mayReadOpening, NotSignedIn, uiUser } from "./me";
 
 type Refused = { ok: false; message: string };
 type Done = Refused | { ok: true; message: string };
@@ -231,5 +231,45 @@ export const moveCvs = mutation({
     for (const a of apps) await ctx.db.patch(a._id, { jobPostId: toId });
     await refreshWorkdayChecks(ctx, p.post.openingId, p.user._id);
     return { ok: true, message: `Moved ${apps.length} ${apps.length === 1 ? "CV" : "CVs"} to "${to.title}".` };
+  },
+});
+
+/** The opening's posts as the LinkedIn Job screen shows them (18 Nov): links,
+ *  other names, place, owner and today's CV count. A TA sees the posts they own,
+ *  a lead or anyone desk-wide all of them, as in the old screen. */
+export const list = query({
+  args: { openingId: v.string() },
+  handler: async (ctx, args) => {
+    let user: Doc<"users">;
+    try {
+      user = await uiUser(ctx);
+    } catch (error) {
+      return refused(error instanceof NotSignedIn ? error.message : "Could not check who you are.");
+    }
+    const jobId = ctx.db.normalizeId("jobs", args.openingId);
+    if (!jobId || !(await mayReadOpening(ctx, user, jobId))) return refused("That opening is not one of yours.");
+    const rows = await ctx.db.query("jobPosts").withIndex("by_opening", (q) => q.eq("openingId", jobId)).take(200);
+    const ownerIds = [...new Set(rows.flatMap((p) => (p.assignedTaId ? [p.assignedTaId] : [])))];
+    const owners = await Promise.all(ownerIds.map((id) => ctx.db.get(id)));
+    const nameOf = new Map(owners.flatMap((u) => (u ? [[u._id as string, u.fullName.split(" ")[0]] as const] : [])));
+    return {
+      ok: true as const,
+      me: user._id as string,
+      posts: rows.map((p) => ({
+        id: p._id as string,
+        title: p.title,
+        status: p.status,
+        channel: p.channel ?? "linkedin",
+        aliases: p.aliasKeywords ?? [],
+        city: p.city ?? "",
+        country: p.country ?? "",
+        code: p.campaignCode ?? null,
+        link: p.externalUrl ?? "",
+        publicLink: p.publicUrl ?? "",
+        ownerId: (p.assignedTaId ?? null) as string | null,
+        owner: p.assignedTaId ? nameOf.get(p.assignedTaId as string) ?? "" : "",
+        today: p.cvCountToday ?? 0,
+      })),
+    };
   },
 });

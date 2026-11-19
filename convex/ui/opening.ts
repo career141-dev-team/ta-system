@@ -155,7 +155,28 @@ export const matches = query({
       | { status: string | null; matchedAt: string | null; results: { cvId: string; overallScore: number; reason: string }[] }
       | null;
     if (!found) return { ok: true as const, status: null, matchedAt: null, results: [] };
-    return { ok: true as const, status: found.status, matchedAt: found.matchedAt, results: found.results.slice(0, 100) };
+    // Who to show (18 Nov, the new UI's Database CVs): the person's details
+    // beside each score, and nobody a TA took off with "Not for this job".
+    const out = [];
+    for (const r of found.results) {
+      if (out.length >= 100) break;
+      const id = ctx.db.normalizeId("candidates", r.cvId);
+      if (!id) continue;
+      const gone = await ctx.db.query("matchExclusions").withIndex("by_opening_candidate", (q) => q.eq("openingId", o.jobId).eq("candidateId", id)).first();
+      if (gone) continue;
+      const c = await ctx.db.get(id);
+      if (!c) continue;
+      out.push({
+        ...r,
+        name: c.fullName?.trim() || "Name not on record",
+        title: c.currentJobTitle ?? null,
+        company: c.currentEmployer ?? null,
+        location: c.location ?? null,
+        years: c.totalExperienceYears ?? null,
+        noticeDays: c.noticePeriodDays ?? null,
+      });
+    }
+    return { ok: true as const, status: found.status, matchedAt: found.matchedAt, results: out };
   },
 });
 
@@ -181,6 +202,9 @@ export const strategies = query({
         submittedAt: r.submittedAt ?? null,
         note: r.note ?? null,
         proofs: r.proofs.length,
+        // This person's own place on it: on the row, and still to accept (18 Nov).
+        mine: r.doneBy.some((d) => (d as string) === me) || (r.acknowledgements ?? []).some((x) => (x.taId as string) === me),
+        waiting: (r.acknowledgements ?? []).some((x) => (x.taId as string) === me && x.acceptedAt === null),
       })),
     };
   },
