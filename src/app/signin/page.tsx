@@ -1,8 +1,8 @@
-import NotBuilt from "../NotBuilt";
+import SignIn from "./SignInPage";
 
 export const metadata = { title: "Sign in - TA System" };
 
-// Where Sign out lands. Sign-in itself comes with the backend.
+// Where Sign out lands, and the design preview of the sign-in screen.
 export default function Page() {
-  return <NotBuilt name="Sign in" />;
+  return <SignIn />;
 }

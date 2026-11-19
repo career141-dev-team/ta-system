@@ -87,6 +87,8 @@ html {
   --color-aura-2: #3d6bff;
   --color-aura-3: #22d3c5;
   --color-aura-4: #8cf55a;
+  /* The night behind AURA's mark (the sign-in card); the same in light and dark. */
+  --color-aura-night: #0b0b12;
 
   /* Older names, kept so nothing breaks; new code uses the names above. */
   --color-background: var(--color-canvas);
