@@ -95,6 +95,37 @@ export async function saveLiveFile(url: string, name: string): Promise<boolean> 
   setTimeout(() => globalThis.URL.revokeObjectURL(a.href), 10_000);
   return true;
 }
+/**
+ * The candidate and JD buttons the old server runs for us (D7, ta-system #30):
+ * Add-on, Backup, add to another job, the Database CVs shortlist, approve and
+ * re-read the JD, interview, offer and placement. A placement goes as a form with
+ * the signed offer letter. The answer is the TA System's own sentence.
+ */
+export async function candidateCall(body: Record<string, unknown>, letter?: File | null): Promise<{ ok: boolean; message: string }> {
+  const url = `${OLD_SERVER}/api/ui/candidate`;
+  const auth = await cvHeaders(url);
+  let init: RequestInit;
+  if (letter) {
+    const form = new FormData();
+    form.append("payload", JSON.stringify(body));
+    form.append("letter", letter);
+    init = { method: "POST", headers: auth, body: form };
+  } else {
+    init = { method: "POST", headers: { "Content-Type": "application/json", ...auth }, body: JSON.stringify(body) };
+  }
+  const res = await fetch(url, init).catch(() => null);
+  const got = (await res?.json().catch(() => null)) as { ok?: boolean; message?: string } | null;
+  return { ok: !!got?.ok, message: got?.message ?? "Could not reach the TA System. Check your connection and try again." };
+}
+
+/** One candidate's offers (to name the offer a placement is for). */
+export async function candidateOffers(openingId: string, appId: string): Promise<{ id: string; status: string }[] | null> {
+  const url = `${OLD_SERVER}/api/ui/candidate?${new URLSearchParams({ opening: openingId, app: appId })}`;
+  const res = await fetch(url, { headers: await cvHeaders(url) }).catch(() => null);
+  const got = (await res?.json().catch(() => null)) as { ok?: boolean; offers?: { id: string; status: string }[] } | null;
+  return got?.ok ? (got.offers ?? []) : null;
+}
+
 function CvSession() {
   const session = useSessionHeaders();
   useEffect(() => {

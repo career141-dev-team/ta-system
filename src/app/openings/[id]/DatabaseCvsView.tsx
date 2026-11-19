@@ -1,7 +1,7 @@
 "use client";
 
 import { ViewSkeleton } from "@/app/Skeleton";
-import { door, jobFromAddress, useDoorMutation, useDoorQuery, useLive, type Answer, type DoorDone, cvUrl, OLD_SERVER, saveLiveFile } from "@/lib/backend";
+import { door, jobFromAddress, useDoorMutation, useDoorQuery, useLive, type Answer, type DoorDone, cvUrl, OLD_SERVER, saveLiveFile, candidateCall } from "@/lib/backend";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
@@ -153,7 +153,16 @@ export default function DatabaseCvsView() {
   };
   const shortlist = (p: Person) => {
     if (gate) return say(gate, undefined, true);
-    if (live) return say("Shortlisting from the database is not switched on here yet - do it in AURA for now.", undefined, true);
+    if (live && job) {
+      // The old Database CVs "Shortlist" (addToOpening, D7): claims them on this job,
+      // into TA Follow-Up; another TA's claim is refused with their name.
+      void candidateCall({ do: "shortlistMatch", candidateId: p.id, openingId: job }).then((r) => {
+        if (!r.ok) return say(r.message, undefined, true);
+        leave(p);
+        say(` ${r.message}`, p.name);
+      });
+      return;
+    }
     if (CLAIMED[p.id]) return say(`${CLAIMED[p.id]} already claimed ${p.name}.`, undefined, true);
     // They show on the Pipeline board, in TA Follow-Up (source: the database).
     sendToPipeline({ name: p.name, title: p.title, company: p.company, location: p.city, years: p.years, notice: p.notice, cv: p.cv, channel: "SCOOP" });

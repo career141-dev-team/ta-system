@@ -20,7 +20,7 @@ import { arrivals, onArrival, type Arrival } from "./pipelineInbox";
 import { useWorkdayGate } from "@/lib/workday";
 import { useFilters } from "@/lib/filters";
 import { NoResults } from "@/app/FilterBits";
-import { LIVE, door, jobFromAddress, STAGE_KEYS, useDoorMutation, useDoorQuery, useLive, type DoorBoard, type DoorCard, type DoorDone, cvUrl } from "@/lib/backend";
+import { LIVE, door, jobFromAddress, STAGE_KEYS, useDoorMutation, useDoorQuery, useLive, type DoorBoard, type DoorCard, type DoorDone, type DoorOpenings, cvUrl, candidateCall, candidateOffers } from "@/lib/backend";
 
 // The CV preview is its own download, fetched while the screen is idle (OpeningView).
 const CvPreview = dynamic(() => import("./CvPreview"), { ssr: false });
@@ -116,7 +116,7 @@ const fromArrival = (a: Arrival, n: number): Card => ({
 
 /** Placeholder: the person's other open jobs (the same sample ones as Today), and
  *  the set a shortlist joins, until the backend sends them. */
-const OTHER_JOBS = ["Finance Manager - Hayleys", "Production Executive - MAS Holdings", "HR Business Partner - Dialog"];
+const OTHER_JOBS = ["Finance Manager - Hayleys", "Production Executive - MAS Holdings", "HR Business Partner - Dialog"].map((label) => ({ id: label, label }));
 const OPEN_SET = 3;
 
 /** The door's words for what is missing, in the board's own chips. */
@@ -148,7 +148,30 @@ const fromDoor = (c: DoorCard): Card => ({
 });
 
 /** Moves whose details (dates, package, signed offer letter) the backend does not check yet (PR 1b). */
-const NOT_YET_LIVE = new Set(["Interview", "Offer", "Placed"]);
+// Interview, Offer and Placed are written by the old server's shared rules (D7,
+// ta-system #30): the interview booked, the offer made, the placement recorded with
+// its signed letter; each moves the card itself, as in AURA.
+const MODE: Record<string, "in_person" | "video" | "phone"> = { "In person": "in_person", Video: "video", Phone: "phone" };
+async function closingWrite(to: string, openingId: string, appId: string, f: FormData): Promise<{ ok: boolean; message: string }> {
+  const v = (k: string) => String(f.get(k) ?? "").trim();
+  const money = { salary: Number(v("salary")), salaryBasis: v("per") === "year" ? "annual" : "monthly", currency: v("currency") === "USD" ? "USD" : "LKR" };
+  if (to === "Interview")
+    return candidateCall({ do: "interview", openingId, appId, body: {
+      action: "schedule", title: "Interview", date: v("date"), time: v("time"), timezone: "Asia/Colombo", location: v("where"),
+      mode: MODE[v("how")] ?? "video", interviewers: [], durationMins: Number(v("minutes")) || null, notes: "",
+    } });
+  if (to === "Offer") return candidateCall({ do: "closing", openingId, appId, body: { action: "offer", ...money, startDate: v("start"), terms: "" } });
+  // A placement is for the candidate's offer still standing (pending or accepted).
+  const offers = await candidateOffers(openingId, appId);
+  if (offers === null) return { ok: false, message: "Could not read their offer. Try again." };
+  const offer = offers.find((o) => o.status === "accepted") ?? offers.find((o) => o.status === "pending");
+  if (!offer) return { ok: false, message: "Make them an offer first (move them to Offer), then place them." };
+  const letter = f.get("letter");
+  return candidateCall(
+    { do: "closing", openingId, appId, body: { action: "place", offerId: offer.id, joinDate: v("join"), ...money, packageNotes: v("package") } },
+    letter instanceof File && letter.size > 0 ? letter : null,
+  );
+}
 
 /** Placeholder: the other TAs on this opening, until the backend sends the team. */
 
@@ -265,7 +288,7 @@ export default function PipelineBoard() {
   // backend a drop is one stage move through the TA System's own transition, which
   // can still refuse (a reject needs a reason, a Director decision is the Director's).
   // Set by the real board below: saves a move, or puts the card back with the reason.
-  const sendMove = useRef<((card: Card, from: string, to: string, note?: string) => void) | null>(null);
+  const sendMove = useRef<((card: Card, from: string, to: string, note?: string, form?: FormData) => void) | null>(null);
   // A live opening starts empty and shows skeletons until its board arrives - never the
   // sample people (owner, 19 Nov 2026: the sample flashed while the real board loaded).
   const [board, setBoard] = useState<Record<string, Card[]>>(() =>
@@ -332,7 +355,7 @@ export default function PipelineBoard() {
   }, []);
 
   const refuse = useCallback((why: string) => setToast((t) => ({ rest: why, warn: true, n: (t?.n ?? 0) + 1 })), []);
-  const tell = (bold: string, rest: string) => setToast((t) => ({ bold, rest, n: (t?.n ?? 0) + 1 }));
+  const tell = useCallback((bold: string, rest: string) => setToast((t) => ({ bold, rest, n: (t?.n ?? 0) + 1 })), []);
 
   // The real board (18 Nov): with the backend switched on and ?job=<id> in the
   // address, the columns are that opening's, read through the signed-in door
@@ -351,6 +374,12 @@ export default function PipelineBoard() {
     [realBoard],
   );
   const saveMove = useDoorMutation(door.move);
+  // Add to another job, signed in: the TA's other open jobs.
+  const myJobs = useDoorQuery(door.openings, live ? {} : "skip") as DoorOpenings | undefined;
+  const otherJobs = useMemo(
+    () => (myJobs?.ok ? myJobs.openings.filter((o) => o.status === "active" && o.id !== jobId).map((o) => ({ id: o.id, label: `${o.title} - ${o.client}` })) : []),
+    [myJobs, jobId],
+  );
   const saveShortlist = useDoorMutation(door.shortlist);
   // Each new answer from the backend replaces the columns (adjusted while
   // rendering, React's pattern for state that follows a changing value).
@@ -362,13 +391,17 @@ export default function PipelineBoard() {
   useEffect(() => {
     sendMove.current =
       live && jobId
-        ? async (card, from, to, note) => {
+        ? async (card, from, to, note, form) => {
             const key = STAGE_KEYS[STAGES.findIndex((st) => st.name === to)];
             const putBack = (why: string) => {
               setBoard((bd) => ({ ...bd, [to]: bd[to].filter((c) => c.id !== card.id), [from]: [card, ...bd[from].filter((c) => c.id !== card.id)] }));
               refuse(why);
             };
-            if (NOT_YET_LIVE.has(to)) return putBack(`${to} is not connected in the new screen yet. Do this one in AURA for now.`);
+            if (to === "Interview" || to === "Offer" || to === "Placed") {
+              if (!form) return putBack(`Moving to ${to} needs its details. Use the card's menu.`);
+              const r = await closingWrite(to, jobId, card.id, form);
+              return r.ok ? tell(card.name, ` ${r.message}`) : putBack(r.message);
+            }
             try {
               const r = (await saveMove({ applicationId: card.id, stage: key, reason: to === "Rejected" || to === "Dropped out" ? note : undefined })) as DoorDone;
               if (!r.ok) putBack(r.message);
@@ -377,7 +410,7 @@ export default function PipelineBoard() {
             }
           }
         : null;
-  }, [live, jobId, saveMove, refuse]);
+  }, [live, jobId, saveMove, refuse, tell]);
   const [adding, setAdding] = useState(false);
 
   // The workday gate: a TA moves nobody until today's workday is started (6.2).
@@ -433,7 +466,7 @@ export default function PipelineBoard() {
   // The one place a card changes column: a drop, the menu, or a saved form. With
   // the backend this is one stage move through the TA System's own transition.
   // `pop` is for a move with no carried copy to land (menu, form): the card pops in.
-  const moveCard = useCallback((card: Card, from: string, to: string, opts?: { note?: string; pop?: boolean }) => {
+  const moveCard = useCallback((card: Card, from: string, to: string, opts?: { note?: string; pop?: boolean; form?: FormData }) => {
     setBoard((bd) => {
       setMoved({ card, from, to, at: bd[from].findIndex((c) => c.id === card.id), note: opts?.note });
       setMovedOpen(true);
@@ -444,7 +477,7 @@ export default function PipelineBoard() {
       };
     });
     if (opts?.pop) setUndone((u) => ({ id: card.id, n: (u?.n ?? 0) + 1 }));
-    sendMove.current?.(card, from, to, opts?.note);
+    sendMove.current?.(card, from, to, opts?.note, opts?.form);
   }, []);
 
   // From the menu: the same rules as a drop.
@@ -499,6 +532,13 @@ export default function PipelineBoard() {
     const next = { ...card, [mark]: !card[mark] };
     setBoard((bd) => ({ ...bd, [stage]: bd[stage].map((c) => (c.id === card.id ? next : c)) }));
     setMenu({ ...menu, card: next });
+    // Signed in the TA System saves it (and says who it told); a refusal puts it back.
+    if (live && jobId)
+      void candidateCall({ do: mark === "addOn" ? "addon" : "backup", appId: card.id, openingId: jobId, on: next[mark] ? "1" : "0" }).then((r) => {
+        if (r.ok) return tell(card.name, ` ${r.message}`);
+        setBoard((bd) => ({ ...bd, [stage]: bd[stage].map((c) => (c.id === card.id ? card : c)) }));
+        refuse(r.message);
+      });
   };
 
   /**
@@ -965,13 +1005,17 @@ export default function PipelineBoard() {
       {askShown && ask && (
         <MoveForm
           ref={askBox}
-          ask={{ needs: ask.needs, name: ask.card.name, from: ask.from, to: STAGES.find((st) => st.name === ask.to)!, jobs: OTHER_JOBS }}
+          ask={{ needs: ask.needs, name: ask.card.name, from: ask.from, to: STAGES.find((st) => st.name === ask.to)!, jobs: live ? otherJobs : OTHER_JOBS }}
           onCancel={() => setAskOpen(false)}
-          onSave={(note) => {
+          onSave={(note, form) => {
             setAskOpen(false);
             // "Add to another job" moves nobody on this board; it only says so.
-            if (ask.needs === "job") tell(ask.card.name, ` added to TA Follow-Up on ${note}. They stay on this job too.`);
-            else moveCard(ask.card, ask.from, ask.to, { note, pop: true });
+            if (ask.needs === "job" && live && jobId)
+              void candidateCall({ do: "addjob", appId: ask.card.id, openingId: jobId, destinationId: note }).then((r) =>
+                r.ok ? tell(ask.card.name, ` ${r.message}`) : refuse(r.message),
+              );
+            else if (ask.needs === "job") tell(ask.card.name, ` added to TA Follow-Up on ${OTHER_JOBS.find((j) => j.id === note)?.label ?? note}. They stay on this job too.`);
+            else moveCard(ask.card, ask.from, ask.to, { note, pop: true, form });
           }}
         />
       )}

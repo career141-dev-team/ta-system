@@ -6,7 +6,7 @@ import { DUR, EASE, gsap, useGSAP } from "@/lib/gsap";
 import { DECLINE_REASONS, REJECT_REASONS, type Needs, type StageDef } from "./pipelineRules";
 
 /** "job" is not a stage move: it is "Add to another job", which asks which one. */
-export type Ask = { needs: Needs | "job"; name: string; from: string; to: StageDef; jobs?: string[] };
+export type Ask = { needs: Needs | "job"; name: string; from: string; to: StageDef; jobs?: { id: string; label: string }[] };
 
 const FIELD =
   "h-[max(2.4rem,33px)] w-full rounded-xl border border-border bg-white px-3 text-[max(0.85rem,12.5px)] text-ink outline-none focus-visible:ring-2 focus-visible:ring-brand/30";
@@ -32,7 +32,8 @@ export default function MoveForm({
   ask: Ask;
   onCancel: () => void;
   /** `note` is the answer in one line, for the notice after the move. */
-  onSave: (note: string) => void;
+  /** The sentence for the moved box, and the form itself (signed in, it is sent to the TA System). */
+  onSave: (note: string, form: FormData) => void;
 }) {
   const { needs, name, from, to, jobs = [] } = ask;
   const declined = needs === "reason" && from === "Offer" && to.name === "Dropped out";
@@ -73,12 +74,12 @@ export default function MoveForm({
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     const v = (k: string) => String(f.get(k) ?? "").trim();
-    if (needs === "job") onSave(v("job"));
-    else if (needs === "reason") onSave(reason === "Other" ? v("other") : reason);
-    else if (needs === "interview") onSave(`Interview on ${day(v("date"))} at ${v("time")}, ${v("how").toLowerCase()}, ${v("minutes")} minutes.`);
+    if (needs === "job") onSave(v("job"), f);
+    else if (needs === "reason") onSave(reason === "Other" ? v("other") : reason, f);
+    else if (needs === "interview") onSave(`Interview on ${day(v("date"))} at ${v("time")}, ${v("how").toLowerCase()}, ${v("minutes")} minutes.`, f);
     else if (needs === "offer")
-      onSave(`Offer: ${v("currency")} ${Number(v("salary")).toLocaleString("en-GB")} a ${v("per")}` + (v("start") ? `, starting ${day(v("start"))}.` : "."));
-    else onSave(`Joins ${day(v("join"))}. Package: ${v("package")}. Signed offer letter attached.`);
+      onSave(`Offer: ${v("currency")} ${Number(v("salary")).toLocaleString("en-GB")} a ${v("per")}` + (v("start") ? `, starting ${day(v("start"))}.` : "."), f);
+    else onSave(`Joins ${day(v("join"))}. Package: ${v("currency")} ${Number(v("salary")).toLocaleString("en-GB")} a ${v("per")}${v("package") ? `, ${v("package")}` : ""}. Signed offer letter attached.`, f);
   };
 
   return createPortal(
@@ -117,7 +118,9 @@ export default function MoveForm({
                   Choose a job
                 </option>
                 {jobs.map((j) => (
-                  <option key={j}>{j}</option>
+                  <option key={j.id} value={j.id}>
+                    {j.label}
+                  </option>
                 ))}
               </select>
             </label>
@@ -170,6 +173,10 @@ export default function MoveForm({
                   <input name="minutes" type="number" min={5} max={480} defaultValue={45} required className={FIELD + " mt-1"} />
                 </label>
               </div>
+              <label className={LABEL}>
+                Where (address or meeting link)
+                <input name="where" maxLength={200} className={FIELD + " mt-1"} />
+              </label>
             </>
           )}
 
@@ -208,9 +215,29 @@ export default function MoveForm({
                 Joining date
                 <input name="join" type="date" required autoFocus className={FIELD + " mt-1"} />
               </label>
+              <div className="grid grid-cols-[1fr_auto_auto] gap-[max(0.6rem,8px)]">
+                <label className={LABEL}>
+                  Agreed salary
+                  <input name="salary" type="number" min={1} required className={FIELD + " mt-1"} />
+                </label>
+                <label className={LABEL}>
+                  Per
+                  <select name="per" className={FIELD + " mt-1 px-2"}>
+                    <option>month</option>
+                    <option>year</option>
+                  </select>
+                </label>
+                <label className={LABEL}>
+                  Currency
+                  <select name="currency" className={FIELD + " mt-1 px-2"}>
+                    <option>LKR</option>
+                    <option>USD</option>
+                  </select>
+                </label>
+              </div>
               <label className={LABEL}>
-                Agreed package
-                <input name="package" required maxLength={200} placeholder="LKR 450,000 a month plus transport" className={FIELD + " mt-1"} />
+                Package notes
+                <input name="package" maxLength={200} placeholder="plus transport and medical" className={FIELD + " mt-1"} />
               </label>
               <label className={LABEL}>
                 Signed offer letter (PDF or Word, under 10 MB)

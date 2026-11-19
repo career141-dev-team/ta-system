@@ -9,7 +9,7 @@ import { BackButton } from "./PipelineBoard";
 import Toast from "./Toast";
 import { useLiftMenu } from "./liftMenu";
 import { useMe } from "@/lib/role";
-import { door, jobFromAddress, useDoorQuery, useLive, type Answer } from "@/lib/backend";
+import { candidateCall, door, jobFromAddress, useDoorQuery, useLive, type Answer } from "@/lib/backend";
 
 // The Job Description view (shane123-tech's branch, Figma): the draft on the left; on
 // the right the approval bar, a chat to change the draft, and what candidates are
@@ -45,6 +45,17 @@ export default function JobDescriptionView() {
 
 function LiveJd() {
   const job = jobFromAddress();
+  // Approve and re-read run the old actions on the old server (D7, ta-system #30), so
+  // approving still starts the details reading, matching, Research and Suggestions.
+  const [busy, setBusy] = useState("");
+  const [said, setSaid] = useState<{ ok: boolean; message: string } | null>(null);
+  const run = async (what: "approveJd" | "rereadJd", jd: string) => {
+    if (!job || busy) return;
+    setBusy(what);
+    const r = await candidateCall(what === "approveJd" ? { do: what, openingId: job, jdMarkdown: jd } : { do: what, openingId: job });
+    setBusy("");
+    setSaid(r);
+  };
   const got = useDoorQuery(door.summary, job ? { openingId: job } : "skip") as
     | Answer<{ opening: { title: string | null; jd: { markdown: string | null; status: string | null; approvedAt: number | null } } }>
     | undefined;
@@ -64,7 +75,29 @@ function LiveJd() {
                 {got.opening.jd.status === "approved" ? "Approved" : "Not approved yet"}
               </span>
             </div>
-            <p className="mt-1 text-small text-ink-3">Editing and approving here is not switched on yet - do it in AURA for now.</p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {got.opening.jd.status !== "approved" ? (
+                <button
+                  type="button"
+                  disabled={!!busy || !got.opening.jd.markdown?.trim()}
+                  onClick={() => void run("approveJd", got.opening.jd.markdown ?? "")}
+                  className="h-9 rounded-full bg-ink px-4 text-small font-medium text-white hover:bg-ink-2 disabled:opacity-50"
+                >
+                  {busy === "approveJd" ? "Approving…" : "Approve the job description"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={!!busy}
+                  onClick={() => void run("rereadJd", "")}
+                  className="h-9 rounded-full border border-border px-4 text-small text-ink hover:bg-surface-2 disabled:opacity-50"
+                >
+                  {busy === "rereadJd" ? "Reading…" : "Re-read the job details"}
+                </button>
+              )}
+              {said && <span className={"text-small " + (said.ok ? "text-brand-strong" : "text-danger")}>{said.message}</span>}
+            </div>
+            <p className="mt-2 text-small text-ink-3">Editing the text here is not switched on yet - edit it in AURA for now.</p>
             <div className="mt-6 whitespace-pre-wrap text-body text-ink-2">{got.opening.jd.markdown?.trim() || "No job description yet."}</div>
           </>
         )}
