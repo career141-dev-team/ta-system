@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { DUR, HOVER_IN, HOVER_OUT, gsap, useExit, useGSAP } from "@/lib/gsap";
 import Toast from "./Toast";
+import { door, jobFromAddress, useDoorMutation, useDoorQuery, useLive, type Answer, type DoorDone } from "@/lib/backend";
 
 // The opening's Automations (owner's design, 13 Nov 2026), as the TA System has them
 // (follow-up skill, Flows F and I):
@@ -40,6 +41,20 @@ const LIFT_OUT = { opacity: 0, y: -6, scale: 0.97 };
 export default function Automations({ pillClass, icon }: { pillClass: string; icon: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [saved, setSaved] = useState(SAVED);
+  // Live: the opening's real switch and questions (ui/opening:summary); saving goes
+  // through ui/opening:setFollowUp and ui/manage:setQuestions, which re-check the rules.
+  const live = useLive();
+  const job = live ? jobFromAddress() : null;
+  const real = useDoorQuery(door.summary, job ? { openingId: job } : "skip") as
+    | Answer<{ opening: { followUp: { on: boolean | null; questions: { label: string }[] } } }>
+    | undefined;
+  const [seenReal, setSeenReal] = useState<typeof real>(undefined);
+  if (real !== seenReal) {
+    setSeenReal(real);
+    if (real?.ok) setSaved({ on: !!real.opening.followUp.on, questions: real.opening.followUp.questions.map((q) => q.label) });
+  }
+  const saveSwitch = useDoorMutation(door.setFollowUp);
+  const saveQuestions = useDoorMutation(door.setQuestions);
   const [on, setOn] = useState(saved.on);
   const [qs, setQs] = useState(() => toQs(saved.questions));
   const [problem, setProblem] = useState<string | null>(null);
@@ -133,7 +148,7 @@ export default function Automations({ pillClass, icon }: { pillClass: string; ic
     });
   };
 
-  const save = () => {
+  const save = async () => {
     const seen = new Set<string>();
     for (const t of texts) {
       const k = t.toLowerCase();
@@ -141,11 +156,15 @@ export default function Automations({ pillClass, icon }: { pillClass: string; ic
       seen.add(k);
     }
     const added = texts.filter((t) => !saved.questions.includes(t)).length;
+    if (job) {
+      const done = (await saveQuestions({ openingId: job, questions: texts })) as DoorDone | undefined;
+      if (done && !done.ok) return setProblem(done.message);
+    }
     setSaved((s) => ({ ...s, questions: texts }));
     setQs(toQs(texts));
     setProblem(null);
     setOpen(false);
-    say("Questions saved", added ? ` - asked of the ${IN_FOLLOW_UP} people in Follow-up.` : ".");
+    say("Questions saved", added && !job ? ` - asked of the ${IN_FOLLOW_UP} people in Follow-up.` : ".");
   };
 
   return (
@@ -199,10 +218,18 @@ export default function Automations({ pillClass, icon }: { pillClass: string; ic
                 aria-label="Automatic follow-up"
                 disabled={!CAN_MANAGE}
                 // The switch saves at once, as in the old system; the questions wait for Save.
-                onClick={() => {
+                onClick={async () => {
                   const v = !on;
                   setOn(v);
                   setSaved((s) => ({ ...s, on: v }));
+                  if (job) {
+                    const done = (await saveSwitch({ openingId: job, on: v })) as DoorDone | undefined;
+                    if (done && !done.ok) {
+                      setOn(!v);
+                      setSaved((s) => ({ ...s, on: !v }));
+                      return say("Not saved", ` - ${done.message}`);
+                    }
+                  }
                   say("Automatic follow-up", v ? " is on." : " is off.");
                 }}
                 className={"relative h-[max(2rem,26px)] w-[max(3.5rem,46px)] shrink-0 rounded-full transition-colors disabled:opacity-50 " + (on ? "bg-brand" : "bg-border-strong")}

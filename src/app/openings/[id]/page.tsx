@@ -1,4 +1,5 @@
 import OpeningCards from "./OpeningCards";
+import LiveName from "./LiveName";
 import RowLink from "./RowLink";
 import PillMenu, { type MenuOption } from "./PillMenu";
 import Notch from "./Notch";
@@ -103,9 +104,9 @@ export default async function OpeningPage({ params }: PageProps<"/openings/[id]"
       overview={
         <>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-        <h1 className="text-title font-semibold">{OPENING.title}</h1>
+        <h1 className="text-title font-semibold"><LiveName field="title" sample={OPENING.title} /></h1>
         <Divider />
-        <span className="text-title font-semibold">{OPENING.client}</span>
+        <span className="text-title font-semibold"><LiveName field="client" sample={OPENING.client} /></span>
         <RefereeBadge />
         <Divider />
         <PillMenu options={STATUS} initial={OPENING.status} pillClass={PILL} />

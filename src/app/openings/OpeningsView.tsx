@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { DUR, EASE, gsap, useExit, useSwap, useTabGlide } from "@/lib/gsap";
 import { useMe } from "@/lib/role";
+import { door, useDoorQuery, useLive, type DoorOpenings } from "@/lib/backend";
 import Count from "@/app/Count";
 import Toast from "./[id]/Toast";
 import { LIFT_OUT, useLiftMenu } from "./[id]/liftMenu";
@@ -35,7 +36,19 @@ export default function OpeningsView() {
   const me = useMe();
   const canBin = (o: Opening) => me.lead || o.team.includes(me.first);
   const [arming, setArming] = useState<string | null>(null);
-  const [rows, setRows] = useState(OPENINGS);
+  const live = useLive();
+  const [rows, setRows] = useState<Opening[]>(live ? [] : OPENINGS);
+  // Live: the openings this person may see, from the backend (ui/openings:list).
+  // Each new answer replaces the rows (adjusted while rendering).
+  const real = useDoorQuery(door.openings, live ? {} : "skip") as DoorOpenings | undefined;
+  const [seen, setSeen] = useState<DoorOpenings | undefined>(undefined);
+  const [refusal, setRefusal] = useState<string | null>(null);
+  if (real !== seen) {
+    setSeen(real);
+    if (real?.ok) setRows(real.openings as Opening[]);
+    setRefusal(real && !real.ok ? real.message : null);
+  }
+  const notYet = (what: string) => setToast({ bold: what, rest: " is not switched on here yet - do it in AURA for now.", n: ++said.current });
   const [tab, setTab] = useState<Tab>("all");
   const [show, setShow] = useState<List[]>(ORDER);
   const [client, setClient] = useState("");
@@ -78,6 +91,7 @@ export default function OpeningsView() {
   // The Bin button asks first (a box over the card); "Move to Bin" there bins it.
   const bin = (o: Opening) => {
     setArming(null);
+    if (live) return notYet("Moving to the Bin");
     setRows((r) => r.filter((x) => x.id !== o.id));
     setToast({ bold: o.title, rest: " is in the Bin for 7 days. Anyone on the desk can put it back from the Bin.", n: ++said.current });
   };
@@ -147,6 +161,7 @@ export default function OpeningsView() {
 
       {/* The lists */}
       <div ref={body} className="-mx-2 mt-[clamp(14px,4dvh,44px)] min-h-0 flex-1 overflow-y-auto px-2 pb-10">
+        {refusal && <p className="mb-4 text-small text-danger">{refusal}</p>}
         <div className="flex flex-col gap-[clamp(18px,4dvh,44px)]">
           {(tab === "all" ? ORDER.filter((l) => show.includes(l)) : [tab]).map((l) => {
             const list = of(l);
@@ -176,7 +191,7 @@ export default function OpeningsView() {
                         armed={arming === o.id}
                         onArm={() => setArming(o.id)}
                         onBin={() => bin(o)}
-                        onWeb={() => setRows((r) => r.map((x) => (x.id === o.id ? { ...x, website: !x.website } : x)))}
+                        onWeb={() => live ? notYet("The website switch") : setRows((r) => r.map((x) => (x.id === o.id ? { ...x, website: !x.website } : x)))}
                         onDisarm={() => setArming(null)}
                       />
                     ))}
@@ -207,6 +222,10 @@ export default function OpeningsView() {
           start={sheet}
           onClose={() => setSheet(null)}
           onCreate={(o) => {
+            if (live) {
+              setSheet(null);
+              return notYet("Creating an opening");
+            }
             setRows((r) => [{ ...o, made: Math.max(...r.map((x) => x.made)) + 1 }, ...r]);
             setSheet(null);
             setTab("all");
@@ -247,6 +266,7 @@ function Card({
   onWeb: () => void;
   onDisarm: () => void;
 }) {
+  const live = useLive();
   const l: List = inList(o, "unassigned") ? "unassigned" : o.status;
   const over = o.status === "active" && o.team.length > 0 && o.days > TARGET[o.priority];
   const right =
@@ -274,7 +294,7 @@ function Card({
   return (
     <Link
       // ponytail: every card opens the one opening built so far.
-      href={o.referee ? "/openings/demo?referee=1" : "/openings/demo"}
+      href={live ? `/openings/demo?job=${o.id}` : o.referee ? "/openings/demo?referee=1" : "/openings/demo"}
       prefetch={false}
       onMouseLeave={armed ? onDisarm : undefined}
       className="group relative flex h-[clamp(116px,15.5dvh,168px)] flex-col gap-[clamp(5px,0.95dvh,10px)] rounded-lg border border-border bg-surface px-[max(1.625rem,16px)] py-[clamp(12px,2dvh,22px)] transition-colors hover:border-border-strong hover:shadow-card"

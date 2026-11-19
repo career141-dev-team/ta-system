@@ -69,6 +69,24 @@ export const door = {
   board: makeFunctionReference<"query">("ui/pipeline:board"),
   move: makeFunctionReference<"mutation">("ui/pipeline:move"),
   shortlist: makeFunctionReference<"mutation">("ui/pipeline:shortlist"),
+  openings: makeFunctionReference<"query">("ui/openings:list"),
+  summary: makeFunctionReference<"query">("ui/opening:summary"),
+  setFollowUp: makeFunctionReference<"mutation">("ui/opening:setFollowUp"),
+  setQuestions: makeFunctionReference<"mutation">("ui/manage:setQuestions"),
+  scoops: makeFunctionReference<"query">("ui/opening:scoops"),
+  matches: makeFunctionReference<"query">("ui/opening:matches"),
+  strategies: makeFunctionReference<"query">("ui/opening:strategies"),
+  postApplicants: makeFunctionReference<"query">("ui/opening:postApplicants"),
+  acceptStrategies: makeFunctionReference<"mutation">("ui/manage:acceptStrategies"),
+  submitStrategies: makeFunctionReference<"mutation">("ui/manage:submitStrategies"),
+  removeFromOpening: makeFunctionReference<"mutation">("ui/manage:removeFromOpening"),
+  notForJob: makeFunctionReference<"mutation">("ui/manage:notForJob"),
+  addPost: makeFunctionReference<"mutation">("ui/posts:addPost"),
+  updatePost: makeFunctionReference<"mutation">("ui/posts:updatePost"),
+  setPostStatus: makeFunctionReference<"mutation">("ui/posts:setPostStatus"),
+  deletePost: makeFunctionReference<"mutation">("ui/posts:deletePost"),
+  moveCvs: makeFunctionReference<"mutation">("ui/posts:moveCvs"),
+  postsList: makeFunctionReference<"query">("ui/posts:list"),
 };
 
 /** The board's columns in the backend's words, in the same order as the UI's STAGES. */
@@ -85,6 +103,9 @@ export type DoorCard = {
   backup: boolean; owned: boolean; mine: boolean; lockedBy: string | null; missing: string[];
 };
 export type DoorBoard = Answer<{ opening: { id: string; title: string }; columns: { stage: string; label: string; count: number; capped: boolean; cards: DoorCard[] }[] }>;
+/** One card on the Openings page, as ui/openings:list sends it. */
+export type DoorOpening = { id: string; client: string; title: string; status: "active" | "hold" | "placed" | "lost"; priority: 1 | 2 | 3 | 4 | 5; days: number; team: string[]; made: number; website: boolean };
+export type DoorOpenings = Answer<{ openings: DoorOpening[]; capped: string[] }>;
 export type DoorDone = Answer<{ message: string }>;
 
 /** The real opening this page shows: ?job=<id> in the address (the id in AURA's own address). */

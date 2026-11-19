@@ -1,5 +1,6 @@
 "use client";
 
+import { door, jobFromAddress, useDoorMutation, useDoorQuery, useLive, type Answer, type DoorDone } from "@/lib/backend";
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { DUR, EASE, gsap, useExit, useGSAP, swapIn, useSwap } from "@/lib/gsap";
@@ -107,8 +108,40 @@ type Upload = { id: string; file: string; url?: string; bad?: boolean; state: "r
  *  can act on the opening), and every scoop on the opening with Shortlist. Clicking a
  *  row opens the reading view - the list on the left, that CV on the right - and Back
  *  returns to the list. Shortlisted rows stay, marked, as in the TA System. */
+type DoorScoops = Answer<{
+  me: string;
+  names: Record<string, string>;
+  people: { id: string; name: string; title: string | null; company: string | null; location: string | null; years: number | null; noticeDays: number | null; ownerId: string | null; addedAt: number; sentBy: string | null }[];
+}>;
+const first = (n?: string) => n?.split(" ")[0];
+const dayWords = (t: number) => {
+  const d = Math.floor((Date.now() - t) / 86_400_000);
+  return d <= 0 ? "today" : d === 1 ? "yesterday" : `${d} days ago`;
+};
+
 export default function ScoopsView() {
-  const [list, setList] = useState(SCOOPS);
+  // Live: the opening's scoops (ui/opening:scoops). Shortlist goes through
+  // ui/pipeline:shortlist, Delete through ui/manage:removeFromOpening.
+  const live = useLive();
+  const job = live ? jobFromAddress() : null;
+  const [list, setList] = useState(live ? [] : SCOOPS);
+  const real = useDoorQuery(door.scoops, job ? { openingId: job } : "skip") as DoorScoops | undefined;
+  const [seenReal, setSeenReal] = useState<DoorScoops | undefined>(undefined);
+  if (real !== seenReal) {
+    setSeenReal(real);
+    if (real?.ok)
+      setList(
+        real.people.map((p) => ({
+          id: p.id, name: p.name, title: p.title ?? "", company: p.company ?? "", location: p.location ?? "",
+          years: p.years ?? 0, notice: p.noticeDays ?? 0, sentDay: dayWords(p.addedAt),
+          sentBy: p.sentBy ? first(real.names[p.sentBy]) : undefined,
+          mine: !!p.ownerId && p.ownerId === real.me,
+          lockedBy: p.ownerId && p.ownerId !== real.me ? first(real.names[p.ownerId]) ?? "another TA" : undefined,
+        })),
+      );
+  }
+  const claim = useDoorMutation(door.shortlist);
+  const takeOff = useDoorMutation(door.removeFromOpening);
   const [mode, setMode] = useState<"list" | "read">("list");
   const [chosen, setChosen] = useState(SCOOPS[0].id);
   const [picked, setPicked] = useState<string[]>([]);
@@ -247,6 +280,16 @@ export default function ScoopsView() {
     const take = list.filter((s) => ids.includes(s.id) && free(s));
     if (!take.length) return;
     if (gate) return say(gate + " Start it on Today, then shortlist.", undefined, true);
+    if (job) {
+      // Each one through the backend's own shortlist; the list re-reads itself.
+      void Promise.all(take.map((s) => claim({ applicationId: s.id }) as Promise<DoorDone | undefined>)).then((all) => {
+        const no = all.find((d) => d && !d.ok);
+        if (no && !no.ok) say(no.message, undefined, true);
+        else say(" shortlisted - moved to TA Follow-Up", take.length === 1 ? take[0].name : `${take.length} candidates`);
+      });
+      setPicked((p) => p.filter((x) => !ids.includes(x)));
+      return;
+    }
     setList((l) => l.map((s) => (take.includes(s) ? { ...s, mine: true } : s)));
     // They show on the Pipeline board, in TA Follow-Up.
     take.forEach((s) => sendToPipeline({ name: s.name, title: s.title, company: s.company, location: s.location, years: s.years, notice: s.notice, cv: s.cv }));
@@ -298,6 +341,7 @@ export default function ScoopsView() {
   const addFiles = (files: FileList | File[]) => {
     if (!CAN_ACT) return;
     if (gate) return say(gate + " Start it on Today, then upload scoops.", undefined, true);
+    if (live) return say("Uploading scoops is not switched on here yet - do it in AURA for now.", undefined, true);
     const all = Array.from(files);
     const fits = all.filter((f) => CV_FILE.test(f.name) && f.size <= MAX_BYTES);
     const ok = fits.slice(0, MAX_FILES);
@@ -361,6 +405,15 @@ export default function ScoopsView() {
     if (gate) return say(gate + " Start it on Today, then delete scoops.", undefined, true);
     const rows = list.flatMap((s, at) => (ids.includes(s.id) ? [{ s, at }] : []));
     if (!rows.length) return;
+    if (job) {
+      // Saved in the backend: they go to Dropped out, and come back from there (no Undo here).
+      void Promise.all(ids.map((id) => takeOff({ applicationId: id }) as Promise<DoorDone | undefined>)).then((all) => {
+        const no = all.find((d) => d && !d.ok);
+        say(no && !no.ok ? no.message : all[0]?.message ?? "Removed.", undefined, !!(no && !no.ok));
+      });
+      setPicked((p) => p.filter((x) => !ids.includes(x)));
+      return;
+    }
     if (mode === "read" && current && ids.includes(current.id)) {
       const i = shown.indexOf(current);
       const next = shown.slice(i + 1).find((s) => !ids.includes(s.id)) ?? shown.slice(0, i).reverse().find((s) => !ids.includes(s.id));
