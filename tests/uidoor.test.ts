@@ -292,6 +292,38 @@ eq("send: the ChatGPT rule is kept", sendSrc.includes("checkResearchSubmission")
   eq("remind: one wake-up per plan (the old one is cancelled)", remindSrc.includes("ctx.scheduler.cancel(plan.wakeJobId)"), true);
   eq("remind: an older plan's wake-up does nothing", remindSrc.includes("plan.version !== args.version"), true);
   eq("remind: every plan change re-arms", (read("convex/ui/plan.ts").match(/await arm\(ctx, plan\._id\)/g) ?? []).length >= 5, true);
+
+  // Phase 3, changing the plan by talking (19 Nov): the doc's seven sentences, read with no model.
+  const { readChange, applyChange, timeOf, minutesOf } = await import("../convex/ui/planRules");
+  const day = [
+    { key: "t1", title: "Review SAP suggestions", startMin: 540, minutes: 30, state: "doing" as const },
+    { key: "t2", title: "Chase Finance candidates", startMin: 570, minutes: 30, state: "planned" as const },
+    { key: "t3", title: "Midday email", startMin: 750, minutes: 30, state: "planned" as const },
+  ];
+  const now = 555; // 9:15, in the SAP review
+  eq("talk: time words", [timeOf("move it to 2:30"), timeOf("at 14:30"), timeOf("by 4pm"), timeOf("till 10 pm")], [870, 870, 960, 1320]);
+  eq("talk: minutes words", [minutesOf("another 15 minutes"), minutesOf("half an hour"), minutesOf("1.5 hours")], [15, 30, 90]);
+  eq("talk: 'another 15 minutes' extends the task in hand", readChange("I need another 15 minutes to complete this task.", day, now), { change: { op: "extend", key: "t1", minutes: 15 } });
+  eq("talk: 'move this task to 2:30 PM'", readChange("Move this task to 2:30 PM.", day, now), { change: { op: "move", key: "t1", atMin: 870 } });
+  eq("talk: 'I will complete this task by 4:00 PM'", readChange("I will complete this task by 4:00 PM.", day, now), { change: { op: "set_end", key: "t1", atMin: 960 } });
+  eq("talk: 'stop reminding me ... 30 minutes'", readChange("Stop reminding me about this task for the next 30 minutes.", day, now), { change: { op: "snooze", key: "t1", minutes: 30 } });
+  eq("talk: 'move my pending tasks to the afternoon'", readChange("Move my pending tasks to the afternoon.", day, now), { change: { op: "shift_pending", atMin: 780 } });
+  eq("talk: 'urgent recruitment activity' adds a task now", (readChange("Update my schedule because I have an urgent recruitment activity.", day, now) as { change: { op: string } }).change.op, "add");
+  eq("talk: 'I will work till 10 tonight'", readChange("I'll work till 10 tonight", day, now), { change: { op: "set_finish", atMin: 1320 } });
+  eq("talk: a task named by its words", readChange("move the finance chase to 11", day, now), { change: { op: "move", key: "t2", atMin: 660 } });
+  eq("talk: something it cannot read goes to the model", readChange("hmm what about lunch", day, now), null);
+  const ext = applyChange(day, { op: "extend", key: "t1", minutes: 15 }, 1020, now);
+  eq("apply: extending slides the next task", "refused" in ext ? ext : [ext.tasks.find((t) => t.key === "t2")?.startMin, ext.changed], [585, ["t1", "t2"]]);
+  eq("apply: and says so", "refused" in ext ? "" : ext.say, "Review SAP suggestions now ends at 9:45. Chase Finance candidates moves to 9:45.");
+  const pastEnd = applyChange(day, { op: "move", key: "t3", atMin: 1005 }, 1020, now);
+  eq("apply: a clash past the finish is said", "refused" in pastEnd ? pastEnd : pastEnd.clashes, ["Midday email now ends after your finish (17:00)."]);
+  eq("apply: a done task cannot be moved", applyChange([{ ...day[0], state: "done" }], { op: "move", key: "t1", atMin: 600 }, 1020, now), { refused: "That task is not open any more." });
+  const fin = applyChange(day, { op: "set_finish", atMin: 1320 }, 1020, now);
+  eq("apply: a later finish", "refused" in fin ? fin : fin.finishMin, 1320);
+  const talkSrc = read("convex/ui/planTalk.ts");
+  eq("talk: rules first, the model only when they cannot read it", talkSrc.indexOf("readChange(") < talkSrc.indexOf("getAnthropicClient("), true);
+  eq("talk: the model's answer is checked (known op, real key)", talkSrc.includes("checked(jsonIn("), true);
+  eq("talk: every model call goes in the ledger with the day limit", talkSrc.includes("internal.ui.auraLedger.record") && talkSrc.includes("AI_DAY_LIMIT_USD"), true);
 }
 
 console.log(`\nuidoor: ${pass} passed, ${fail} failed`);

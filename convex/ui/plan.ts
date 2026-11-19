@@ -7,11 +7,11 @@
 // lead's read-only view comes in phase 5. Reminders (phase 2) start from `approvedAt`.
 
 import { v } from "convex/values";
-import { mutation, query, type MutationCtx, type QueryCtx } from "../_generated/server";
+import { internalMutation, mutation, query, type MutationCtx, type QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { workdayDate } from "../../src/lib/workday";
 import { NotSignedIn, uiUser } from "./me";
-import { DEFAULT_FINISH, draftRefusal, historyOf, planTally, taskMoveRefusal, type TaskState } from "./planRules";
+import { applyChange, dayStartOf, DEFAULT_FINISH, draftRefusal, historyOf, planTally, taskMoveRefusal, type Change, type TaskState } from "./planRules";
 import { arm } from "./planRemind";
 
 type Refused = { ok: false; message: string };
@@ -220,3 +220,79 @@ export const snooze = mutation({
     return { ok: true as const, message: `No reminders${args.key ? " for that task" : ""} for ${args.minutes} minutes.` };
   },
 });
+
+/** One change read from the TA's words (ui/planTalk), applied to their approved plan:
+ *  the times worked out by applyChange, each touched task given a history line with
+ *  the TA's own words, moved tasks' reminders re-armed (docs/AURA-DAY-AGENT.md section 7).
+ *  Internal: only ui/planTalk calls it, with the signed-in person's own id. */
+export const applyTalk = internalMutation({
+  args: {
+    userId: v.id("users"),
+    said: v.string(),
+    change: v.object({
+      op: v.union(v.literal("extend"), v.literal("move"), v.literal("set_end"), v.literal("snooze"), v.literal("shift_pending"), v.literal("add"), v.literal("skip"), v.literal("set_finish"), v.literal("done")),
+      key: v.optional(v.string()),
+      minutes: v.optional(v.number()),
+      atMin: v.optional(v.number()),
+      title: v.optional(v.string()),
+      reason: v.optional(v.string()),
+      all: v.optional(v.boolean()),
+    }),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const plan = await planOf(ctx, args.userId, workdayDate(now));
+    if (!plan || plan.state !== "approved") return refused(plan?.state === "closed" ? "Today's plan is closed." : "Approve today's plan first, then I can change it.");
+    const rows = await tasksOf(ctx, plan._id);
+    const nowMin = Math.floor((now - dayStartOf(plan.date)) / 60_000);
+    const change = args.change as Change;
+    const result = applyChange(
+      rows.map((t) => ({ key: t.key, title: t.title, startMin: t.startMin, minutes: t.minutes, state: t.state as TaskState })),
+      change,
+      plan.finishMin,
+      nowMin,
+    );
+    if ("refused" in result) return refused(result.refused);
+    const said = `Chat: “${args.said.trim().slice(0, 120)}”`;
+
+    if (change.op === "snooze" && change.all) await ctx.db.patch(plan._id, { quietUntil: now + (change.minutes ?? 30) * 60_000 });
+    for (const key of result.changed) {
+      const next = result.tasks.find((t) => t.key === key)!;
+      const row = rows.find((t) => t.key === key);
+      if (!row) {
+        await ctx.db.insert("auraPlanTasks", {
+          planId: plan._id,
+          userId: args.userId,
+          key,
+          order: rows.length,
+          title: next.title,
+          kind: "other",
+          startMin: next.startMin,
+          minutes: next.minutes,
+          priority: "normal",
+          state: "planned",
+          history: [{ at: now, by: "ta", what: `Added. ${said}` }],
+        });
+        continue;
+      }
+      const moved = next.startMin !== row.startMin || next.minutes !== row.minutes;
+      const what = moved ? `${hmOf(row.startMin)}–${hmOf(row.startMin + row.minutes)} → ${hmOf(next.startMin)}–${hmOf(next.startMin + next.minutes)}` : next.state !== row.state ? `${row.state} → ${next.state}` : "Reminders paused";
+      await ctx.db.patch(row._id, {
+        startMin: next.startMin,
+        minutes: next.minutes,
+        state: next.state,
+        ...(next.state === "done" ? { doneBy: "ta" as const, doneAt: now } : {}),
+        ...(next.state === "skipped" ? { reason: next.reason } : {}),
+        ...(next.snoozeMin ? { snoozedUntil: now + next.snoozeMin * 60_000 } : {}),
+        // A task at a new time gets its reminders again, at the new times.
+        ...(moved ? { reminded: [] } : {}),
+        history: historyOf(row.history, { at: now, by: "ta", what: `${what}. ${said}` }),
+      });
+    }
+    await ctx.db.patch(plan._id, { finishMin: result.finishMin, version: plan.version + 1, updatedAt: now });
+    await arm(ctx, plan._id);
+    return { ok: true as const, message: [result.say, ...result.clashes].join(" ") };
+  },
+});
+
+const hmOf = (min: number) => `${Math.floor(min / 60)}:${String(min % 60).padStart(2, "0")}`;
