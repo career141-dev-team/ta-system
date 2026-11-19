@@ -29,7 +29,7 @@ export const emails = query({
     const w = await who(ctx);
     if (!w.ok) return w;
     try {
-      const emails: unknown = await ctx.runQuery(internal.ta.dailyEmails.list, { actorId: w.user._id, jobId: a.jobId });
+      const emails: unknown = await ctx.runQuery(internal.ta.dailyEmails.list, { actorId: w.user._id, jobId: a.jobId, recent: true });
       const missed: unknown = await ctx.runQuery(internal.ta.dailyEmails.missedDays, { actorId: w.user._id, jobId: a.jobId }).catch(() => []);
       const context: unknown = await ctx.runQuery(internal.ta.workdays.eodContext, { actorId: w.user._id, jobId: a.jobId }).catch(() => null);
       return { ok: true, emails, missed, context };

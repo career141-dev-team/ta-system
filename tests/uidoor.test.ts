@@ -6,7 +6,8 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { cardLimit, inWords, scoopFileRefusal, normalizeQuestions, strategyRowsToSubmit, matchableEmail, moveRefusal, toCard, openingCard, withEdits, BOARD_STAGES, BACKEND_STAGES } from "../convex/ui/rules";
+import { cardLimit, inWords, scoopFileRefusal, normalizeQuestions, strategyRowsToSubmit, matchableEmail, moveRefusal, toCard, openingCard, withEdits, BOARD_STAGES, BACKEND_STAGES, daysOpen, columnCount } from "../convex/ui/rules";
+import { isEodCandidateEligible } from "../src/lib/eodEligibility";
 
 let pass = 0, fail = 0;
 const eq = (l: string, got: unknown, want: unknown) => {
@@ -120,6 +121,28 @@ const openingsSrc = fs.readFileSync(path.join("convex", "ui", "openings.ts"), "u
 eq("openings: each status through its index", openingsSrc.includes('withIndex("by_status"'), true);
 eq("openings: never the whole table", /query\("jobs"\)\.collect\(\)/.test(openingsSrc), false);
 eq("openings: a TA sees only their own", openingsSrc.includes("by_userId_isActive"), true);
+
+// 19 Nov, fast reads. Day N as the old app counts it (map.ts): assignedAt, else created.
+{
+  const now = Date.parse("2026-11-19T10:00:00+05:30");
+  eq("days open: from assignedAt", daysOpen({ assignedAt: Date.parse("2026-11-09T09:00:00+05:30"), createdAt: "2026-10-01T00:00:00Z" }, now), 10);
+  eq("days open: no assignedAt reads the created day (it read 0 on every card)", daysOpen({ createdAt: "2026-11-05T08:00:00+05:30" }, now), 14);
+  eq("days open: nothing on record is 0", daysOpen({}, now), 0);
+  eq("board count: under the cap is exact", columnCount(12), { count: 12, capped: false });
+  eq("board count: exactly the cap is not capped", columnCount(500), { count: 500, capped: false });
+  eq("board count: past the cap says so", columnCount(1002), { count: 500, capped: true });
+  for (const [f, src] of [["openings", openingsSrc], ["lead", read("convex/ui/lead.ts")], ["desk", read("convex/ui/desk.ts")]] as const)
+    eq(`${f}: day N never from assignedAt alone`, /j\.assignedAt \?/.test(src), false);
+  eq("today: own day only, never the reviewers' panel", read("convex/ui/day.ts").includes("ownOnly: true"), true);
+  eq("dashboard: ownOnly skips the desk-wide assignment scan", read("convex/ta/workdays.ts").includes('teamView ? await ctx.db.query("jobAssignments").collect()'), true);
+  eq("emails: the door asks for the last 31 days without the HTML", read("convex/ui/email.ts").includes("recent: true"), true);
+  const lead = read("convex/ui/lead.ts");
+  eq("lead: a TA's own candidates from their index, not every role's newest", lead.includes('"by_workday_owner"') && !lead.includes('query("applications").withIndex("by_jobId"'), true);
+  eq("homes: open roles' stages only, never desk-wide by stage", read("convex/ui/homes.ts").includes('withIndex("by_stage"'), false);
+  const compose = read("convex/lib/eodCompose.ts");
+  eq("compose: only Director Review is read for the roster", compose.includes('eq("currentStage", "second_shortlist")') && !compose.includes('withIndex("by_jobId"'), true);
+  eq("compose: that is the only stage the rule lets through", ["new_cvs", "ta_shortlist", "follow_up", "director_shortlist", "client_review", "rejected"].some((stage) => isEodCandidateEligible({ stage, lastStageChangedAt: 0 }, { taId: null, workType: "100%" })), false);
+}
 
 // The TA's day (ui/day, D4): thin wrappers over the workday's own rules.
 const daySrc = fs.readFileSync(path.join("convex", "ui", "day.ts"), "utf8");

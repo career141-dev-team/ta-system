@@ -33,7 +33,7 @@ eq("the route passes the position to the backend", route.includes('jobId: new UR
 eq("the route names the step that failed", route.includes("the desk is still loading") && route.includes("the checks took too long to read"), true);
 
 const workdays = read("convex/ta/workdays.ts");
-eq("dashboard takes a position", workdays.includes("jobId: v.optional(v.string()) },") && workdays.includes("await view(ctx, active, now, true, args.jobId)"), true);
+eq("dashboard takes a position", /jobId: v\.optional\(v\.string\(\)\)\s*[,}]/.test(workdays) && workdays.includes("await view(ctx, active, now, true, args.jobId)"), true);
 const view = workdays.slice(workdays.indexOf("async function view("), workdays.indexOf("async function summaryView("));
 eq("a day view builds one position when asked", view.includes("onlyJobId ? all.filter((j) => j.jobId === onlyJobId) : all"), true);
 eq("the upload scans run once per day view", view.includes("secondaryUploads: await secondaryUploadsSince(") && workdays.includes("shared.secondaryUploads ?? (await secondaryUploadsSince(ctx, since))"), true);

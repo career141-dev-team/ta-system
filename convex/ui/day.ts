@@ -42,7 +42,8 @@ export function dayAnswer(op: string, result: { ok?: boolean; blockers?: string[
 
 /**
  * Today: the person's open workday with each position's checks, the positions
- * they may add, and (for leads and reviewers) the team. ta/workdays:dashboard,
+ * they may add and their last days - never the reviewers' team panel (ownOnly;
+ * a lead reads the team from ui/lead:desk). ta/workdays:dashboard,
  * which is already bounded (#380, #393). `staleChecklists` on a day says which
  * positions were computed live; `refreshChecks` asks for one stored recompute.
  */
@@ -54,6 +55,8 @@ export const today = query({
     try {
       const view: unknown = await ctx.runQuery(internal.ta.workdays.dashboard, {
         actorId: w.user._id, detail: true, jobId: args.jobId, allHistory: args.allHistory,
+        // The person's own day only: the reviewers' panel timed out for an admin (19 Nov) and Today never shows it.
+        ownOnly: true,
       });
       return { ok: true as const, view };
     } catch (error) {

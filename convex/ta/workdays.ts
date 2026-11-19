@@ -1313,13 +1313,21 @@ export const emailPreflight = internalMutation({
 export const dashboard = internalQuery({
   args: { actorId: v.string(), detail: v.optional(v.boolean()), cursor: v.optional(v.string()), date: v.optional(v.string()), focusWorkday: v.optional(v.string()), taId: v.optional(v.string()), allHistory: v.optional(v.boolean()),
     /** Build the active day's checks for this one position only (the EOD composer, 10 Nov). */
-    jobId: v.optional(v.string()) },
+    jobId: v.optional(v.string()),
+    /**
+     * Only the person's own day, options and history - no reviewers' panel (the
+     * new UI's Today, ui/day:today, 19 Nov). The panel reads every assignment on
+     * the desk and every assigned opening; for an admin that ran past the 1 s
+     * limit ("Function execution timed out", 4.4 s) and the new UI never shows it.
+     */
+    ownOnly: v.optional(v.boolean()) },
   handler: async (ctx, args) => {
     const user = await requireActor(ctx, args.actorId);
     const role = roleOf(user);
     const worker = ["ta", "ta_support"].includes(role);
     const lead = canLead(user);
     const review = canReviewWorkdays(role);
+    const teamView = review && !args.ownOnly;
     // The web counts ops as desk-wide (src/lib/auth.ts DESK_WIDE); this list
     // left ops out, so ops could not open the reviewers' panel (docs/19 P3, 2 Nov).
     const deskWide = role === "admin" || role === "director" || role === "ta_lead" || role === "ops";
@@ -1412,7 +1420,7 @@ export const dashboard = internalQuery({
     // earlier dates were part of what timed the panel out (29 Oct). Older
     // days are still in the page below and under the Day filter.
     const today = workdayDate(now);
-    if (review && !args.date && !args.focusWorkday) {
+    if (teamView && !args.date && !args.focusWorkday) {
       if (deskWide) {
         const [working, page] = await Promise.all([
           ctx.db
@@ -1450,7 +1458,7 @@ export const dashboard = internalQuery({
       }
     }
     // Filter the date before pagination; filtering a recent page hid older days.
-    if (review && args.date && !args.focusWorkday) {
+    if (teamView && args.date && !args.focusWorkday) {
       const taId = args.taId ? ctx.db.normalizeId("users", args.taId) : null;
       let query = ctx.db.query("taWorkdays")
         .withIndex("by_date", q => q.eq("date", args.date!));
@@ -1462,12 +1470,12 @@ export const dashboard = internalQuery({
     // Assignment choices must exist even before a TA starts a workday.
     // From the small assignment rows, not a scan of every opening (see above):
     // only openings with a recruiter on them can list a TA here.
-    const allAssignments = review ? await ctx.db.query("jobAssignments").collect() : [];
+    const allAssignments = teamView ? await ctx.db.query("jobAssignments").collect() : [];
     const byJob = new Map<string, Doc<"jobAssignments">[]>();
     for (const a of allAssignments) if (a.isActive && recruiters.includes(a.assignmentRole)) byJob.set(a.jobId as string, [...(byJob.get(a.jobId as string) ?? []), a]);
     const reviewJobs = (await Promise.all([...byJob.keys()].map((id) => ctx.db.get(id as Id<"jobs">))))
       .filter((job): job is Doc<"jobs"> => !!job);
-    const teamAssignments = review ? await Promise.all(reviewJobs
+    const teamAssignments = teamView ? await Promise.all(reviewJobs
       .filter(job => !isGone(job) && (deskWide || job.taLeadId === user._id))
       .map(async job => {
         const assigned = byJob.get(job._id as string) ?? [];
@@ -1481,7 +1489,7 @@ export const dashboard = internalQuery({
     const team: WorkdayView[] = [];
     // Notification links can target older workdays outside the current page.
     // The normal per-job visibility checks below still apply.
-    if (review && args.focusWorkday) {
+    if (teamView && args.focusWorkday) {
       const id = ctx.db.normalizeId("taWorkdays", args.focusWorkday);
       const focused = id ? await ctx.db.get(id) : null;
       recent = focused ? [focused] : [];
@@ -1542,7 +1550,7 @@ export const dashboard = internalQuery({
       ),
       team,
       teamAssignments: teamAssignments.flat(),
-      teamMembers: review ? (await ctx.db.query("users").collect())
+      teamMembers: teamView ? (await ctx.db.query("users").collect())
         .filter(ta => ta.isActive && ["ta", "ta_support"].includes(roleOf(ta)))
         .map(ta => ({ userId: ta._id, name: mapUser(ta).name })) : [],
       options,
