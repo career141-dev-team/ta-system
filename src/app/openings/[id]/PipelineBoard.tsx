@@ -657,6 +657,9 @@ export default function PipelineBoard() {
     });
     setUndone((u) => ({ id: card.id, n: (u?.n ?? 0) + 1 }));
     setMovedOpen(false);
+    // Signed in, the move is already saved: Undo is a second real move back. If the
+    // stage rules refuse it, the card goes back where the backend holds it, with why.
+    sendMove.current?.(card, to, from);
   };
 
   useEffect(() => {
