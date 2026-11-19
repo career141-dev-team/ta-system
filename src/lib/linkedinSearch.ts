@@ -8,6 +8,7 @@
 // Prices: the actors' Apify pages, 16-17 Nov 2026 (the Starter plan's Bronze discount
 // makes them a little lower).
 import type { Ask } from "../app/linkedin-search/read";
+import { toProfile, type Profile } from "./linkedinProfile";
 
 const SEARCH = "harvestapi~linkedin-profile-search";
 const PROFILE = "harvestapi~linkedin-profile-scraper";
@@ -28,6 +29,8 @@ export type Found = {
   skills: string[];
   /** What AURA checked on an opened profile, each met or not. */
   checks: { ok: boolean; text: string }[];
+  /** Everything the opened profile showed (roles by year, education...), so the CV pane needs no second read. */
+  profile?: Profile;
 };
 export type SearchResult = { checked: Found[]; others: Found[]; pages: number; opened: number; cost: number; note?: string };
 
@@ -86,6 +89,7 @@ function toFound(p: Raw, a: Ask, full: boolean): Found {
   const text = [str(p.headline), title, str(p.about), skillsOf(p).join(" "), ...arr(p.experience).map((e) => `${str(e.position)} ${str(e.description)}`)].join(" ");
   const years = yearsOf(p);
   base.years = years;
+  base.profile = toProfile(p);
   base.checks = [
     // Every word of the title, any order: "HR Manager" matches "Manager - HR" (live, 17 Nov 2026).
     ...a.titles.map((t) => ({

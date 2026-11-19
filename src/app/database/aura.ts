@@ -24,6 +24,8 @@ export type Person = {
   tags: string[];
   score: number;
   cv?: string;
+  /** Roles, newest first, for the Database CVs rows (sample; the backend gives the real ones). */
+  career?: { period: string; title: string; company: string }[];
 };
 
 export const POOL: Person[] = [
@@ -38,6 +40,7 @@ export const POOL: Person[] = [
     tags: ["sap", "manufacturing", "led"],
     score: 92,
     cv: "/cvs/s2.pdf",
+    career: [{"period":"2020 – Now","title":"SAP S/4HANA Lead","company":"Virtusa"},{"period":"2016 – 2020","title":"Senior SAP Consultant","company":"IFS"},{"period":"2015 – 2016","title":"SAP Consultant","company":"Hayleys"}],
   },
   {
     id: "p2",
@@ -50,6 +53,7 @@ export const POOL: Person[] = [
     tags: ["sap", "manufacturing", "led"],
     score: 88,
     cv: "/cvs/s3.pdf",
+    career: [{"period":"2019 – Now","title":"SAP Solution Architect","company":"Virtusa"},{"period":"2016 – 2019","title":"SAP PP Consultant","company":"Brandix"}],
   },
   {
     id: "p3",
@@ -62,6 +66,7 @@ export const POOL: Person[] = [
     tags: ["sap", "manufacturing", "led"],
     score: 85,
     cv: "/cvs/s4.pdf",
+    career: [{"period":"2021 – Now","title":"ERP Programme Director","company":"Hayleys"},{"period":"2016 – 2021","title":"SAP Delivery Manager","company":"MAS Holdings"},{"period":"2012 – 2016","title":"SAP MM Consultant","company":"John Keells IT"}],
   },
   {
     id: "p4",
@@ -74,6 +79,7 @@ export const POOL: Person[] = [
     tags: ["sap", "manufacturing", "led"],
     score: 81,
     cv: "/cvs/s6.pdf",
+    career: [{"period":"2022 – Now","title":"SAP MM Lead","company":"IFS"},{"period":"2018 – 2022","title":"SAP MM Consultant","company":"Dialog Axiata"},{"period":"2016 – 2018","title":"Associate Consultant","company":"Attune"}],
   },
   {
     id: "p5",
@@ -98,6 +104,7 @@ export const POOL: Person[] = [
     tags: ["sap", "manufacturing", "finance"],
     score: 77,
     cv: "/cvs/p2.pdf",
+    career: [{"period":"2020 – Now","title":"SAP FICO Manager","company":"Brandix"},{"period":"2016 – 2020","title":"SAP FICO Consultant","company":"Hirdaramani"},{"period":"2013 – 2015","title":"Accounts Executive","company":"Hemas"}],
   },
   {
     id: "p7",

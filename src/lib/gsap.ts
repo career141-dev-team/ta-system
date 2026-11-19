@@ -32,7 +32,7 @@ gsap.registerPlugin(useGSAP);
 /** Seconds. tap = a press or a highlight appearing; fast = exits and small
  *  things; base = most entrances and glides; slow = a big surface arriving. */
 export const DUR = { tap: 0.12, fast: 0.18, base: 0.28, slow: 0.45 } as const;
-export const EASE = { out: "power3.out", in: "power2.in", inOut: "power3.inOut", pop: "back.out(1.6)" } as const;
+export const EASE = { out: "power3.out", in: "power2.in", inOut: "power3.inOut", pop: "back.out(1.6)", bounce: "back.out(2.4)" } as const;
 
 /** The guidelines' named motions (DESIGN.md, "Shape, depth & motion"):
  *  draw-in - lines and charts draw left to right, 400 ms ease-out;
@@ -44,6 +44,19 @@ export const MOTION = { drawIn: 0.4, boardSlide: 0.32, settleStagger: 0.04 } as 
 
 /** Pin & settle, ready for gsap.from(cards, PIN_IN). */
 export const PIN_IN = { y: 6, rotation: 2, opacity: 0, duration: DUR.base, stagger: MOTION.settleStagger, ease: EASE.out } as const;
+
+/** A CV / profile panel opening beside a list (owner, 19 Nov 2026: "a nice animation when the
+ *  CV window appears"): it springs in from the right, a touch tilted and blurred, settling
+ *  with an overshoot, then its header, note, CV and buttons rise in one after another.
+ *  fromTo, not from: development runs effects twice. */
+export function popPanel(el: HTMLElement) {
+  gsap.fromTo(
+    el,
+    { opacity: 0, x: 120, scale: 0.84, rotate: 1.5, filter: "blur(6px)", transformOrigin: "100% 40%" },
+    { opacity: 1, x: 0, scale: 1, rotate: 0, filter: "blur(0px)", duration: DUR.base * 1.8, ease: EASE.bounce, clearProps: "transform,opacity,filter,transformOrigin" },
+  );
+  gsap.fromTo(el.children, { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: DUR.base, ease: EASE.out, stagger: 0.07, delay: 0.18, clearProps: "transform,opacity" });
+}
 
 /** THE switch: whenever what is shown in a place changes - a view, a tab, Midday
  *  to End of day, a list to a reading view, one CV to the next - the new content

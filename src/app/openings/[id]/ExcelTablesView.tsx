@@ -39,6 +39,7 @@ type Row = {
   company: string;
   url: string;
   phone?: string;
+  email?: string;
   via?: Via;
   interest: Interest;
   why?: string;
@@ -592,16 +593,7 @@ export default function ExcelTablesView() {
           if (rows.some((x) => mine(x) && keyOf(x.url) === keyOf(link)))
             return addFromPaste(link); // already there: says so
           try {
-            const res = await fetch("/api/linkedin-profile", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ url: link }),
-            });
-            const data = await res.json().catch(() => {
-              throw new Error("Extract needs the server: a local copy with APIFY_TOKEN set, or the dev link once the key is in Cloudflare.");
-            });
-            if (!res.ok) throw new Error(data.error ?? "Extract failed");
-            return addFromPaste(link, data as Profile);
+            return addFromPaste(link, await fetchProfile(link));
           } catch (e) {
             say(e instanceof Error ? e.message : "Extract failed", undefined, true);
             return false;
@@ -1283,7 +1275,7 @@ function TableRow({
               />
             </>
           ) : null}
-          {x.profile && <DetailsButton p={x.profile} url={x.url} />}
+          {x.profile && <DetailsButton x={x} p={x.profile} edit={edit} />}
           {can && <NoteButton x={x} up={up} edit={edit} say={say} />}
           {mine && (
             <div className={"flex shrink-0 items-center gap-1.5 transition-opacity" + quiet}>
@@ -1322,23 +1314,50 @@ function TableRow({
 /** "See details": everything the extract read, as a profile card in a dialog (Esc or the
  *  backdrop closes). Header with the person and their LinkedIn link, then About, Skills,
  *  Experience as a timeline and Education, each in its own soft panel. */
-function DetailsButton({ p, url }: { p: Profile; url: string }) {
+/** Reads one LinkedIn profile through the extract route; throws a sentence a TA can read. */
+async function fetchProfile(link: string): Promise<Profile> {
+  const res = await fetch("/api/linkedin-profile", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: link }),
+  });
+  const data = await res.json().catch(() => {
+    throw new Error("Extract needs the server: a local copy with APIFY_TOKEN set, or the dev link once the key is in Cloudflare.");
+  });
+  if (!res.ok) throw new Error(data.error ?? "Extract failed");
+  return data as Profile;
+}
+
+/** A long About cut at a sentence end near 500 characters: the gist, not the essay. */
+function brief(t: string, max = 500) {
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
+  const stop = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf(".\n"));
+  return (stop > max / 2 ? cut.slice(0, stop + 1) : cut.replace(/\s+\S*$/, "") + "…").trim();
+}
+
+function DetailsButton({ x, p, edit }: { x: Row; p: Profile; edit: (patch: Partial<Row>) => void }) {
   const [open, setOpen] = useState(false);
+  const [from, setFrom] = useState<{ x: number; y: number }>();
   return (
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={(e) => {
+          const b = e.currentTarget.getBoundingClientRect();
+          setFrom({ x: b.left + b.width / 2, y: b.top + b.height / 2 });
+          setOpen(true);
+        }}
         className={ROW_BTN + " border border-border font-normal text-ink-2 hover:bg-surface-2 hover:text-ink"}
       >
         See details
       </button>
-      {open && <DetailsDialog p={p} url={url} onClose={() => setOpen(false)} />}
+      {open && <DetailsDialog x={x} p={p} edit={edit} from={from} onClose={() => setOpen(false)} />}
     </>
   );
 }
 
-function DetailsDialog({ p, url, onClose }: { p: Profile; url: string; onClose: () => void }) {
+function DetailsDialog({ x, p, edit, from, onClose }: { x: Row; p: Profile; edit: (patch: Partial<Row>) => void; from?: { x: number; y: number }; onClose: () => void }) {
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -1351,12 +1370,86 @@ function DetailsDialog({ p, url, onClose }: { p: Profile; url: string; onClose: 
     const el = root.current;
     if (!el) return;
     gsap.fromTo(el.querySelector("[data-veil]"), { opacity: 0 }, { opacity: 1, duration: DUR.fast });
-    gsap.fromTo(el.querySelector("[data-box]"), { opacity: 0, y: 14, scale: 0.96 }, { opacity: 1, y: 0, scale: 1, duration: DUR.base, ease: EASE.pop, clearProps: "transform,opacity" });
+    // Cute: the window grows out of the See details button with a little overshoot, then
+    // its tiles and panels pop in one after another.
+    const box = el.querySelector<HTMLElement>("[data-box]")!;
+    const r = box.getBoundingClientRect();
+    const origin = from ? `${from.x - r.left}px ${from.y - r.top}px` : "50% 50%";
+    gsap.fromTo(box, { opacity: 0, scale: 0.55, transformOrigin: origin }, { opacity: 1, scale: 1, duration: DUR.base * 1.4, ease: EASE.bounce, clearProps: "transform,opacity,transformOrigin" });
+    gsap.fromTo(box.querySelectorAll("[data-pop]"), { opacity: 0, y: 14, scale: 0.94 }, { opacity: 1, y: 0, scale: 1, duration: DUR.base, ease: EASE.pop, stagger: 0.045, delay: 0.14, clearProps: "transform,opacity" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const role = [p.title, p.company].filter(Boolean).join(" at ") || p.headline;
-  const initials = p.name.split(" ").map((w) => w[0]).join("").slice(0, 2);
-  const panel = "rounded-md bg-surface-2 p-4";
-  const h = "text-caption font-medium uppercase text-ink-3";
+  const [prof, setProf] = useState(p);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [email, setEmail] = useState(x.email ?? "");
+  const [phone, setPhone] = useState(x.phone ?? "");
+  const role = [prof.title, prof.company].filter(Boolean).join(" at ") || prof.headline;
+  const initials = prof.name.split(" ").map((w) => w[0]).join("").slice(0, 2);
+  // Sizes from the Figma frame (1920 wide; 1rem = 16px there), each with a px floor.
+  const t22 = "text-[max(1.375rem,16px)]";
+  const t18 = "text-[max(1.125rem,14px)]";
+  const t14 = "text-[max(0.875rem,12px)]";
+  const t13 = "text-[max(0.8125rem,11px)]";
+  const t12 = "text-[max(0.75rem,11px)]";
+  const label = "text-[max(0.6875rem,10px)] font-medium tracking-[0.06em] text-ink-3";
+  const tileBox = "flex min-w-0 flex-col gap-[3px] rounded-md bg-canvas px-4 py-3";
+  const box = "flex flex-col gap-2 rounded-[1.25rem] bg-canvas px-[1.125rem] py-4 min-h-0 overflow-y-auto max-lg:max-h-80";
+  const edu = prof.education[0];
+  const lang = prof.languages?.join(" · ");
+  const btn = "flex h-[2.7rem] shrink-0 items-center justify-center gap-2 rounded-full border border-border-strong bg-surface px-5 font-medium text-ink hover:bg-surface-2 disabled:opacity-40 " + t14;
+  // The 16 things the extract can fill; the banner counts the ones it found.
+  const fields = [prof.name, prof.headline, prof.about, prof.title, prof.company, prof.place, prof.total, lang, edu?.degree, prof.skills.length, prof.experience.length, prof.education.length, x.url, x.email, x.phone, prof.experience[0]?.period];
+  const filled = fields.filter(Boolean).length;
+  const missing = [!x.email && "Email", !x.phone && "Phone"].filter(Boolean).join(" and ");
+  const slug = x.url.replace(/^https?:\/\/(www\.)?/, "").split("?")[0].replace(/\/$/, "");
+  const reread = async () => {
+    setBusy(true);
+    setErr("");
+    try {
+      const fresh = await fetchProfile(x.url);
+      setProf(fresh);
+      edit({ profile: fresh });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Extract failed");
+    }
+    setBusy(false);
+  };
+  const save = () => {
+    edit({ email: email.trim() || undefined, phone: phone.trim() || undefined, ...(phone.trim() && !x.phone ? { via: "other" as Via } : {}) });
+    onClose();
+  };
+  const field = (name: string, val: string, set: (v: string) => void, saved?: string) => (
+    <div data-pop className={tileBox}>
+      <p className={label}>{name.toUpperCase()}</p>
+      {editing ? (
+        <input
+          value={val}
+          onChange={(e) => set(e.target.value)}
+          aria-label={name}
+          maxLength={120}
+          className={"w-full rounded-xs border border-brand bg-surface px-2 py-0.5 text-ink outline-none focus:ring-2 focus:ring-brand/20 " + t14}
+        />
+      ) : saved ? (
+        <p className={"truncate font-medium text-ink " + t14}>{saved}</p>
+      ) : (
+        <p className="flex items-center gap-2">
+          <span className={"text-ink-3 " + t14}>Not on profile</span>
+          <button type="button" onClick={() => setEditing(true)} className={"font-medium text-brand hover:text-brand-strong " + t13}>
+            Add
+          </button>
+        </p>
+      )}
+    </div>
+  );
+  const tile = (name: string, v?: string) => (
+    <div data-pop className={tileBox}>
+      <p className={label}>{name.toUpperCase()}</p>
+      <p className={"truncate font-medium " + t14 + (v ? " text-ink" : " text-ink-3")}>{v || "Not on profile"}</p>
+    </div>
+  );
+  const count = (n: string | number) => <span className="text-brand tracking-normal">{n}</span>;
   return createPortal(
     <div ref={root} className="fixed inset-0 z-[80] flex items-center justify-center p-4">
       <div data-veil className="absolute inset-0 bg-surface/20 backdrop-blur-[6px]" onClick={onClose} />
@@ -1364,87 +1457,164 @@ function DetailsDialog({ p, url, onClose }: { p: Profile; url: string; onClose: 
         data-box
         role="dialog"
         aria-modal="true"
-        aria-label={`${p.name} from LinkedIn`}
-        className="relative flex max-h-[min(52rem,calc(100dvh-32px))] w-[min(76rem,100%)] flex-col overflow-hidden rounded-lg bg-surface shadow-float"
+        aria-label={`${prof.name} from LinkedIn`}
+        className="relative flex h-[min(58rem,calc(100dvh-32px))] w-[min(95rem,100%)] flex-col overflow-hidden rounded-[1.75rem] border border-border bg-surface shadow-float"
       >
-        {/* One slim row: who they are, their LinkedIn, close. */}
-        <div className="flex items-center gap-3 border-b border-border px-[max(1.25rem,14px)] py-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-info-soft text-small font-medium text-info">{initials}</span>
-          <div className="min-w-0 flex-1">
-            <h2 className="truncate text-body font-medium text-ink">{p.name}</h2>
-            <p className="truncate text-small text-ink-2">{[role, p.place].filter(Boolean).join(" · ")}</p>
+        <div className="flex shrink-0 items-center gap-4 border-b border-border px-7 py-6">
+          <span className={"flex size-14 shrink-0 items-center justify-center rounded-full bg-sticky-sky font-medium text-brand " + t18}>{initials}</span>
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <h2 className={"truncate font-medium text-ink " + t22}>{prof.name}</h2>
+            <p className={"truncate text-ink-2 " + t14}>{role}</p>
+            {prof.place && (
+              <p className={"flex items-center gap-1.5 text-ink-2 " + t13}>
+                <svg viewBox="0 0 13 13" className="size-[13px] shrink-0" fill="none" stroke="currentColor" strokeWidth="1.08333" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M10.8333 5.41667C10.8333 8.66667 6.5 11.9167 6.5 11.9167C6.5 11.9167 2.16667 8.66667 2.16667 5.41667C2.16667 4.26739 2.62321 3.16519 3.43587 2.35254C4.24853 1.53988 5.35073 1.08333 6.5 1.08333C7.64927 1.08333 8.75147 1.53988 9.56413 2.35254C10.3768 3.16519 10.8333 4.26739 10.8333 5.41667Z" className="text-ink-3" />
+                  <path d="M8.125 5.41667C8.125 6.31413 7.39746 7.04167 6.5 7.04167C5.60254 7.04167 4.875 6.31413 4.875 5.41667C4.875 4.5192 5.60254 3.79167 6.5 3.79167C7.39746 3.79167 8.125 4.5192 8.125 5.41667Z" className="text-ink-3" />
+                </svg>
+                <span className="truncate">{prof.place}</span>
+              </p>
+            )}
           </div>
-          <a href={url} target="_blank" rel="noreferrer" className="flex shrink-0 items-center gap-1.5 rounded-full border border-border px-3 py-1 text-small font-medium text-ink hover:bg-surface-2 max-md:hidden">
-            <LinkedInIcon className="size-4" />
+          <div className="min-w-4 flex-1" />
+          <span className={"flex shrink-0 items-center gap-2 rounded-full bg-violet/8 py-[7px] pl-3 pr-3.5 font-medium text-violet max-md:hidden " + t13}>
+            <svg viewBox="0 0 13 13" className="size-[13px]" fill="currentColor" aria-hidden="true">
+              <path d="M6.5 1.08333L7.8 5.2L11.9167 6.5L7.8 7.8L6.5 11.9167L5.2 7.8L1.08333 6.5L5.2 5.2L6.5 1.08333Z" />
+            </svg>
+            Extracted by AURA · just now
+          </span>
+          <a href={x.url} target="_blank" rel="noreferrer" className={btn + " pl-3.5 pr-[1.125rem] max-md:hidden"}>
+            <LinkedInIcon className="size-[18px]" />
             LinkedIn
           </a>
-          <button type="button" autoFocus onClick={onClose} aria-label="Close" className="flex size-8 shrink-0 items-center justify-center rounded-full text-ink-3 hover:bg-surface-2 hover:text-ink">
-            <CloseIcon />
+          <button type="button" autoFocus onClick={onClose} aria-label="Close" className="flex size-[37px] shrink-0 items-center justify-center rounded-full border border-border-strong bg-surface text-ink-2 hover:bg-surface-2 hover:text-ink">
+            <svg viewBox="0 0 16 16" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.33333" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 4L4 12M4 4L12 12" />
+            </svg>
           </button>
         </div>
-        {/* Two columns: about and skills on the left, the career on the right. */}
-        <div className="grid min-h-0 flex-1 grid-cols-2 gap-4 overflow-y-auto p-[max(1.25rem,14px)] text-small text-ink max-md:grid-cols-1">
-          <div className="flex flex-col gap-4">
-            {p.headline && (
-              <section className={panel}>
-                <h3 className={h}>Headline</h3>
-                <p className="mt-1 text-ink-2">{p.headline}</p>
-              </section>
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden px-7 pb-6 pt-5 text-ink max-lg:overflow-y-auto">
+          <div data-pop className="flex shrink-0 flex-wrap items-center gap-x-2.5 gap-y-1 rounded-md bg-brand-tint px-4 py-3">
+            <span className="flex size-5 shrink-0 items-center justify-center rounded-[10px] bg-brand">
+              <svg viewBox="0 0 11 11" className="size-[11px]" fill="none" stroke="white" strokeWidth="1.375" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M9.16667 2.75L4.125 7.79167L1.83333 5.5" />
+              </svg>
+            </span>
+            <span className={"font-medium text-ink " + t14}>AURA read the LinkedIn profile and filled {filled} of {fields.length} fields.</span>
+            {missing && (
+              <span className={"text-ink-2 " + t13}>
+                {missing} {missing.includes("and") ? "are" : "is"} not on the profile. Add {missing.includes("and") ? "them" : "it"} if you know {missing.includes("and") ? "them" : "it"}.
+              </span>
             )}
-            {p.about && (
-              <section className={panel}>
-                <h3 className={h}>About</h3>
-                <p className="mt-1 whitespace-pre-line text-ink-2">{p.about}</p>
-              </section>
-            )}
-            {p.skills.length > 0 && (
-              <section className={panel}>
-                <h3 className={h}>Skills</h3>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {p.skills.slice(0, 8).map((k) => (
-                    <span key={k} className="rounded-full bg-surface px-2.5 py-0.5 text-caption text-ink-2">
-                      {k}
-                    </span>
-                  ))}
-                  {p.skills.length > 8 && <span className="px-1 py-0.5 text-caption text-ink-3">+{p.skills.length - 8} more</span>}
+          </div>
+          <div className="flex shrink-0 flex-col gap-3">
+            <div className="grid grid-cols-4 gap-3 max-lg:grid-cols-2 max-sm:grid-cols-1">
+              {tile("Current position", prof.title)}
+              {tile("Current company", prof.company)}
+              {tile("Location", prof.place)}
+              {tile("Total experience", prof.total)}
+            </div>
+            <div className="grid grid-cols-4 gap-3 max-lg:grid-cols-2 max-sm:grid-cols-1">
+              {field("Email", email, setEmail, x.email)}
+              {field("Phone", phone, setPhone, x.phone)}
+              {tile("Education", edu && (edu.degree || edu.school))}
+              {tile("Languages", lang)}
+            </div>
+          </div>
+          <div className="grid min-h-0 flex-1 grid-cols-[640fr_464fr_360fr] grid-rows-[minmax(0,1fr)] gap-4 max-lg:flex-none max-lg:grid-cols-1 max-lg:grid-rows-none">
+            <section data-pop className={box}>
+              {prof.headline && (
+                <>
+                  <p className={label}>HEADLINE</p>
+                  <p className={"font-medium leading-[1.375rem] text-ink " + t14}>{prof.headline}</p>
+                </>
+              )}
+              {prof.about && (
+                <>
+                  <div className="h-1.5 shrink-0" />
+                  <p className={label}>ABOUT</p>
+                  <p className={"whitespace-pre-line leading-[1.3125rem] text-ink-2 " + t13}>{brief(prof.about)}</p>
+                </>
+              )}
+            </section>
+            <section data-pop className={box + " gap-3.5"}>
+              <p className={"flex items-center gap-2 " + label}>
+                EXPERIENCE {count(prof.experience.length + " roles")}
+              </p>
+              {prof.experience.map((e, i, all) => (
+                <div key={i} className="flex shrink-0 gap-3">
+                  <div className="flex w-2.5 shrink-0 flex-col items-center gap-1.5 pt-1.5">
+                    <span aria-hidden="true" className={"size-2 shrink-0 rounded-[4px] " + (e.current ? "bg-brand" : "bg-border-strong")} />
+                    {i < all.length - 1 && <span aria-hidden="true" className="min-h-1 w-[1.5px] flex-1 bg-border-strong" />}
+                  </div>
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5 pb-1">
+                    <p className={"flex flex-wrap items-center gap-2 font-medium text-ink " + t14}>
+                      {e.title || "Role not shown"}
+                      {e.current && <span className={"rounded-[10px] bg-brand/10 px-2 py-0.5 font-medium text-brand " + "text-[max(0.6875rem,10px)]"}>Current</span>}
+                    </p>
+                    <p className={"text-ink-2 " + t13}>{[e.company, e.kind].filter(Boolean).join(" · ")}</p>
+                    <p className={"text-ink-2 " + t13}>{[e.period, e.length].filter(Boolean).join(" · ")}</p>
+                  </div>
                 </div>
-              </section>
-            )}
-          </div>
-          <div className="flex flex-col gap-4">
-            {p.experience.length > 0 && (
-              <section className={panel}>
-                <h3 className={h}>Experience</h3>
-                <ul className="mt-2 flex flex-col">
-                  {p.experience.map((e, i) => (
-                    <li key={i} className="relative flex gap-3 pb-2.5 last:pb-0">
-                      <span aria-hidden="true" className="relative mt-1.5 flex flex-col items-center">
-                        <span className="size-2 rounded-full bg-brand" />
-                        {i < p.experience.length - 1 && <span className="absolute top-3 h-[calc(100%+0.25rem)] w-px bg-border-strong" />}
+              ))}
+            </section>
+            <div className="flex min-h-0 flex-col gap-4">
+              {prof.skills.length > 0 && (
+                <section data-pop className={box + " shrink"}>
+                  <p className={"flex items-center gap-2 " + label}>SKILLS {count(prof.skills.length)}</p>
+                  <div className="flex flex-wrap content-start gap-2">
+                    {prof.skills.map((k) => (
+                      <span key={k} className={"rounded-[14px] border border-border bg-surface px-[11px] py-1 text-ink " + t12}>
+                        {k}
                       </span>
-                      <div className="min-w-0">
-                        <p className="font-medium">{e.title || "Role not shown"}</p>
-                        <p className="text-ink-2">{[e.company, e.period].filter(Boolean).join(" · ")}</p>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
-            {p.education.length > 0 && (
-              <section className={panel}>
-                <h3 className={h}>Education</h3>
-                <ul className="mt-1.5 flex flex-col gap-1">
-                  {p.education.map((e, i) => (
-                    <li key={i}>
-                      <span className="font-medium">{e.school}</span>
-                      {e.degree && <span className="text-ink-2"> · {e.degree}</span>}
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
+                    ))}
+                  </div>
+                </section>
+              )}
+              {edu && (
+                <section data-pop className={box + " shrink-0 gap-[3px] overflow-visible"}>
+                  <p className={label}>EDUCATION</p>
+                  <p className={"font-medium text-ink " + t14}>{edu.degree || edu.school}</p>
+                  {edu.degree && <p className={"text-ink-2 " + t13}>{edu.school}</p>}
+                  {edu.years && <p className={"text-ink-2 " + t13}>{edu.years}</p>}
+                </section>
+              )}
+            </div>
           </div>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2.5 border-t border-border px-7 py-4">
+          <p className={"flex min-w-0 flex-1 items-center gap-2 " + t13 + (err ? " text-danger" : " text-ink-2")}>
+            {err || (
+              <>
+                <svg viewBox="0 0 14 14" className="size-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.16667" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M5.83333 7.58333C6.08385 7.91824 6.40346 8.19536 6.77049 8.39588C7.13752 8.59641 7.54338 8.71565 7.96055 8.74553C8.37771 8.7754 8.79643 8.71521 9.18828 8.56904C9.58014 8.42286 9.93598 8.19412 10.2317 7.89833L11.9817 6.14833C12.513 5.59824 12.8069 4.86149 12.8003 4.09675C12.7937 3.33201 12.4869 2.60047 11.9461 2.0597C11.4054 1.51892 10.6738 1.21218 9.90909 1.20553C9.14435 1.19889 8.40759 1.49287 7.8575 2.02417L6.85417 3.02167" className="text-ink-3" />
+                  <path d="M8.16667 6.41667C7.91615 6.08176 7.59654 5.80464 7.22951 5.60412C6.86248 5.40359 6.45662 5.28435 6.03945 5.25447C5.62229 5.2246 5.20357 5.28479 4.81171 5.43096C4.41986 5.57714 4.06402 5.80588 3.76833 6.10167L2.01833 7.85167C1.48704 8.40176 1.19306 9.13851 1.1997 9.90325C1.20635 10.668 1.51309 11.3995 2.05386 11.9403C2.59464 12.4811 3.32617 12.7878 4.09091 12.7945C4.85565 12.8011 5.59241 12.5071 6.1425 11.9758L7.14 10.9783" className="text-ink-3" />
+                </svg>
+                <span className="truncate">Source: {slug} · saved to the L{x.sheet} sheet</span>
+              </>
+            )}
+          </p>
+          <button type="button" disabled={busy} onClick={reread} className={btn + " pl-[1.125rem] pr-5"}>
+            <svg viewBox="0 0 16 16" className="size-4 text-ink-2" fill="none" stroke="currentColor" strokeWidth="1.33333" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M2 8C2 6.4087 2.63214 4.88258 3.75736 3.75736C4.88258 2.63214 6.4087 2 8 2C9.67737 2.00631 11.2874 2.66082 12.4933 3.82667L14 5.33333" />
+              <path d="M14 2V5.33333H10.6667" />
+              <path d="M14 8C14 9.5913 13.3679 11.1174 12.2426 12.2426C11.1174 13.3679 9.5913 14 8 14C6.32263 13.9937 4.71265 13.3392 3.50667 12.1733L2 10.6667" />
+              <path d="M5.33333 10.6667H2V14" />
+            </svg>
+            {busy ? "Reading…" : "Extract again"}
+          </button>
+          <button type="button" aria-pressed={editing} onClick={() => setEditing((v) => !v)} className={btn + " pl-[1.125rem] pr-5 aria-pressed:bg-surface-2"}>
+            <svg viewBox="0 0 16 16" className="size-4 text-ink-2" fill="none" stroke="currentColor" strokeWidth="1.33333" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M11.3333 2C11.5031 1.79936 11.7131 1.63604 11.95 1.52045C12.1869 1.40487 12.4454 1.33956 12.7091 1.32868C12.9728 1.3178 13.2359 1.36159 13.4816 1.45726C13.7273 1.55293 13.9502 1.69838 14.1362 1.88435C14.3222 2.07031 14.4671 2.29271 14.5617 2.53736C14.6563 2.78201 14.6986 3.04356 14.6857 3.30532C14.6729 3.56708 14.6053 3.82332 14.4873 4.05771C14.3692 4.2921 14.2033 4.49949 14 4.66667L5 13.6667L1.33333 14.6667L2.33333 11L11.3333 2Z" />
+              <path d="M10 3.33333L12.6667 6" />
+            </svg>
+            Edit details
+          </button>
+          <button type="button" onClick={save} className={"flex h-[2.7rem] shrink-0 items-center justify-center gap-2 rounded-full bg-brand pl-[1.125rem] pr-5 font-medium text-white hover:bg-brand-strong " + t14}>
+            <svg viewBox="0 0 16 16" className="size-4" fill="none" stroke="white" strokeWidth="1.33333" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M13.3333 4L6 11.3333L2.66667 8" />
+            </svg>
+            Save details
+          </button>
         </div>
       </div>
     </div>,

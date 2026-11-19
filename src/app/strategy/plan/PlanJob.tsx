@@ -10,6 +10,7 @@ import Toast from "../../openings/[id]/Toast";
 import { BackButton } from "../../openings/[id]/PipelineBoard";
 import { TAS, groupsOf, namesOf, useCatalogue, TODAY, WEEK, WORKED, auraPlan, busy, drafts, job, liveRows, setRows, ta, useRows, whenLabel, type Job, type Row, type TaId } from "../data";
 import { AssignPanel, CalendarIcon, Initials, Toggle, type Assign } from "../ui";
+import AuraBarGlow from "../../AuraBarGlow";
 import { readPlan } from "./talk";
 
 // S3, planning one job (owner's design, 14 Nov 2026): what worked on roles like it,
@@ -371,7 +372,8 @@ function PlanChat({ onSend }: { onSend: (text: string) => string }) {
     setText("");
   };
   return (
-    <div className="flex shrink-0 flex-col gap-2 px-[max(1.25rem,12px)] pb-[max(1.25rem,12px)] pt-[max(0.5rem,4px)]">
+    <div className="relative isolate flex shrink-0 flex-col gap-2 px-[max(1.25rem,12px)] pb-[max(1.25rem,12px)] pt-[max(0.5rem,4px)]">
+      <AuraBarGlow />
       {reply && (
         <p ref={line} role="status" title={reply.said} className="flex items-start gap-2 px-1 text-small text-ink-2">
           <Image src="/aura-mark.png" alt="" width={24} height={24} className="mt-0.5 size-[max(1.25rem,16px)] shrink-0 rounded-full" />

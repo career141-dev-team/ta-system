@@ -2,11 +2,12 @@
 
 import { door, jobFromAddress, useDoorMutation, useDoorQuery, useLive, type Answer, type DoorDone } from "@/lib/backend";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import dynamic from "next/dynamic";
+import Image from "next/image";
 import Link from "next/link";
 import { useWorkdayGate } from "@/lib/workday";
-import { DUR, EASE, gsap, useSwap } from "@/lib/gsap";
-import { CLAIMED, POOL, reasonOf, type Person } from "../../database/aura";
+import { DUR, EASE, gsap, popPanel, useSwap } from "@/lib/gsap";
+import { CLAIMED, POOL, fitOf, reasonOf, type Person } from "../../database/aura";
+import AuraBarGlow from "@/app/AuraBarGlow";
 import Count from "@/app/Count";
 import { BackButton } from "./PipelineBoard";
 import CvPages, { warmPdf } from "./CvPages";
@@ -24,8 +25,6 @@ import { useJdApproved, getJd } from "./jdState";
 // Merged 14 Nov with shane123-tech's feat/database-cvs-screen: his Figma score ring
 // (713:1660), the big count, the CV read ahead on hover, "Open this CV big" and the
 // workday line came from there.
-
-const CvPreview = dynamic(() => import("./CvPreview"), { ssr: false });
 
 /** The Filters panel (owner's Figma "Filter popup", 17 Nov 2026): fit, location,
  *  notice and experience, plus the list filters under "More filters". A list filter
@@ -109,13 +108,12 @@ export default function DatabaseCvsView() {
   const fBtn = useRef<HTMLButtonElement>(null);
   const [pickedId, setPickedId] = useState(rows[0]?.id ?? "");
   const [matching, setMatching] = useState(false);
-  const [big, setBig] = useState(false);
-  // The big CV grows out of the CV pane it was opened from (CvPreview `from`).
-  const [bigFrom, setBigFrom] = useState<HTMLElement | null>(null);
-  const openBig = () => {
-    setBigFrom(cv.current?.closest("section") ?? null);
-    setBig(true);
-  };
+  // The CV and details panel that slides in from the right when a row is clicked.
+  const [panel, setPanel] = useState(false);
+  const panelEl = useRef<HTMLElement>(null);
+  // The AURA bar: what is typed, and the words the list is narrowed by.
+  const [ask, setAsk] = useState("");
+  const [asked, setAsked] = useState("");
   const [ranAgo, setRanAgo] = useState("4 min ago");
   const [toast, setToast] = useState<{ bold?: string; rest: string; warn?: boolean; n: number } | null>(null);
   // ponytail: sample set number; the backend gives the real next set.
@@ -132,7 +130,14 @@ export default function DatabaseCvsView() {
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
 
-  const shown = rows.filter(keep(f));
+  // shortcut: the words are looked for in the record's text, not understood; with the backend AURA reads them.
+  const words = asked.toLowerCase().split(/\s+/).filter(Boolean);
+  const shown = rows
+    .filter(keep(f))
+    .filter((p) => {
+      const all = [p.name, p.title, p.company, p.city, ...p.tags, ...(p.career ?? []).flatMap((x) => [x.title, x.company])].join(" ").toLowerCase();
+      return words.every((w) => all.includes(w));
+    });
   const picked = shown.find((p) => p.id === pickedId) ?? shown[0];
   const open = rows.filter((p) => !CLAIMED[p.id]).length;
   useSwap(cv, picked?.id ?? "");
@@ -185,22 +190,43 @@ export default function DatabaseCvsView() {
     }, 2500);
   };
 
-  // Up and down move along the list while this view is on screen.
+  // While this view is on screen: up and down move along the list, S shortlists, X takes
+  // them off, Space opens the CV and Esc closes it (the hints under the list).
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (!root.current?.offsetParent || e.defaultPrevented) return;
-      if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-      if ((e.target as HTMLElement).closest("input, textarea, select, [role=menu], [role=dialog]")) return;
-      const i = shown.findIndex((p) => p.id === picked?.id);
-      const next = shown[i + (e.key === "ArrowDown" ? 1 : -1)];
-      if (!next) return;
-      e.preventDefault();
-      setPickedId(next.id);
-      root.current.querySelector(`[data-row="${next.id}"]`)?.scrollIntoView({ block: "nearest" });
+      if (!root.current?.offsetParent || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement;
+      if (t.closest("input, textarea, select, [role=menu]") || (t.closest("[role=dialog]") && !t.closest("aside"))) return;
+      const k = e.key.toLowerCase();
+      if (k === "escape" && panel) {
+        e.preventDefault();
+        setPanel(false);
+      } else if (k === "arrowdown" || k === "arrowup") {
+        const i = shown.findIndex((p) => p.id === picked?.id);
+        const next = shown[i + (k === "arrowdown" ? 1 : -1)];
+        if (!next) return;
+        e.preventDefault();
+        setPickedId(next.id);
+        root.current.querySelector(`[data-row="${next.id}"]`)?.scrollIntoView({ block: "nearest" });
+      } else if (picked && k === "s") shortlist(picked);
+      else if (picked && k === "x") notFor(picked);
+      else if (picked && k === " " && !t.closest("button, a")) {
+        e.preventDefault();
+        setPanel((v) => !v);
+      }
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [shown, picked]);
+    // shortlist and notFor are rebuilt every render and read the same state as these two.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shown, picked, panel, sure, rows, gate]);
+
+  // The panel slides in from the right with a little overshoot, then its parts settle in.
+  useLayoutEffect(() => {
+    const el = panelEl.current;
+    if (!panel || !el) return;
+    popPanel(el);
+  }, [panel]);
 
   // Each chip clears with a functional update, so "Clear the filters" can run them all.
   const years =
@@ -210,6 +236,7 @@ export default function DatabaseCvsView() {
         ? `${f.minYears}+ years`
         : `Up to ${f.maxYears} years`;
   const chips = [
+    asked && { label: `AURA: ${asked}`, clear: () => setAsked("") },
     f.fit === "strong" && { label: "Fit: strong", clear: () => setF((x) => ({ ...x, fit: "any" })) },
     f.notice !== null && {
       label: f.notice === 0 ? "Notice: immediate" : `Notice ≤ ${f.notice} month${f.notice > 1 ? "s" : ""}`,
@@ -225,6 +252,21 @@ export default function DatabaseCvsView() {
     ),
   ].filter(Boolean) as { label: string; clear: () => void }[];
 
+  const idx = picked ? shown.indexOf(picked) : -1;
+  const step = (d: number) => {
+    const n = shown[idx + d];
+    if (n) setPickedId(n.id);
+  };
+  const tick = (ok: boolean) => (
+    <span aria-hidden="true" className={"flex size-[1.05rem] shrink-0 items-center justify-center rounded-full " + (ok ? "bg-success-soft text-success" : "bg-warn-soft text-warn")}>
+      <svg viewBox="0 0 12 12" className="size-2.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <path d={ok ? "m2.5 6.2 2.3 2.3 4.7-4.9" : "M3 6h6"} />
+      </svg>
+    </span>
+  );
+  const pill = "flex h-[2.23rem] shrink-0 items-center justify-center rounded-full px-[1.14rem] text-[max(0.777rem,10.5px)] font-medium";
+  const keyHint = "rounded-xs bg-white/15 px-1.5 py-0.5 text-caption font-medium text-white";
+
   return (
     <div ref={root} className="flex min-h-0 flex-1 flex-col px-[max(1.5rem,14px)] pb-[max(1.25rem,12px)] pt-[max(1.4rem,14px)] max-md:pt-11">
       <div className="flex flex-wrap items-center gap-x-[max(1.25rem,12px)] gap-y-2">
@@ -238,56 +280,64 @@ export default function DatabaseCvsView() {
           onClick={rerun}
           disabled={matching}
           title="Run matching again - it reads the approved JD"
-          className="flex items-center gap-2 rounded-full bg-surface-2 px-3 py-1 text-small text-ink-2 hover:bg-surface-3 hover:text-ink disabled:cursor-default md:ml-auto"
+          className="flex items-center gap-2 rounded-full bg-surface-2 px-3 py-1 text-small text-ink-2 hover:bg-surface-3 hover:text-ink disabled:cursor-default"
         >
           <span className={"size-2 rounded-full " + (matching ? "animate-pulse bg-warn" : "bg-success")} />
           {matching ? "Matching…" : `Matching finished ${ranAgo}`}
         </button>
+        <div className="flex items-center gap-2 md:ml-auto">
+          <button
+            ref={fBtn}
+            type="button"
+            onClick={() => setFOpen((v) => !v)}
+            aria-expanded={fOpen}
+            className="flex items-center gap-2 rounded-full border border-border bg-surface px-4 py-2 text-small font-medium text-ink hover:border-border-strong aria-expanded:border-border-strong aria-expanded:bg-surface-2"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="size-3.5" aria-hidden="true">
+              <path d="M4 6h16M7 12h10M10 18h4" />
+            </svg>
+            Filters
+          </button>
+          <Link
+            href={`/database?for=${encodeURIComponent(getJd().title)}`}
+            className="flex items-center gap-2 rounded-full border border-border bg-surface px-4 py-2 text-small font-medium text-ink hover:border-border-strong"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="size-3.5" aria-hidden="true">
+              <ellipse cx="12" cy="5.5" rx="8" ry="3" />
+              <path d="M4 5.5v13c0 1.7 3.6 3 8 3s8-1.3 8-3v-13M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3" />
+            </svg>
+            Search the whole database
+          </Link>
+        </div>
       </div>
 
       {gate && <WorkdayBlocked what="shortlist candidates" className="mt-3" />}
 
-      <div className="mt-[max(1rem,10px)] flex flex-wrap items-center gap-2">
-        <button
-          ref={fBtn}
-          type="button"
-          onClick={() => setFOpen((v) => !v)}
-          aria-expanded={fOpen}
-          className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-small text-ink-2 hover:border-border-strong hover:text-ink aria-expanded:border-border-strong aria-expanded:text-ink"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="size-3.5" aria-hidden="true">
-            <path d="M4 6h16M7 12h10M10 18h4" />
-          </svg>
-          Filters
-        </button>
-        {chips.map((c) => (
-          <span key={c.label} className="flex max-w-[max(16rem,200px)] items-center gap-1 rounded-full bg-surface-2 py-1 pl-3 pr-1.5 text-small text-ink-2">
-            <span className="truncate" title={c.label}>
-              {c.label}
+      {chips.length > 0 && (
+        <div className="mt-[max(0.9rem,10px)] flex flex-wrap items-center gap-2">
+          {chips.map((c) => (
+            <span key={c.label} className="flex max-w-[max(16rem,200px)] items-center gap-1 rounded-full bg-surface-2 py-1 pl-3 pr-1.5 text-small text-ink-2">
+              <span className="truncate" title={c.label}>
+                {c.label}
+              </span>
+              <button
+                type="button"
+                onClick={c.clear}
+                aria-label={`Remove ${c.label}`}
+                title={`Remove ${c.label}`}
+                className="flex size-[1.15rem] shrink-0 items-center justify-center rounded-full opacity-50 hover:bg-surface hover:opacity-100"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" className="size-3" aria-hidden="true">
+                  <path d="M6 6l12 12M18 6 6 18" />
+                </svg>
+              </button>
             </span>
-            <button
-              type="button"
-              onClick={c.clear}
-              aria-label={`Remove ${c.label}`}
-              title={`Remove ${c.label}`}
-              className="flex size-[1.15rem] shrink-0 items-center justify-center rounded-full opacity-50 hover:bg-surface hover:opacity-100"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" className="size-3" aria-hidden="true">
-                <path d="M6 6l12 12M18 6 6 18" />
-              </svg>
-            </button>
-          </span>
-        ))}
-        <Link
-          href={`/database?for=${encodeURIComponent(getJd().title)}`}
-          className="ml-auto text-small font-medium text-brand hover:underline"
-        >
-          Search the whole database →
-        </Link>
-      </div>
+          ))}
+        </div>
+      )}
 
-      <div className="mt-[max(1rem,10px)] flex min-h-0 flex-1 gap-[max(1.25rem,12px)] max-md:flex-col">
-        {/* The filters slide in from the left edge; the list and the CV give way and get smaller. */}
+      <div className="relative mt-[max(1rem,10px)] flex min-h-0 flex-1 gap-[max(1.25rem,12px)] max-md:flex-col">
+        {/* The filters slide in from the left edge; the list gives way. */}
         {fOpen && (
           <FiltersPanel
             applied={f}
@@ -303,7 +353,8 @@ export default function DatabaseCvsView() {
             }}
           />
         )}
-        <ul aria-label="Matches" className="flex w-[46%] min-w-[max(22rem,280px)] shrink flex-col gap-2 overflow-y-auto pr-1 max-md:max-h-[40%] max-md:w-auto max-md:min-w-0">
+        {/* One row per person (owner's Figma 1515:7533): score, who, career, why. */}
+        <ul aria-label="Matches" className="flex min-w-0 flex-1 flex-col overflow-y-auto">
           {shown.length === 0 && (
             <li className="flex flex-col items-start gap-2 rounded-md bg-surface-2 p-4 text-small text-ink-2">
               {rows.length ? "Nobody here with these filters." : "No matches waiting. Run matching again for new ones."}
@@ -316,109 +367,234 @@ export default function DatabaseCvsView() {
           )}
           {shown.map((p) => {
             const on = p.id === picked?.id;
+            const career = p.career ?? [{ period: "Now", title: p.title, company: p.company }];
+            const bits = reasonOf(p).split(" · ");
+            const fit = [...bits.slice(0, -2).map((t) => ({ ok: true, t })), { ok: true, t: `${p.years} years of experience` }, { ok: p.notice <= 1, t: bits[bits.length - 1] }].slice(0, 3);
             return (
-              <li key={p.id}>
+              <li key={p.id} className="group relative border-b border-border last:border-0">
                 <button
                   type="button"
                   data-row={p.id}
-                  onClick={() => setPickedId(p.id)}
+                  onClick={() => {
+                    setPickedId(p.id);
+                    setPanel(true);
+                  }}
                   // The CV is read ahead while the pointer is on its way, so it opens at once.
                   onPointerEnter={() => p.cv && warmPdf(p.cv)}
                   aria-current={on ? "true" : undefined}
                   className={
-                    "flex w-full items-center gap-3 rounded-md border px-3.5 py-3 text-left transition-colors " +
-                    (on ? "border-brand bg-brand-tint" : "border-transparent hover:bg-surface-2")
+                    "grid w-full grid-cols-[minmax(0,1.2fr)_minmax(0,0.3fr)_minmax(0,1fr)_minmax(0,1fr)] items-center gap-x-[max(1rem,10px)] rounded-md py-4 pl-7 pr-[max(11rem,120px)] text-left transition-colors max-xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] max-xl:[&>:nth-child(2)]:hidden max-xl:[&>:nth-child(4)]:hidden max-md:grid-cols-1 " +
+                    (on ? "bg-canvas" : "hover:bg-canvas/60")
                   }
                 >
-                  <Ring score={p.score} />
-                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="flex items-center gap-2">
-                      <span className="truncate text-body font-medium text-ink">{p.name}</span>
-                      {CLAIMED[p.id] && (
-                        <span className="shrink-0 rounded-full bg-surface-3 px-2 py-0.5 text-caption text-ink-2">
-                          {CLAIMED[p.id]}&apos;s
-                        </span>
-                      )}
-                    </span>
-                    <span className="truncate text-small text-ink-3">
-                      {p.title} · {p.company} · {p.city}
-                    </span>
-                    <span className="truncate text-small text-violet">✦ {reasonOf(p)}</span>
-                    <span className="mt-1 flex flex-wrap gap-1.5">
-                      {p.tags.slice(0, 6).map((t) => (
-                        <span key={t} className="rounded-full bg-surface-2 px-2.5 py-0.5 text-caption capitalize text-ink-2">
-                          {t}
-                        </span>
-                      ))}
+                  <span className="flex min-w-0 items-center gap-4">
+                    <Ring score={p.score} />
+                    <span className="flex min-w-0 flex-col">
+                      <span className="flex items-center gap-2">
+                        <span className="truncate text-h3 font-medium text-ink">{p.name}</span>
+                        {CLAIMED[p.id] && (
+                          <span className="shrink-0 rounded-full bg-surface-3 px-2 py-0.5 text-caption text-ink-2">{CLAIMED[p.id]}&apos;s</span>
+                        )}
+                      </span>
+                      <span className="truncate text-small text-ink-3">
+                        {p.years} years · {p.city}
+                      </span>
                     </span>
                   </span>
+                  <span className="flex flex-col gap-1.5 text-small max-md:hidden">
+                    {career.map((c, i) => (
+                      <span key={i} className={"truncate " + (i === 0 ? "font-medium text-brand" : "text-ink-3")}>
+                        {c.period}
+                      </span>
+                    ))}
+                  </span>
+                  <span className="flex min-w-0 flex-col gap-1.5 text-small max-md:mt-2">
+                    {career.map((c, i) => (
+                      <span key={i} className="truncate text-ink">
+                        {c.title} <span className="ml-1 text-ink-3">{c.company}</span>
+                      </span>
+                    ))}
+                  </span>
+                  <span className="flex min-w-0 flex-col gap-1.5 text-small text-ink-2 max-md:hidden">
+                    {fit.map((x) => (
+                      <span key={x.t} className="flex items-center gap-2">
+                        {tick(x.ok)}
+                        <span className="truncate">{x.t}</span>
+                      </span>
+                    ))}
+                  </span>
                 </button>
+                {/* Shown on the picked row and on hover; a tap picks the row first on a phone. */}
+                {!CLAIMED[p.id] && (
+                  <div className={"absolute right-7 top-1/2 flex -translate-y-1/2 items-center gap-2 " + (on ? "" : "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100")}>
+                    <button
+                      type="button"
+                      onClick={() => notFor(p)}
+                      onBlur={() => setSure("")}
+                      aria-label={sure === p.id ? "Press again to take them off" : "Not for this job"}
+                      title={sure === p.id ? "Press again to take them off" : "Not for this job (X)"}
+                      className={"flex size-[max(2.6rem,34px)] items-center justify-center rounded-full border " + (sure === p.id ? "border-danger/40 bg-danger-soft text-danger" : "border-border-strong bg-surface text-ink-2 hover:bg-surface-2")}
+                    >
+                      <svg viewBox="0 0 16 16" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.33" strokeLinecap="round" aria-hidden="true">
+                        <path d="M12 4 4 12M4 4l8 8" />
+                      </svg>
+                    </button>
+                    <button type="button" onClick={() => shortlist(p)} title="Shortlist (S)" className="flex h-[max(2.6rem,34px)] items-center rounded-full bg-brand px-5 text-small font-medium text-white hover:bg-brand-strong">
+                      Shortlist
+                    </button>
+                  </div>
+                )}
               </li>
             );
           })}
         </ul>
 
-        {/* White like the board, with a hairline to set it apart (owner, 17 Nov 2026). */}
-        <section className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md border border-border bg-surface">
-          {picked ? (
-            <>
-              {picked.cv && (
+        {/* The CV and details slide in from the right over the list (owner's Figma 1515:7813,
+            "CV peek", 728 wide at 1920; every size below is that frame's). */}
+        {panel && picked && (
+          <aside
+            ref={panelEl}
+            role="dialog"
+            aria-label={`${picked.name}'s CV`}
+            className="absolute inset-y-0 right-0 z-20 flex w-[min(54rem,100%)] flex-col gap-[0.725rem] rounded-[1.45rem] border border-border bg-surface p-[1.036rem] shadow-float max-md:fixed max-md:inset-3 max-md:w-auto"
+          >
+            <div className="flex shrink-0 items-center gap-[0.62rem]">
+              <span className="flex size-[2.487rem] shrink-0 items-center justify-center rounded-full bg-info-soft text-[max(0.725rem,10px)] font-medium text-info">
+                {picked.name.split(" ").map((w) => w[0]).join("").slice(0, 2)}
+              </span>
+              <div className="flex min-w-0 flex-col">
+                <p className="truncate text-[max(1.036rem,13px)] font-medium text-ink">{picked.name}</p>
+                <p className="truncate text-[max(0.725rem,10px)] text-ink-2">
+                  {picked.title} · {picked.company} · {picked.years} yrs
+                </p>
+              </div>
+              <span className="shrink-0 rounded-[0.52rem] bg-brand-soft px-[0.415rem] py-[0.1rem] text-[max(0.725rem,10px)] text-brand">{picked.score}</span>
+              <span className="ml-auto shrink-0 text-[max(0.674rem,10px)] text-ink-3">
+                {idx + 1} of {shown.length}
+              </span>
+              {(
+                [
+                  ["Previous", -1, "m10 3-5 5 5 5"],
+                  ["Next", 1, "m6 3 5 5-5 5"],
+                ] as const
+              ).map(([l, d, path]) => (
                 <button
+                  key={l}
                   type="button"
-                  onClick={() => openBig()}
-                  aria-label="Open this CV big"
-                  title="Open this CV big (or double-click it)"
-                  className="absolute right-3 top-3 z-10 flex size-[max(2.2rem,30px)] items-center justify-center rounded-full bg-surface text-ink shadow-float hover:bg-surface-2"
+                  disabled={!shown[idx + d]}
+                  onClick={() => step(d)}
+                  aria-label={l}
+                  title={`${l} (${d < 0 ? "↑" : "↓"})`}
+                  className="flex size-[2.07rem] shrink-0 items-center justify-center rounded-full border border-border-strong bg-surface text-ink-2 hover:bg-surface-2 disabled:opacity-40 disabled:hover:bg-surface"
                 >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-1/2" aria-hidden="true">
-                    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                  <svg viewBox="0 0 16 16" className="size-[0.83rem]" fill="none" stroke="currentColor" strokeWidth="1.33" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d={path} />
                   </svg>
                 </button>
+              ))}
+              <button
+                type="button"
+                autoFocus
+                onClick={() => setPanel(false)}
+                aria-label="Close CV"
+                title="Close (Esc)"
+                className="flex size-[2.07rem] shrink-0 items-center justify-center rounded-full border border-border-strong bg-surface text-ink-2 hover:bg-surface-2"
+              >
+                <svg viewBox="0 0 16 16" className="size-[0.83rem]" fill="none" stroke="currentColor" strokeWidth="1.33" strokeLinecap="round" aria-hidden="true">
+                  <path d="M12 4 4 12M4 4l8 8" />
+                </svg>
+              </button>
+            </div>
+            <p className="flex shrink-0 items-center gap-[0.62rem] rounded-[0.93rem] bg-brand-tint px-[0.83rem] py-[0.62rem] text-[max(0.725rem,10px)] font-medium text-ink">
+              <Image src="/aura-mark.png" alt="" width={24} height={24} className="size-[1.45rem] shrink-0 rounded-full bg-black" />
+              {fitOf(picked.score)} fit. {reasonOf(picked)}.
+            </p>
+            <div ref={cv} className="min-h-0 flex-1 overflow-y-auto rounded-[0.725rem] border border-border bg-surface">
+              {picked.cv ? (
+                <CvPages key={picked.cv} src={picked.cv} fit="width" />
+              ) : (
+                <p className="pt-[15vh] text-center text-body text-ink-3">No CV file on record for {picked.name.split(" ")[0]}.</p>
               )}
-              <div ref={cv} onDoubleClick={() => picked.cv && openBig()} className="min-h-0 flex-1 overflow-y-auto px-[max(1.25rem,12px)] pb-[max(5.5rem,70px)] pt-[max(1.25rem,12px)]">
-                {picked.cv ? (
-                  <CvPages key={picked.cv} src={picked.cv} fit="width" />
-                ) : (
-                  <p className="pt-[20vh] text-center text-body text-ink-3">No CV file on record for {picked.name.split(" ")[0]}.</p>
-                )}
-              </div>
-              <div className="absolute inset-x-0 bottom-[max(1.25rem,12px)] flex justify-center gap-2 px-3">
-                {CLAIMED[picked.id] ? (
-                  <p className="rounded-full bg-surface px-4 py-2.5 text-small text-ink-2 shadow-float">
-                    {CLAIMED[picked.id]} already claimed {picked.name.split(" ")[0]}
-                  </p>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => notFor(picked)}
-                      onBlur={() => setSure("")}
-                      className={
-                        "flex h-[max(2.75rem,36px)] items-center rounded-full px-[max(1.2rem,14px)] text-body font-medium shadow-float ring-1 " +
-                        (sure === picked.id ? "bg-danger-soft text-danger ring-danger/40" : "bg-surface text-ink ring-border/60 hover:bg-surface-2")
-                      }
-                    >
-                      {sure === picked.id ? "Press again to take them off" : "Not for this job"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => shortlist(picked)}
-                      className="flex h-[max(2.75rem,36px)] items-center rounded-full bg-brand px-[max(1.4rem,16px)] text-body font-medium text-white shadow-float hover:bg-brand-strong"
-                    >
-                      Shortlist
-                    </button>
-                  </>
-                )}
-              </div>
-            </>
-          ) : (
-            <p className="m-auto text-body text-ink-3">Pick someone on the left to read their CV.</p>
-          )}
-        </section>
+            </div>
+            <div className="flex shrink-0 items-center gap-[0.52rem]">
+              {picked.cv && (
+                <a href={picked.cv} download className={pill + " gap-[0.415rem] border border-border-strong bg-surface text-ink hover:bg-surface-2"}>
+                  <svg viewBox="0 0 12 12" className="size-[0.725rem] text-ink-2" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M6 1.5v6M3.4 5.4 6 8l2.6-2.6M1.8 10h8.4" />
+                  </svg>
+                  Download
+                </a>
+              )}
+              {CLAIMED[picked.id] ? (
+                <p className="ml-auto text-small text-ink-2">
+                  {CLAIMED[picked.id]} already claimed {picked.name.split(" ")[0]}
+                </p>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => notFor(picked)}
+                    onBlur={() => setSure("")}
+                    className={pill + " ml-auto border " + (sure === picked.id ? "border-danger/40 bg-danger-soft text-danger" : "border-border-strong bg-surface text-ink hover:bg-surface-2")}
+                  >
+                    {sure === picked.id ? "Press again to take them off" : "Not for this job"}
+                  </button>
+                  <button type="button" onClick={() => shortlist(picked)} className={pill + " bg-brand text-white hover:bg-brand-strong"}>
+                    Shortlist
+                  </button>
+                </>
+              )}
+            </div>
+          </aside>
+        )}
       </div>
-      {big && picked?.cv && (
-        <CvPreview from={bigFrom} name={picked.name} title={`${picked.title} · ${picked.company}`} src={picked.cv} onClose={() => setBig(false)} />
-      )}
+
+      {/* The AURA bar and the key hints (Figma 1515:7783 / 1515:7533): ask AURA in words to
+          narrow the list; Enter keeps the people whose record has all the words. */}
+      <div className="relative isolate mt-3 flex shrink-0 flex-wrap items-center justify-center gap-5">
+        <AuraBarGlow />
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const t = ask.trim();
+            if (!t) return;
+            setAsked(t);
+            setAsk("");
+          }}
+          className="flex h-[3.75rem] w-[min(40rem,100%)] items-center gap-3 rounded-full border-[1.5px] border-transparent bg-[linear-gradient(white,white),linear-gradient(90deg,var(--color-aura-1),var(--color-aura-2),var(--color-aura-3),var(--color-aura-4))] [background-clip:padding-box,border-box] [background-origin:border-box] py-2 pl-2.5 pr-2 shadow-float"
+        >
+          <Image src="/aura-mark.png" alt="" width={40} height={40} className="size-10 shrink-0 rounded-full bg-black" />
+          <input
+            value={ask}
+            onChange={(e) => setAsk(e.target.value)}
+            placeholder="Type or speak — ask AURA to narrow the list"
+            aria-label="Ask AURA to narrow the list"
+            className="min-w-0 flex-1 bg-transparent text-body text-ink outline-none placeholder:text-ink-3"
+          />
+          <button type="button" disabled title="Chat with AURA opens here once it is wired to the backend" aria-label="Open chat" className="flex size-9 shrink-0 items-center justify-center rounded-full bg-surface-2 text-ink-2 opacity-60">
+            <svg viewBox="0 0 16 16" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.33" strokeLinejoin="round" aria-hidden="true">
+              <path d="M2.5 3.5h11v7.5H7l-3 2.5V11H2.5z" />
+            </svg>
+          </button>
+          <button type="button" disabled title="Speaking to AURA is not switched on yet" aria-label="Speak" className="flex size-5 shrink-0 items-center justify-center text-ink-2 opacity-60">
+            <svg viewBox="0 0 20 20" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+              <rect x="7.5" y="2.5" width="5" height="10" rx="2.5" />
+              <path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5" />
+            </svg>
+          </button>
+          <button disabled={!ask.trim()} aria-label="Send" className="flex size-11 shrink-0 items-center justify-center rounded-full bg-ink text-white hover:bg-ink/85 disabled:opacity-40">
+            <svg viewBox="0 0 18 18" className="size-[18px]" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M9 15V3M3.8 8.2 9 3l5.2 5.2" />
+            </svg>
+          </button>
+        </form>
+        <p className="flex items-center gap-4 rounded-full bg-ink px-5 py-3 text-small text-white max-md:hidden">
+          <span className="flex items-center gap-2"><kbd className={keyHint}>↑ ↓</kbd> move</span>
+          <span className="flex items-center gap-2"><kbd className={keyHint}>S</kbd> shortlist</span>
+          <span className="flex items-center gap-2"><kbd className={keyHint}>X</kbd> not for this job</span>
+          <span className="flex items-center gap-2"><kbd className={keyHint}>Space</kbd> open the CV</span>
+        </p>
+      </div>
       {undo && (
         <div role="status" className="fixed bottom-[max(4rem,48px)] left-1/2 z-[90] flex max-w-[calc(100vw-24px)] -translate-x-1/2 items-center gap-3 rounded-full bg-ink px-[max(1.3rem,14px)] py-[max(0.7rem,8px)] text-[max(0.85rem,12.5px)] text-white shadow-float">
           <span>
