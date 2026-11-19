@@ -6,7 +6,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { cardLimit, inWords, scoopFileRefusal, normalizeQuestions, strategyRowsToSubmit, matchableEmail, moveRefusal, toCard, openingCard, BOARD_STAGES, BACKEND_STAGES } from "../convex/ui/rules";
+import { cardLimit, inWords, scoopFileRefusal, normalizeQuestions, strategyRowsToSubmit, matchableEmail, moveRefusal, toCard, openingCard, withEdits, BOARD_STAGES, BACKEND_STAGES } from "../convex/ui/rules";
 
 let pass = 0, fail = 0;
 const eq = (l: string, got: unknown, want: unknown) => {
@@ -143,6 +143,29 @@ const composeSrc = dailySrc.slice(dailySrc.indexOf("export const compose"));
 eq("compose: the same roster rule", composeSrc.includes("eligibleApplications(ctx"), true);
 eq("compose: takes no recipients, subject or HTML from the caller", /args:\s*\{[^}]*\b(to|cc|html|subject)\b/.test(composeSrc), false);
 eq("compose door: no recipients from the browser", /compose = query\(\{\s*args:\s*\{[^}]*\b(to|cc|html)\b/.test(emailSrc), false);
+
+// The Midday send (D5 step 2): built on the server; the browser only edits cells.
+const base = [{ no: 1, name: "Ann", age: "30", notice: "1 month", notes: [">a"], currentCompany: "X", currentDesignation: "Y", currentRemuneration: "1", expectedRemuneration: "2", applicationId: "a1" }];
+const edited = withEdits(base as never, [
+  { applicationId: "a1", field: "notice", value: " 2 months " },
+  { applicationId: "a1", field: "applicationId", value: "evil" },
+  { applicationId: "a1", field: "notes", value: "one\n\ntwo" },
+  { applicationId: "zz", field: "name", value: "Not here" },
+  { applicationId: "a1", field: "name", value: "  " },
+]);
+eq("send: a cell edit is applied", edited[0].notice, "2 months");
+eq("send: only table-1 cells can change", edited[0].applicationId, "a1");
+eq("send: notes split into lines", edited[0].notes, ["one", "two"]);
+eq("send: an edit for someone not in the email is ignored", edited.length, 1);
+eq("send: a blank name keeps the record's", edited[0].name, "Ann");
+const sendSrc = fs.readFileSync(path.join("convex", "ui", "emailSend.ts"), "utf8");
+const sendArgs = sendSrc.slice(sendSrc.indexOf("const form = {"), sendSrc.indexOf("};", sendSrc.indexOf("const form = {")));
+eq("send: the browser cannot give HTML, a sender, To/Cc lists or rows", /(html|from|to|cc|rows|snapshot|applicationIds)\s*:/.test(sendArgs), false);
+eq("send: the HTML is built on the server", sendSrc.includes("eodEmailHtml({ rows"), true);
+eq("send: through the old reservation and its guards", sendSrc.includes("internal.ta.dailyEmails.begin"), true);
+eq("send: through the old sender (test mode, outbound lock)", sendSrc.includes("internal.ta.eodMail.send"), true);
+eq("send: only a Midday, and without attachments", sendSrc.includes('submissionType: "midday"') && sendSrc.includes("attachments: [], savedIds: []") && !/submissionType:\s*"eod"/.test(sendSrc), true);
+eq("send: the ChatGPT rule is kept", sendSrc.includes("checkResearchSubmission"), true);
 
 console.log(`\nuidoor: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

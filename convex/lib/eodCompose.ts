@@ -132,11 +132,22 @@ export async function effortRow(
   };
 }
 
-/** To and Cc before the TA changes them: joborders@, the desk's copies and the shortlist inbox. */
-export async function defaultRecipients(ctx: Ctx): Promise<{ to: string[]; cc: string[] }> {
-  const inbox = await ctx.db.query("taSettings").withIndex("by_key", (q) => q.eq("key", "shortlistInbox")).first();
-  return eodRecipients({ removed: [], extraTo: [], extraCc: [], shortlistInbox: inbox?.value ?? DEFAULT_SHORTLIST_INBOX });
+/** The inbox that watches for the Director's reply (repo.shortlistInbox). */
+export async function shortlistInbox(ctx: Ctx): Promise<string> {
+  const row = await ctx.db.query("taSettings").withIndex("by_key", (q) => q.eq("key", "shortlistInbox")).first();
+  return row?.value ?? DEFAULT_SHORTLIST_INBOX;
 }
+
+/**
+ * To and Cc: joborders@, the desk's copies and the shortlist inbox, less what the
+ * TA took off, plus what they added (eodRecipients, the old send's own rule).
+ */
+export async function recipients(ctx: Ctx, edits: { removed?: string[]; extraTo?: string[]; extraCc?: string[] } = {}): Promise<{ to: string[]; cc: string[] }> {
+  return eodRecipients({ removed: edits.removed ?? [], extraTo: edits.extraTo ?? [], extraCc: edits.extraCc ?? [], shortlistInbox: await shortlistInbox(ctx) });
+}
+
+/** To and Cc before the TA changes them. */
+export const defaultRecipients = (ctx: Ctx) => recipients(ctx);
 
 /** "SET 1 - CLIENT - TITLE - 3 CVs", or "... - DAILY ACTIVITY" with nobody (the eod page's default). */
 export function defaultSubject(job: Doc<"jobs">, locationName: string | null, rows: ShortlistRow[], setNumber: number | string | null): string {
