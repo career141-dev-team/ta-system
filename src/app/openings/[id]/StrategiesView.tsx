@@ -1,5 +1,6 @@
 "use client";
 
+import { ViewSkeleton } from "@/app/Skeleton";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -370,6 +371,8 @@ export default function StrategiesView() {
     );
   }
 
+  // Still reading this opening: a skeleton of the view, never an empty list that looks final (19 Nov).
+  if (job && real === undefined) return <ViewSkeleton />;
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       {/* Main two-column layout matching Figma board padding (top ~42px, sides ~37px, gap 40px) */}

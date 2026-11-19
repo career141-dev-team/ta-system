@@ -19,7 +19,7 @@ for (const s of STAGES.filter((s) => !s.closed && s.name !== "Placed"))
 
 // Refusals.
 assert.ok(!ok(checkMove(ready, "TA Follow-Up", "Placed", TA)), "no skipping to Placed");
-assert.ok(!ok(checkMove(ready, "TA Follow-Up", "Ai Follow-Up", TA)), "nobody into Ai Follow-Up by hand");
+assert.ok(!ok(checkMove(ready, "TA Follow-Up", "AI Follow-Up", TA)), "nobody into AI Follow-Up by hand");
 assert.ok(!ok(checkMove({ missing: ["Notice Period"] }, "TA Follow-Up", "Director Review", TA)), "Director Review needs the details");
 assert.ok(!ok(checkMove(ready, "Director Review", "Director Shortlist", TA)), "a TA does not decide the shortlist");
 assert.ok(ok(checkMove(ready, "Director Review", "Director Shortlist", LEAD)));
@@ -27,7 +27,7 @@ assert.ok(!ok(checkMove(ready, "Placed", "Rejected", TA)), "Placed is locked for
 assert.ok(ok(checkMove(ready, "Placed", "Rejected", LEAD)));
 assert.ok(!ok(checkMove(ready, "Placed", "Offer", LEAD)), "Placed never goes back a stage");
 
-assert.ok(!ok(checkMove({ missing: [], owned: false }, "Ai Follow-Up", "Director Review", TA)), "shortlist comes first");
+assert.ok(!ok(checkMove({ missing: [], owned: false }, "AI Follow-Up", "Director Review", TA)), "shortlist comes first");
 
 // Back in from an ending.
 assert.ok(ok(checkMove(ready, "Rejected", "TA Follow-Up", TA)));

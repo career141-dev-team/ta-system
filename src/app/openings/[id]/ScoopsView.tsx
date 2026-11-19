@@ -1,5 +1,6 @@
 "use client";
 
+import { ViewSkeleton } from "@/app/Skeleton";
 import { door, jobFromAddress, useDoorMutation, useDoorQuery, useLive, type Answer, type DoorDone, cvUrl } from "@/lib/backend";
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
@@ -479,6 +480,8 @@ export default function ScoopsView() {
     if (!blocked) setDone(selecting);
   };
 
+  // Still reading this opening: a skeleton of the view, never an empty list that looks final (19 Nov).
+  if (job && real === undefined) return <ViewSkeleton />;
   return (
     <div
       ref={root}

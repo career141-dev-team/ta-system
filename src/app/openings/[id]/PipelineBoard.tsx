@@ -20,7 +20,7 @@ import { arrivals, onArrival, type Arrival } from "./pipelineInbox";
 import { useWorkdayGate } from "@/lib/workday";
 import { useFilters } from "@/lib/filters";
 import { NoResults } from "@/app/FilterBits";
-import { door, jobFromAddress, STAGE_KEYS, useDoorMutation, useDoorQuery, useLive, type DoorBoard, type DoorCard, type DoorDone, cvUrl } from "@/lib/backend";
+import { LIVE, door, jobFromAddress, STAGE_KEYS, useDoorMutation, useDoorQuery, useLive, type DoorBoard, type DoorCard, type DoorDone, cvUrl } from "@/lib/backend";
 
 // The CV preview is its own download, fetched while the screen is idle (OpeningView).
 const CvPreview = dynamic(() => import("./CvPreview"), { ssr: false });
@@ -85,11 +85,13 @@ type Card = Person & {
   noticeDays: number;
   /** Their own CV file, when they came from a view that had it. */
   cv?: string;
+  /** The backend holds no CV file for them yet: nothing to open (19 Nov). */
+  noCv?: boolean;
 };
 
 /** The candidate's CV file. Sample: the two demo CVs in public/cvs; the real board
  *  reads each candidate's own. */
-const cvFileOf = (c: Card) => c.cv ?? (c.name === "Rashini Kaweesha" ? "/cvs/p1.pdf" : "/cvs/p2.pdf");
+const cvFileOf = (c: Card) => c.cv ?? (c.noCv ? "" : c.name === "Rashini Kaweesha" ? "/cvs/p1.pdf" : "/cvs/p2.pdf");
 
 /** Someone shortlisted in another view of this opening, as a card: theirs to work,
  *  with the CV they came with; salary and notice period still to come from the
@@ -136,10 +138,13 @@ const fromDoor = (c: DoorCard): Card => ({
   missing: c.missing.map((m) => MISSING[m] ?? m),
   addOn: c.addOn,
   backup: c.backup,
-  yearsN: c.years ?? 0,
-  noticeDays: c.noticeDays ?? 0,
-  // The candidate's own CV (D6); none when the backend says it is still missing.
-  ...(c.missing.includes("a CV") ? {} : { cv: cvUrl({ app: c.id }) }),
+  // Not known stays not known (NaN): a "30 days or less" filter must not let an
+  // unknown notice through as 0 (19 Nov audit).
+  yearsN: c.years ?? Number.NaN,
+  noticeDays: c.noticeDays ?? Number.NaN,
+  // The candidate's own CV (D6); none when the backend says it is still missing -
+  // then the card says so instead of opening a sample PDF.
+  ...(c.missing.includes("a CV") ? { noCv: true } : { cv: cvUrl({ app: c.id }) }),
 });
 
 /** Moves whose details (dates, package, signed offer letter) the backend does not check yet (PR 1b). */
@@ -169,6 +174,31 @@ const PEOPLE: Person[] = [
 ];
 
 // The stages and the rules of a move live in pipelineRules.ts (the TA System's own).
+
+/** A column's count as the backend gives it: 500 at most, then "500+". */
+const shownCount = (col: { count: number; capped: boolean } | undefined, have: number) =>
+  col ? `${col.count}${col.capped ? "+" : ""}` : String(have);
+
+/** A card-shaped placeholder while the real board is read. */
+const CardSkeleton = () => (
+  <div role="status" aria-label="Loading" className="flex flex-col gap-[max(0.6rem,7px)] rounded-md border border-border bg-white p-[max(1rem,12px)]">
+    <div className="flex items-center gap-[max(0.6rem,7px)]">
+      <span className="shimmer size-[max(2.4rem,32px)] shrink-0 rounded-full" />
+      <span className="flex flex-1 flex-col gap-1.5">
+        <span className="shimmer h-3 w-3/4 rounded-sm" />
+        <span className="shimmer h-2.5 w-1/2 rounded-sm" />
+      </span>
+    </div>
+    {[90, 70, 80, 60].map((w) => (
+      <span key={w} className="shimmer h-2.5 rounded-sm" style={{ width: `${w}%` }} />
+    ))}
+    <div className="flex gap-1.5">
+      {[0, 1, 2].map((k) => (
+        <span key={k} className="shimmer h-4 w-12 rounded-md" />
+      ))}
+    </div>
+  </div>
+);
 
 /** Six sample cards per stage; the first stage starts with the design's first card.
  *  Owner and source vary so the filters have something to filter; every third card
@@ -236,8 +266,10 @@ export default function PipelineBoard() {
   // can still refuse (a reject needs a reason, a Director decision is the Director's).
   // Set by the real board below: saves a move, or puts the card back with the reason.
   const sendMove = useRef<((card: Card, from: string, to: string, note?: string) => void) | null>(null);
+  // A live opening starts empty and shows skeletons until its board arrives - never the
+  // sample people (owner, 19 Nov 2026: the sample flashed while the real board loaded).
   const [board, setBoard] = useState<Record<string, Card[]>>(() =>
-    Object.fromEntries(STAGES.map((s, i) => [s.name, cardsFor(i)])),
+    Object.fromEntries(STAGES.map((s, i) => [s.name, LIVE && jobFromAddress() ? [] : cardsFor(i)])),
   );
   // People shortlisted in the other views land at the top of TA Follow-Up. Each
   // board keeps its own place in the list (see pipelineInbox).
@@ -280,6 +312,8 @@ export default function PipelineBoard() {
   const boardRow = useRef<HTMLDivElement>(null);
   useBoardWheel(boardRow, mode === "board");
   const [undone, setUndone] = useState<{ id: string; n: number } | null>(null);
+  // A move the rules refuse says why, in a notice at the bottom (FLOW-CHECK 2.2).
+  const [toast, setToast] = useState<{ bold?: string; rest: string; n: number; warn?: boolean } | null>(null);
   // The candidate whose CV is open in the preview, if any.
   const [cvFor, setCvFor] = useState<Card | null>(null);
   const [cvOpen, setCvOpen] = useState(false);
@@ -290,14 +324,13 @@ export default function PipelineBoard() {
   const [cvFrom, setCvFrom] = useState<HTMLElement | null>(null);
   const [cvN, setCvN] = useState(0);
   const openCv = useCallback((p: Card) => {
+    if (p.noCv) return setToast((t) => ({ bold: p.name, rest: "has no CV on record yet.", warn: true, n: (t?.n ?? 0) + 1 }));
     setCvFrom(onScreen('[data-card-id="' + p.id + '"]'));
     setCvFor(p);
     setCvOpen(true);
     setCvN((n) => n + 1);
   }, []);
 
-  // A move the rules refuse says why, in a notice at the bottom (FLOW-CHECK 2.2).
-  const [toast, setToast] = useState<{ bold?: string; rest: string; n: number; warn?: boolean } | null>(null);
   const refuse = useCallback((why: string) => setToast((t) => ({ rest: why, warn: true, n: (t?.n ?? 0) + 1 })), []);
   const tell = (bold: string, rest: string) => setToast((t) => ({ bold, rest, n: (t?.n ?? 0) + 1 }));
 
@@ -308,6 +341,15 @@ export default function PipelineBoard() {
   const live = useLive();
   const [jobId] = useState(jobFromAddress);
   const realBoard = useDoorQuery(door.board, live && jobId ? { openingId: jobId, limit: 50 } : "skip") as DoorBoard | undefined;
+  // The real board's own numbers per column: its count (500 at most, then "500+")
+  // and how many cards it sent; a refusal is said where the board would be.
+  const liveBoard = live && !!jobId;
+  const boardLoading = liveBoard && realBoard === undefined;
+  const boardWhy = liveBoard && realBoard && !realBoard.ok ? realBoard.message : null;
+  const liveCount = useMemo(
+    () => new Map(realBoard?.ok ? realBoard.columns.map((c) => [c.stage, c] as const) : []),
+    [realBoard],
+  );
   const saveMove = useDoorMutation(door.move);
   const saveShortlist = useDoorMutation(door.shortlist);
   // Each new answer from the backend replaces the columns (adjusted while
@@ -315,8 +357,7 @@ export default function PipelineBoard() {
   const [seenBoard, setSeenBoard] = useState<DoorBoard | undefined>(undefined);
   if (realBoard !== seenBoard) {
     setSeenBoard(realBoard);
-    if (realBoard && !realBoard.ok) refuse(realBoard.message);
-    else if (realBoard) setBoard(Object.fromEntries(STAGES.map((s, i) => [s.name, (realBoard.columns.find((c) => c.stage === STAGE_KEYS[i])?.cards ?? []).map(fromDoor)])));
+    if (realBoard?.ok) setBoard(Object.fromEntries(STAGES.map((s, i) => [s.name, (realBoard.columns.find((c) => c.stage === STAGE_KEYS[i])?.cards ?? []).map(fromDoor)])));
   }
   useEffect(() => {
     sendMove.current =
@@ -812,6 +853,12 @@ export default function PipelineBoard() {
         </div>
       )}
 
+      {boardWhy && (
+        <p role="alert" className="mx-[max(1.5rem,14px)] mb-[max(1rem,10px)] rounded-md border border-warn/40 bg-warn-soft px-4 py-3 text-body text-ink">
+          {boardWhy}
+        </p>
+      )}
+
       {mode === "board" ? (
         // Columns side by side; the row scrolls sideways, each column scrolls itself.
         <div ref={boardRow} data-board className="flex cursor-grab min-h-0 flex-1 gap-[max(1.75rem,18px)] overflow-x-auto [container-type:inline-size] px-[max(1.5rem,14px)] pb-2 [&::-webkit-scrollbar]:h-[10px] [&::-webkit-scrollbar-track]:mx-[max(1.5rem,14px)] [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-surface-2 [&::-webkit-scrollbar-thumb]:bg-ink-3 [&::-webkit-scrollbar-thumb:hover]:bg-ink-2">
@@ -826,7 +873,13 @@ export default function PipelineBoard() {
                 <span aria-hidden="true" className="size-2 shrink-0 rounded-full" style={{ background: s.dot }} />
                 <h3 className="min-w-0 flex-1 truncate text-col font-semibold">{s.name}</h3>
                 <span className="rounded-md bg-surface-3 px-2 py-0.5 text-chip font-medium text-ink-2">
-                  {filtering ? cards.length : s.count + all.length - 6}
+                  {boardLoading ? (
+                    <span className="shimmer inline-block h-[0.8em] w-[2ch] rounded-sm align-middle" />
+                  ) : filtering || !liveBoard ? (
+                    filtering ? cards.length : s.count + all.length - 6
+                  ) : (
+                    shownCount(liveCount.get(STAGE_KEYS[STAGES.indexOf(s)]), all.length)
+                  )}
                 </span>
               </header>
               <TickList>
@@ -836,9 +889,17 @@ export default function PipelineBoard() {
                   aria-hidden="true"
                   className="hidden rounded-md border-[1.5px] border-dashed border-brand/40 bg-brand-soft"
                 />
-                {cards.map((p) => (
-                  <CandidateCard key={p.id} p={p} stage={s.name} onPickUp={pickUp} onOpenCv={openCv} onMenu={openMenu} />
-                ))}
+                {boardLoading
+                  ? [0, 1, 2].map((k) => <CardSkeleton key={k} />)
+                  : cards.map((p) => <CandidateCard key={p.id} p={p} stage={s.name} onPickUp={pickUp} onOpenCv={openCv} onMenu={openMenu} />)}
+                {!boardLoading && !boardWhy && !all.length && (
+                  <p className="px-1 pt-2 text-center text-card-sub text-ink-3">Nobody in {s.name} yet.</p>
+                )}
+                {!boardLoading && !filtering && (liveCount.get(STAGE_KEYS[STAGES.indexOf(s)])?.count ?? 0) > all.length && (
+                  <p className="px-1 pb-2 pt-1 text-center text-card-sub text-ink-3">
+                    Showing the newest {all.length} of {shownCount(liveCount.get(STAGE_KEYS[STAGES.indexOf(s)]), all.length)}.
+                  </p>
+                )}
               </TickList>
             </section>
           ))}
@@ -862,8 +923,10 @@ export default function PipelineBoard() {
           start={{
             designation: cvFor.title,
             company: cvFor.company,
-            notice: cvFor.missing.includes("Notice Period") ? undefined : `${cvFor.noticeDays} Days`,
-            ...(cvFor.missing.includes("Salary") ? {} : { currentSalary: "LKR 420,000", expectedSalary: "LKR 550,000" }),
+            notice: cvFor.missing.includes("Notice Period") || !Number.isFinite(cvFor.noticeDays) ? undefined : `${cvFor.noticeDays} Days`,
+            // The sample's salary only on the sample board: a live card has no salary
+            // figure from the board read, so the box leaves it for the TA (19 Nov audit).
+            ...(live || cvFor.missing.includes("Salary") ? {} : { currentSalary: "LKR 420,000", expectedSalary: "LKR 550,000" }),
             notes: [],
           }}
           onClose={() => setCvOpen(false)}
@@ -1090,7 +1153,7 @@ const CandidateCard = memo(function CandidateCard({
       onPointerDown={(e) => onPickUp(e, p, stage)}
       // A click opens the CV: on the way in, read this candidate's CV and draw its first
       // page ahead, so the opening motion never waits on it (owner, 17 Nov 2026).
-      onPointerEnter={() => warmCv(cvFileOf(p))}
+      onPointerEnter={() => p.noCv || warmCv(cvFileOf(p))}
       // A click anywhere on the card (name, initials, details) opens the CV
       // (owner, 12 Nov 2026); a drag does not.
       onClick={(e) => {
@@ -1132,8 +1195,9 @@ const CandidateCard = memo(function CandidateCard({
             e.stopPropagation();
             onOpenCv(p);
           }}
-          aria-label={`Open the CV of ${p.name}`}
-          className="cursor-pointer rounded-md bg-surface-3 px-1.5 py-0.5 text-ink transition-colors hover:bg-brand hover:text-white"
+          aria-label={p.noCv ? `${p.name} has no CV yet` : `Open the CV of ${p.name}`}
+          title={p.noCv ? "No CV on record yet" : undefined}
+          className={"cursor-pointer rounded-md px-1.5 py-0.5 transition-colors " + (p.noCv ? "bg-warn-soft text-warn" : "bg-surface-3 text-ink hover:bg-brand hover:text-white")}
         >
           CV
         </button>
@@ -1242,8 +1306,8 @@ function ListView({
               <button
                 type="button"
                 onClick={() => onOpenCv(p)}
-                aria-label={`Open the CV of ${p.name}`}
-                className={pill + "bg-surface-2 text-ink hover:bg-brand hover:text-white"}
+                aria-label={p.noCv ? `${p.name} has no CV yet` : `Open the CV of ${p.name}`}
+                className={pill + (p.noCv ? "bg-warn-soft text-warn" : "bg-surface-2 text-ink hover:bg-brand hover:text-white")}
               >
                 CV
               </button>

@@ -10,7 +10,7 @@ import { door, jobFromAddress, useDoorMutation, useDoorQuery, useLive, useSigned
 import PillMenu, { type MenuOption } from "./PillMenu";
 
 type Summary = Answer<{ opening: { status: string | null; team: { id: string; workingStage: string | null }[] } }>;
-const STATUS_WORD: Record<string, string> = { active: "Active", draft: "Active", on_hold: "On hold", filled: "Placed", cancelled: "Closed / Lost" };
+const STATUS_WORD: Record<string, string> = { active: "Active", draft: "Draft", on_hold: "On hold", filled: "Placed", cancelled: "Closed / Lost" };
 
 function useSummary() {
   const live = useLive();
@@ -26,7 +26,7 @@ export function StatusPill({ options, sample, pillClass }: { options: MenuOption
   return (
     <span className={pillClass}>
       {dot && <span aria-hidden="true" className="size-2 rounded-full" style={{ background: dot }} />}
-      {word || "…"}
+      {word || (got ? "Not known" : <span className="shimmer inline-block h-[0.8em] w-[6ch] rounded-md" />)}
     </span>
   );
 }
@@ -40,7 +40,7 @@ export function StagePill({ options, sample, pillClass }: { options: MenuOption[
   const [round, setRound] = useState(0);
   if (!live) return <PillMenu options={options} initial={sample} prefix="Stage:" title="Working Stage" pillClass={pillClass} />;
   const mine = got?.ok && me?.ok ? got.opening.team.find((t) => t.id === me.id) : undefined;
-  if (!mine) return <span className={pillClass}>Stage: {got ? "not on this opening" : "…"}</span>;
+  if (!mine) return <span className={pillClass}>Stage: {got ? "not on this opening" : <span className="shimmer inline-block h-[0.8em] w-[5ch] rounded-md align-middle" />}</span>;
   const value = mine.workingStage ?? "100%";
   return (
     <>

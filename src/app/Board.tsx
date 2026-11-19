@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
-import { DUR, EASE, gsap, motionOK } from "@/lib/gsap";
+import { DUR, EASE, gsap } from "@/lib/gsap";
 import Notch from "./openings/[id]/Notch";
+import LoadingBar from "./LoadingBar";
+import { useAnyBusy } from "@/lib/busy";
 import { counts, useRows } from "./strategy/data";
 
 // One board for the whole app (owner, 14 Nov 2026: "keep the Figma board behind,
@@ -49,9 +51,7 @@ export default function Board({ children }: { children: ReactNode }) {
   const off = i < 0;
   const stage = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
-  const bar = useRef<HTMLDivElement>(null);
   const ghost = useRef<HTMLElement | null>(null);
-  const loop = useRef<gsap.core.Tween | null>(null);
 
   // The tab hangs from the board's top edge. Scrolling down (the page or any scroll
   // container inside it) lifts it away so it never covers content; scrolling up, the
@@ -127,29 +127,13 @@ export default function Board({ children }: { children: ReactNode }) {
     };
   }, [off, path]);
 
-  // The loading bar (owner, 14 Nov 2026: "the rounded bar should be animated... give
-  // the premium vibe"): a soft rounded track under the tab rises in, a glowing pill
-  // in AURA's colours glides along it while the next page loads, and when the page
-  // arrives the track fills with the brand green and sinks away. Less motion asked
-  // for: the pill holds still in the middle instead of gliding.
-  const loading = (on: boolean) => {
-    const el = bar.current;
-    if (!el) return;
-    const comet = el.querySelector<HTMLElement>("[data-comet]");
-    const fill = el.querySelector<HTMLElement>("[data-fill]");
-    loop.current?.kill();
-    loop.current = null;
-    if (on) {
-      gsap.set(fill, { scaleX: 0 });
-      gsap.fromTo(el, { opacity: 0, y: -6, scaleX: 0.6 }, { opacity: 1, y: 0, scaleX: 1, duration: DUR.base, ease: EASE.pop, overwrite: true });
-      if (motionOK()) loop.current = gsap.fromTo(comet, { xPercent: -120 }, { xPercent: 270, duration: 1.15, ease: "power2.inOut", repeat: -1 });
-      else gsap.set(comet, { xPercent: 75 });
-      return;
-    }
-    if (Number(gsap.getProperty(el, "opacity")) < 0.05) return;
-    gsap.to(fill, { scaleX: 1, duration: DUR.base, ease: EASE.out, overwrite: true });
-    gsap.to(el, { opacity: 0, y: -6, duration: DUR.base, delay: DUR.base, ease: EASE.in, overwrite: true });
-  };
+  // The tab's loading bar (./LoadingBar.tsx) runs while the next page loads and then
+  // while any screen on it still waits on the backend (owner, 19 Nov 2026: "until the
+  // page properly loads").
+  // The page a link was pressed for: the bar runs until the address reaches it.
+  const [target, setTarget] = useState<string | null>(null);
+  const turning = target !== null && target !== path;
+  const waiting = useAnyBusy();
 
   // Leaving: the moment a link to another board page is clicked, a picture of this
   // page (a copy of its content) is laid over it and a thin line runs under the
@@ -174,13 +158,13 @@ export default function Board({ children }: { children: ReactNode }) {
       Object.assign(g.style, { position: "absolute", inset: "0", pointerEvents: "none", zIndex: "5", background: "var(--color-surface)" });
       s.appendChild(g);
       ghost.current = g;
-      loading(true);
+      setTarget(url.pathname);
       // A link that never arrives (an error, a refused page) lets the page go.
       setTimeout(() => {
         if (ghost.current === g) {
           g.remove();
           ghost.current = null;
-          loading(false);
+          setTarget(null);
         }
       }, 8000);
     };
@@ -198,9 +182,10 @@ export default function Board({ children }: { children: ReactNode }) {
       last = path;
       const g = ghost.current;
       ghost.current = null;
+      // Arrived (or went elsewhere, by Back): the page turn is over.
+      setTimeout(() => setTarget(null), 0);
       if (performance.now() < turn.quietUntil) {
         g?.remove();
-        loading(false);
         return;
       }
       // Not on the first load: the page is server HTML that React has not taken
@@ -223,7 +208,6 @@ export default function Board({ children }: { children: ReactNode }) {
         gsap.set(body.current, { x: 72 * dir, opacity: 0 });
         tl.to(body.current, { x: 0, opacity: 1, duration: DUR.slow, clearProps: "transform,opacity" }, 0.06);
       }
-      loading(false);
       if (stage.current) tl.set(stage.current, { clearProps: "overflow" });
       // Gone on a plain timer too: a copy left behind would cover the live page.
       if (g) setTimeout(() => g.remove(), 1600);
@@ -240,15 +224,7 @@ export default function Board({ children }: { children: ReactNode }) {
       <div ref={tab} className="pointer-events-none absolute inset-x-0 top-0 z-20 h-0 [&>h2]:pointer-events-auto">
         <Notch big label={path === "/strategy/submissions" && unread ? `${PAGES[i][1]} · ${unread}` : PAGES[i][1]} labelRef={label}>
           {/* The loading bar lives inside the tab, shown while the next page loads. */}
-          <div
-            ref={bar}
-            aria-hidden="true"
-            style={{ opacity: 0 }}
-            className="pointer-events-none absolute inset-x-[22%] bottom-[max(0.55rem,6px)] h-[max(0.3rem,4px)] overflow-hidden rounded-full bg-brand-tint"
-          >
-            <span data-comet className="absolute inset-y-0 left-0 w-[38%] rounded-full bg-[linear-gradient(90deg,transparent,var(--color-aura-1),var(--color-aura-2),var(--color-aura-3),transparent)]" />
-            <span data-fill className="absolute inset-0 origin-left scale-x-0 rounded-full bg-brand" />
-          </div>
+          <LoadingBar on={turning || waiting} className="inset-x-[22%] bottom-[max(0.55rem,6px)]" />
         </Notch>
       </div>
       <div ref={stage} className="relative flex min-h-0 flex-1 flex-col rounded-lg">

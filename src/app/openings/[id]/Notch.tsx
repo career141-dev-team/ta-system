@@ -67,6 +67,7 @@ export default function Notch({
           <path d="M0 0c10 0 12 6 15 14l7 16c3 8 8 12 16 12h132c8 0 13-4 16-12l7-16c3-8 5-14 15-14Z" />
         </svg>
         <span className="relative">{label}</span>
+        {children}
       </h2>
     );
   return (

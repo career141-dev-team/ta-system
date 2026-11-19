@@ -12,6 +12,8 @@ export default function LiveName({ field, sample }: { field: "title" | "client";
   const got = useDoorQuery(door.summary, job ? { openingId: job } : "skip") as Summary | undefined;
   if (!live) return <>{sample}</>;
   if (!job) return <>Open an opening from the Openings page</>;
-  if (got && !got.ok) return <>{field === "title" ? got.message : ""}</>;
+  // Still reading: a soft shimmer the size of the words, never a blank line.
+  if (!got) return <span role="status" aria-label="Loading" className={"shimmer inline-block h-[0.8em] rounded-md align-middle " + (field === "title" ? "w-[14ch]" : "w-[9ch]")} />;
+  if (!got.ok) return <>{field === "title" ? got.message : ""}</>;
   return <>{got?.opening[field] ?? ""}</>;
 }

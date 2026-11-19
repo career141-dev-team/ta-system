@@ -12,6 +12,8 @@ import { ATS_ROWS, HH_ROWS } from "./rows";
 import { copyOf, openBoard } from "../../Overview";
 import { turn } from "../../Board";
 import Notch from "./Notch";
+import LoadingBar from "@/app/LoadingBar";
+import { useAnyBusy } from "@/lib/busy";
 import PipelineBoard from "./PipelineBoard";
 import { BackButton } from "./PipelineBoard";
 import { warmPdf } from "./CvPages";
@@ -92,6 +94,9 @@ const STILL = "[data-card-id], [data-card-id] *, [data-still], [data-still] *";
 
 export default function OpeningView({ overview }: { overview: ReactNode }) {
   const [view, setView] = useState<View>("overview");
+  // Any read on this opening still on its way runs the loading bar in the view's tab,
+  // or along the top of the opening page (owner, 19 Nov 2026).
+  const waiting = useAnyBusy();
   const focus = view !== "overview";
 
   // Switch at once, on the click: no leave animation to wait for. The arrival below
@@ -398,6 +403,7 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
             : "mx-26.25 mt-10.25 pb-8 max-md:mx-4 max-md:mt-5 max-md:overflow-y-auto")
         }
       >
+        {view === "overview" && <LoadingBar on={waiting} className="-top-3 inset-x-[38%]" />}
         {/* Shown views take their place; the rest stay mounted but hidden. */}
         <div className={view === "overview" ? "contents" : "hidden"}>{overview}</div>
         {opened.map((v) =>
@@ -408,7 +414,11 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
               className={v === view ? "relative flex min-h-0 flex-1 flex-col rounded-lg bg-white" : "hidden"}
             >
               {/* The email view names its own notch: Midday or End of day email. */}
-              {v !== "midday" && <Notch small label={viewLabel(v)} />}
+              {v !== "midday" && (
+                <Notch small label={viewLabel(v)}>
+                  {v === view && <LoadingBar on={waiting} className="bottom-[3px] inset-x-[30%]" />}
+                </Notch>
+              )}
               <Suspense fallback={<ViewSkeleton />}>
               {v === "pipeline" ? (
                 <PipelineBoard />
