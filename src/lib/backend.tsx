@@ -172,6 +172,12 @@ export const door = {
   // The Director's and Ops's AURA homes (19 Nov).
   directorDesk: makeFunctionReference<"query">("ui/homes:director"),
   opsDesk: makeFunctionReference<"query">("ui/homes:ops"),
+  // AURA's day plan, phase 1 (19 Nov): draft, approve, tick, close.
+  planToday: makeFunctionReference<"query">("ui/plan:today"),
+  planSaveDraft: makeFunctionReference<"mutation">("ui/plan:saveDraft"),
+  planApprove: makeFunctionReference<"mutation">("ui/plan:approve"),
+  planSetTask: makeFunctionReference<"mutation">("ui/plan:setTask"),
+  planClose: makeFunctionReference<"mutation">("ui/plan:close"),
   scoopUploadUrl: makeFunctionReference<"mutation">("ui/opening:scoopUploadUrl"),
   queueScoop: makeFunctionReference<"mutation">("ui/opening:queueScoop"),
   refreshChecks: makeFunctionReference<"mutation">("ui/day:refreshChecks"),

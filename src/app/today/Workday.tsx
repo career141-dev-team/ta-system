@@ -11,7 +11,8 @@ import { door, useDoorAction, useDoorMutation, useDoorQuery, type AuraReply, typ
 import ChecksList from "./ChecksList";
 import { checksFor, KNOWN, progress, type Check, type CheckKey } from "./checks";
 import PillMenu, { type MenuOption } from "../openings/[id]/PillMenu";
-import { aboutTheDay, planDay, type Plan } from "./plan";
+import { aboutTheDay, planDay, type DayPosition, type Plan } from "./plan";
+import PlanApproval from "./PlanApproval";
 import { answer, DESK, rank, startLine, type Answer, type Desk, type Tone } from "./desk";
 import { saveRow, TAS, useRows, type Row } from "../strategy/data";
 import { petSay } from "@/lib/pet";
@@ -565,7 +566,7 @@ export default function Workday({ startedAt }: { startedAt: number | null }) {
                 ) : m.reply === "na" ? (
                   <Say>I&rsquo;m not connected yet &mdash; this screen is a preview, so I can&rsquo;t answer that today.</Say>
                 ) : "steps" in m.reply ? (
-                  <DayPlan plan={m.reply} latest={m.id === latestPlan} onChange={change} />
+                  <DayPlan plan={m.reply} latest={m.id === latestPlan} onChange={change} positions={ranked.filter((r) => picked[r.d.id]).map((r) => r.d as DayPosition)} />
                 ) : (
                   <Told a={m.reply} live={rows} onAccept={(row) => saveRow({ ...row, state: "working", accepted: "Today" })} />
                 )}
@@ -647,7 +648,7 @@ const DOT = { brand: "bg-brand", warn: "bg-warn", info: "bg-info", none: "border
 /** AURA's plan: the headline, then the day step by step - the time, the position's
  *  colour, the work, and the position to open; Start / Change something on the
  *  latest plan only. Rows arrive one after another (start states set at once). */
-function DayPlan({ plan, latest, onChange }: { plan: Plan; latest: boolean; onChange: () => void }) {
+function DayPlan({ plan, latest, onChange, positions }: { plan: Plan; latest: boolean; onChange: () => void; positions: DayPosition[] }) {
   const card = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = card.current;
@@ -698,6 +699,8 @@ function DayPlan({ plan, latest, onChange }: { plan: Plan; latest: boolean; onCh
               </button>
             </div>
           )}
+          {/* Phase 1 of the day agent (19 Nov): approve it, then tick it off. */}
+          {latest && <div className="mt-[max(0.9rem,10px)]"><PlanApproval plan={plan} positions={positions} /></div>}
         </div>
       )}
     </>
