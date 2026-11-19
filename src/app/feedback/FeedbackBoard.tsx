@@ -6,6 +6,9 @@ import { DUR, EASE, gsap, loadFlip, motionOK, type FlipPlugin } from "@/lib/gsap
 import { personOf, useRole, useSignedInPerson } from "@/lib/role";
 import Toast from "../openings/[id]/Toast";
 import { pushAlert } from "../alerts/data";
+import PillMenu from "../openings/[id]/PillMenu";
+import { useFilters, matchesAll } from "@/lib/filters";
+import { SearchField } from "../FilterBits";
 import { COLUMNS, KIND, meta, setItems, update, useItems, type Item } from "./data";
 
 // F2, the Feedback & support board (owner's design, 14 Nov 2026) for a TA Lead,
@@ -37,7 +40,13 @@ export default function FeedbackBoard() {
   const lead = role === "Lead" || role === "Director";
   const me = personOf(role).name.split(" ")[0];
   const all = useItems();
-  const items = lead ? all : all.filter((x) => x.by === me);
+  const mine = lead ? all : all.filter((x) => x.by === me);
+  // Search, kind, who sent it and "blocks my work" are kept for the visit; Reset clears them.
+  const { f, set, reset, active } = useFilters("feedback", { q: "", kind: "", by: "", blocking: false as boolean });
+  const senders = [...new Set(mine.map((x) => x.by))].sort();
+  const items = mine.filter(
+    (x) => matchesAll(f.q, x.title, x.text, x.by) && (!f.kind || x.kind === f.kind) && (!f.by || x.by === f.by) && (!f.blocking || x.blocks),
+  );
   const [open, setOpen] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>(null);
   const [words, setWords] = useState("");
@@ -110,6 +119,22 @@ export default function FeedbackBoard() {
   return (
     // As on the Pipeline: columns side by side, each scrolling itself with no bar; on
     // a narrow screen the row slides sideways inside the board.
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex flex-wrap items-center gap-2 px-[max(1.5rem,14px)] pt-[max(2.5rem,16px)] max-md:pt-12">
+        <SearchField value={f.q} onChange={(q) => set({ q })} placeholder="Search feedback" />
+        <PillMenu options={[{ value: "", label: "All kinds" }, { value: "broke", label: "Something broke" }, { value: "idea", label: "An idea" }, { value: "question", label: "A question" }]} initial={f.kind} onChange={(kind) => set({ kind })} mark="tick" pillClass={PILL} />
+        {lead && senders.length > 1 && (
+          <PillMenu options={[{ value: "", label: "Anyone" }, ...senders.map((s) => ({ value: s, label: s }))]} initial={f.by} onChange={(by) => set({ by })} prefix="From:" mark="tick" pillClass={PILL} />
+        )}
+        <button type="button" aria-pressed={f.blocking} onClick={() => set({ blocking: !f.blocking })} className={"h-[max(2.4rem,33px)] rounded-full border px-[max(1rem,13px)] text-small transition-colors " + (f.blocking ? "border-ink bg-ink text-white" : "border-border bg-surface text-ink-2 hover:text-ink")}>
+          Blocks work
+        </button>
+        {active > 0 && (
+          <button type="button" onClick={reset} className="rounded-full px-3 py-1.5 text-small font-medium text-brand-strong hover:bg-surface-2">
+            Reset filters{active > 1 ? ` (${active})` : ""} · {items.length} of {mine.length}
+          </button>
+        )}
+      </div>
     <div ref={board} className="flex min-h-0 flex-1 gap-[max(1.75rem,18px)] overflow-x-auto px-[max(1.5rem,14px)] pt-[max(2.5rem,16px)] [scrollbar-width:none] max-md:pt-12">
       {COLUMNS.map((c) => {
         const list = items.filter((x) => x.status === c.status);
@@ -152,8 +177,11 @@ export default function FeedbackBoard() {
       })}
       {toast && <Toast key={toast.key} bold={toast.bold} rest={toast.rest} />}
     </div>
+    </div>
   );
 }
+
+const PILL = "flex h-[max(2.4rem,33px)] items-center gap-2 whitespace-nowrap rounded-full border border-border bg-surface px-[max(1rem,13px)] text-small text-ink-2";
 
 // The app's buttons: green for the main step, outlined for the other, quiet text for the rest.
 const BTN = "rounded-full px-[max(0.875rem,10px)] py-[max(0.45rem,6px)] text-small font-medium transition-colors";
