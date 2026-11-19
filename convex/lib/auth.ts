@@ -76,9 +76,16 @@ export async function resolveActor(
       .withIndex("by_token", (q) => q.eq("tokenIdentifier", identity.tokenIdentifier))
       .unique();
 
-    if (!user) throw new Error("User not found in database");
-    assertUsable(user);
-    return { user, source: "clerk" };
+    if (user) {
+      assertUsable(user);
+      return { user, source: "clerk" };
+    }
+    // 19 Nov: the new UI's door (convex/ui/me.ts) finds a person by token, Clerk id OR
+    // verified email, then calls an internal function with that person's id. The Clerk
+    // identity travels into that call, so the token-only lookup above failed for anyone
+    // matched by email ("User not found in database" on ui/opening:summary). An internal
+    // caller that names the actor has already established who it is - fall through to it.
+    if (!actorId) throw new Error("User not found in database");
   }
 
   // ── Mode 2: the TA platform's signed-cookie session ───────────────────────
