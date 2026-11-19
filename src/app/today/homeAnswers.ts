@@ -73,6 +73,14 @@ export const CHASE = [
 
 export type HomeRole = "Lead" | "Director" | "Ops";
 
+/** The lead's desk: the real one from ui/lead:desk when signed in, else the sample. */
+export type LeadDesk = {
+  team: TaToday[];
+  decide: { title: string; client: string; why: string; red?: boolean }[];
+  roles: { title: string; client: string; tas: string; on: boolean; fu: number; days: number }[];
+};
+export const SAMPLE_DESK: LeadDesk = { team: TEAM, decide: DECIDE, roles: ROLES };
+
 const first = (t: TaToday) => t.name.split(" ")[0];
 const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 const has = (q: string, ...words: string[]) => words.some((w) => q.includes(w));
@@ -85,24 +93,24 @@ export const dayLine = (t: TaToday): Line => ({
 });
 
 /** What the lead sees first: who is behind and what waits. */
-function leadBrief(): Answer {
-  const idle = TEAM.filter((t) => !t.day.started);
-  const low = TEAM.filter((t) => t.cvs < CVS_GOAL);
-  const busy = TEAM.filter((t) => t.alerts > ALERTS_MAX);
+function leadBrief(d: LeadDesk): Answer {
+  const idle = d.team.filter((t) => !t.day.started);
+  const low = d.team.filter((t) => t.cvs < CVS_GOAL);
+  const busy = d.team.filter((t) => t.alerts > ALERTS_MAX);
   const warn = [
     ...idle.map((t) => `${first(t)} has not started`),
     low.length ? `${plural(low.length, "TA")} under ${CVS_GOAL} CVs today` : "",
     ...busy.map((t) => `${first(t)} has ${t.alerts} alerts`),
   ].filter(Boolean);
   return {
-    say: `${plural(TEAM.length - idle.length, "TA")} of ${TEAM.length} started, ${plural(TEAM.filter((t) => t.day.eod).length, "EOD")} sent, ${plural(DECIDE.length, "decision")} waiting on you.`,
+    say: `${plural(d.team.length - idle.length, "TA")} of ${d.team.length} started, ${plural(d.team.filter((t) => t.day.eod).length, "EOD")} sent, ${plural(d.decide.length, "decision")} waiting on you.`,
     warn,
-    rows: DECIDE.map((d) => ({ main: d.title, meta: `${d.client} · ${d.why}`, tag: { text: "Decide", tone: d.red ? "danger" : "warn" } })),
+    rows: d.decide.map((d) => ({ main: d.title, meta: `${d.client} · ${d.why}`, tag: { text: "Decide", tone: d.red ? "danger" : "warn" } })),
   };
 }
 
-function leadAnswer(q: string): Answer {
-  const ta = TEAM.find((t) => q.includes(first(t).toLowerCase()) || q.includes(t.name.toLowerCase()));
+function leadAnswer(q: string, d: LeadDesk): Answer {
+  const ta = d.team.find((t) => q.includes(first(t).toLowerCase()) || q.includes(t.name.toLowerCase()));
   if (ta) {
     const warn = [
       !ta.day.started ? "Not started today" : "",
@@ -123,33 +131,33 @@ function leadAnswer(q: string): Answer {
     };
   }
   if (has(q, "not started", "hasn't", "has not", "who started", "absent", "late")) {
-    const idle = TEAM.filter((t) => !t.day.started);
+    const idle = d.team.filter((t) => !t.day.started);
     return idle.length ? { say: `${plural(idle.length, "TA")} ${idle.length === 1 ? "has" : "have"} not started today.`, rows: idle.map(dayLine) } : { say: "Everyone has started today." };
   }
   if (has(q, "decision", "decide", "needs me", "need me", "waiting on me")) {
-    return { say: `${plural(DECIDE.length, "thing")} ${DECIDE.length === 1 ? "needs" : "need"} your decision.`, rows: leadBrief().rows };
+    return { say: `${plural(d.decide.length, "thing")} ${d.decide.length === 1 ? "needs" : "need"} your decision.`, rows: leadBrief(d).rows };
   }
   if (has(q, "linkedin", "not posted", "no link")) {
-    const off = ROLES.filter((r) => !r.on);
+    const off = d.roles.filter((r) => !r.on);
     return { say: `${plural(off.length, "role")} ${off.length === 1 ? "is" : "are"} not on LinkedIn.`, rows: off.map((r) => ({ main: r.title, meta: `${r.client} · ${r.tas} · day ${r.days}`, tag: { text: "Not on LinkedIn", tone: "warn" } })) };
   }
   if (has(q, "cv", "under 10", "low")) {
-    const low = TEAM.filter((t) => t.cvs < CVS_GOAL).sort((a, b) => a.cvs - b.cvs);
+    const low = d.team.filter((t) => t.cvs < CVS_GOAL).sort((a, b) => a.cvs - b.cvs);
     return { say: low.length ? `${plural(low.length, "TA")} under ${CVS_GOAL} CVs today.` : `Everyone has ${CVS_GOAL} CVs or more today.`, rows: low.map((t) => ({ main: t.name, meta: `${t.cvs} CVs today · ${t.pipeline} in the pipeline`, tag: { text: `${CVS_GOAL - t.cvs} short`, tone: "danger" } })) };
   }
   if (has(q, "alert")) {
-    const by = [...TEAM].sort((a, b) => b.alerts - a.alerts);
-    return { say: `${TEAM.reduce((n, t) => n + t.alerts, 0)} alerts open across the team.`, rows: by.map((t) => ({ main: t.name, meta: `${plural(t.alerts, "alert")}`, tag: t.alerts > ALERTS_MAX ? { text: "Too many", tone: "danger" } : undefined })) };
+    const by = [...d.team].sort((a, b) => b.alerts - a.alerts);
+    return { say: `${d.team.reduce((n, t) => n + t.alerts, 0)} alerts open across the team.`, rows: by.map((t) => ({ main: t.name, meta: `${plural(t.alerts, "alert")}`, tag: t.alerts > ALERTS_MAX ? { text: "Too many", tone: "danger" } : undefined })) };
   }
   if (has(q, "eod", "end of day", "email")) {
-    const sent = TEAM.filter((t) => t.day.eod);
-    return { say: `${plural(sent.length, "EOD")} sent so far, ${TEAM.length - sent.length} to come.`, rows: TEAM.map(dayLine) };
+    const sent = d.team.filter((t) => t.day.eod);
+    return { say: `${plural(sent.length, "EOD")} sent so far, ${d.team.length - sent.length} to come.`, rows: d.team.map(dayLine) };
   }
   if (has(q, "role", "opening", "position", "job")) {
-    return { say: `${plural(ROLES.length, "open role")} across the team.`, rows: ROLES.map((r) => ({ main: r.title, meta: `${r.client} · ${r.tas} · day ${r.days}`, tag: r.on ? { text: `${r.fu} in follow-up`, tone: "muted" } : { text: "Not on LinkedIn", tone: "warn" } })) };
+    return { say: `${plural(d.roles.length, "open role")} across the team.`, rows: d.roles.map((r) => ({ main: r.title, meta: `${r.client} · ${r.tas} · day ${r.days}`, tag: r.on ? { text: `${r.fu} in follow-up`, tone: "muted" } : { text: "Not on LinkedIn", tone: "warn" } })) };
   }
   if (has(q, "check", "team", "status", "everyone", "how is", "how are", "today", "going on", "progress")) {
-    return { say: "Here is the team right now.", rows: TEAM.map(dayLine) };
+    return { say: "Here is the team right now.", rows: d.team.map(dayLine) };
   }
   return { say: "I can tell you how each TA is doing, who has not started, the checks, CVs, alerts, EODs, open roles and what needs your decision. Try a name, like “How is Chathura doing?”" };
 }
@@ -185,15 +193,15 @@ function opsAnswer(q: string): Answer {
 }
 
 /** AURA's first words when the chat opens. */
-export function brief(role: HomeRole): Answer {
-  if (role === "Lead") return leadBrief();
+export function brief(role: HomeRole, d: LeadDesk = SAMPLE_DESK): Answer {
+  if (role === "Lead") return leadBrief(d);
   if (role === "Director") return { ...directorAnswer("review"), say: `${plural(WAITING.length, "set")} ${WAITING.length === 1 ? "waits" : "wait"} on your review today.` };
   return { ...opsAnswer("chase"), say: `${plural(CHASE.length, "thing")} to chase and ${plural(INTERVIEWS.filter((i) => !i.confirmed).length, "interview")} not confirmed.` };
 }
 
-export function answer(role: HomeRole, text: string): Answer {
+export function answer(role: HomeRole, text: string, d: LeadDesk = SAMPLE_DESK): Answer {
   const q = text.toLowerCase();
-  return role === "Lead" ? leadAnswer(q) : role === "Director" ? directorAnswer(q) : opsAnswer(q);
+  return role === "Lead" ? leadAnswer(q, d) : role === "Director" ? directorAnswer(q) : opsAnswer(q);
 }
 
 export const SUGGEST: Record<HomeRole, string[]> = {
@@ -203,12 +211,12 @@ export const SUGGEST: Record<HomeRole, string[]> = {
 };
 
 /** The three numbers under Start chat. */
-export function startStats(role: HomeRole): [string, string][] {
+export function startStats(role: HomeRole, d: LeadDesk = SAMPLE_DESK): [string, string][] {
   if (role === "Lead")
     return [
-      [String(TEAM.filter((t) => t.day.started).length), `of ${TEAM.length} TAs started`],
-      [String(TEAM.filter((t) => t.day.eod).length), "EODs sent"],
-      [String(DECIDE.length), "decisions waiting"],
+      [String(d.team.filter((t) => t.day.started).length), `of ${d.team.length} TAs started`],
+      [String(d.team.filter((t) => t.day.eod).length), "EODs sent"],
+      [String(d.decide.length), "decisions waiting"],
     ];
   if (role === "Director")
     return [

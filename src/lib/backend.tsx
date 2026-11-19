@@ -121,6 +121,8 @@ export const door = {
   desk: makeFunctionReference<"query">("ui/desk:desk"),
   things: makeFunctionReference<"query">("ui/desk:things"),
   askToday: makeFunctionReference<"action">("ui/aura:askToday"),
+  // The lead's AURA home (19 Nov): every TA's day, decisions and open roles.
+  leadDesk: makeFunctionReference<"query">("ui/lead:desk"),
   scoopUploadUrl: makeFunctionReference<"mutation">("ui/opening:scoopUploadUrl"),
   queueScoop: makeFunctionReference<"mutation">("ui/opening:queueScoop"),
   refreshChecks: makeFunctionReference<"mutation">("ui/day:refreshChecks"),
