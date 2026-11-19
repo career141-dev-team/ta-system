@@ -16,6 +16,7 @@ import Motion from "./Motion";
 import Board from "./Board";
 import Overview from "./Overview";
 import AuraPet from "./AuraPet";
+import PlanReminders from "./PlanReminders";
 import { THEME_BOOT } from "@/lib/theme";
 import { Backend } from "@/lib/backend";
 
@@ -44,6 +45,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <TopNav />
           <Board>{children}</Board>
           <Motion />
+          <PlanReminders />
         </Backend>
         <Overview />
         <AuraPet />

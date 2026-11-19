@@ -10,7 +10,7 @@
 // Drag it anywhere; it runs the way you pull it and stays where you leave it (per person).
 // A click (not a drag) opens a small "Ask AURA" box that goes to the AURA chat.
 // "Change" under it, or "My pet" in the name menu, opens the picker.
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { DUR, EASE, gsap } from "@/lib/gsap";
@@ -54,10 +54,16 @@ const DOT: Record<PetMood, string> = { working: "bg-info", done: "bg-success", f
 
 /** Kept inside the window, so a smaller window never loses the pet. */
 /** clientWidth, not innerWidth: innerWidth counts the scroll bar, which hid part of the pet. */
+const noop = () => () => {};
+
+// Never below 0: in a window narrower than the pet, it stays at the edge rather than off screen.
 const clamp = (r: number, b: number) =>
   typeof window === "undefined"
     ? { right: r, bottom: b }
-    : { right: Math.min(Math.max(r, 0), document.documentElement.clientWidth - W), bottom: Math.min(Math.max(b, 0), document.documentElement.clientHeight - H - 34) };
+    : {
+        right: Math.max(0, Math.min(r, document.documentElement.clientWidth - W)),
+        bottom: Math.max(0, Math.min(b, document.documentElement.clientHeight - H - 34)),
+      };
 
 export default function AuraPet() {
   const [state, setState] = useState<State>("idle");
@@ -117,7 +123,9 @@ export default function AuraPet() {
     return () => clearTimeout(t);
   }, [unread, hidden]);
 
-  const place = clamp(live?.right ?? at.right, live?.bottom ?? at.bottom);
+  // The first render matches the server's (no window yet); the window's size is read after.
+  const mounted = useSyncExternalStore(noop, () => true, () => false);
+  const place = mounted ? clamp(live?.right ?? at.right, live?.bottom ?? at.bottom) : { right: 12, bottom: 12 };
 
   const down = (e: React.PointerEvent) => {
     if (e.button !== 0) return;

@@ -14,6 +14,7 @@ import { useSignedInPerson } from "@/lib/role";
 import { petSay } from "@/lib/pet";
 import { DUR, EASE, gsap } from "@/lib/gsap";
 import { short, type DayPosition, type Plan, type Step } from "./plan";
+import { askForPopups } from "../PlanReminders";
 
 type TaskState = "planned" | "doing" | "done" | "skipped" | "carried";
 type Task = { key: string; title: string; kind: string; jobId: string | null; startMin: number; minutes: number; priority: string; state: TaskState; reason: string | null };
@@ -87,6 +88,7 @@ function useDayPlan() {
   const approveIt = useDoorMutation(door.planApprove);
   const setTaskIt = useDoorMutation(door.planSetTask);
   const closeIt = useDoorMutation(door.planClose);
+  const snoozeIt = useDoorMutation(door.planSnooze);
   const plan = live ? (read?.ok ? read.plan : null) : local;
 
   const approve = async (tasks: ReturnType<typeof toTasks>): Promise<Answer> => {
@@ -118,7 +120,10 @@ function useDayPlan() {
     }
     return (await closeIt({})) as Answer;
   };
-  return { live, plan, loading: live && read === undefined, approve, setTask, close };
+  // Reminders run in the backend, so quieting them is for a signed-in plan only.
+  const snooze = async (key: string | undefined, minutes: number): Promise<Answer> =>
+    live ? ((await snoozeIt({ key, minutes })) as Answer) : { ok: true, message: "Reminders run when you are signed in." };
+  return { live, plan, loading: live && read === undefined, approve, setTask, close, snooze };
 }
 
 const BTN_DARK = "flex h-[max(2.75rem,36px)] items-center gap-2 rounded-full bg-ink px-[max(1.25rem,14px)] text-[max(0.9375rem,13px)] font-medium text-white transition-colors hover:bg-black disabled:opacity-50";
@@ -138,6 +143,7 @@ export default function PlanApproval({ plan, positions }: { plan: Plan; position
         disabled={busy || plan.steps.length === 0}
         onClick={async () => {
           setBusy(true);
+          askForPopups();
           const a = await approve(toTasks(plan, positions, live));
           setBusy(false);
           setSaid(a.ok ? null : a.message);
@@ -150,14 +156,14 @@ export default function PlanApproval({ plan, positions }: { plan: Plan; position
         </svg>
         {busy ? "Approving…" : "Approve this plan"}
       </button>
-      <p className="text-[max(0.8125rem,11.5px)] text-ink-3">{said ?? "AURA starts keeping you on time once you approve. You can still change it later."}</p>
+      <p className="text-[max(0.8125rem,11.5px)] text-ink-3">{said ?? "AURA starts reminding you once you approve: at each task's start, near its end, and if it runs over."}</p>
     </div>
   );
 }
 
 /** The approved plan: tick, skip with a reason, close the day. */
 function DayPlanCard() {
-  const { plan: day, setTask, close } = useDayPlan();
+  const { live, plan: day, setTask, close, snooze } = useDayPlan();
   const [skipping, setSkipping] = useState<string | null>(null);
   const [why, setWhy] = useState("");
   const [closing, setClosing] = useState(false);
@@ -186,6 +192,11 @@ function DayPlanCard() {
         <span className="text-[max(0.875rem,12px)] text-ink-3">
           {day.tally.done} of {day.tally.of} done{day.tally.open ? ` · ${day.tally.open} open` : ""}
         </span>
+        {!closed && live && (
+          <button type="button" onClick={async () => petSay("done", (await snooze(undefined, 60)).message)} className="ml-auto text-[max(0.8125rem,11.5px)] text-ink-3 hover:text-ink">
+            Pause reminders 1 h
+          </button>
+        )}
       </div>
       <ol className="flex flex-col divide-y divide-border">
         {day.tasks.map((t) => {
@@ -220,6 +231,11 @@ function DayPlanCard() {
                 {t.state === "skipped" && !closed && (
                   <button type="button" onClick={() => setTask(t.key, "planned")} className="shrink-0 text-[max(0.8125rem,11.5px)] text-ink-3 hover:text-ink">
                     Bring back
+                  </button>
+                )}
+                {!closed && !gone && !done && live && (
+                  <button type="button" onClick={async () => petSay("done", (await snooze(t.key, 30)).message)} title="No reminders for this task for 30 minutes" className="shrink-0 text-[max(0.8125rem,11.5px)] text-ink-3 hover:text-ink">
+                    Quiet 30 min
                   </button>
                 )}
                 {!closed && !gone && !done && (
