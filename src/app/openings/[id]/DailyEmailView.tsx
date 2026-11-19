@@ -9,6 +9,9 @@ import { BackButton } from "./PipelineBoard";
 import Notch from "./Notch";
 import Toast from "./Toast";
 import WorkdayBlocked from "./WorkdayBlocked";
+import PillMenu from "./PillMenu";
+import { useFilters } from "@/lib/filters";
+import { NoResults, ResultLine } from "@/app/FilterBits";
 import { useOpeningView, type WorkView } from "./view";
 import {
   CandidateTable,
@@ -1530,6 +1533,8 @@ function StatusCard({
   );
 }
 
+const SENT_PILL = "flex h-[max(2.2rem,30px)] items-center gap-2 whitespace-nowrap rounded-full border border-border bg-surface px-[max(0.9rem,12px)] text-small text-ink-2";
+
 /** Sent in the last 31 days: own emails for a TA, everyone's for a lead. */
 function SentList({
   mails,
@@ -1544,8 +1549,14 @@ function SentList({
 }) {
   const me = useMe();
   const LEAD = me.lead;
-  const list = mails.filter(
+  const base = mails.filter(
     (m) => m.status !== "draft" && (LEAD || m.by === me.name),
+  );
+  // Kind, state and (for a lead) who wrote it are kept for the visit; Reset clears them.
+  const { f, set, reset, active } = useFilters("sent-emails", { kind: "", state: "", by: "" });
+  const writers = [...new Set(base.map((m) => m.by))].sort();
+  const list = base.filter(
+    (m) => (!f.kind || m.kind === f.kind) && (!f.state || m.status === f.state) && (!f.by || m.by === f.by),
   );
   const eodDays = new Set(
     mails
@@ -1591,6 +1602,34 @@ function SentList({
           <Cross />
         </button>
       </div>
+      <div className="mt-[max(0.8rem,8px)] flex flex-wrap items-center gap-2">
+        <PillMenu
+          options={[{ value: "", label: "All emails" }, { value: "midday", label: "Midday" }, { value: "eod", label: "End of day" }]}
+          initial={f.kind}
+          onChange={(kind) => set({ kind })}
+          mark="tick"
+          pillClass={SENT_PILL}
+        />
+        <PillMenu
+          options={[{ value: "", label: "Any state" }, { value: "sent", label: "Sent" }, { value: "failed", label: "Not sent" }, { value: "uncertain", label: "Not confirmed" }]}
+          initial={f.state}
+          onChange={(state) => set({ state })}
+          mark="tick"
+          pillClass={SENT_PILL}
+        />
+        {LEAD && writers.length > 1 && (
+          <PillMenu
+            options={[{ value: "", label: "Anyone" }, ...writers.map((w) => ({ value: w, label: w }))]}
+            initial={f.by}
+            onChange={(by) => set({ by })}
+            prefix="By:"
+            mark="tick"
+            pillClass={SENT_PILL}
+          />
+        )}
+        <ResultLine shown={list.length} total={base.length} noun="emails" active={active} onReset={reset} />
+      </div>
+      {list.length === 0 && <NoResults noun="sent emails" filtered={active > 0} onReset={reset} />}
       <ul className="mt-[max(0.8rem,8px)] space-y-2">
         {list.map((m) => (
           <li key={m.id}>
