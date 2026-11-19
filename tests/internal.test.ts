@@ -79,6 +79,7 @@ const ALLOWED_PUBLIC = new Set<string>([
   "ui/email:preflight",
   "ui/email:settle",
   "ui/email:compose",
+  "ui/emailSend:sendMidday",
 ]);
 
 const PUBLIC = /export\s+(?:const\s+(\w+)\s*=|(default))\s*(query|mutation|action)\s*\(/g;

@@ -299,6 +299,7 @@ import type * as templates_messageTemplates from "../templates/messageTemplates.
 import type * as ui_manage from "../ui/manage.js";
 import type * as ui_day from "../ui/day.js";
 import type * as ui_email from "../ui/email.js";
+import type * as ui_emailSend from "../ui/emailSend.js";
 import type * as ui_me from "../ui/me.js";
 import type * as ui_opening from "../ui/opening.js";
 import type * as ui_openings from "../ui/openings.js";
@@ -605,6 +606,7 @@ declare const fullApi: ApiFromModules<{
   "ui/manage": typeof ui_manage;
   "ui/day": typeof ui_day;
   "ui/email": typeof ui_email;
+  "ui/emailSend": typeof ui_emailSend;
   "ui/me": typeof ui_me;
   "ui/opening": typeof ui_opening;
   "ui/openings": typeof ui_openings;
@@ -845,6 +847,7 @@ declare const fullApi: ApiFromModules<{
   "ui/manage": typeof ui_manage;
   "ui/day": typeof ui_day;
   "ui/email": typeof ui_email;
+  "ui/emailSend": typeof ui_emailSend;
   "ui/me": typeof ui_me;
   "ui/opening": typeof ui_opening;
   "ui/openings": typeof ui_openings;

@@ -297,9 +297,11 @@ Short hashes from `git log`; dates are commit dates.
 
 - 2026-11-19 - the email is also built in the backend for the new UI: `convex/lib/eodCompose.ts` (`eligibleApplications` = THE roster rule, now called by `ta/dailyEmails:begin` too, so screen and send cannot drift; `shortlistRows`, `effortRow`, `defaultRecipients`, `defaultSubject`) and `ta/dailyEmails:compose` (read by `ui/email:compose`). `shortlistRowFor` and `subjectLine` moved to `src/lib/eod-format.ts`, `effortBucket` to `src/lib/cvSource.ts`; `src/lib/eod.ts` re-exports all three, so the old app is unchanged. Not yet in the backend build: the referee-calls block (still Next-only).
 
+- 2026-11-19 - the new UI sends a Midday WITHOUT CV attachments through `convex/ui/emailSend.ts` `sendMidday`: `prepareMidday` builds the email on the server (compose + the TA's table-1 cell edits via `withEdits`, `recipients` = eodRecipients with the TA's removed/added addresses, `checkResearchSubmission` with scoopsOnly from the records, `eodEmailHtml`), `middayDraft` reuses today's open draft or creates one, then the same `begin` and `eodMail:send` as the old app. The browser never gives HTML, sender, To/Cc lists or rows. Not yet: a Midday with CVs, the EOD, saving cell edits back to the candidate.
+
 <!-- skill-meta
-verified-commit: 99acaa73
-verified-hash: 5fea6b74dfb91dd5d298c9221b4048488fdd1acb
+verified-commit: 534889d6
+verified-hash: cce0476d830b64415f53cbd7fb524faccb2a5053
 verified-date: 2026-11-19
 sources:
   src/app/openings/[id]/eod/page.tsx
@@ -320,6 +322,7 @@ sources:
   src/lib/workLocations.ts
   convex/ta/dailyEmails.ts
   convex/lib/eodCompose.ts
+  convex/ui/emailSend.ts
   convex/ta/eodMail.ts
   convex/ta/eodCopies.ts
   convex/ta/eodReminders.ts

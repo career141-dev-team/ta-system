@@ -1,3 +1,4 @@
+import type { ShortlistRow } from "../../src/lib/eod-format";
 // convex/ui/rules.ts
 //
 // The plain rules of the new UI's door (convex/ui), kept free of Convex so a
@@ -231,3 +232,27 @@ export const openingCard = {
     return { id: j.id, client: j.client, title: j.title, status: openingCard.status(j.status), priority: p, days: j.days, team: j.team, made: j.made, website: j.website };
   },
 };
+
+/** The table-1 cells a TA may change before sending (shortlistRowsFromForm). */
+const EDITABLE = ["name", "age", "notice", "notes", "currentCompany", "currentDesignation", "currentRemuneration", "expectedRemuneration"] as const;
+type Editable = (typeof EDITABLE)[number];
+export type CellEdit = { applicationId: string; field: string; value: string };
+
+/** The TA's edits laid over the rows built from the records; nothing else of a row can change. */
+export function withEdits(rows: ShortlistRow[], edits: CellEdit[]): ShortlistRow[] {
+  return rows.map((r, i) => {
+    const out: ShortlistRow = { ...r, no: i + 1 };
+    for (const e of edits) {
+      if (e.applicationId !== r.applicationId || !(EDITABLE as readonly string[]).includes(e.field)) continue;
+      const value = e.value.slice(0, 2000);
+      if (e.field === "notes") {
+        const notes = value.split("\n").map((n) => n.trim()).filter(Boolean);
+        if (notes.length) out.notes = notes;
+      } else if (e.field === "name") {
+        if (value.trim()) out.name = value.trim();
+      } else out[e.field as Exclude<Editable, "notes" | "name">] = value.trim();
+    }
+    return out;
+  });
+}
+
