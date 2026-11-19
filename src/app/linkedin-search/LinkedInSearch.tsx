@@ -104,8 +104,52 @@ export default function LinkedInSearch() {
     const el = progress.current;
     if (step !== 3 || !el) return;
     const tw = gsap.fromTo(el, { width: "2%" }, { width: "92%", duration: motionOK() ? 60 : 0.2, ease: "power1.out" });
-    return () => void tw.kill();
+    // The colours slide along the bar so it reads as working, not stuck.
+    const sh = motionOK() ? gsap.fromTo(el, { backgroundPositionX: "0%" }, { backgroundPositionX: "100%", duration: 1.6, ease: "none", repeat: -1 }) : null;
+    return () => {
+      tw.kill();
+      sh?.kill();
+    };
   }, [step]);
+
+  // The steps come in one after another, each finished step pops and draws its tick,
+  // the step in progress breathes, and its words slide in (plain useEffect: see DESIGN.md motion).
+  const steps = useRef<HTMLOListElement>(null);
+  useEffect(() => {
+    const ol = steps.current;
+    if (!ol || !busy || !motionOK()) return;
+    const tw = gsap.fromTo(ol.children, { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.55, ease: "power3.out", stagger: 0.1, clearProps: "transform,opacity" });
+    return () => void tw.kill();
+  }, [busy]);
+  useEffect(() => {
+    const ol = steps.current;
+    if (!ol || !busy || !motionOK()) return;
+    const rows = Array.from(ol.children) as HTMLElement[];
+    const find = (r: HTMLElement | undefined, s: string) => r?.querySelector<HTMLElement>(s) ?? null;
+    const tl = gsap.timeline();
+    const prev = rows[step - 1];
+    const cur = rows[step];
+    const mark = find(prev, "[data-mark]");
+    const tick = find(prev, "[data-tick]");
+    if (mark) tl.fromTo(mark, { scale: 0.5 }, { scale: 1, duration: 0.5, ease: "back.out(2.4)", clearProps: "transform" }, 0);
+    if (tick) tl.fromTo(tick, { strokeDasharray: 14, strokeDashoffset: 14 }, { strokeDashoffset: 0, duration: 0.38, ease: "power2.out" }, 0.08);
+    const label = find(cur, "[data-label]");
+    if (label) tl.fromTo(label, { x: -10, opacity: 0.3 }, { x: 0, opacity: 1, duration: 0.45, ease: "power3.out", clearProps: "transform,opacity" }, 0);
+    const detail = find(cur, "[data-detail]");
+    if (detail) tl.fromTo(detail, { x: 10, opacity: 0 }, { x: 0, opacity: 1, duration: 0.45, ease: "power3.out", clearProps: "transform,opacity" }, 0.1);
+    const dot = find(cur, "[data-dot]");
+    const pulse = dot ? gsap.fromTo(dot, { scale: 1 }, { scale: 1.7, duration: 0.7, ease: "sine.inOut", yoyo: true, repeat: -1 }) : null;
+    return () => {
+      tl.kill();
+      pulse?.kill();
+    };
+  }, [step, busy]);
+  useEffect(() => {
+    const ol = steps.current;
+    if (!ol || !filters || !motionOK()) return;
+    const tw = gsap.fromTo(ol.querySelectorAll("[data-chip]"), { opacity: 0, y: 8, scale: 0.9 }, { opacity: 1, y: 0, scale: 1, duration: 0.35, ease: "back.out(1.8)", stagger: 0.04, clearProps: "transform,opacity" });
+    return () => void tw.kill();
+  }, [filters]);
 
   async function send(raw: string) {
     const said = raw.trim();
@@ -386,7 +430,7 @@ export default function LinkedInSearch() {
               <h1 className="text-[max(2rem,20px)] font-light text-ink">{title(busy)}</h1>
               <p className="text-small text-ink-2">AURA is searching LinkedIn now</p>
             </div>
-            <ol className="mt-4 flex flex-col gap-[max(1.1rem,12px)]">
+            <ol ref={steps} className="mt-4 flex flex-col gap-[max(1.1rem,12px)]">
               {STEPS.map((s, i) => {
                 const done = i < step;
                 const now = i === step;
@@ -395,20 +439,21 @@ export default function LinkedInSearch() {
                   <li key={s} className="flex flex-col gap-2">
                     <div className="flex items-center gap-4">
                       <span
+                        data-mark
                         aria-hidden="true"
                         className={"flex size-[1.4rem] shrink-0 items-center justify-center rounded-full " + (done ? "bg-brand text-white" : now ? "border-2 border-violet bg-white" : "border border-border-strong")}
                       >
                         {done ? (
                           <svg viewBox="0 0 11 11" className="size-[11px]" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M9.17 2.75 4.13 7.79 1.83 5.5" />
+                            <path data-tick d="M9.17 2.75 4.13 7.79 1.83 5.5" />
                           </svg>
                         ) : now ? (
-                          <span className="size-2 rounded-full bg-violet" />
+                          <span data-dot className="size-2 rounded-full bg-violet" />
                         ) : null}
                       </span>
-                      <span className={"text-body " + (done || now ? "text-ink" : "text-ink-3")}>{s}</span>
+                      <span data-label className={"text-body " + (done || now ? "text-ink" : "text-ink-3")}>{s}</span>
                       {(done || now) && (i === 2 || detail) && (
-                        <span className="ml-auto truncate text-small text-ink-3">
+                        <span data-detail className="ml-auto truncate text-small text-ink-3">
                           {i === 2 ? (
                             <button type="button" onClick={() => setFilters((v) => !v)} className="font-medium text-brand hover:underline">
                               {filters ? "Hide them" : "See them"}
@@ -422,13 +467,13 @@ export default function LinkedInSearch() {
                     {i === 2 && filters && (done || now) && (
                       <div className="flex flex-wrap gap-1.5 pl-10">
                         {chipsOf(busy).map((c) => (
-                          <span key={c} className="rounded-full bg-violet-soft px-2.5 py-0.5 text-caption text-violet">{c}</span>
+                          <span key={c} data-chip className="rounded-full bg-violet-soft px-2.5 py-0.5 text-caption text-violet">{c}</span>
                         ))}
                       </div>
                     )}
                     {i === 3 && now && (
                       <span className="ml-10 block h-1 overflow-hidden rounded-full bg-surface-3">
-                        <span ref={progress} className="block h-full w-[2%] rounded-full bg-[linear-gradient(90deg,var(--color-aura-1),var(--color-aura-2),var(--color-aura-3),var(--color-aura-4))]" />
+                        <span ref={progress} className="block h-full w-[2%] rounded-full bg-[length:300%_100%] bg-[linear-gradient(90deg,var(--color-aura-1),var(--color-aura-2),var(--color-aura-3),var(--color-aura-4))]" />
                       </span>
                     )}
                   </li>
@@ -482,7 +527,7 @@ export default function LinkedInSearch() {
               <div className="mt-3 flex flex-wrap items-center gap-1.5 pl-[max(3.5rem,44px)]">
                 <span className="text-small text-ink-2">What I searched for</span>
                 {chipsOf(view.ask).map((c) => (
-                  <span key={c} className="rounded-full bg-violet-soft px-2.5 py-0.5 text-caption text-violet">{c}</span>
+                  <span key={c} data-chip className="rounded-full bg-violet-soft px-2.5 py-0.5 text-caption text-violet">{c}</span>
                 ))}
                 <span className="text-caption text-ink-3">Say “only …” or “now …” to change them.</span>
               </div>
