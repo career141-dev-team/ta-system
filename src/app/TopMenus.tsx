@@ -6,7 +6,7 @@ import Link from "next/link";
 import { DUR, EASE, gsap } from "@/lib/gsap";
 import { getTheme, setTheme } from "@/lib/theme";
 import { useDoorSignOut } from "@/lib/backend";
-import { personOf, ROLES, setRole, useRole, useSignedInPerson, worksADay } from "@/lib/role";
+import { canViewAs, personOf, ROLES, setRole, useRole, useSignedInPerson, worksADay } from "@/lib/role";
 import { markRead, useAlerts, type Alert, type Icon } from "./alerts/data";
 import TellUs from "./feedback/TellUs";
 import { openPetPicker, useMyPet } from "@/lib/pet";
@@ -263,8 +263,8 @@ export function Person() {
             <li role="separator" className="mx-2.5 my-1.5 h-px bg-border" />
             {/* Until sign-in: see the app as each role (homes, rights). Signed in, the
                 account decides who is looking, so it steps aside (18 Nov). */}
-            {!signedIn && <li data-row role="none" className="px-2.5 py-1.5">
-              <p className="mb-1.5 text-caption text-ink-3">View as (until sign-in)</p>
+            {canViewAs() && <li data-row role="none" className="px-2.5 py-1.5">
+              <p className="mb-1.5 text-caption text-ink-3">{signedIn ? "View as (admin, while we build)" : "View as (until sign-in)"}</p>
               <div className="flex flex-wrap gap-1.5">
                 {ROLES.map((r) => (
                   <button

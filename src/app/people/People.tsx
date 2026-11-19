@@ -132,7 +132,7 @@ export default function People() {
   const role = useRole();
   const signed = useSignedInPerson();
   // user.manage: an admin only. Signed in, the account says so; on the sample, the Lead view stands in.
-  const canEdit = signed ? signed.title === "Admin" : role === "Lead";
+  const canEdit = signed ? signed.title === "Admin" : role === "Lead" || role === "Admin";
   // ponytail: the sample's own row; with the backend, the signed-in person's id.
   const meId = "u1";
 

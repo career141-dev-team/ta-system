@@ -5,6 +5,7 @@ import Link from "next/link";
 import { EASE, MOTION, gsap, motionOK } from "@/lib/gsap";
 import Count from "../Count";
 import { useSignedInPerson } from "@/lib/role";
+import { ALERTS_MAX, CHASE, CLIENTS, CVS_GOAL, DECIDE, INTERVIEWS, ROLES, STAGES, TEAM, WAITING, WITH_CLIENT, type TaToday } from "./homeAnswers";
 
 // Homes for the TA Lead, the Director and Ops (owner 14 Nov 2026: "based on the UI,
 // make the home view for the lead, director, ops"). Each keeps what its old dashboard
@@ -180,31 +181,6 @@ const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? o
 
 // ----- TA Lead -----
 
-type TaToday = { name: string; ini: string; roles: string[]; li: [number, number]; noLink: number; pipeline: number; cvs: number; sets: number; alerts: number; day: { started?: string; done: number; of: number; eod?: string } };
-const TEAM: TaToday[] = [
-  { name: "Chathura Sampath", ini: "CS", roles: ["SAP Transformation", "Finance Manager", "Brand Manager"], li: [2, 3], noLink: 1, pipeline: 14, cvs: 12, sets: 3, alerts: 2, day: { started: "9:05", done: 4, of: 6 } },
-  { name: "Dilini Ranasinghe", ini: "DR", roles: ["HR Business Partner", "Senior Accountant"], li: [2, 2], noLink: 0, pipeline: 9, cvs: 16, sets: 4, alerts: 1, day: { started: "8:52", done: 6, of: 6, eod: "5:41" } },
-  { name: "Sewwandi Perera", ini: "SP", roles: ["Quality Assurance Lead", "Sales Executive"], li: [1, 2], noLink: 0, pipeline: 6, cvs: 7, sets: 1, alerts: 4, day: { started: "9:30", done: 2, of: 6 } },
-  { name: "Dinuka Kumara", ini: "DK", roles: ["Plant Engineer", "SAP Transformation", "Production Planner"], li: [3, 3], noLink: 0, pipeline: 11, cvs: 9, sets: 2, alerts: 3, day: { started: "9:12", done: 5, of: 7 } },
-  { name: "Ravindu Mendis", ini: "RM", roles: ["Store Manager"], li: [0, 1], noLink: 1, pipeline: 3, cvs: 4, sets: 0, alerts: 1, day: { done: 0, of: 0 } },
-];
-const CVS_GOAL = 10; // fewer CVs today than this reads red (the old lead dashboard)
-const ALERTS_MAX = 3; // more alerts than this reads red
-const DECIDE = [
-  { title: "Head of Logistics", client: "Maersk", why: "Nobody assigned", red: true },
-  { title: "Quality Assurance Lead", client: "Brandix", why: "JD not approved by Sewwandi" },
-  { title: "Store Manager", client: "Cargills", why: "Day 52 against a P4 target of 45 — close it or reassign" },
-];
-const ROLES = [
-  { title: "Senior Manager — SAP", client: "PGP Glass", tas: "Chathura, Dinuka", on: true, fu: 6, days: 9 },
-  { title: "Finance Manager", client: "Hayleys Fabric", tas: "Chathura", on: true, fu: 4, days: 7 },
-  { title: "HR Business Partner", client: "Dialog Axiata", tas: "Dilini", on: true, fu: 3, days: 9 },
-  { title: "Senior Accountant", client: "John Keells", tas: "Dilini, Sewwandi", on: true, fu: 2, days: 8 },
-  { title: "Quality Assurance Lead", client: "Brandix", tas: "Sewwandi", on: false, fu: 1, days: 5 },
-  { title: "Plant Engineer", client: "Lanka Tiles", tas: "Dinuka", on: true, fu: 2, days: 11 },
-  { title: "Head of Logistics", client: "Maersk", tas: "Unassigned", on: false, fu: 0, days: 4 },
-  { title: "Store Manager", client: "Cargills", tas: "Ravindu", on: false, fu: 1, days: 52 },
-];
 
 const firstName = (t: TaToday) => t.name.split(" ")[0];
 const who = (ts: TaToday[]) => (ts.length === 1 ? firstName(ts[0]) : plural(ts.length, "TA"));
@@ -350,30 +326,6 @@ function TaCard({ t }: { t: TaToday }) {
 
 // ----- Director -----
 
-const WAITING = [
-  { who: "Kasun Perera", client: "PGP Glass", title: "Senior Manager — SAP", set: 3, ta: "Chathura" },
-  { who: "Nimali Fernando", client: "Hayleys Fabric", title: "Finance Manager", set: 2, ta: "Chathura" },
-  { who: "Ishara Silva", client: "Dialog Axiata", title: "HR Business Partner", set: 4, ta: "Dilini" },
-];
-const STAGES: [string, number][] = [
-  ["New", 64],
-  ["AI Follow-up", 31],
-  ["TA Follow-up", 22],
-  ["Director Review", 3],
-  ["Director Shortlist", 9],
-  ["Client Shortlist", 7],
-  ["Interview", 5],
-  ["Offer", 2],
-  ["Placed", 4],
-];
-const CLIENTS = [
-  { name: "PGP Glass", open: 1, sets: 3, value: 1850 },
-  { name: "Hayleys Fabric", open: 1, sets: 2, value: 960 },
-  { name: "Dialog Axiata", open: 1, sets: 4, value: 1400 },
-  { name: "John Keells", open: 1, sets: 2, value: 720 },
-  { name: "Lanka Tiles", open: 1, sets: 1, value: 0 },
-  { name: "Cargills", open: 1, sets: 0, value: 0 },
-];
 
 function directorFlags(): Flag[] {
   return WAITING.length
@@ -449,20 +401,6 @@ function DirectorHome() {
 
 // ----- Ops -----
 
-const WITH_CLIENT = [
-  { who: "Ruwan Jayasinghe", client: "Dialog Axiata", title: "HR Business Partner", days: 4 },
-  { who: "Tharushi Bandara", client: "John Keells", title: "Senior Accountant", days: 1 },
-  { who: "Sahan Wickramasinghe", client: "PGP Glass", title: "Senior Manager — SAP", days: 0 },
-];
-const INTERVIEWS = [
-  { who: "Nadeesha Perera", title: "Finance Manager", when: "Mon 17 Nov, 10:30", confirmed: true },
-  { who: "Pasindu Silva", title: "Plant Engineer", when: "Mon 17 Nov, 14:00", confirmed: false },
-  { who: "Hiruni Fernando", title: "HR Business Partner", when: "Tue 18 Nov, 11:00", confirmed: true },
-];
-const CHASE = [
-  { what: "Dialog Axiata has not answered on Ruwan's set for 4 days", action: "Chase the client" },
-  { what: "Pasindu Silva's interview is Monday — not contacted yet", action: "Call Pasindu" },
-];
 
 function opsFlags(): Flag[] {
   const cold = INTERVIEWS.filter((i) => !i.confirmed).length;

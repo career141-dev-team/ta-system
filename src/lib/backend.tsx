@@ -184,8 +184,8 @@ export function useSignedIn(): Me | undefined | null {
 }
 
 /** The backend's role words in the UI's roles. Admin works as a lead does (desk-wide). */
-const ROLE_OF: Record<string, Role> = { ta: "TA", ta_support: "TA Support", ta_lead: "Lead", admin: "Lead", director: "Director", ops: "Ops" };
-const TITLE_OF: Record<Role, string> = { TA: "Talent Acquisition", "TA Support": "TA Support", Lead: "TA Lead", Director: "Director", Ops: "Ops" };
+const ROLE_OF: Record<string, Role> = { ta: "TA", ta_support: "TA Support", ta_lead: "Lead", admin: "Admin", director: "Director", ops: "Ops" };
+const TITLE_OF: Record<Role, string> = { TA: "Talent Acquisition", "TA Support": "TA Support", Lead: "TA Lead", Admin: "Admin", Director: "Director", Ops: "Ops" };
 
 /** "Keep me signed in" off: Clerk keeps a session for days, so when the box was left unticked
  *  the session ends with the browser - a new browser session (no mark in sessionStorage) signs out. */
