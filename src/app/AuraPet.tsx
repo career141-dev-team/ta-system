@@ -53,8 +53,11 @@ const PILL = "rounded-full bg-surface px-3 py-1 text-caption font-medium text-in
 const DOT: Record<PetMood, string> = { working: "bg-info", done: "bg-success", failed: "bg-danger", waiting: "bg-warn" };
 
 /** Kept inside the window, so a smaller window never loses the pet. */
+/** clientWidth, not innerWidth: innerWidth counts the scroll bar, which hid part of the pet. */
 const clamp = (r: number, b: number) =>
-  typeof window === "undefined" ? { right: r, bottom: b } : { right: Math.min(Math.max(r, 0), innerWidth - W), bottom: Math.min(Math.max(b, 0), innerHeight - H - 34) };
+  typeof window === "undefined"
+    ? { right: r, bottom: b }
+    : { right: Math.min(Math.max(r, 0), document.documentElement.clientWidth - W), bottom: Math.min(Math.max(b, 0), document.documentElement.clientHeight - H - 34) };
 
 export default function AuraPet() {
   const [state, setState] = useState<State>("idle");
@@ -192,15 +195,22 @@ function Ask({ onClose }: { onClose: () => void }) {
   const [q, setQ] = useState("");
   const router = useRouter();
   const box = useRef<HTMLFormElement>(null);
+  // The latest close, read on Escape: the effect must run once. With onClose as a
+  // dependency it re-ran on every sprite frame (a new function each render), restarting
+  // the fade-in every 0.2 s - the box flickered half-seen (owner 19 Nov: "glitching").
+  const shut = useRef(onClose);
+  useLayoutEffect(() => {
+    shut.current = onClose;
+  });
   useEffect(() => {
     const t = gsap.fromTo(box.current, { opacity: 0, y: 6, scale: 0.97 }, { opacity: 1, y: 0, scale: 1, duration: DUR.base, ease: EASE.out, transformOrigin: "bottom right" });
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && shut.current();
     addEventListener("keydown", esc);
     return () => {
       t.kill();
       removeEventListener("keydown", esc);
     };
-  }, [onClose]);
+  }, []);
   return (
     <form
       ref={box}
