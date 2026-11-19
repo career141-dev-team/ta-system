@@ -104,6 +104,7 @@ export const door = {
   moveCvs: makeFunctionReference<"mutation">("ui/posts:moveCvs"),
   postsList: makeFunctionReference<"query">("ui/posts:list"),
   today: makeFunctionReference<"query">("ui/day:today"),
+  compose: makeFunctionReference<"query">("ui/email:compose"),
   scoopUploadUrl: makeFunctionReference<"mutation">("ui/opening:scoopUploadUrl"),
   queueScoop: makeFunctionReference<"mutation">("ui/opening:queueScoop"),
   refreshChecks: makeFunctionReference<"mutation">("ui/day:refreshChecks"),

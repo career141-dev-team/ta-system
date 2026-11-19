@@ -1,5 +1,6 @@
 "use client";
 
+import { door, jobFromAddress, useDoorQuery, useLive, type Answer } from "@/lib/backend";
 import { useEffect, useRef, useState } from "react";
 import { DUR, EASE, gsap, motionOK, useGSAP, useSwap } from "@/lib/gsap";
 import { PERSON, useMe } from "@/lib/role";
@@ -319,17 +320,40 @@ function researchProblem(link: string) {
 }
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/** The email the backend builds (ui/email:compose, 19 Nov D5 step 1). */
+type Row = { applicationId: string; name: string; age: string; notice: string; notes: string[]; currentCompany: string; currentDesignation: string; currentRemuneration: string; expectedRemuneration: string };
+type DoorCompose = Answer<{ email: { rows: Row[]; effort: Record<string, number | string | null>; to: string[]; cc: string[]; subject: string } }>;
+const fromRow = (r: Row): Cand => ({
+  id: r.applicationId, name: r.name, age: r.age, notice: r.notice, company: r.currentCompany, designation: r.currentDesignation,
+  current: r.currentRemuneration, expected: r.expectedRemuneration, cv: "ready", extra: {}, edited: [], notes: r.notes.join("\n"),
+});
+const KEYS = ["lEffort", "sets", "da", "scoop", "l", "post", "addOns", "backUp"] as const;
+const fromEffort = (e: Record<string, number | string | null>): Effort =>
+  Object.fromEntries(KEYS.map((k) => [k, Number(e[k] ?? 0) || 0])) as Effort;
+
 export default function DailyEmailView() {
   const { go } = useOpeningView();
   const gate = useWorkdayGate();
   const me = useMe();
-  const [mails, setMails] = useState<Mail[]>(() => [
-    newMail("eod", 1),
-    ...HISTORY,
-  ]);
+  // Signed in: the real email from the backend - its people, the L-sheet line,
+  // To / Cc and subject (ui/email:compose); no sample history. Sending from here
+  // is the next step, so Send says so.
+  const signedIn = useLive();
+  const job = signedIn ? jobFromAddress() : null;
+  const [mails, setMails] = useState<Mail[]>(() => (signedIn ? [newMail("eod", 1)] : [newMail("eod", 1), ...HISTORY]));
   const [openId, setOpenId] = useState<string | null>(null);
   const [tab, setTab] = useState<Kind>("midday");
-  const [cands, setCands] = useState(CANDS);
+  const [cands, setCands] = useState(signedIn ? [] : CANDS);
+  const real = useDoorQuery(door.compose, job ? { jobId: job } : "skip") as DoorCompose | undefined;
+  const [seenReal, setSeenReal] = useState<DoorCompose | undefined>(undefined);
+  if (real !== seenReal) {
+    setSeenReal(real);
+    if (real?.ok) {
+      const e = real.email;
+      setCands(e.rows.map(fromRow));
+      setMails((all) => all.map((m) => (m.status === "draft" && !m.rows ? { ...m, to: [...e.to], cc: [...e.cc], effort: fromEffort(e.effort), subject: m.subject ?? e.subject } : m)));
+    }
+  }
   const [link, setLink] = useState("");
   const [linkOk, setLinkOk] = useState(false);
   const [linkSaving, setLinkSaving] = useState(false);
@@ -622,6 +646,7 @@ export default function DailyEmailView() {
 
   const send = () => {
     if (!mail || left.length) return;
+    if (signedIn) return say("Sending from this screen comes in the next step. Send this one in AURA for now.", undefined, true);
     const snapshot = rows.map((r) => ({ ...r }));
     patch(mail.id, { status: "sending", rows: snapshot });
     // ponytail: a stand-in delay; with the backend this is the durable send
