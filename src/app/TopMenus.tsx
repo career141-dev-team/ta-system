@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { DUR, EASE, gsap } from "@/lib/gsap";
 import { getTheme, setTheme } from "@/lib/theme";
+import { useDoorSignOut } from "@/lib/backend";
 import { personOf, ROLES, setRole, useRole, useSignedInPerson, worksADay } from "@/lib/role";
 import { markRead, useAlerts, type Alert, type Icon } from "./alerts/data";
 import TellUs from "./feedback/TellUs";
@@ -193,6 +194,7 @@ export function Person() {
   const [tell, setTell] = useState(false);
   const role = useRole();
   const signedIn = useSignedInPerson();
+  const signOut = useDoorSignOut();
   const me = personOf(role);
   // What the page is showing now (read when the menu opens; the boot script set it).
   const [dark, setDark] = useState(false);
@@ -283,7 +285,15 @@ export function Person() {
                 setDark(next === "dark");
               }}
             />
-            <MenuRow icon="out" label="Sign out" href="/signin" onClick={close} />
+            <MenuRow
+              icon="out"
+              label="Sign out"
+              href={signOut ? undefined : "/signin"}
+              onClick={() => {
+                close();
+                void signOut?.();
+              }}
+            />
           </ul>
         </Pop>
       )}
