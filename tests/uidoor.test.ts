@@ -128,5 +128,21 @@ eq("day: the ChatGPT link keeps its confirm rule", daySrc.includes("checkResearc
 eq("day: refresh only on your own workday", daySrc.includes("That workday is not yours."), true);
 eq("day: the bell reads only your own", daySrc.includes("userId: w.user._id"), true);
 
+// The email screen before the send (ui/email, D5a): no door may send mail yet.
+const emailSrc = fs.readFileSync(path.join("convex", "ui", "email.ts"), "utf8");
+eq("email: nothing here sends (no begin, no eodMail)", /dailyEmails\.begin|eodMail/.test(emailSrc.replace(/\/\/.*$/gm, "")), false);
+eq("email: the browser never names the scoop-only exemption", /scoopsOnly/.test(emailSrc.replace(/\/\/.*$|\*.*$/gm, "")), false);
+eq("email: settling an uncertain send uses the backend's rule", emailSrc.includes("internal.ta.dailyEmails.reconcile"), true);
+
+// The email built in the backend (D5 step 1): one roster rule for the screen and the send.
+const dailySrc = fs.readFileSync(path.join("convex", "ta", "dailyEmails.ts"), "utf8");
+const beginSrc = dailySrc.slice(dailySrc.indexOf("export const begin"), dailySrc.indexOf("export const", dailySrc.indexOf("export const begin") + 10));
+eq("compose: begin uses the shared roster rule", beginSrc.includes("eligibleApplications(ctx"), true);
+eq("compose: begin keeps no second copy of the rule", beginSrc.includes("isEodCandidateEligible"), false);
+const composeSrc = dailySrc.slice(dailySrc.indexOf("export const compose"));
+eq("compose: the same roster rule", composeSrc.includes("eligibleApplications(ctx"), true);
+eq("compose: takes no recipients, subject or HTML from the caller", /args:\s*\{[^}]*\b(to|cc|html|subject)\b/.test(composeSrc), false);
+eq("compose door: no recipients from the browser", /compose = query\(\{\s*args:\s*\{[^}]*\b(to|cc|html)\b/.test(emailSrc), false);
+
 console.log(`\nuidoor: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

@@ -72,6 +72,13 @@ const ALLOWED_PUBLIC = new Set<string>([
   "ui/day:bell",
   "ui/day:markRead",
   "ui/day:markAllRead",
+  "ui/email:emails",
+  "ui/email:sent",
+  "ui/email:addMidday",
+  "ui/email:saveDraft",
+  "ui/email:preflight",
+  "ui/email:settle",
+  "ui/email:compose",
 ]);
 
 const PUBLIC = /export\s+(?:const\s+(\w+)\s*=|(default))\s*(query|mutation|action)\s*\(/g;

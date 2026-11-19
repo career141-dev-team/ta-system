@@ -20,7 +20,7 @@ type Refused = { ok: false; message: string };
 type Done = Refused | { ok: true; message: string };
 const refused = (message: string): Refused => ({ ok: false, message });
 
-async function who(ctx: QueryCtx | MutationCtx): Promise<Refused | { ok: true; user: Doc<"users"> }> {
+export async function who(ctx: QueryCtx | MutationCtx): Promise<Refused | { ok: true; user: Doc<"users"> }> {
   try {
     return { ok: true, user: await uiUser(ctx) };
   } catch (error) {

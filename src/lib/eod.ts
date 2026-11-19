@@ -1,7 +1,7 @@
 import { repo, setsForOpening } from "@/data/store";
 import { EFFORT_NUMBERS, OUTREACH_TYPES } from "@/lib/eod-format";
 import { colomboDayStart } from "@/lib/calendar";
-import { cvSource, headhuntedCandidates } from "@/lib/cvSource";
+import { headhuntedCandidates } from "@/lib/cvSource";
 import type { Application, Candidate, Id, User } from "@/data/types";
 import type { EffortRow, ShortlistRow } from "./eod-format";
 import { isEodCandidateEligible, type EodEligibility } from "./eodEligibility";
@@ -18,19 +18,11 @@ import { workdayDate } from "./workday";
 
 export type { ShortlistRow, EffortRow } from "./eod-format";
 export { SHORTLIST_COLUMNS, EFFORT_COLUMNS, MANUAL_EFFORT } from "./eod-format";
-
-const HOUSE_NOTE = (c: Candidate, a: Application): string[] => {
-  const out: string[] = [];
-  if (c.totalExperienceYears) out.push(`>Total Experience - ${c.totalExperienceYears}yr`);
-  if (c.currentEmployer) out.push(`>Currently at ${c.currentEmployer}`);
-  for (const n of a.notes) {
-    const clean = n.replace(/^>/, "").trim();
-    if (clean && !out.some((o) => o.endsWith(clean))) out.push(`>${clean}`);
-  }
-  // The CV box carries every TA note; the email must not drop later notes
-  // after the experience and employer lines take up the first two slots.
-  return out;
-};
+// Moved 19 Nov so the backend builds the same email (convex/lib/eodCompose.ts).
+import { shortlistRowFor } from "./eod-format";
+import { effortBucket, type EffortBucket } from "./cvSource";
+export { shortlistRowFor, subjectLine } from "./eod-format";
+export { effortBucket, type EffortBucket } from "./cvSource";
 
 /**
  * Table 1 — the people this email is about.
@@ -87,28 +79,6 @@ export function shortlistRows(
   });
 }
 
-/** One person's line in table 1, from their record. */
-export function shortlistRowFor(a: Application, c: Candidate, no: number): ShortlistRow {
-  return {
-    no,
-    name: c.fullName,
-    age: c.age ? String(c.age) : "",
-    // Zero days is "immediate", which is the best answer there is — it was
-    // printed as a blank (audit finding 28).
-    // As said first ("2 months", "Not disclosed"), which has no days.
-    notice:
-      c.noticePeriod?.trim() ||
-      (c.noticePeriodDays === 0 ? "Immediate" : c.noticePeriodDays ? `${c.noticePeriodDays} days` : ""),
-    notes: HOUSE_NOTE(c, a),
-    currentCompany: c.currentEmployer ?? "",
-    currentDesignation: c.currentTitle ?? "",
-    currentRemuneration: c.currentSalary ?? "Not disclosed",
-    expectedRemuneration: c.expectedSalary ?? "Open to discuss",
-    applicationId: a.id,
-    reviewStageChangedAt: a.lastStageChangedAt,
-  };
-}
-
 /**
  * Table 1 for exactly these people, in this order, whatever their stage —
  * for an email already sent, whose people `shortlistRows` no longer lists
@@ -120,24 +90,6 @@ export function rowsForApplications(ids: Id[]): ShortlistRow[] {
     const c = a ? repo.candidate(a.candidateId) : null;
     return a && c ? [shortlistRowFor(a, c, i + 1)] : [];
   });
-}
-
-/** The column a CV is counted in on the end-of-day sheet. */
-export type EffortBucket = "backUp" | "addOns" | "scoop" | "da" | "post" | "l";
-
-/**
- * The one column a CV of the day goes in (the desk, 28 Sep), so the columns
- * add up to the day's total: a backup first, then a scoop mailed in by a lead,
- * then an add-on, then where it came from (lib/cvSource). A scoop stays a
- * scoop on an Add-on day — the desk counts what the leads sent under SCOOP. A
- * database pick is TBR, not a hunted CV, and is in none of them.
- */
-export function effortBucket(app: Application, headhunted: ReadonlySet<Id>): EffortBucket | null {
-  if (app.backupForApplicationId) return "backUp";
-  if (app.scoopFrom || app.scoopReceivedAt) return "scoop";
-  if (app.isAddOn) return "addOns";
-  const source = cvSource(app, headhunted);
-  return source === "database" ? null : source;
 }
 
 /**
@@ -312,18 +264,6 @@ export function shortlistRowsFromForm(
 // Moved to eod-format (29 Sep) so the composer can use it in the browser too.
 export { eodDetailChanges } from "./eod-format";
 
-/**
- * "SET 1 - DELMO - BRAND MANAGER - 3 CVs". The client stays in it: a reply is
- * matched by its subject, and two clients hiring the same title are told
- * apart by the client's name (lib/routing matchReviewReply).
- */
-export function subjectLine(clientName: string, title: string, setNumber: number | null = 1, cvCount = 1): string {
-  const setPart = `SET ${setNumber ?? 1}`;
-  const clientPart = (clientName || "CLIENT").trim().toUpperCase();
-  const posPart = title.trim().toUpperCase();
-  const cvPart = `${cvCount} ${cvCount === 1 ? "CV" : "CVs"}`;
-  return `${setPart} - ${clientPart} - ${posPart} - ${cvPart}`;
-}
 
 /**
  * Deliberately NOT a place to add instructions for the reader.

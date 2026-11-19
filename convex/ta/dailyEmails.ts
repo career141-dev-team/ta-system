@@ -4,11 +4,11 @@ import type { Doc, Id } from "../_generated/dataModel";
 import { requireActor, assertJobAccess } from "./guard";
 import { mapUser } from "../../src/data/convex/map";
 import { workdayDate } from "../../src/lib/workday";
-import { isEodCandidateEligible } from "../../src/lib/eodEligibility";
 import { workSessionStart } from "../../src/lib/workdayRequirements";
 import { dailySendProblem, sameCandidateList, EMAIL_RETENTION_MS, MISSED_EOD_DAYS, type DailyEmailSnapshot } from "../../src/lib/dailyEmail";
 import { validateResearchLink, checkResearchSubmission, scoopsOnly } from "../../src/lib/eod-format";
 import { dailyEmailsFor, finalizeDailyEmail, middayRequired } from "../lib/dailyEmail";
+import { defaultRecipients, defaultSubject, effortRow, eligibleApplications, shortlistRows } from "../lib/eodCompose";
 import { requiredChecks } from "../lib/workdayChecks";
 import { refreshWorkdayChecks } from "./workdays";
 import { requireWorkLocation, inWorkLocation } from "../../src/lib/workLocations";
@@ -225,22 +225,14 @@ export const begin = internalMutation({
     if (parent) {
       if (!sameCandidateList(parent.applicationIds, args.applicationIds) || !parent.applicationIds.every((id, i) => id === args.applicationIds[i])) throw new Error("A correction must keep the original candidates and their order.");
     } else {
-      const rounds = await ctx.db.query("reviewRounds").withIndex("by_opening", q => q.eq("openingId", args.jobId)).collect();
-      const sent = new Set(rounds.filter(r => r.kind === "director" && !r.recoveryReopenedAt).flatMap(r => r.applicationIds));
-      for (const e of all.filter(e => e.status === "accepted" && !e.recoveryReopenedAt)) for (const id of e.applicationIds) sent.add(id);
-      const apps = await ctx.db.query("applications").withIndex("by_jobId", q => q.eq("jobId", args.jobId)).collect();
       const entry = day?.jobs.find(j => j.jobId === args.jobId);
       const currentWorkType = entry?.workType ?? "100%";
       const sessionStart = entry ? workSessionStart(entry) : null;
       // Midday and EOD use the page's one rule (17 Nov). Midday used to take every unsent Director
       // Review CV from any day while the page lists only today's, so one older CV - usually a missed
       // end of day - refused every midday send for good, and no reload or drop-out could clear it.
-      const eligible = apps.filter(a => inWorkLocation(a, locationId ?? "") && !sent.has(a._id) && isEodCandidateEligible({
-        stage: a.currentStage,
-        ownerTaId: a.ownerTaId,
-        isAddOn: a.isAddOn,
-        lastStageChangedAt: a.lastStageChangedAt,
-      }, { taId: worker(user) ? user._id : null, workType: currentWorkType, sessionStart, day: late ?? date }));
+      // One function since 19 Nov (convex/lib/eodCompose.ts): the new UI's email is built from it too.
+      const eligible = await eligibleApplications(ctx, { jobId: args.jobId, userId: user._id, worker: worker(user), locationId, workType: currentWorkType, sessionStart, day: late ?? date });
       if (!sameCandidateList(args.applicationIds, eligible.map(a => a._id))) throw new Error(await listChanged(ctx, args.applicationIds, eligible.map(a => a._id)));
       if (day && args.submissionType === "eod") {
         const blockers = setup!.eodChecks.filter(c => !["director_cv", "chatgpt", "midday_email"].includes(c.key.split(":")[0]) && c.status !== "complete" && !c.exception);
@@ -385,5 +377,44 @@ export const missedDays = internalQuery({
         days.set(day, (days.get(day) ?? 0) + 1);
     }
     return [...days].map(([date, count]) => ({ date, count })).sort((a, b) => b.date.localeCompare(a.date));
+  },
+});
+
+/**
+ * The email the TA is about to send, built here (19 Nov, D5 step 1): the people
+ * (the same roster begin enforces), the L-sheet line, To / Cc and the subject - as
+ * the old eod page builds them on the Next server. The new UI shows this; the send
+ * will be built from it on the server, never from the browser.
+ */
+export const compose = internalQuery({
+  args: { actorId: v.string(), jobId: v.id("jobs"), workLocationId: v.optional(v.string()), forDate: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const user = await access(ctx, args.actorId, args.jobId, true);
+    const job = (await ctx.db.get(args.jobId))!;
+    const location = requireWorkLocation(job, args.workLocationId);
+    const today = workdayDate(Date.now());
+    const late = args.forDate && /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(args.forDate) && args.forDate < today ? args.forDate : undefined;
+    const days = late ? [] : await ctx.db.query("taWorkdays").withIndex("by_user", q => q.eq("userId", user._id)).order("desc").take(3);
+    const day = days.find(d => d.date === today && (d.finishedAt === undefined || d.closureReason === "eod"));
+    const entry = day?.jobs.find(j => j.jobId === args.jobId);
+    const workType = entry?.workType ?? "100%";
+    const eligible = await eligibleApplications(ctx, {
+      jobId: args.jobId, userId: user._id, worker: worker(user), locationId: location?.id,
+      workType: late ? "100%" : workType, sessionStart: late || !entry ? null : workSessionStart(entry), day: late ?? today,
+    });
+    const rows = await shortlistRows(ctx, eligible);
+    const effort = await effortRow(ctx, {
+      jobId: args.jobId, user, locationId: location?.id,
+      at: late ? Date.parse(`${late}T12:00:00+05:30`) : Date.now(), onlyIds: late ? rows.map(r => r.applicationId as Id<"applications">) : undefined,
+    });
+    if (entry && !late) effort.hundredOrFollowUp = entry.workType;
+    const { to, cc } = await defaultRecipients(ctx);
+    return {
+      rows, effort, to, cc, workType, late: late ?? null,
+      subject: defaultSubject(job, location?.name ?? null, rows, effort.sets),
+      applicationIds: rows.map(r => r.applicationId),
+      workLocationId: location?.id ?? null,
+      onWorkday: !!entry,
+    };
   },
 });

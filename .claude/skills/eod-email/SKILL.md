@@ -295,10 +295,12 @@ Short hashes from `git log`; dates are commit dates.
 
 - 2026-11-17 - a midday email refused for good with "The candidate list changed": the page lists today's Director Review CVs, `begin` counted every unsent one of any day, so one older CV (a missed end of day) blocked every midday and the desk kept dropping out the wrong candidate. Midday now uses `isEodCandidateEligible` like the EOD, and the refusal names who differs (`listChanged`).
 
+- 2026-11-19 - the email is also built in the backend for the new UI: `convex/lib/eodCompose.ts` (`eligibleApplications` = THE roster rule, now called by `ta/dailyEmails:begin` too, so screen and send cannot drift; `shortlistRows`, `effortRow`, `defaultRecipients`, `defaultSubject`) and `ta/dailyEmails:compose` (read by `ui/email:compose`). `shortlistRowFor` and `subjectLine` moved to `src/lib/eod-format.ts`, `effortBucket` to `src/lib/cvSource.ts`; `src/lib/eod.ts` re-exports all three, so the old app is unchanged. Not yet in the backend build: the referee-calls block (still Next-only).
+
 <!-- skill-meta
-verified-commit: 36b980d
-verified-hash: 6f6d8d1f57a268748f4793b1e9ee901f54bad3bd
-verified-date: 2026-11-18
+verified-commit: 99acaa73
+verified-hash: 5fea6b74dfb91dd5d298c9221b4048488fdd1acb
+verified-date: 2026-11-19
 sources:
   src/app/openings/[id]/eod/page.tsx
   src/app/openings/[id]/midday/page.tsx
@@ -317,6 +319,7 @@ sources:
   src/lib/linkExport.ts
   src/lib/workLocations.ts
   convex/ta/dailyEmails.ts
+  convex/lib/eodCompose.ts
   convex/ta/eodMail.ts
   convex/ta/eodCopies.ts
   convex/ta/eodReminders.ts
