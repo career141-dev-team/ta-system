@@ -117,6 +117,9 @@ export const door = {
   today: makeFunctionReference<"query">("ui/day:today"),
   compose: makeFunctionReference<"query">("ui/email:compose"),
   sendMidday: makeFunctionReference<"action">("ui/emailSend:sendMidday"),
+  // AURA on Today (E5 group 1): the TA's desk, and one question to Claude Haiku.
+  desk: makeFunctionReference<"query">("ui/desk:desk"),
+  askToday: makeFunctionReference<"action">("ui/aura:askToday"),
   scoopUploadUrl: makeFunctionReference<"mutation">("ui/opening:scoopUploadUrl"),
   queueScoop: makeFunctionReference<"mutation">("ui/opening:queueScoop"),
   refreshChecks: makeFunctionReference<"mutation">("ui/day:refreshChecks"),
@@ -157,6 +160,18 @@ export function jobFromAddress(): string | null {
 }
 
 /** Every door answer: the data, or a sentence saying why not. */
+/** One position on the TA's desk (ui/desk:desk). */
+export type DoorDeskPosition = {
+  id: string; title: string; client: string; priority: string | null; day: number; target: number | null;
+  skills: string[]; years: [number, number | null]; salary: string | null; where: string; hiring: string | null;
+  pipeline: number; cvsToday: number; director: number; jdApproved: boolean; linkedinLive: boolean;
+  strategies: { name: string; waiting: boolean }[];
+};
+/** AURA's reply on Today (ui/aura:askToday). `where` is a position id on the desk. */
+export type AuraReply =
+  | { kind: "plan"; headline: string; steps: { at: string; what: string; where?: string; tone: "brand" | "warn" | "info" | "none" }[] }
+  | { kind: "answer"; say: string; rows: { main: string; meta?: string; where?: string }[]; chips: string[]; warn: string[] };
+
 export type Answer<T> = ({ ok: true } & T) | { ok: false; message: string };
 
 export type Me = Answer<{ id: string; name: string; initials: string; email: string; role: string }>;

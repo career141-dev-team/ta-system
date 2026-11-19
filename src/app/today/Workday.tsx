@@ -7,7 +7,7 @@ import Link from "next/link";
 import { DUR, EASE, gsap, useGSAP } from "@/lib/gsap";
 import { PERSON, useMe } from "@/lib/role";
 import { useDayEnd, useLiveDesk } from "@/lib/workday";
-import { door, useDoorMutation, type DayPayload, type DoorDone } from "@/lib/backend";
+import { door, useDoorAction, useDoorMutation, useDoorQuery, type AuraReply, type DayPayload, type DoorDeskPosition, type DoorDone } from "@/lib/backend";
 import ChecksList from "./ChecksList";
 import { checksFor, KNOWN, progress, type Check, type CheckKey } from "./checks";
 import PillMenu, { type MenuOption } from "../openings/[id]/PillMenu";
@@ -42,6 +42,12 @@ const fresh = (id: string, title: string, client: string): Position => ({
   pipeline: 0, cvsToday: 0, director: 0, jd: false, linkedin: false,
 });
 // Placeholder evidence: what each position already has done today.
+/** A desk position from the backend, in the shape the rail and AURA's order use. */
+const fromDoor = (d: DoorDeskPosition, type: WorkType): Position => ({
+  id: d.id, title: d.title, client: d.client, type, p: (Number(d.priority?.replace(/\D/g, "")) || 3) as Position["p"],
+  day: d.day, of: d.target ?? 30, skills: d.skills, years: [d.years[0], d.years[1] ?? d.years[0]], salary: d.salary ?? "",
+  where: d.where, hiring: d.hiring ?? "", pipeline: d.pipeline, cvsToday: d.cvsToday, director: d.director, jd: d.jdApproved, linkedin: d.linkedinLive,
+});
 const DONE: Record<string, CheckKey[]> = { sap: ["jd_review", "linkedin_post", "excel_profiles"], fin: ["chatgpt"], prod: [], hr: [] };
 
 // The old TA System's rules for one day (FLOW-CHECK 6.5): at most 10 positions,
@@ -123,6 +129,10 @@ export default function Workday({ startedAt }: { startedAt: number | null }) {
   const addPos = useDoorMutation(door.addPosition);
   const saveType = useDoorMutation(door.setWorkType);
   const excuse = useDoorMutation(door.excuseCheck);
+  // AURA (E5 group 1, 19 Nov): the TA's real desk, and Claude Haiku answering from it.
+  const deskRead = useDoorQuery(door.desk, desk ? {} : "skip") as { ok: true; positions: DoorDeskPosition[] } | { ok: false; message: string } | undefined;
+  const real = new Map((deskRead?.ok ? deskRead.positions : []).map((d) => [d.id, d]));
+  const ask = useDoorAction(door.askToday);
   const answered = (run: Promise<unknown>, ok?: () => void) =>
     void (run as Promise<DoorDone | undefined>).then((d) => (d && !d.ok ? setRefusal(d.message) : (setRefusal(""), ok?.())));
   const part = useSyncExternalStore(
@@ -144,8 +154,10 @@ export default function Workday({ startedAt }: { startedAt: number | null }) {
   const [made, setMade] = useState<Position[]>([]);
   const positions = desk
     ? [
-        ...(liveDay?.jobs ?? []).map((j) => ({ ...fresh(j.jobId, j.title, ""), type: j.workType })),
-        ...desk.options.filter((o) => !liveDay?.jobs.some((j) => j.jobId === o.id)).map((o) => ({ ...fresh(o.id, o.title, ""), type: o.workType ?? ("100%" as WorkType) })),
+        ...(liveDay?.jobs ?? []).map((j) => (real.has(j.jobId) ? fromDoor(real.get(j.jobId)!, j.workType) : { ...fresh(j.jobId, j.title, ""), type: j.workType })),
+        ...desk.options
+          .filter((o) => !liveDay?.jobs.some((j) => j.jobId === o.id))
+          .map((o) => (real.has(o.id) ? fromDoor(real.get(o.id)!, o.workType ?? "100%") : { ...fresh(o.id, o.title, ""), type: o.workType ?? ("100%" as WorkType) })),
       ]
     : [...POSITIONS, ...made];
   const picked: Record<string, WorkType> = desk ? Object.fromEntries((liveDay?.jobs ?? []).map((j) => [j.jobId, j.workType])) : pickedLocal;
@@ -237,6 +249,32 @@ export default function Workday({ startedAt }: { startedAt: number | null }) {
     const t = text.trim();
     if (!t) return;
     const id = ++seq.current;
+    if (desk) {
+      // Signed in: Claude Haiku answers from the real desk (ui/aura:askToday). It only
+      // advises; every link it gives opens the position.
+      const history = chat.flatMap((m) => [
+        { role: "user" as const, text: m.text },
+        ...(m.reply && m.reply !== "na" ? [{ role: "assistant" as const, text: "steps" in m.reply ? `${m.reply.headline} ${m.reply.steps.map((s) => `${s.at} ${s.what}`).join("; ")}` : m.reply.say }] : []),
+      ]);
+      setChat((c) => [...c, { id, text: t }]);
+      setDraft("");
+      setHint("");
+      const today = Object.entries(picked).map(([jobId, workType]) => ({ jobId, workType }));
+      const title = (where?: string) => (where ? real.get(where)?.title : undefined);
+      const href = (where?: string) => (where ? `/openings/demo?job=${where}` : undefined);
+      void (ask({ text: t, history, today }) as Promise<{ ok: true; reply: AuraReply } | { ok: false; message: string } | undefined>)
+        .then((d): Plan | Answer => {
+          if (!d) return { say: "AURA is not connected on this preview." };
+          if (!d.ok) return { say: d.message };
+          const a = d.reply;
+          if (a.kind === "plan")
+            return { headline: a.headline, steps: a.steps.map((x) => ({ at: x.at, minutes: 0, what: x.what, tone: x.tone, where: title(x.where), href: href(x.where) })) };
+          return { say: a.say, chips: a.chips, warn: a.warn, rows: a.rows.map((x, i) => ({ n: i + 1, main: x.main, meta: x.meta, href: href(x.where) })) };
+        })
+        .catch((): Answer => ({ say: "AURA could not answer just now. Try again." }))
+        .then((reply) => setChat((c) => c.map((m) => (m.id === id ? { ...m, reply } : m))));
+      return;
+    }
     const told = answer(t, ranked.filter((r) => picked[r.d.id]), ranked, rows, me);
     const planning = !told && (aboutTheDay(t) || !chat.some((m) => m.reply && m.reply !== "na" && "steps" in m.reply) || hint !== "");
     if (planning) said.current = `${said.current} ${t}`;
