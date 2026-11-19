@@ -9,7 +9,7 @@
 // Reminders come in phase 2, changing the plan by chat in phase 3.
 
 import { useRef, useState, useSyncExternalStore } from "react";
-import { door, useDoorMutation, useDoorQuery } from "@/lib/backend";
+import { door, useDoorAction, useDoorMutation, useDoorQuery } from "@/lib/backend";
 import { useSignedInPerson } from "@/lib/role";
 import { petSay } from "@/lib/pet";
 import { DUR, EASE, gsap } from "@/lib/gsap";
@@ -265,6 +265,7 @@ function DayPlanCard() {
           );
         })}
       </ol>
+      {!closed && <TalkBox live={live} />}
       {!closed && (
         <div className="mt-[max(0.9rem,10px)] flex flex-wrap items-center gap-[max(0.75rem,8px)]">
           <button
@@ -284,6 +285,77 @@ function DayPlanCard() {
               Cancel
             </button>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Phase 3 (19 Nov): tell AURA what changed, in words. The backend reads it into one
+ *  change (ui/planTalk:change: plain rules first, the model only when they cannot),
+ *  applies it and says what moved; when it is not sure which task, it asks. */
+const TRY = ["I need another 15 minutes", "Move this to 2:30", "Stop reminding me for 30 minutes", "I'll work till 7 tonight"];
+function TalkBox({ live }: { live: boolean }) {
+  const talk = useDoorAction(door.planChange);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<{ text: string; ok: boolean; options?: string[]; asked?: string } | null>(null);
+  const send = async (words: string) => {
+    const t = words.trim();
+    if (!t || busy) return;
+    if (!live) return setSaid({ text: "Changing the plan by talking works when you are signed in.", ok: false });
+    setBusy(true);
+    petSay("working", "Changing your plan…");
+    try {
+      const a = (await talk({ text: t })) as { ok: boolean; message: string; ask?: boolean; options?: string[] };
+      setSaid({ text: a.message, ok: a.ok, options: a.ask ? a.options : undefined, asked: a.ask ? t : undefined });
+      petSay(a.ok ? (a.ask ? "waiting" : "done") : "failed", a.message);
+      if (a.ok && !a.ask) setText("");
+    } catch {
+      setSaid({ text: "AURA could not change the plan just now. Try again.", ok: false });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="mt-[max(0.9rem,10px)] border-t border-border pt-[max(0.9rem,10px)]">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void send(text);
+        }}
+        className="flex items-center gap-2 rounded-full border border-border bg-surface py-1 pl-4 pr-1 focus-within:ring-2 focus-within:ring-brand/30"
+      >
+        <input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Tell AURA what changed — “I need another 15 minutes”"
+          aria-label="Tell AURA what changed in your plan"
+          maxLength={500}
+          className="min-w-0 flex-1 bg-transparent py-1.5 text-[max(0.9375rem,13px)] text-ink outline-none placeholder:text-ink-3"
+        />
+        <button type="submit" disabled={busy || !text.trim()} className="rounded-full bg-ink px-3.5 py-1.5 text-[max(0.8125rem,11.5px)] font-medium text-white transition-opacity disabled:opacity-40">
+          {busy ? "Changing…" : "Change"}
+        </button>
+      </form>
+      {!said && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {TRY.map((t) => (
+            <button key={t} type="button" onClick={() => setText(t)} className="rounded-full bg-surface-2 px-3 py-1 text-[max(0.8125rem,11.5px)] text-ink-2 transition-colors hover:bg-surface-3 hover:text-ink">
+              {t}
+            </button>
+          ))}
+        </div>
+      )}
+      {said && (
+        <div role="status" className="mt-2 flex flex-wrap items-center gap-2">
+          <span className={"size-2 shrink-0 rounded-full " + (said.ok ? "bg-brand" : "bg-warn")} aria-hidden="true" />
+          <span className="text-[max(0.875rem,12px)] text-ink-2">{said.text}</span>
+          {said.options?.map((o) => (
+            <button key={o} type="button" onClick={() => void send(`${said.asked ?? ""} — ${o}`)} className="rounded-full border border-border px-3 py-1 text-[max(0.8125rem,11.5px)] text-ink hover:bg-surface-2">
+              {o}
+            </button>
+          ))}
         </div>
       )}
     </div>
