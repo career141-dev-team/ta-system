@@ -11,7 +11,7 @@ import { internal } from "../_generated/api";
 // "opsApiWrites" is private: the Ops System's idempotency keys are its own
 // integration's business, and the capacity planner has none in them (5 Nov).
 // The contact discovery tables (9 Nov) belong to the Brevo clone's own token, like Extras.
-export const PARTNER_PRIVATE_TABLES = ["taTrackingDevices", "taTrackingRows", "demoTemplateSends", "salesContacts", "salesContactRuns", "automobileContacts", "automobileContactRuns", "opsApiWrites", "opsEvents", "contactSearches", "contactSearchRows"] as const;
+export const PARTNER_PRIVATE_TABLES = ["taTrackingDevices", "taTrackingRows", "demoTemplateSends", "salesContacts", "salesContactRuns", "automobileContacts", "automobileContactRuns", "opsApiWrites", "opsEvents", "contactSearches", "contactSearchRows", "aiRuns"] as const;
 export const PARTNER_READ_TABLES = [
   "dailyEmailPolicy", "dailyEmails", "dailyEmailAttachments",
   "users", "teams", "teamMembers", "jobAssignments", "openingAccessRequests", "roleAuditLog",

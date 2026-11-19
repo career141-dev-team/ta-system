@@ -3700,6 +3700,20 @@ export default defineSchema({
     matchedBy: v.string(),
   }).index("by_search", ["searchId"]).index("by_search_email", ["searchId", "email"]),
 
+  // One AI call from the new UI (E5, 19 Nov): who, which feature, its tokens and
+  // cost. The day's sum is the desk's daily limit (convex/ui/auraRules.ts).
+  aiRuns: defineTable({
+    userId: v.id("users"),
+    feature: v.string(),
+    /** Colombo midnight of the day it ran, as an instant. */
+    day: v.number(),
+    inputTokens: v.number(),
+    outputTokens: v.number(),
+    costUsd: v.number(),
+    ok: v.boolean(),
+    error: v.optional(v.string()),
+  }).index("by_day", ["day"]),
+
 }, { schemaValidation: false });
 
 

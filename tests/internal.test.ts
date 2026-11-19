@@ -58,6 +58,9 @@ const ALLOWED_PUBLIC = new Set<string>([
   "ui/posts:moveCvs",
   "ui/posts:list",
   "ui/day:today",
+  // AURA on Today (19 Nov, E5 group 1): the desk it reads and the one AI ask.
+  "ui/desk:desk",
+  "ui/aura:askToday",
   "ui/day:refreshChecks",
   "ui/day:start",
   "ui/day:addPosition",
