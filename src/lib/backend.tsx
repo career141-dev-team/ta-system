@@ -42,6 +42,9 @@ export const useDoorMutation = (LIVE ? useMutation : () => noMutation) as typeof
 // The sign-in screen's Clerk hook, with the same stand-in for a build without a backend.
 export const useDoorSignIn = (LIVE ? useSignIn : () => ({ isLoaded: false, signIn: undefined, setActive: undefined })) as typeof useSignIn;
 
+/** Sign out: Clerk's own when live (the menu's Sign out used to be only a link, so nobody was ever signed out). */
+export const useDoorSignOut = (LIVE ? () => useClerk().signOut : () => undefined) as () => (() => Promise<void>) | undefined;
+
 /** A Clerk failure in a sentence the person can act on. */
 export function errorText(e: unknown): string {
   if (isClerkAPIResponseError(e)) return e.errors[0]?.longMessage ?? e.errors[0]?.message ?? "Could not sign in.";
