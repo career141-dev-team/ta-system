@@ -23,7 +23,8 @@ for (const f of files) {
   const src = read(`${dir}/${f}`);
   eq(`${f}: no actorId argument (the person is the Clerk identity only)`, /actorId\s*:\s*v\./.test(src), false);
   const publicFns = (src.match(/=\s*(query|mutation|action)\(\{/g) ?? []).length;
-  const checked = (src.match(/await (uiUser|openFor|forOpening|manager|postFor)\(ctx/g) ?? []).length;
+  // `act(ctx` (ui/day.ts) runs `who(ctx)` before anything else.
+  const checked = (src.match(/await (uiUser|openFor|forOpening|manager|postFor|who)\(ctx|=> act\(ctx/g) ?? []).length;
   if (publicFns) eq(`${f}: every public function asks uiUser first`, checked >= publicFns, true);
 }
 eq("unverified email is never matched", matchableEmail({ tokenIdentifier: "t", subject: "s", email: "a@b.com", emailVerified: false }), null);
@@ -118,6 +119,14 @@ const openingsSrc = fs.readFileSync(path.join("convex", "ui", "openings.ts"), "u
 eq("openings: each status through its index", openingsSrc.includes('withIndex("by_status"'), true);
 eq("openings: never the whole table", /query\("jobs"\)\.collect\(\)/.test(openingsSrc), false);
 eq("openings: a TA sees only their own", openingsSrc.includes("by_userId_isActive"), true);
+
+// The TA's day (ui/day, D4): thin wrappers over the workday's own rules.
+const daySrc = fs.readFileSync(path.join("convex", "ui", "day.ts"), "utf8");
+eq("day: no actorId argument anywhere", /args:\s*\{[^}]*actorId/.test(daySrc), false);
+eq("day: every write goes through the workday's own rule", ["workdays.start", "workdays.addPosition", "workdays.setWorkType", "workdays.taskException", "workdays.carry", "workdays.finish", "workdays.decide", "workdays.saveCheck"].every((f) => daySrc.includes(`internal.ta.${f}`)), true);
+eq("day: the ChatGPT link keeps its confirm rule", daySrc.includes("checkResearchSubmission"), true);
+eq("day: refresh only on your own workday", daySrc.includes("That workday is not yours."), true);
+eq("day: the bell reads only your own", daySrc.includes("userId: w.user._id"), true);
 
 console.log(`\nuidoor: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

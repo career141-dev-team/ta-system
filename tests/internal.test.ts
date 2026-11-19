@@ -57,6 +57,21 @@ const ALLOWED_PUBLIC = new Set<string>([
   "ui/posts:deletePost",
   "ui/posts:moveCvs",
   "ui/posts:list",
+  "ui/day:today",
+  "ui/day:refreshChecks",
+  "ui/day:start",
+  "ui/day:addPosition",
+  "ui/day:setWorkType",
+  "ui/day:excuseCheck",
+  "ui/day:carry",
+  "ui/day:markReviewed",
+  "ui/day:finish",
+  "ui/day:decide",
+  "ui/day:saveCheck",
+  "ui/day:setWorkingStage",
+  "ui/day:bell",
+  "ui/day:markRead",
+  "ui/day:markAllRead",
 ]);
 
 const PUBLIC = /export\s+(?:const\s+(\w+)\s*=|(default))\s*(query|mutation|action)\s*\(/g;

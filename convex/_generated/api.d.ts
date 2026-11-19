@@ -297,6 +297,7 @@ import type * as ta_workLocations from "../ta/workLocations.js";
 import type * as ta_workdays from "../ta/workdays.js";
 import type * as templates_messageTemplates from "../templates/messageTemplates.js";
 import type * as ui_manage from "../ui/manage.js";
+import type * as ui_day from "../ui/day.js";
 import type * as ui_me from "../ui/me.js";
 import type * as ui_opening from "../ui/opening.js";
 import type * as ui_openings from "../ui/openings.js";
@@ -601,6 +602,7 @@ declare const fullApi: ApiFromModules<{
   "ta/workdays": typeof ta_workdays;
   "templates/messageTemplates": typeof templates_messageTemplates;
   "ui/manage": typeof ui_manage;
+  "ui/day": typeof ui_day;
   "ui/me": typeof ui_me;
   "ui/opening": typeof ui_opening;
   "ui/openings": typeof ui_openings;
@@ -839,6 +841,7 @@ declare const fullApi: ApiFromModules<{
   "ta/workdays": typeof ta_workdays;
   "templates/messageTemplates": typeof templates_messageTemplates;
   "ui/manage": typeof ui_manage;
+  "ui/day": typeof ui_day;
   "ui/me": typeof ui_me;
   "ui/opening": typeof ui_opening;
   "ui/openings": typeof ui_openings;
