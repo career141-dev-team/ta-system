@@ -34,6 +34,7 @@ import { acceptStrategies, removeStrategyPicture, strategyBellDue, submitStrateg
 import { writeCandidateProfile } from "@/lib/candidates/profileWrites";
 import { writeCandidateInterview } from "@/lib/candidates/interviewWrites";
 import { writeCandidateClosing } from "@/lib/candidates/closingWrites";
+import { storeOfferLetter } from "@/lib/candidates/offerLetter";
 import { writeCandidateReview } from "@/lib/candidates/reviewWrites";
 import { writeCandidateCall } from "@/lib/candidates/callWrites";
 import { checkCandidateReferee } from "@/lib/candidates/referenceChecks";
@@ -4368,26 +4369,6 @@ export async function recordPlacement(formData: FormData) {
   redirect(`${here}?msg=${encodeURIComponent("Placement recorded. Asma and the Director have been told.")}`);
 }
 
-/** The offer letter, into the same storage the screenshots use. */
-async function storeOfferLetter(file: File): Promise<{ ok: true; fileId: string } | { ok: false; message: string }> {
-  if (file.size > 10 * 1024 * 1024) return { ok: false, message: "The offer letter must be under 10 MB." };
-  const type = file.type || "application/pdf";
-  if (!isConvex()) return { ok: true, fileId: `local_${file.name}` };
-  try {
-    const uploadUrl = await convexMutation<string>("ta/storage:recordingUploadUrl", {});
-    const put = await fetch(internalUploadUrl(uploadUrl), {
-      method: "POST",
-      headers: { "content-type": type },
-      body: Buffer.from(await file.arrayBuffer()),
-    });
-    if (!put.ok) return { ok: false, message: `The offer letter could not be saved (${put.status}). Nothing was placed.` };
-    const { storageId } = (await put.json()) as { storageId: string };
-    return { ok: true, fileId: storageId };
-  } catch (e) {
-    console.error("[recordPlacement] offer letter upload failed:", e);
-    return { ok: false, message: "The offer letter could not be saved. Nothing was placed." };
-  }
-}
 
 // ─── Screening calls ─────────────────────────────────────────────────────────
 //
