@@ -311,6 +311,8 @@ import type * as ui_me from "../ui/me.js";
 import type * as ui_opening from "../ui/opening.js";
 import type * as ui_openings from "../ui/openings.js";
 import type * as ui_pipeline from "../ui/pipeline.js";
+import type * as ui_plan from "../ui/plan.js";
+import type * as ui_planRules from "../ui/planRules.js";
 import type * as ui_posts from "../ui/posts.js";
 import type * as ui_rules from "../ui/rules.js";
 import type * as users_users from "../users/users.js";
@@ -625,6 +627,8 @@ declare const fullApi: ApiFromModules<{
   "ui/opening": typeof ui_opening;
   "ui/openings": typeof ui_openings;
   "ui/pipeline": typeof ui_pipeline;
+  "ui/plan": typeof ui_plan;
+  "ui/planRules": typeof ui_planRules;
   "ui/posts": typeof ui_posts;
   "ui/rules": typeof ui_rules;
   "users/users": typeof users_users;
@@ -873,6 +877,8 @@ declare const fullApi: ApiFromModules<{
   "ui/opening": typeof ui_opening;
   "ui/openings": typeof ui_openings;
   "ui/pipeline": typeof ui_pipeline;
+  "ui/plan": typeof ui_plan;
+  "ui/planRules": typeof ui_planRules;
   "ui/posts": typeof ui_posts;
   "ui/rules": typeof ui_rules;
   "users/users": typeof users_users;
