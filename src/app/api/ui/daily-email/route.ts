@@ -16,12 +16,10 @@ import { NextResponse } from "next/server";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { sendDailyEmail } from "@/app/actions";
 import { inline } from "@/lib/inlineResult";
-import { formFields, readSendRedirect, redirectUrl, UI_ORIGINS } from "@/lib/uiDailyEmail";
+import { formFields, readSendRedirect, redirectUrl } from "@/lib/uiDailyEmail";
+import { uiCors } from "@/lib/uiCors";
 
-const cors = (origin: string | null): Record<string, string> =>
-  origin && UI_ORIGINS.includes(origin)
-    ? { "access-control-allow-origin": origin, "access-control-allow-methods": "POST, OPTIONS", "access-control-allow-headers": "authorization, content-type", "access-control-max-age": "600", vary: "origin" }
-    : {};
+const cors = (origin: string | null) => uiCors(origin, "POST, OPTIONS");
 
 export function OPTIONS(req: Request) {
   return new NextResponse(null, { status: 204, headers: cors(req.headers.get("origin")) });
