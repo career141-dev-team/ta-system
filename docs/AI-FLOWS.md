@@ -1,130 +1,120 @@
-# AI flows — the list to approve (phase E5)
+# AI flows — the full list to approve (phase E5)
 
-19 Nov 2026. The new UI changes whole flows from forms to "tell AURA". Each one needs
-its own backend. This page lists every one: how it works in the new UI, how it worked in
-old AURA, and what the backend must do. **Approve or change each one, then it is built,
-one at a time.**
+19 Nov 2026, rewritten after reading the whole new UI (every screen, the removed candidate
+page in git history, FLOW-CHECK and SCREEN-CHECK). The first version had 9 features and
+missed many — this one has every AURA idea found.
+
+**Where things stand today:** no AI model runs anywhere in the new UI. Every "AURA" is
+browser rules, word matching, sample data or a timer pretending to think. Only two real
+outside calls exist: **LinkedIn Search** and **Extract with AI** (Apify).
+
+Columns: **Today** = how the new UI does it now · **Old** = did old AURA have it ·
+**Backend** = what has to be built · **AI** = needs a model? · **Size** S / M / L.
 
 ## The rules for every AI flow
 
-1. **AI reads, suggests and fills. A person confirms.** Nothing is created, moved, sent or
-   deleted by AI on its own. The button the person presses runs the backend's normal rule.
-2. **The backend's rules still decide.** AI never skips a check (workday, permissions,
-   limits, the outbound lock, test mode).
-3. **AI never writes to a candidate or a client.** Emails and WhatsApp stay draft, person
-   approves, system sends.
-4. **Every AI call is counted**: which feature, who, cost. A daily cost limit stops it.
-5. **When AI is off or fails**, the screen says so in plain words and the manual way still
-   works.
+1. **AI reads, suggests and fills. A person confirms.** Nothing is created, moved, sent or deleted by AI on its own.
+2. **The backend's rules still decide** (workday, permissions, limits, outbound lock, test mode).
+3. **AI never writes to a candidate or a client by itself** — draft, person approves, system sends (the existing WhatsApp/email assistant keeps its own guards).
+4. **Every AI call is counted** (feature, who, cost) under a daily limit.
+5. **AI off or failing** → the screen says so and the manual way still works.
 6. **A flow that changes an old rule is your decision**, written down with the date.
 
-## Decisions needed from you first
+## Decisions for you first
 
 | # | Decision | My recommendation |
 |---|---|---|
-| A | Where AI runs | **Small, quick AI jobs in the backend** (reading a brief, the chats, the CV questions) — the backend already has the AI key and already runs AI for matching. **Long jobs stay on the old server** (Research, Suggestions with Claude, CV files) and the backend asks it. |
-| B | Which model | **DeepSeek V4 Flash** for the small jobs — the only model the OpenRouter account allows, under a second, fractions of a cent. **Claude (your subscription)** stays for Research and Suggestions, as today. |
-| C | Daily cost limit | **$5 a day** across the desk to start; when it is reached the AI parts pause and say so. |
-| D | Order | 1 New opening, 2 Database chat, 3 CV agent, 4 Today chat, 5 JD chat, 6 Strategy plan chat, 7 Research & Suggestions from the new UI, 8 LinkedIn Search + Extract with AI, 9 Snippets. |
+| A | Where AI runs | Small, quick jobs in the backend (it already has the AI key). Long jobs (Research, Suggestions, CV files) on the old server. |
+| B | Model | DeepSeek V4 Flash for small jobs (the only model the OpenRouter account allows). Claude (your subscription) for Research and Suggestions, as today. |
+| C | Daily cost limit | $5 a day across the desk to start. |
+| D | Voice | Typing by voice: the browser's own (free, already works). AURA **speaking** and the **screening call**: the old voice agent. |
+| E | **Fix now (safety)** | LinkedIn Search and Extract with AI call Apify from public links **with no sign-in check** — anyone who finds the link can spend money. Move them behind the signed-in backend first. |
+| F | Order | Groups 1 → 7 below, most-used first. |
 
-## The features
+## Group 1 — Today (the TA's day)
 
-### 1. New opening from a brief
+| # | Feature | Today | Old | Backend | AI | Size |
+|---|---|---|---|---|---|---|
+| 1 | **Day plan** — "interview at 2:30, keep the afternoon light" → timed steps; "Change something" re-plans | Fixed slots + sample tasks | No | The TA's real queue: suggestions to review, replies waiting, CVs ready, interviews, strategies due | Optional | M |
+| 2 | **Desk questions** — "What first?", "My strategies today", "Finance requirements?" | Word rules, sample desk | No | One "my desk" read (positions, priority, day N of target, pipeline, CVs today, strategies) | For free questions | M |
+| 3 | **"Things" feed** — "Kasun replied: 850k, 1 month — Move to Director Review", "AURA drafted the JD — Review", "New strategy — Accept" | Sample (hidden signed in) | Partly (reply reading exists) | A feed of AI-read replies, drafted JDs, new strategies | Uses existing AI | M |
+| 4 | **Draft my EOD** — AURA drafts the email's notes and numbers | Lists the email views only | No | AI draft on top of the backend email (D5) | Yes | M |
+| 5 | **Morning brief + talk to AURA** (speak, attach a file) | "Not connected yet" | No | Brief read, voice in/out, file reading | Yes | L |
+| 6 | Suggested order + start line ("Start with X — P1, 100%") | Rules | No | The desk read (2) | No | S |
 
-| | |
-|---|---|
-| **New flow** | Write or say one paragraph, or attach a JD (PDF / Word). AURA fills the role, client, places and people, priority, team, must-haves, hiring-for. What is missing, AURA asks one at a time. The person presses **Create**. Then AURA drafts the JD. |
-| **Old AURA** | A long form with every field, then "Draft JD". |
-| **Rule change (yours)** | Only **role + client** are required to create; everything else takes the usual default (you decided this 14 Nov). |
-| **Backend to build** | AI "read this brief" → fields (backend AI job). Read text from an attached PDF / Word (old server). **Create opening** with the old rules (team rules, a TA only puts themself, lead adds others, bells) moved into the backend. Then the JD draft (old app's JD writer, moved or called). |
-| **Size** | Large |
+## Group 2 — Openings
 
-### 2. Database chat
+| # | Feature | Today | Old | Backend | AI | Size |
+|---|---|---|---|---|---|---|
+| 7 | **New opening from a brief** — write/say a paragraph; AURA fills role, client, places + people, priority, team, must-haves; asks what is missing one at a time; person presses Create. **Rule change (yours, 14 Nov): only role + client required** | Word rules | Long form | Read the brief (model), create opening with old rules moved in | Yes | L |
+| 8 | **Attach a JD (PDF / Word)** to the brief | Only .txt read | — | Text from PDF/Word (old server) | No | S |
+| 9 | **JD drafted after Create** | Toast only | Yes | JD writer job | Yes | M |
+| 10 | **"Search or ask AURA" (⌘K / Spotlight)** — find openings and people, "Create an opening called…", ask anything about the desk | Word match, sample | Partly (old ask-the-desk) | Desk-wide search + a desk-wide answer | Yes | M |
 
-| | |
-|---|---|
-| **New flow** | One chat: "SAP leads in Colombo, 8+ years" → people. Each next message refines ("only Kandy", "people like Kasun", "do we have Nimal Perera?"). Add to a job, shortlist, download CVs from the chat. Chats are kept as history. Referees mode searches referees named on CVs. |
-| **Old AURA** | A search page with filter boxes; one search at a time; saved searches. |
-| **Rule change (yours)** | None — same search, same who-may-see. |
-| **Backend to build** | Turn each message into a search (the existing AI step that reads a search sentence + the existing search engine, bounded). Keep the last filters so a message refines them. "People like X" (existing lookalike search). Add to a job / shortlist (old app's rule moved into the backend). Download CVs. A **new table for chat history**. Referees search (existing referee search; its sentence reader uses Claude today). |
-| **Size** | Large |
+## Group 3 — Inside an opening
 
-### 3. CV agent ("Ask AURA" on the CV)
+| # | Feature | Today | Old | Backend | AI | Size |
+|---|---|---|---|---|---|---|
+| 11 | **CV agent** — "add the green box", "expected 900k", "move top right", "add a note" | Word rules, not saved | Box editor by hand | Save the box; it goes into the email | No (AI optional) | M |
+| 12 | **Prepared CV** — the CV file with the box stamped (download, email attachment, "Make it") | Timer stand-in | Yes | Stamp + Word→PDF on the old server | No | M |
+| 13 | **Ask about this CV** — "years in SAP?", "email?" | CV text + word overlap | No | Nothing; a model for real answers | Optional | S |
+| 14 | **JD chat** — "make it shorter", versions, restore | "Not connected yet" | Yes | Reviser + version saves | Yes | M |
+| 15 | **JD generate / regenerate from the brief**, record notes by voice | Not built | Yes | JD writer | Yes | M |
+| 16 | **Re-read job details** ("what candidates are matched on") | Timer stand-in | Yes | Existing re-read (exists) | Existing | S |
+| 17 | **Approve JD starts AI** (re-read, rematch, Research, Suggestions) | Toast only | Yes | Approve + start the jobs on the old server | Existing | M |
+| 18 | **Database CVs matching** — score ring, ✦ "why" line, Strong / Worth a look, Run again | Real score; reason from tags only; Run again off | Yes | Real match reasons; rematch (Qdrant + model) | Existing | M |
+| 19 | **LinkedIn Job applicant fit score** + "Strong fit 80+" filter | Sample (0 when signed in) | Yes | Read the screening score | Existing | S |
+| 20 | **Scoops CV reading** | Real queue signed in | Yes | Exists | Existing | — |
+| 21 | **Research** — 8 answers with sources, benchmark people with confidence, Find them, Wrong company? correct it | Sample + timer | Yes | Run on the old server (web search + Claude), reads, edits | Existing | L |
+| 22 | **Suggestions** — rounds, Refine, Tell AURA, AURA's first message ("you picked 2 from tile makers…"), why lines, "confirm before approaching" | Sample + timer | Yes | Run rounds on the old server, Select / Not this one, read the note into the next round | Yes | L |
+| 23 | **Find CV** — match a LinkedIn profile to a database CV ("Same person") | Sample | Yes | Database lookup + match strength | Optional | S |
+| 24 | **Extract with AI** (one profile link fills the row) | Real Apify, **saves nothing, no sign-in gate** | Simpler | Behind the backend, counted, saved | Outside service | M |
+| 25 | **Snippets** — "make it punchier", snippet chat, level from title | Canned + rules | Yes (refine) | Model refine | Yes | S |
+| 26 | Referee Calls Positive / Not successful; HH Overview next cards | Rules | Yes | Writes only | No | S |
+| 27 | **AI Follow-Up stage on the Pipeline** — see who the assistant is chasing and its status | Counts only | Yes | Read the assistant's state (exists) | Existing | S |
 
-| | |
-|---|---|
-| **New flow** | In any CV popup: "add the green box", "set expected salary 900k", "move it to the top right", "add a note: strong SAP"; or a question: "how many years in SAP?". |
-| **Old AURA** | The Prepared CV box editor in the candidate drawer, by hand. |
-| **Rule change (yours)** | None. |
-| **Backend to build** | **Save the box** (old app's rule moved into the backend) so the email attaches exactly that box. The **Prepared CV file** stays on the old server (Word to PDF). Commands already work without AI in the browser; free questions can stay browser-only (no cost) — **AI only if you want answers beyond what the CV text says**. |
-| **Size** | Medium |
+## Group 4 — The candidate follow-up (lost from the new UI)
 
-### 4. Today chat (AURA knows the TA's desk)
+The candidate page was built 16 Nov and removed the same day. Old AURA has all of these;
+the new UI has none of them now. **Where should they live?** (my suggestion: in the CV popup, beside Ask AURA).
 
-| | |
-|---|---|
-| **New flow** | After Start workday, AURA knows the TA's positions, priorities, pipeline, Rashmi's strategies due today; "Plan my day", "What first?", "My strategies today", "Draft my EOD"; it lays the day out in times. |
-| **Old AURA** | No equivalent (only Today's Checks). |
-| **Rule change (yours)** | None — AURA only advises. |
-| **Backend to build** | One **"my desk" read**: positions on the day with requirements, priority, day N of target, pipeline counts, CVs today, strategies due. The answers work today **without AI** (rules in the browser). **AI only for free questions** ("what should I say to the client about…") — optional. |
-| **Size** | Small (Medium with AI questions) |
+| # | Feature | Today | Old | Backend | AI | Size |
+|---|---|---|---|---|---|---|
+| 28 | **Follow-up chat** — what the WhatsApp/email assistant collected, N of 3 sent, Take over / Hand back, Send next, Stop | Removed | Yes | Reads + the existing follow-up rules | Existing | M |
+| 29 | **Aura screening call** — asks salary, expected, notice, the job's questions | Removed | Yes (voice agent) | The existing voice agent | Existing | M |
+| 30 | **Reference checks** — Verify on LinkedIn, company references | Removed | Yes | Existing reference search | Existing | S |
 
-### 5. JD chat
+## Group 5 — Database
 
-| | |
-|---|---|
-| **New flow** | On the Job Description: "make it shorter", "add hybrid 3 days", "rewrite for a manager level" → AURA changes the JD; versions kept; Approve. |
-| **Old AURA** | The same idea exists (revise JD with AI), on the old server. |
-| **Rule change (yours)** | None. |
-| **Backend to build** | JD save / versions / restore and **Approve** (approve starts Research + Suggestions — see 7). The revise step: move the old JD reviser into a backend AI job, or call the old server. |
-| **Size** | Medium |
+| # | Feature | Today | Old | Backend | AI | Size |
+|---|---|---|---|---|---|---|
+| 31 | **Database chat** — plain words → search, each message refines, Boolean, "people like X", "do we have Nimal?", add to a job, shortlist, download CVs | Word rules, 12 sample people | Search page | Sentence → search (existing AI step), search engine, lookalike, add/shortlist rules, CV files | Yes | L |
+| 32 | **Attach a JD to search** ("find people for this JD") | File name only | Search from a job | Read the file, JD → search | Yes | M |
+| 33 | **Referees mode** — a sentence → title / company / industry, "We have a CV for X — maybe them" | Word rules, sample | Yes | Referee search (existing), name matching | Yes | M |
+| 34 | **Why line + fit label** on each person | Rules | Fit bands | Real match reasons | Existing | S |
+| 35 | **Spotlights** (free to approach, being worked, placed before), "Bring them back first", CV scanner, lookalike from an uploaded CV | Not built | Yes | Reads + existing lookalike | Existing | M |
+| 36 | Chat history (and AI-named chats) | In the browser only | Saved searches | A chat history table | Optional | S |
 
-### 6. Strategy plan chat
+## Group 6 — Strategy Planner
 
-| | |
-|---|---|
-| **New flow** | The lead plans a job's strategies by talking: "Rashmi on LinkedIn groups tomorrow, Hasini on referrals"; AURA suggests a plan from what worked before; the lead presses **Send**. |
-| **Old AURA** | Tick boxes in the planner matrix. |
-| **Rule change (yours)** | None. |
-| **Backend to build** | The planner's rules (put a TA on a strategy, set the day, not for this job, take off, the bell) moved into the backend. **"What worked before"**: a read of past strategies and their results. The chat works today without AI (word matching); AI optional. |
-| **Size** | Medium |
+| # | Feature | Today | Old | Backend | AI | Size |
+|---|---|---|---|---|---|---|
+| 37 | **"Plan with AURA" / AURA suggests a plan** — who has room, which strategies | Fixed rule | No | Week loads + past results | Optional | M |
+| 38 | **What worked before** — results of past strategies on similar roles | Sample | No | Past-results read; similar roles may need AI | Optional | M |
+| 39 | **Tell AURA the plan** — "Dilini on direct headhunt tomorrow" | Word rules | Tick boxes | The planner's rules moved in | Optional | M |
 
-### 7. Research & Suggestions from the new UI
+## Group 7 — Other pages
 
-| | |
-|---|---|
-| **New flow** | Research: Run / Run again / correct the client / pick benchmark / Find them. Suggestions: rounds of people to review, Select / Not this one, **Refine** and **Tell AURA** to steer the next round. |
-| **Old AURA** | Same features, run on the old server (web search + Claude). |
-| **Rule change (yours)** | None. |
-| **Backend to build** | The new UI's buttons ask the backend; the backend asks the **old server** to run the job (it has Claude and web search); results land where they do today; reads for the screens; Select / Not this one / Find CV rules moved into the backend. |
-| **Size** | Large |
-
-### 8. LinkedIn Search + Extract with AI
-
-| | |
-|---|---|
-| **New flow** | LinkedIn Search: a chat — "SAP managers at Virtusa in Colombo" → ranked profiles (~$0.14 a search). Excel Tables "Extract with AI": paste one profile link → the row fills (~$0.004). |
-| **Old AURA** | No LinkedIn Search. Extract existed in a simpler form. |
-| **Rule change (yours)** | **New spending** — you set who may use it and a monthly limit. |
-| **Backend to build** | Run both through the backend (the Apify key server-side, cost counted, limit enforced). **Save** extracted rows and chosen profiles into Excel Tables (today Extract saves nothing). |
-| **Size** | Medium |
-
-### 9. Snippets refine
-
-| | |
-|---|---|
-| **New flow** | "Make it punchier", "shorter for LinkedIn" → AURA rewrites the job snippet. |
-| **Old AURA** | Same idea on the old server. |
-| **Rule change (yours)** | None. |
-| **Backend to build** | A small backend AI job, counted. |
-| **Size** | Small |
-
-## Not AI (already works in the browser, no cost)
-
-- Referee Calls: Positive / Not successful read from the feedback words.
-- TA Track "What stands out": plain rules over the numbers.
-- The day plan's times (from the positions and what the TA said).
+| # | Feature | Today | Old | Backend | AI | Size |
+|---|---|---|---|---|---|---|
+| 40 | **LinkedIn Search chat** — "SAP managers at Virtusa in Colombo" → ranked profiles, ~$0.14 | Real Apify, **no sign-in gate**, saves nothing | No | Behind the backend, limit, save to Excel Tables, model reader | Yes | M |
+| 41 | **TA Track "What stands out"** — top sender, idle up, LinkedIn time | Rules, sample | No | Tracker data + CV counts | Optional | M |
+| 42 | **Feedback voice note** → transcribe, title, sort (broke / idea / question) | Recorded, not read | Voice note | Storage + transcription | Yes | S |
+| 43 | **Lead / Director / Ops homes** — "needs a decision" lines, summaries | Rules, sample | Dashboards | Reads | Optional | M |
+| 44 | **Voice agent page** (old top bar) | Not built | Yes | Existing voice agent | Existing | M |
+| 45 | **"Aura" strategy** in the strategy catalogue (AI tools group) | A catalogue name | — | — | — | — (**what does it mean?**) |
 
 ## What you approve
 
-For each feature: **OK as written**, or **change** (say what). Plus decisions A–D above.
+For each group (or number): **OK as written** or **change** — plus decisions A–F, and where
+the candidate follow-up (group 4) should live.
