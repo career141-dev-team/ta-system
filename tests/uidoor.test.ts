@@ -198,6 +198,23 @@ eq("send: the ChatGPT rule is kept", sendSrc.includes("checkResearchSubmission")
   eq("things: ready uses the board's own blockers rule", deskSrc.includes("directorReviewBlockers(a, c)"), true);
   eq("things: only this TA's own candidates", deskSrc.includes("a.ownerTaId as string | undefined) !== me"), true);
   eq("things: read only", /ctx\.db\.(insert|patch|replace|delete)/.test(deskSrc), false);
+
+  // The lead's desk (19 Nov): the old lead dashboard's rules, for AURA on the lead's Today.
+  const { decisionOf, tally, clock, IN_PIPELINE } = await import("../convex/ui/leadRules");
+  const role = { title: "SAP Lead", client: "PGP", tas: 1, jdPending: false, day: 3, target: 14, tier: "P1" };
+  eq("lead: nobody on a role is a red decision", decisionOf({ ...role, tas: 0 }), { title: "SAP Lead", client: "PGP", why: "Nobody assigned", red: true });
+  eq("lead: a JD waiting is a decision", decisionOf({ ...role, jdPending: true })?.why, "JD waiting for approval");
+  eq("lead: past its target is a decision", decisionOf({ ...role, day: 20 })?.why, "Day 20 against a P1 target of 14 — close it or reassign");
+  eq("lead: within target and staffed is no decision", decisionOf(role), null);
+  const check = (status: "complete" | "incomplete", key: string, exception?: { reason: string; at: number; by: string }) => ({ key, status, exception }) as never;
+  eq("lead: done = complete or excused", tally({ checks: [check("complete", "jd"), check("incomplete", "research", { reason: "x", at: 1, by: "u" }), check("incomplete", "daily_email")] }, "100%"), { done: 2, of: 3 });
+  eq("lead: no checklist yet = nothing counted", tally(null, "100%"), { done: 0, of: 0 });
+  eq("lead: Colombo clock", clock(Date.UTC(2026, 10, 19, 3, 35)), "9:05");
+  eq("lead: pipeline excludes new and closed", IN_PIPELINE.has("new_cvs") || IN_PIPELINE.has("placed"), false);
+  const leadSrc = read("convex/ui/lead.ts");
+  eq("lead: signed in and desk-wide only", leadSrc.includes("uiUser(ctx)") && leadSrc.includes("isDeskWideUser(user)"), true);
+  eq("lead: bounded reads only", /\.collect\(\)/.test(leadSrc), false);
+  eq("lead: read only", /ctx\.db\.(insert|patch|replace|delete)/.test(leadSrc), false);
 }
 
 console.log(`\nuidoor: ${pass} passed, ${fail} failed`);
