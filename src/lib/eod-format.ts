@@ -1,4 +1,4 @@
-import type { Candidate, Id, Role } from "@/data/types";
+import type { Application, Candidate, Id, Role } from "@/data/types";
 import { noticePeriodToDays } from "./answered";
 import { externalUrl } from "./url";
 import type { RefereeCallEmailRow } from "@/data/types";
@@ -500,4 +500,54 @@ export function boxOverrides(change: ReturnType<typeof eodDetailChanges>): {
   if ("noticePeriod" in change.patch) out.noticePeriod = change.patch.noticePeriod ?? null;
   if (change.notes) out.notes = change.notes;
   return out;
+}
+
+const HOUSE_NOTE = (c: Candidate, a: Application): string[] => {
+  const out: string[] = [];
+  if (c.totalExperienceYears) out.push(`>Total Experience - ${c.totalExperienceYears}yr`);
+  if (c.currentEmployer) out.push(`>Currently at ${c.currentEmployer}`);
+  for (const n of a.notes) {
+    const clean = n.replace(/^>/, "").trim();
+    if (clean && !out.some((o) => o.endsWith(clean))) out.push(`>${clean}`);
+  }
+  // The CV box carries every TA note; the email must not drop later notes
+  // after the experience and employer lines take up the first two slots.
+  return out;
+};
+
+
+/** One person's line in table 1, from their record. */
+export function shortlistRowFor(a: Application, c: Candidate, no: number): ShortlistRow {
+  return {
+    no,
+    name: c.fullName,
+    age: c.age ? String(c.age) : "",
+    // Zero days is "immediate", which is the best answer there is — it was
+    // printed as a blank (audit finding 28).
+    // As said first ("2 months", "Not disclosed"), which has no days.
+    notice:
+      c.noticePeriod?.trim() ||
+      (c.noticePeriodDays === 0 ? "Immediate" : c.noticePeriodDays ? `${c.noticePeriodDays} days` : ""),
+    notes: HOUSE_NOTE(c, a),
+    currentCompany: c.currentEmployer ?? "",
+    currentDesignation: c.currentTitle ?? "",
+    currentRemuneration: c.currentSalary ?? "Not disclosed",
+    expectedRemuneration: c.expectedSalary ?? "Open to discuss",
+    applicationId: a.id,
+    reviewStageChangedAt: a.lastStageChangedAt,
+  };
+}
+
+
+/**
+ * "SET 1 - DELMO - BRAND MANAGER - 3 CVs". The client stays in it: a reply is
+ * matched by its subject, and two clients hiring the same title are told
+ * apart by the client's name (lib/routing matchReviewReply).
+ */
+export function subjectLine(clientName: string, title: string, setNumber: number | null = 1, cvCount = 1): string {
+  const setPart = `SET ${setNumber ?? 1}`;
+  const clientPart = (clientName || "CLIENT").trim().toUpperCase();
+  const posPart = title.trim().toUpperCase();
+  const cvPart = `${cvCount} ${cvCount === 1 ? "CV" : "CVs"}`;
+  return `${setPart} - ${clientPart} - ${posPart} - ${cvPart}`;
 }

@@ -71,7 +71,7 @@ Rule (desk, 28 Sep): a set stays open across days until the TA sends >=5 CVs in 
 
 Two callers must stay identical: `ta/applications.ts:nextSetNumber` (live) and `src/data/store.ts:nextSetNumber` (local store), both calling `nextSetFor`.
 
-Display: `store.ts:setsForOpening(openingId, taId?)` -> `{taId,setNumber,count,status}` used by dashboards, overview, openings list, mobile, `sla.ts` (open sets), reporting, desk assistant. EOD page (`src/app/openings/[id]/eod/page.tsx`) uses the TA's newest set (`nextSetNumber = latestSet?.setNumber ?? 1`) for the subject `subjectLine()` in `src/lib/eod.ts` = `SET n - CLIENT - POSITION - k CV(s)` (uppercase client and title), and the explanatory text ("complete on a day you send 5 or more"). SETS cell in the effort sheet: `setsCell(sets,total)` in `src/lib/eod-format.ts` -> `"2 · 14 CVs"`; typed trailing "N CVs" is stripped (1 Oct). `effortRow` sets `sets = max(setsForOpening(opening, ta))`.
+Display: `store.ts:setsForOpening(openingId, taId?)` -> `{taId,setNumber,count,status}` used by dashboards, overview, openings list, mobile, `sla.ts` (open sets), reporting, desk assistant. EOD page (`src/app/openings/[id]/eod/page.tsx`) uses the TA's newest set (`nextSetNumber = latestSet?.setNumber ?? 1`) for the subject `subjectLine()` in `src/lib/eod-format.ts` (re-exported by `src/lib/eod.ts`; the backend builds the same subject in `convex/lib/eodCompose.ts` `defaultSubject`, 19 Nov) = `SET n - CLIENT - POSITION - k CV(s)` (uppercase client and title), and the explanatory text ("complete on a day you send 5 or more"). SETS cell in the effort sheet: `setsCell(sets,total)` in `src/lib/eod-format.ts` -> `"2 · 14 CVs"`; typed trailing "N CVs" is stripped (1 Oct). `effortRow` sets `sets = max(setsForOpening(opening, ta))`.
 
 At send, the round's set is `min(setNumber of the sent applications)`: live path `convex/lib/dailyEmail.ts:finalizeDailyEmail`; local path `actions.ts:sendEod` -> `repo.openReviewRound`.
 
@@ -257,9 +257,9 @@ Pre-merge checklist:
 - 26 Oct `2b9c52f` a person on the opening twice counts as on it (CVs not refiled); setCvs repair of set CVs not on the opening.
 
 <!-- skill-meta
-verified-commit: 76a5a2ee
-verified-hash: f997cd27c0b2e6a52744920da5e78e2f653fefee
-verified-date: 2026-11-02
+verified-commit: 99acaa73
+verified-hash: 046f2b39eec4b03d8e36f4ef69409574fc467eff
+verified-date: 2026-11-19
 sources:
   tests/addToAssignedJob.test.ts
   convex/lib/sets.ts

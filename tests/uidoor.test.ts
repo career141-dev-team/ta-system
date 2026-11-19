@@ -134,5 +134,15 @@ eq("email: nothing here sends (no begin, no eodMail)", /dailyEmails\.begin|eodMa
 eq("email: the browser never names the scoop-only exemption", /scoopsOnly/.test(emailSrc.replace(/\/\/.*$|\*.*$/gm, "")), false);
 eq("email: settling an uncertain send uses the backend's rule", emailSrc.includes("internal.ta.dailyEmails.reconcile"), true);
 
+// The email built in the backend (D5 step 1): one roster rule for the screen and the send.
+const dailySrc = fs.readFileSync(path.join("convex", "ta", "dailyEmails.ts"), "utf8");
+const beginSrc = dailySrc.slice(dailySrc.indexOf("export const begin"), dailySrc.indexOf("export const", dailySrc.indexOf("export const begin") + 10));
+eq("compose: begin uses the shared roster rule", beginSrc.includes("eligibleApplications(ctx"), true);
+eq("compose: begin keeps no second copy of the rule", beginSrc.includes("isEodCandidateEligible"), false);
+const composeSrc = dailySrc.slice(dailySrc.indexOf("export const compose"));
+eq("compose: the same roster rule", composeSrc.includes("eligibleApplications(ctx"), true);
+eq("compose: takes no recipients, subject or HTML from the caller", /args:\s*\{[^}]*\b(to|cc|html|subject)\b/.test(composeSrc), false);
+eq("compose door: no recipients from the browser", /compose = query\(\{\s*args:\s*\{[^}]*\b(to|cc|html)\b/.test(emailSrc), false);
+
 console.log(`\nuidoor: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

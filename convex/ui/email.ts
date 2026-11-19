@@ -39,6 +39,21 @@ export const emails = query({
   },
 });
 
+/** The email as it would go now: people, L-sheet line, To / Cc, subject (ta/dailyEmails:compose). */
+export const compose = query({
+  args: { jobId: v.id("jobs"), workLocationId: v.optional(v.string()), forDate: v.optional(v.string()) },
+  handler: async (ctx, a): Promise<Refused | { ok: true; email: unknown }> => {
+    const w = await who(ctx);
+    if (!w.ok) return w;
+    try {
+      const email: unknown = await ctx.runQuery(internal.ta.dailyEmails.compose, { actorId: w.user._id, ...a });
+      return { ok: true, email };
+    } catch (error) {
+      return refused(inWords(error, "Could not build this email. Try again."));
+    }
+  },
+});
+
 /** The sidebar's "Sent in the last 31 days", across openings. */
 export const sent = query({
   args: {},

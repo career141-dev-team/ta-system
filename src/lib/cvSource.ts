@@ -38,3 +38,22 @@ export function cvSource(app: Application, headhunted: ReadonlySet<Id>): CvSourc
       return app.jobPostId ? "post" : "da";
   }
 }
+
+/** The column a CV is counted in on the end-of-day sheet. */
+export type EffortBucket = "backUp" | "addOns" | "scoop" | "da" | "post" | "l";
+
+/**
+ * The one column a CV of the day goes in (the desk, 28 Sep), so the columns
+ * add up to the day's total: a backup first, then a scoop mailed in by a lead,
+ * then an add-on, then where it came from (lib/cvSource). A scoop stays a
+ * scoop on an Add-on day — the desk counts what the leads sent under SCOOP. A
+ * database pick is TBR, not a hunted CV, and is in none of them.
+ */
+export function effortBucket(app: Application, headhunted: ReadonlySet<Id>): EffortBucket | null {
+  if (app.backupForApplicationId) return "backUp";
+  if (app.scoopFrom || app.scoopReceivedAt) return "scoop";
+  if (app.isAddOn) return "addOns";
+  const source = cvSource(app, headhunted);
+  return source === "database" ? null : source;
+}
+

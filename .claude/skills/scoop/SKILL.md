@@ -93,7 +93,7 @@ On the Scoops tab `CandidateList` is rendered with `claimable` and `basePath=/op
 
 - A Director/midday email whose candidates are ALL scoops does not need the ChatGPT research link (owner, 17 Nov; `scoopsOnly` in src/lib/eod-format.ts, see /eod-email).
 
-- `effortBucket(app, headhunted)` in `src/lib/eod.ts` returns, in order: `backUp` if `backupForApplicationId`; `scoop` if `app.scoopFrom || app.scoopReceivedAt`; `addOns` if `isAddOn`; else `cvSource(...)` (`src/lib/cvSource.ts`; `sourcingChannel === "SCOOP"` -> "database" -> no column). A scoop therefore stays a scoop on an Add-on day. Order is backup > scoop > add-on > source.
+- `effortBucket(app, headhunted)` in `src/lib/cvSource.ts` (re-exported by `src/lib/eod.ts`; moved 19 Nov so the backend's `convex/lib/eodCompose.ts` uses the same one) returns, in order: `backUp` if `backupForApplicationId`; `scoop` if `app.scoopFrom || app.scoopReceivedAt`; `addOns` if `isAddOn`; else `cvSource(...)` (`src/lib/cvSource.ts`; `sourcingChannel === "SCOOP"` -> "database" -> no column). A scoop therefore stays a scoop on an Add-on day. Order is backup > scoop > add-on > source.
 - Only CVs sent to the Director today are counted: `sentToDirectorToday(openingId, taId, since, workLocationId)` = applications in today's (Colombo day start, `colomboDayStart`) `director` review rounds sent by this TA (excluding `recoveryReopenedAt`) plus people waiting in tonight's Director email (`shortlistRows(...,"director")`). `effortRow` loops them, `count.scoop++` per scoop bucket, `scoop: count.scoop || null` (blank not 0). Six scoops uploaded, one sent to the Director -> SCOOP 1 (`tests/eodeffort.test.ts` "six mailed in").
 - The TA can overtype every EOD cell (`effortFromForm`, `form.set("effort_scoop")`); `MANUAL_EFFORT` is an empty set, so nothing is forced manual. `EffortSheet.tsx` explains: "SCOOP if you uploaded it under Scoops (add any that came on WhatsApp)". WhatsApp scoops the system never saw are added by typing.
 - `dayTotal` (`src/lib/eod-format.ts`) sums `CV_COLUMNS = ["da","scoop","l","post","addOns","backUp"]`; the SETS cell reads "<set> - <total> CVs".
@@ -195,7 +195,7 @@ Common edits:
 | Size/type/file count | `MAX_BYTES`/`TYPES` in the route, `MAX_FILES` and `accept` in `ScoopUpload.tsx`, copy text, `platformGuide.ts` | HH route uses `HEADHUNT_MAX_BYTES` separately |
 | What the flag writes | `scoopFlag` in `scoopMail.ts` and `fileScoop` | `src/data/types.ts`, `map.ts`, `projections.ts`, schema `applications`, `tests/scoopmail.test.ts` |
 | New progress step or wording | `STEPS` in `cvUploadProgress.ts` and `LINE` in `ScoopUpload.tsx` | `tests/cvuploadprogress.test.ts`, HH panel shares the translator |
-| EOD column rule | `effortBucket`/`effortRow` in `src/lib/eod.ts` | `eod-format.ts`, `EffortSheet.tsx` help text, `tests/eodeffort.test.ts`, /eod-email |
+| EOD column rule | `effortBucket` in `src/lib/cvSource.ts`, `effortRow` in `src/lib/eod.ts` and `convex/lib/eodCompose.ts` (keep both the same) | `eod-format.ts`, `EffortSheet.tsx` help text, `tests/eodeffort.test.ts`, /eod-email |
 | Make failed reads visible on the list | persist failure server-side (list only shows flagged apps) | `status`, `page.tsx` |
 | Emit `scoop_received` | add an emitter after `fileScoop` flags, via `ta/notifications:create` | owner decision first (users see it) |
 | New field on `applications` or `cvUploads` | `convex/schema.ts` | `convex/ta/model/tables.ts` mapping if the Convex row name differs from the app's, `projections.ts`, `map.ts`, `types.ts`, seed |
@@ -240,9 +240,9 @@ Repo hard rules that apply: never run `convex deploy`/`convex run`/`convex impor
 - 2026-10-28 `d34d9a6` a scoop moved to Follow-up or Director Shortlist gets the opening's only active work location (`placeInOnlyLocation` in `ta/applications.ts`); Try again / Remove on failed scoop cards (`ta/hhUpload:retry`).
 
 <!-- skill-meta
-verified-commit: 481925a0
-verified-hash: 9e4e5e4895a63a1c52ea8ff0aceb7df1f342c037
-verified-date: 2026-11-17
+verified-commit: 99acaa73
+verified-hash: 384cd9cd8ddb2730dd6d8c5b1ff7b9ee3d45467f
+verified-date: 2026-11-19
 sources:
   convex/ta/scoopUpload.ts
   convex/lib/scoopMail.ts
