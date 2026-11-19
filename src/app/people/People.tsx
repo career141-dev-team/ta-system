@@ -6,16 +6,16 @@ import PillMenu, { type MenuOption } from "../openings/[id]/PillMenu";
 import { useRole, useSignedInPerson } from "@/lib/role";
 
 // People and roles (owner 18 Nov 2026: "get the details from old AURA, with our design
-// guidelines"). Everything the old /people page does (src/app/people/page.tsx and
+// guidelines"). What the old /people page does for people (src/app/people/page.tsx and
 // PeopleAdmin.tsx in the TA System): who is on the desk and what each can do; invite by
 // email or add without one; edit; mark as left / bring back (nobody is ever deleted, and
 // nobody marks themselves as left); invites waiting with Revoke; accounts the older app
-// made, given access with a role; and the desk's own settings - the shortlist replies
-// inbox, the pre-shortlist score, who may put jobs on the website, the end-of-day copy
-// line and the standard follow-up questions. Only an admin changes anything
-// (`user.manage`); everyone else reads it.
-// ponytail: sample rows; with the backend, the desk's users, Clerk's invites and the
-// settings table (a TA System pull request, like the other screens).
+// made, given access with a role. Only an admin changes anything (`user.manage`);
+// everyone else reads it.
+// Owner 19 Nov 2026: the desk settings are off this page, and the page is drawn the way
+// TA Track is - a light H1 with white pill controls on the right, then big white cards:
+// the desk on the left, the numbers, invites and older accounts on the right.
+// ponytail: sample rows; with the backend, the desk's users and Clerk's invites.
 
 type RoleKey = "ta" | "ta_support" | "ta_lead" | "director" | "ops" | "admin" | "viewer" | "client";
 const ROLES: { value: RoleKey; label: string; note: string }[] = [
@@ -30,6 +30,22 @@ const ROLES: { value: RoleKey; label: string; note: string }[] = [
 ];
 const ROLE_LABEL = Object.fromEntries(ROLES.map((r) => [r.value, r.label])) as Record<RoleKey, string>;
 const ROLE_MENU: MenuOption[] = ROLES.map((r) => ({ value: r.value, label: r.label, hint: r.note }));
+/** The filter on the right of the title: roles grouped the way the desk talks about them. */
+type Group = "all" | "tas" | "leads" | "director" | "ops";
+const GROUPS: [Group, string][] = [
+  ["all", "Everyone"],
+  ["tas", "TAs"],
+  ["leads", "Leads"],
+  ["director", "Director"],
+  ["ops", "Ops"],
+];
+const IN_GROUP: Record<Group, (r: RoleKey) => boolean> = {
+  all: () => true,
+  tas: (r) => r === "ta" || r === "ta_support",
+  leads: (r) => r === "ta_lead" || r === "admin",
+  director: (r) => r === "director",
+  ops: (r) => r === "ops",
+};
 const COUNTRIES = ["Sri Lanka", "India", "Pakistan"] as const;
 const COUNTRY_MENU: MenuOption[] = COUNTRIES.map((c) => ({ value: c, label: c }));
 
@@ -50,23 +66,16 @@ const OTHERS: Other[] = [
   { email: "amal@example.com", name: "Amal Wickrama", oldRole: "recruiter", canSignIn: true, records: 1 },
   { email: "sachini@example.com", name: "Sachini Dias", oldRole: "viewer", canSignIn: false, records: 2 },
 ];
-type Question = { id: string; label: string; on: boolean };
-const STANDARD: Question[] = [
-  { id: "cv", label: "Latest CV", on: true },
-  { id: "current", label: "Current salary", on: true },
-  { id: "expected", label: "Expected salary", on: true },
-  { id: "notice", label: "Notice period", on: true },
-];
-const EOD_TO = "joborders@career141.com";
-const EOD_CC = ["shamra@career141.com", "asma@career141.com", "opsteam@career141.com", "cv@career141.com", "shortlists@career141.com"];
 
 const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
 const phoneOk = (s: string) => !s.trim() || /^\+?[\d\s-]{9,18}$/.test(s.trim());
 const initials = (n: string) => n.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("");
 
 const FIELD = "w-full rounded-sm border border-border bg-surface px-3 py-2 text-small text-ink outline-none placeholder:text-ink-3 focus:border-brand disabled:bg-surface-2 disabled:text-ink-3";
-const PRIMARY = "rounded-full bg-brand px-4 py-2 text-small font-medium text-white hover:bg-brand-strong disabled:opacity-50";
-const QUIET = "rounded-full border border-border-strong px-4 py-2 text-small font-medium text-ink hover:bg-surface-2";
+const PRIMARY = "flex items-center gap-2 rounded-full bg-brand px-[max(1.25rem,12px)] py-2.5 text-small font-medium text-white shadow-card transition-colors hover:bg-brand-strong";
+const LIGHT = "rounded-full bg-surface px-[max(1.1rem,10px)] py-2.5 text-small text-ink-2 shadow-card transition-colors hover:text-ink";
+const MENU = FIELD + " flex items-center justify-between gap-2 text-left";
+const ROW_BTN = "rounded-full px-3 py-1.5 text-small text-ink-2 transition-colors hover:bg-surface-2 hover:text-ink";
 
 function Field({ label, children, wide }: { label: string; children: ReactNode; wide?: boolean }) {
   return (
@@ -77,15 +86,45 @@ function Field({ label, children, wide }: { label: string; children: ReactNode; 
   );
 }
 
-function Card({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
+/** TA Track's card: a big white board piece with an H3 title and a quiet line under it. */
+function Card({ title, sub, aside, children }: { title: string; sub?: string; aside?: ReactNode; children: ReactNode }) {
   return (
-    <section className="rounded-md bg-canvas px-[max(1.5rem,14px)] py-[max(1.25rem,12px)]">
-      <h3 className="text-small font-medium text-ink">{title}</h3>
-      {note && <p className="mt-1 max-w-[70ch] text-caption text-ink-3">{note}</p>}
-      <div className="mt-3">{children}</div>
+    <section className="flex min-w-0 flex-col rounded-lg bg-surface px-[max(1.75rem,16px)] py-[max(1.5rem,16px)] shadow-card">
+      <header className="mb-[max(1.25rem,12px)] flex items-start gap-3">
+        <span className="min-w-0 flex-1">
+          <h2 className="text-h3 font-medium text-ink">{title}</h2>
+          {sub && <p className="text-small text-ink-3">{sub}</p>}
+        </span>
+        {aside}
+      </header>
+      {children}
     </section>
   );
 }
+
+/** One number of the desk, as TA Track draws its numbers: a dot, a big figure, a caption. */
+function Stat({ dot, big, small }: { dot: string; big: number; small: string }) {
+  return (
+    <li className="flex items-start gap-3">
+      <span className={"mt-3 size-3 shrink-0 rounded-full " + dot} aria-hidden="true" />
+      <span className="flex flex-col">
+        <span className="text-h2 font-normal tabular-nums text-ink">{big}</span>
+        <span className="text-caption text-ink-3">{small}</span>
+      </span>
+    </li>
+  );
+}
+
+const RoleChip = ({ role }: { role: RoleKey }) => (
+  <span
+    className={
+      "inline-flex whitespace-nowrap rounded-full px-3 py-1 text-caption font-medium " +
+      (role === "ta_lead" || role === "admin" ? "bg-brand-soft text-brand" : role === "director" ? "bg-violet-soft text-violet" : "bg-surface-2 text-ink-2")
+    }
+  >
+    {ROLE_LABEL[role]}
+  </span>
+);
 
 export default function People() {
   const role = useRole();
@@ -99,21 +138,19 @@ export default function People() {
   const [invites, setInvites] = useState(INVITES);
   const [others, setOthers] = useState(OTHERS);
   const [q, setQ] = useState("");
+  const [group, setGroup] = useState<Group>("all");
   const [showGone, setShowGone] = useState(false);
   const [panel, setPanel] = useState<"invite" | "add" | null>(null);
   const [editing, setEditing] = useState<Person | null>(null);
   const [draft, setDraft] = useState<Person>({ id: "", name: "", email: "", phone: "", role: "ta", country: "Sri Lanka", inbox: "", active: true });
   const [otherRole, setOtherRole] = useState<Record<string, RoleKey>>({});
-  const [inbox, setInbox] = useState("shortlists@career141.com");
-  const [score, setScore] = useState(75);
-  const [posters, setPosters] = useState({ ops: true, taLead: false });
-  const [questions, setQuestions] = useState(STANDARD);
   const [toast, setToast] = useState<{ key: number; bold?: string; rest: string; warn?: boolean } | null>(null);
   const seq = useRef(0);
   const say = (bold: string | undefined, rest: string, warn?: boolean) => setToast({ key: ++seq.current, bold, rest, warn });
 
+  const onDesk = people.filter((p) => p.active);
   const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  const matching = people.filter((p) => words.every((w) => [p.name, p.email, p.phone, ROLE_LABEL[p.role]].join(" ").toLowerCase().includes(w)));
+  const matching = people.filter((p) => IN_GROUP[group](p.role) && words.every((w) => [p.name, p.email, p.phone, ROLE_LABEL[p.role]].join(" ").toLowerCase().includes(w)));
   const active = matching.filter((p) => p.active);
   const gone = matching.filter((p) => !p.active);
   const shown = showGone ? [...active, ...gone] : active;
@@ -160,7 +197,7 @@ export default function People() {
   };
 
   const form = (p: Person, set: (p: Person) => void, mode: "invite" | "add" | "edit") => (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
       {mode !== "invite" && (
         <Field label="Name">
           <input autoFocus value={p.name} onChange={(e) => set({ ...p, name: e.target.value })} placeholder="Nuha Rizwan" className={FIELD} />
@@ -175,15 +212,15 @@ export default function People() {
         </Field>
       )}
       <Field label="Role">
-        <PillMenu options={ROLE_MENU} initial={p.role} title="Role" pillClass={FIELD + " text-left"} onChange={(v) => set({ ...p, role: v as RoleKey })} />
+        <PillMenu options={ROLE_MENU} initial={p.role} title="Role" pillClass={MENU} onChange={(v) => set({ ...p, role: v as RoleKey })} />
       </Field>
       {mode !== "invite" && (
         <>
           <Field label="Works in">
-            <PillMenu options={COUNTRY_MENU} initial={p.country} title="Works in" pillClass={FIELD + " text-left"} onChange={(v) => set({ ...p, country: v })} />
+            <PillMenu options={COUNTRY_MENU} initial={p.country} title="Works in" pillClass={MENU} onChange={(v) => set({ ...p, country: v })} />
           </Field>
-          <Field label="Applications inbox" wide>
-            <input type="email" value={p.inbox} onChange={(e) => set({ ...p, inbox: e.target.value })} placeholder={mode === "add" ? "nuha.jobs@career141.com — left blank, one is made" : "nuha.jobs@career141.com"} className={FIELD + " font-mono"} />
+          <Field label="Applications inbox">
+            <input type="email" value={p.inbox} onChange={(e) => set({ ...p, inbox: e.target.value })} placeholder={mode === "add" ? "Left blank, one is made" : "nuha.jobs@career141.com"} className={FIELD + " font-mono"} />
           </Field>
         </>
       )}
@@ -191,215 +228,191 @@ export default function People() {
   );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[max(3.5rem,14px)] py-[max(2.25rem,16px)] max-md:pt-12">
-      <div className="mx-auto flex w-full max-w-[64rem] flex-col gap-[max(1.75rem,14px)]">
-        <p className="max-w-[70ch] text-small text-ink-2">
-          Who is on the desk, and what each of them can do.
-          {canEdit
-            ? " Nobody is deleted — a name on a year of stage changes has to keep resolving, so someone who leaves is marked as left and comes off the pickers."
-            : " Only an admin can change this."}
-        </p>
-
-        {/* The main job: the people. */}
-        <section className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-3">
-            <h2 className="text-h3 font-medium text-ink">
-              People <span className="text-ink-3">{active.length}</span>
-            </h2>
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find by name, email, mobile or role" aria-label="Find a person" className={FIELD + " ml-auto max-w-[18rem] rounded-full"} />
-            {canEdit && (
-              <>
-                <button type="button" onClick={() => openPanel("invite")} className={PRIMARY}>{panel === "invite" ? "Cancel" : "Invite someone"}</button>
-                <button type="button" onClick={() => openPanel("add")} className={QUIET}>{panel === "add" ? "Cancel" : "Add without invite"}</button>
-              </>
-            )}
-          </div>
-
-          {panel && (
-            <div className="rounded-md border border-border bg-surface px-[max(1.5rem,14px)] py-[max(1.25rem,12px)] shadow-card">
-              {form(draft, setDraft, panel)}
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                <button type="button" onClick={panel === "invite" ? invite : add} className={PRIMARY}>{panel === "invite" ? "Send invite" : "Add them"}</button>
-                <p className="max-w-[80ch] text-caption text-ink-3">
-                  {panel === "invite"
-                    ? "The role is saved now, so it applies from their first sign-in. They get an email with a link to set up their sign-in. The role can be changed later with Edit."
-                    : "The mobile shows on every snippet they publish. The applications inbox is the address that goes into the LinkedIn job setup for every advert they run — set it up in Microsoft 365 first."}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {shown.length ? (
-            <ul className="flex flex-col gap-2">
-              {shown.map((p) =>
-                editing?.id === p.id ? (
-                  <li key={p.id} className="rounded-md border border-brand bg-surface px-[max(1.25rem,12px)] py-4 shadow-card">
-                    {form(editing, setEditing, "edit")}
-                    <div className="mt-4 flex gap-3">
-                      <button type="button" onClick={save} className={PRIMARY}>Save</button>
-                      <button type="button" onClick={() => setEditing(null)} className="px-2 text-small text-ink-2 hover:text-ink">Cancel</button>
-                    </div>
-                  </li>
-                ) : (
-                  <li key={p.id} className={"flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md px-[max(1.25rem,12px)] py-3 " + (p.active ? "bg-canvas" : "bg-surface-2")}>
-                    <span className={"grid size-9 shrink-0 place-items-center rounded-full text-caption font-medium text-white " + (p.active ? "bg-brand" : "bg-border-strong")}>{initials(p.name)}</span>
-                    <span className="min-w-[12rem] flex-1">
-                      <span className="flex flex-wrap items-center gap-2">
-                        <span className="text-small font-medium text-ink">{p.name}</span>
-                        {!p.active && <span className="rounded-xs bg-surface-3 px-1.5 text-caption text-ink-2">Left</span>}
-                      </span>
-                      <span className="block truncate text-caption text-ink-3">{[p.email, p.phone, p.country].filter(Boolean).join(" · ")}</span>
-                    </span>
-                    {p.inbox && <span className="hidden truncate font-mono text-mono text-ink-3 lg:block lg:max-w-[16rem]" title="Applications inbox">{p.inbox}</span>}
-                    <span className="w-[9.5rem] shrink-0 text-small text-ink-2">{ROLE_LABEL[p.role]}</span>
-                    {canEdit && (
-                      <span className="flex shrink-0 items-center gap-1">
-                        <button type="button" onClick={() => setEditing(p)} className="rounded-full px-3 py-1.5 text-small text-ink-2 hover:bg-surface-2 hover:text-ink">Edit</button>
-                        {/* Nobody marks themselves as left — that is how a desk locks itself out. */}
-                        {p.id !== meId && (
-                          <button type="button" onClick={() => setActive(p, !p.active)} className="rounded-full px-3 py-1.5 text-small text-ink-3 hover:bg-surface-2 hover:text-ink">
-                            {p.active ? "Mark as left" : "Bring back"}
-                          </button>
-                        )}
-                      </span>
-                    )}
-                  </li>
-                ),
-              )}
-            </ul>
-          ) : (
-            <p className="rounded-md bg-canvas px-5 py-6 text-center text-small text-ink-3">{q ? "Nobody matches that search." : "Nobody on the desk yet."}</p>
-          )}
-          {gone.length > 0 && (
-            <button type="button" onClick={() => setShowGone((v) => !v)} className="self-start text-small text-ink-2 hover:text-ink">
-              {showGone ? "Hide" : "Show"} {gone.length} who {gone.length === 1 ? "has" : "have"} left
+    <div className="flex min-h-0 flex-1 flex-col px-[max(1rem,10px)] pb-[max(1rem,10px)] pt-[max(1rem,12px)] max-md:pt-6">
+      {/* The title row, as TA Track's: a light H1, then white pill controls on the right. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-3 px-[max(0.25rem,4px)]">
+        <h1 className="text-h1 font-light text-ink">People and roles</h1>
+        <div className="flex-1" />
+        <label className="relative w-[max(17rem,200px)] max-sm:w-full">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-ink-3">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+          </svg>
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Find a person"
+            aria-label="Find a person by name, email, mobile or role"
+            className="w-full rounded-full bg-surface py-2.5 pl-10 pr-4 text-small text-ink shadow-card outline-none placeholder:text-ink-3 focus-visible:ring-2 focus-visible:ring-brand/30"
+          />
+        </label>
+        <div role="radiogroup" aria-label="Show" className="flex rounded-full bg-surface p-1 shadow-card">
+          {GROUPS.map(([v, l]) => (
+            <button
+              key={v}
+              type="button"
+              role="radio"
+              aria-checked={group === v}
+              onClick={() => setGroup(v)}
+              className={"rounded-full px-[max(1.1rem,10px)] py-2 text-small transition-colors " + (group === v ? "bg-ink text-white" : "text-ink-2 hover:text-ink")}
+            >
+              {l}
             </button>
-          )}
-        </section>
-
-        {canEdit && invites.length > 0 && (
-          <Card title={`Invites waiting to be accepted · ${invites.length}`}>
-            <ul className="flex flex-col divide-y divide-border">
-              {invites.map((i) => (
-                <li key={i.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2.5">
-                  <span className="min-w-[12rem] flex-1 text-small text-ink">{i.email}</span>
-                  <span className="w-[9.5rem] text-small text-ink-2">{ROLE_LABEL[i.role]}</span>
-                  <span className="text-caption text-ink-3">sent {i.sent}</span>
-                  <button type="button" onClick={() => { setInvites((all) => all.filter((x) => x.id !== i.id)); say(i.email, " invite revoked."); }} className="rounded-full px-3 py-1.5 text-small text-ink-3 hover:bg-surface hover:text-danger">
-                    Revoke
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </Card>
+          ))}
+        </div>
+        {canEdit && (
+          <button type="button" onClick={() => openPanel("invite")} className={PRIMARY}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true" className="size-4">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            Invite someone
+          </button>
         )}
+      </div>
 
-        {canEdit && others.length > 0 && (
-          <Card title="Other accounts — not on the desk" note="Made by the older app. They have no access here until you give them a role. Only those marked “can sign in” have a login already; the others need an invite after you give them access.">
-            <ul className="flex flex-col divide-y divide-border">
-              {others.map((a) => (
-                <li key={a.email} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-2.5">
-                  <span className="min-w-[12rem] flex-1">
-                    <span className="block text-small text-ink">{a.name}</span>
-                    <span className="block text-caption text-ink-3">{a.email}{a.records > 1 && ` · ${a.records} records`}</span>
-                  </span>
-                  <span className="text-caption text-ink-3">older app: {a.oldRole}</span>
-                  <span className={"text-caption " + (a.canSignIn ? "text-brand" : "text-ink-3")}>{a.canSignIn ? "can sign in" : "no login here"}</span>
-                  <span className="w-[10rem]">
-                    <PillMenu options={ROLE_MENU} initial="ta" title="Role" pillClass={FIELD + " text-left"} onChange={(v) => setOtherRole((r) => ({ ...r, [a.email]: v as RoleKey }))} />
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const r = otherRole[a.email] ?? "ta";
-                      setOthers((all) => all.filter((x) => x.email !== a.email));
-                      setPeople((all) => [{ id: `u${Date.now()}`, name: a.name, email: a.email, phone: "", role: r, country: "Sri Lanka", inbox: "", active: true }, ...all]);
-                      say(a.name, ` now has access as ${ROLE_LABEL[r]}.`);
-                    }}
-                    className={QUIET}
-                  >
-                    Give access
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </Card>
-        )}
+      <div className="mt-[max(1rem,10px)] min-h-0 flex-1 overflow-y-auto px-[max(0.25rem,4px)] pb-2">
+        <div className="grid grid-cols-[1.98fr_1fr] items-start gap-[max(1.5rem,12px)] max-lg:grid-cols-1">
+          {/* The main job: who is on the desk. */}
+          <Card
+            title="The desk"
+            sub={canEdit ? "Who is on it and what each of them can do. Nobody is deleted; someone who leaves is marked as left." : "Who is on it and what each of them can do. Only an admin can change this."}
+            aside={
+              canEdit && (
+                <button type="button" onClick={() => openPanel("add")} className={LIGHT}>
+                  {panel === "add" ? "Cancel" : "Add without invite"}
+                </button>
+              )
+            }
+          >
+            {panel && (
+              <div className="mb-[max(1.25rem,12px)] rounded-md bg-canvas p-[max(1.25rem,12px)]">
+                <p className="mb-3 text-small font-medium text-ink">{panel === "invite" ? "Invite someone" : "Add someone without an invite"}</p>
+                {form(draft, setDraft, panel)}
+                <div className="mt-4 flex flex-wrap items-center gap-3">
+                  <button type="button" onClick={panel === "invite" ? invite : add} className={PRIMARY}>{panel === "invite" ? "Send invite" : "Add them"}</button>
+                  <button type="button" onClick={() => setPanel(null)} className={ROW_BTN}>Cancel</button>
+                  <p className="max-w-[60ch] text-caption text-ink-3">
+                    {panel === "invite"
+                      ? "They get an email to set up their sign-in. The role applies from their first sign-in."
+                      : "The applications inbox goes into the LinkedIn job setup for every advert they run. Set it up in Microsoft 365 first."}
+                  </p>
+                </div>
+              </div>
+            )}
 
-        {/* The desk's own settings: quieter, below the people (rule 2: hide, don't remove). */}
-        <section className="flex flex-col gap-3">
-          <h2 className="text-h3 font-medium text-ink">Desk settings</h2>
-
-          <Card title="Shortlist replies inbox — one for the whole desk" note="Copied on every shortlist email to a Director or a client, and named on the reply-to, so the reply is tracked whichever way they answer. The subject line already names the client, the role and the day.">
-            <div className="flex flex-wrap items-center gap-3">
-              <input type="email" value={inbox} disabled={!canEdit} onChange={(e) => setInbox(e.target.value)} aria-label="Shortlist replies inbox" className={FIELD + " max-w-[22rem] font-mono"} />
-              {canEdit && <button type="button" onClick={() => (isEmail(inbox) ? say("Shortlist replies inbox", " saved.") : say(undefined, "That email does not look right.", true))} className={QUIET}>Save</button>}
-            </div>
-          </Card>
-
-          <Card title="Pre-shortlist score" note="New CVs and database matches scoring this or more are pre-shortlisted, and wait for the TA to confirm. 85 and above is “strong”, 60 to 84 “worth a look”.">
-            <div className="flex items-center gap-3">
-              <input type="number" min={40} max={100} value={score} disabled={!canEdit} onChange={(e) => setScore(Number(e.target.value))} aria-label="Pre-shortlist score" className={FIELD + " w-24"} />
-              {canEdit && (
-                <button type="button" onClick={() => (score >= 40 && score <= 100 ? say("Pre-shortlist score", ` saved: ${score}.`) : say(undefined, "Use a score from 40 to 100.", true))} className={QUIET}>Save</button>
-              )}
-            </div>
-          </Card>
-
-          <Card title="Jobs on the website" note="The Website switch on a job lists it on career141.com, or takes it down. An admin can always use it. Tick who else can.">
-            <div className="flex flex-wrap items-center gap-5">
-              {(["ops", "taLead"] as const).map((k) => (
-                <label key={k} className="flex items-center gap-2 text-small text-ink">
-                  <input type="checkbox" checked={posters[k]} disabled={!canEdit} onChange={(e) => setPosters((p) => ({ ...p, [k]: e.target.checked }))} className="size-4 accent-brand" />
-                  {k === "ops" ? "Ops" : "TA leads"}
-                </label>
-              ))}
-              {canEdit && <button type="button" onClick={() => say("Who can put jobs on the website", " saved.")} className={QUIET}>Save</button>}
-            </div>
-          </Card>
-
-          <Card title="End-of-day copy">
-            <p className="max-w-[70ch] text-small text-ink-2">
-              Every end-of-day email starts out to <span className="font-mono text-mono">{EOD_TO}</span>, copying {EOD_CC.map((c, i) => <span key={c}>{i ? ", " : ""}<span className="font-mono text-mono">{c}</span></span>)}. A TA can add or take off To and Cc addresses on the email itself.
-            </p>
-          </Card>
-
-          <Card title="Standard follow-up questions" note="Asked on the AI call and chased on WhatsApp for every shortlisted candidate. Switch one off and it is no longer asked. A TA adds job-specific questions on the opening itself.">
-            <ul className="flex flex-col gap-2">
-              {questions.map((x) => (
-                <li key={x.id} className="flex flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={x.on}
-                    aria-label={`Ask ${x.label}`}
-                    disabled={!canEdit}
-                    onClick={() => setQuestions((all) => all.map((y) => (y.id === x.id ? { ...y, on: !y.on } : y)))}
-                    className={"relative h-6 w-10 shrink-0 rounded-full transition-colors disabled:opacity-50 " + (x.on ? "bg-brand" : "bg-border-strong")}
-                  >
-                    <span className={"absolute left-[3px] top-[3px] size-4.5 rounded-full bg-surface shadow-card transition-transform " + (x.on ? "translate-x-4" : "")} />
-                  </button>
-                  <input
-                    value={x.label}
-                    disabled={!canEdit}
-                    onChange={(e) => setQuestions((all) => all.map((y) => (y.id === x.id ? { ...y, label: e.target.value } : y)))}
-                    aria-label="Question"
-                    className={FIELD + " max-w-[20rem]"}
-                  />
-                </li>
-              ))}
-            </ul>
-            {canEdit && (
-              <button
-                type="button"
-                onClick={() => (questions.some((x) => !x.label.trim()) ? say(undefined, "A question cannot be empty.", true) : say("Standard follow-up questions", " saved."))}
-                className={QUIET + " mt-3"}
-              >
-                Save questions
+            {shown.length ? (
+              <ul className="-mx-3 flex flex-col">
+                {shown.map((p) =>
+                  editing?.id === p.id ? (
+                    <li key={p.id} className="rounded-md bg-brand-tint p-[max(1.25rem,12px)]">
+                      {form(editing, setEditing, "edit")}
+                      <div className="mt-4 flex gap-2">
+                        <button type="button" onClick={save} className={PRIMARY}>Save</button>
+                        <button type="button" onClick={() => setEditing(null)} className={ROW_BTN}>Cancel</button>
+                      </div>
+                    </li>
+                  ) : (
+                    <li key={p.id} className={"group flex flex-wrap items-center gap-x-[max(1.25rem,12px)] gap-y-2 rounded-md px-3 py-[max(0.875rem,9px)] transition-colors hover:bg-canvas " + (p.active ? "" : "opacity-55")}>
+                      <span className="flex size-[max(2.75rem,36px)] shrink-0 items-center justify-center rounded-full bg-brand-soft text-small font-medium text-brand">{initials(p.name)}</span>
+                      <span className="min-w-[14rem] flex-1">
+                        <span className="flex flex-wrap items-center gap-2">
+                          <span className="text-body font-medium text-ink">{p.name}</span>
+                          {p.id === meId && <span className="text-caption text-ink-3">· you</span>}
+                          {!p.active && <span className="rounded-full bg-surface-3 px-2.5 py-0.5 text-caption font-medium text-ink-2">Left</span>}
+                        </span>
+                        <span className="block truncate text-small text-ink-3">{[p.email, p.phone, p.country].filter(Boolean).join(" · ")}</span>
+                      </span>
+                      {p.inbox && <span className="hidden w-[max(15rem,180px)] truncate font-mono text-mono text-ink-3 xl:block" title="Applications inbox">{p.inbox}</span>}
+                      {canEdit && (
+                        <span className="flex shrink-0 items-center gap-1 transition-opacity md:opacity-0 md:focus-within:opacity-100 md:group-hover:opacity-100">
+                          <button type="button" onClick={() => setEditing(p)} className={ROW_BTN}>Edit</button>
+                          {/* Nobody marks themselves as left — that is how a desk locks itself out. */}
+                          {p.id !== meId && (
+                            <button type="button" onClick={() => setActive(p, !p.active)} className={ROW_BTN}>
+                              {p.active ? "Mark as left" : "Bring back"}
+                            </button>
+                          )}
+                        </span>
+                      )}
+                      <span className="flex w-[max(10rem,116px)] shrink-0 justify-end"><RoleChip role={p.role} /></span>
+                    </li>
+                  ),
+                )}
+              </ul>
+            ) : (
+              <p className="py-10 text-center text-small text-ink-3">{q || group !== "all" ? "Nobody matches that." : "Nobody on the desk yet."}</p>
+            )}
+            {gone.length > 0 && (
+              <button type="button" onClick={() => setShowGone((v) => !v)} className="mt-3 self-start text-small text-ink-2 hover:text-ink">
+                {showGone ? "Hide" : "Show"} {gone.length} who {gone.length === 1 ? "has" : "have"} left
               </button>
             )}
           </Card>
-        </section>
+
+          <div className="flex min-w-0 flex-col gap-[max(1.5rem,12px)]">
+            <Card title="The desk in numbers">
+              <ul className="grid grid-cols-2 gap-x-6 gap-y-5">
+                <Stat dot="bg-brand" big={onDesk.length} small="on the desk" />
+                <Stat dot="bg-brand-leaf" big={onDesk.filter((p) => IN_GROUP.tas(p.role)).length} small="TAs working openings" />
+                <Stat dot="bg-warn" big={invites.length} small="invites waiting" />
+                <Stat dot="bg-border-strong" big={people.length - onDesk.length} small="marked as left" />
+              </ul>
+            </Card>
+
+            {canEdit && invites.length > 0 && (
+              <Card title="Invites waiting" sub="Sent, not yet accepted.">
+                <ul className="flex flex-col divide-y divide-border">
+                  {invites.map((i) => (
+                    <li key={i.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-small font-medium text-ink">{i.email}</span>
+                        <span className="block text-caption text-ink-3">{ROLE_LABEL[i.role]} · sent {i.sent}</span>
+                      </span>
+                      <button type="button" onClick={() => { setInvites((all) => all.filter((x) => x.id !== i.id)); say(i.email, " invite revoked."); }} className={ROW_BTN + " hover:text-danger"}>
+                        Revoke
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            )}
+
+            {canEdit && others.length > 0 && (
+              <Card title="Other accounts" sub="Made by the older app. No access here until you give them a role.">
+                <ul className="flex flex-col divide-y divide-border">
+                  {others.map((a) => (
+                    <li key={a.email} className="flex flex-col gap-2.5 py-3.5 first:pt-0 last:pb-0">
+                      <span className="flex items-start gap-3">
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-small font-medium text-ink">{a.name}</span>
+                          <span className="block truncate text-caption text-ink-3">{a.email} · older app: {a.oldRole}</span>
+                        </span>
+                        <span className={"shrink-0 rounded-full px-2.5 py-0.5 text-caption font-medium " + (a.canSignIn ? "bg-success-soft text-success" : "bg-surface-2 text-ink-3")}>{a.canSignIn ? "Can sign in" : "No login"}</span>
+                      </span>
+                      <span className="flex items-center gap-2">
+                        <span className="min-w-0 flex-1">
+                          <PillMenu options={ROLE_MENU} initial="ta" title="Role" pillClass="flex w-full items-center justify-between gap-2 rounded-full bg-surface-2 px-4 py-2 text-small text-ink" onChange={(v) => setOtherRole((r) => ({ ...r, [a.email]: v as RoleKey }))} />
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const r = otherRole[a.email] ?? "ta";
+                            setOthers((all) => all.filter((x) => x.email !== a.email));
+                            setPeople((all) => [{ id: `u${Date.now()}`, name: a.name, email: a.email, phone: "", role: r, country: "Sri Lanka", inbox: "", active: true }, ...all]);
+                            say(a.name, ` now has access as ${ROLE_LABEL[r]}.`);
+                          }}
+                          className="shrink-0 rounded-full bg-ink px-4 py-2 text-small font-medium text-white transition-colors hover:bg-marker"
+                        >
+                          Give access
+                        </button>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            )}
+          </div>
+        </div>
       </div>
       {toast && <Toast key={toast.key} bold={toast.bold} rest={toast.rest} warn={toast.warn} />}
     </div>

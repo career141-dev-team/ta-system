@@ -9,6 +9,7 @@ import { useDoorSignOut } from "@/lib/backend";
 import { personOf, ROLES, setRole, useRole, useSignedInPerson, worksADay } from "@/lib/role";
 import { markRead, useAlerts, type Alert, type Icon } from "./alerts/data";
 import TellUs from "./feedback/TellUs";
+import { openPetPicker, useMyPet } from "@/lib/pet";
 
 // The bell's alerts and the person's menu (owner's design G1, 14 Nov 2026; old system
 // FLOW-CHECK 7.1, 7.3). Each opens as a white panel under its button while the page
@@ -46,12 +47,18 @@ function Pop({ pos, onClose, children, label, className }: { pos: Place; onClose
   });
   useEffect(() => {
     if (!panel.current) return;
-    gsap.fromTo(panel.current, PANEL_OUT, { opacity: 1, y: 0, scale: 1, duration: DUR.base, ease: EASE.out, transformOrigin: "top right" });
+    const t = gsap.fromTo(panel.current, PANEL_OUT, { opacity: 1, y: 0, scale: 1, duration: DUR.base, ease: EASE.out, transformOrigin: "top right" });
+    // fromTo with an end, and killed on cleanup: a plain from() run twice (dev runs
+    // effects twice) read the half-faded rows as its end and left them faded (19 Nov 2026).
     const rows = panel.current.querySelectorAll("[data-row]");
-    if (rows.length) gsap.from(rows, { opacity: 0, y: -4, duration: DUR.fast, stagger: 0.03, delay: 0.05 });
+    const r = rows.length ? gsap.fromTo(rows, { opacity: 0, y: -4 }, { opacity: 1, y: 0, duration: DUR.fast, stagger: 0.03, delay: 0.05 }) : null;
     const esc = (e: KeyboardEvent) => e.key === "Escape" && shut.current();
     addEventListener("keydown", esc);
-    return () => removeEventListener("keydown", esc);
+    return () => {
+      t.kill();
+      r?.kill();
+      removeEventListener("keydown", esc);
+    };
   }, []);
   return createPortal(
     <>
@@ -159,6 +166,7 @@ const MENU_ICON: Record<string, ReactNode> = {
   bin: <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />,
   board: <path d="M4 4h5v16H4zM10 4h5v10h-5zM16 4h4v7h-4z" />,
   dark: <path d="M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10Z" />,
+  pet: <path d="M12 21c-4 0-7-2.5-7-5.5S8 11 12 11s7 2.5 7 5.5S16 21 12 21ZM6 9a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM18 9a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM10 6a1.6 1.6 0 1 0 0-3 1.6 1.6 0 0 0 0 3ZM14 6a1.6 1.6 0 1 0 0-3 1.6 1.6 0 0 0 0 3Z" />,
   out: <path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10" />,
 };
 
@@ -193,6 +201,7 @@ export function Person() {
   const [open, setOpen] = useState<Place | null>(null);
   const [tell, setTell] = useState(false);
   const role = useRole();
+  const { pet, hidden: petHidden } = useMyPet();
   const signedIn = useSignedInPerson();
   const signOut = useDoorSignOut();
   const me = personOf(role);
@@ -275,6 +284,7 @@ export function Person() {
               </div>
             </li>}
             <li role="separator" className="mx-2.5 my-1.5 h-px bg-border" />
+            <MenuRow icon="pet" label="My pet" hint={petHidden ? "Hidden" : pet.name} onClick={() => { close(); openPetPicker(); }} />
             <MenuRow
               icon="dark"
               label="Dark mode"
