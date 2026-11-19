@@ -218,3 +218,16 @@ export function strategyRowsToSubmit(
   if (out.length === 0) return { ok: false, message: "None of those strategies are yours to update." };
   return { ok: true, rows: out };
 }
+
+/** The Openings page's lists: a stored status in the UI's words. */
+export type CardStatus = "active" | "hold" | "placed" | "lost";
+const CARD_STATUS: Record<string, CardStatus> = { active: "active", draft: "active", on_hold: "hold", filled: "placed", cancelled: "lost" };
+
+/** One Openings card (convex/ui/openings.ts list). Priority P1-P5, anything else P3 (the intake default). */
+export const openingCard = {
+  status: (stored: string): CardStatus => CARD_STATUS[stored] ?? "active",
+  of(j: { id: string; client: string; title: string; status: string; priorityTier: string | null; days: number; team: string[]; made: number; website: boolean }) {
+    const p = Number(/^P([1-5])$/.exec(j.priorityTier ?? "")?.[1] ?? 3);
+    return { id: j.id, client: j.client, title: j.title, status: openingCard.status(j.status), priority: p, days: j.days, team: j.team, made: j.made, website: j.website };
+  },
+};

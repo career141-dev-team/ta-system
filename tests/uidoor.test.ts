@@ -6,7 +6,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { cardLimit, inWords, scoopFileRefusal, normalizeQuestions, strategyRowsToSubmit, matchableEmail, moveRefusal, toCard, BOARD_STAGES, BACKEND_STAGES } from "../convex/ui/rules";
+import { cardLimit, inWords, scoopFileRefusal, normalizeQuestions, strategyRowsToSubmit, matchableEmail, moveRefusal, toCard, openingCard, BOARD_STAGES, BACKEND_STAGES } from "../convex/ui/rules";
 
 let pass = 0, fail = 0;
 const eq = (l: string, got: unknown, want: unknown) => {
@@ -107,6 +107,17 @@ eq("posts: a rename keeps the old title", posts.includes("previousTitles"), true
 eq("posts: workday checks refreshed like the old save", (posts.match(/refreshWorkdayChecks\(/g) ?? []).length >= 4, true);
 eq("posts: a new link re-reads the mailbox", posts.includes("queueRescanForLink"), true);
 eq("posts: moving CVs stays inside one opening", posts.includes("That record belongs to a different opening."), true);
+
+// The Openings list (ui/openings:list).
+const oc = openingCard.of({ id: "j", client: "C", title: "T", status: "cancelled", priorityTier: "P1", days: 3, team: ["Ann"], made: 1, website: true });
+eq("openings: cancelled reads as lost", oc.status, "lost");
+eq("openings: P1 is priority 1", oc.priority, 1);
+eq("openings: draft is still open work", openingCard.status("draft"), "active");
+eq("openings: no tier is P3", openingCard.of({ ...oc, status: "on_hold", priorityTier: null }).priority, 3);
+const openingsSrc = fs.readFileSync(path.join("convex", "ui", "openings.ts"), "utf8");
+eq("openings: each status through its index", openingsSrc.includes('withIndex("by_status"'), true);
+eq("openings: never the whole table", /query\("jobs"\)\.collect\(\)/.test(openingsSrc), false);
+eq("openings: a TA sees only their own", openingsSrc.includes("by_userId_isActive"), true);
 
 console.log(`\nuidoor: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

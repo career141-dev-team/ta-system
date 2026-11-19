@@ -36,6 +36,7 @@ const ALLOWED_PUBLIC = new Set<string>([
   "ui/pipeline:board",
   "ui/pipeline:move",
   "ui/pipeline:shortlist",
+  "ui/openings:list",
   "ui/opening:summary",
   "ui/opening:scoops",
   "ui/opening:postApplicants",
@@ -55,6 +56,7 @@ const ALLOWED_PUBLIC = new Set<string>([
   "ui/posts:setPostStatus",
   "ui/posts:deletePost",
   "ui/posts:moveCvs",
+  "ui/posts:list",
 ]);
 
 const PUBLIC = /export\s+(?:const\s+(\w+)\s*=|(default))\s*(query|mutation|action)\s*\(/g;
