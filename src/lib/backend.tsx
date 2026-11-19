@@ -50,6 +50,19 @@ export const useSignedHeaders = (LIVE
     }
   : () => async () => ({})) as () => () => Promise<Record<string, string>>;
 
+/** The old server, where the email's CV files and workbook are made (D5 step 3). */
+export const OLD_SERVER = "https://ta-system.career141.com";
+/** Headers with the person's plain Clerk session, which the old server reads like its own cookie. */
+export const useSessionHeaders = (LIVE
+  ? () => {
+      const { getToken } = useAuth();
+      return async (): Promise<Record<string, string>> => {
+        const token = await getToken();
+        return token ? { Authorization: `Bearer ${token}` } : {};
+      };
+    }
+  : () => async () => ({})) as () => () => Promise<Record<string, string>>;
+
 // The sign-in screen's Clerk hook, with the same stand-in for a build without a backend.
 export const useDoorSignIn = (LIVE ? useSignIn : () => ({ isLoaded: false, signIn: undefined, setActive: undefined })) as typeof useSignIn;
 

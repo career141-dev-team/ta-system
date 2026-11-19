@@ -1,6 +1,6 @@
 "use client";
 
-import { door, jobFromAddress, useDoorAction, useDoorQuery, useLive, type Answer } from "@/lib/backend";
+import { door, jobFromAddress, OLD_SERVER, useDoorAction, useDoorQuery, useLive, useSessionHeaders, type Answer } from "@/lib/backend";
 import { useEffect, useRef, useState } from "react";
 import { DUR, EASE, gsap, motionOK, useGSAP, useSwap } from "@/lib/gsap";
 import { PERSON, useMe } from "@/lib/role";
@@ -362,6 +362,7 @@ export default function DailyEmailView() {
   // tick); the design has none, so a small line under the box carries it.
   const [linkConfirmed, setLinkConfirmed] = useState(false);
   const sendMidday = useDoorAction(door.sendMidday);
+  const session = useSessionHeaders();
   // The email as the backend built it, to tell the TA's changes from the record's.
   const built = real?.ok ? real.email : null;
   const [linkOk, setLinkOk] = useState(false);
@@ -656,9 +657,10 @@ export default function DailyEmailView() {
   const send = () => {
     if (!mail || left.length) return;
     if (signedIn) {
-      // A Midday without CVs is sent by the backend, which builds the email itself;
-      // only the TA's own changes go with it. An EOD, or a Midday with its CVs, is next.
-      if (isEod || !mail.noCvs) return say("From this screen you can send a Midday with \"Send without CV attachments\" ticked. Send this one in AURA for now.", undefined, true);
+      // A Midday without CVs is sent by the backend, which builds the email itself.
+      // An End of day, or a Midday with its CVs, needs the Prepared CV PDFs and the
+      // workbook, which only the old server makes: it gets the old page's own form
+      // and runs the old send, every rule included (D5 step 3).
       if (!linkConfirmed && !linkOk) return say("Add your ChatGPT link and confirm it first.", undefined, true);
       // The backend builds the table from the records: typed-in rows and added columns cannot go with it yet.
       if (rows.some((r) => r.manual) || mail.cols.length) return say("Typed-in rows and added columns cannot be sent from this screen yet. Take them out, or send this one in AURA.", undefined, true);
@@ -667,6 +669,44 @@ export default function DailyEmailView() {
       const field: Record<string, string> = { name: "name", age: "age", notice: "notice", notes: "notes", company: "currentCompany", designation: "currentDesignation", current: "currentRemuneration", expected: "expectedRemuneration" };
       const edits = rows.flatMap((c) => Object.entries(field).map(([k, f]) => ({ applicationId: c.id, field: f, value: String((c as unknown as Record<string, unknown>)[k] ?? "") })));
       patch(mail.id, { status: "sending", rows: rows.map((r) => ({ ...r })) });
+      const done = (d: { ok: boolean; message: string } | undefined) => {
+        if (d?.ok) {
+          patch(mail.id, { status: "sent", sentAt: Date.now() });
+          say(` ${d.message}`, isEod ? "End of day email" : `Midday ${mail.n}`);
+        } else {
+          patch(mail.id, { status: "draft" });
+          say(d?.message ?? "Nothing was sent. Try again.", undefined, true);
+        }
+      };
+      if (isEod || !mail.noCvs) {
+        const cells: Record<string, string> = {};
+        for (const e of edits) cells[`shortlist_${e.applicationId}_${e.field}`] = e.value;
+        void session()
+          .then((auth) =>
+            fetch(`${OLD_SERVER}/api/ui/daily-email`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", ...auth },
+              body: JSON.stringify({
+                openingId: job!,
+                submissionType: isEod ? "eod" : "midday",
+                applicationIds: rows.map((c) => c.id).join(","),
+                subject: mail.subject ?? autoSubject(rows.length),
+                introText: mail.intro ?? (rows.length ? INTRO_CVS : INTRO_ACTIVITY),
+                outroText: mail.outro ?? "",
+                chatgptLink: link.trim(),
+                ...(linkConfirmed ? { researchConfirmed: "on" } : {}),
+                extraTo: mail.to.filter((a) => !built?.to.includes(a)).join(","),
+                extraCc: mail.cc.filter((a) => !built?.cc.includes(a)).join(","),
+                removed: [...was].filter((a) => !now.has(a)).join(","),
+                ...cells,
+              }),
+            }),
+          )
+          .then((res) => res.json() as Promise<{ ok: boolean; message: string }>)
+          .catch(() => ({ ok: false, message: "The email could not reach the server. Check whether it went (Sent in the last 31 days) before trying again." }))
+          .then(done);
+        return;
+      }
       void (sendMidday({
         jobId: job!, edits, subject: mail.subject ?? autoSubject(rows.length),
         intro: mail.intro ?? (rows.length ? INTRO_CVS : INTRO_ACTIVITY), outro: mail.outro,
@@ -674,15 +714,7 @@ export default function DailyEmailView() {
         extraCc: mail.cc.filter((a) => !built?.cc.includes(a)).join(","),
         removed: [...was].filter((a) => !now.has(a)).join(","),
         link: link.trim(), confirmed: linkConfirmed,
-      }) as Promise<{ ok: boolean; message: string } | undefined>).then((d) => {
-        if (d?.ok) {
-          patch(mail.id, { status: "sent", sentAt: Date.now() });
-          say(` ${d.message}`, `Midday ${mail.n}`);
-        } else {
-          patch(mail.id, { status: "draft" });
-          say(d?.message ?? "Nothing was sent. Try again.", undefined, true);
-        }
-      });
+      }) as Promise<{ ok: boolean; message: string } | undefined>).then(done);
       return;
     }
     const snapshot = rows.map((r) => ({ ...r }));
