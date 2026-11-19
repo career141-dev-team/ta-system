@@ -7,17 +7,19 @@
 // with clients) and AURA in the middle, answering as cards. A rail row asks AURA about
 // that person. The full team board is one press away ("Team board"); an admin keeps
 // that board as their home (TodayScreen).
-// ponytail: sample desk and plain-word answers (homeAnswers.ts); with the backend, the
-// real desk read and the Haiku answer (E5), like the TA's Today chat.
+// The lead's answers read the real desk when signed in (ui/lead:desk, 19 Nov); the
+// Director and Ops still read the sample desk until their reads exist.
+// ponytail: plain-word answers (homeAnswers.ts); the Haiku answer comes later (E5).
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { DUR, EASE, gsap, motionOK } from "@/lib/gsap";
-import { useMe } from "@/lib/role";
+import { useMe, useSignedInPerson } from "@/lib/role";
+import { door, useDoorQuery } from "@/lib/backend";
 import { petSay } from "@/lib/pet";
 import Today from "./Today";
 import Home from "./Homes";
-import { answer, brief, startStats, SUGGEST, TEAM, WAITING, WITH_CLIENT, type HomeRole } from "./homeAnswers";
+import { answer, brief, SAMPLE_DESK, startStats, SUGGEST, WAITING, WITH_CLIENT, type HomeRole, type LeadDesk } from "./homeAnswers";
 import type { Answer, Tone } from "./desk";
 
 const LINE: Record<HomeRole, string> = {
@@ -35,7 +37,14 @@ type Msg = { id: number; text?: string; reply?: Answer };
 // Kept for the visit: going to another page and back finds the chat as it was.
 const kept: Partial<Record<HomeRole, { open: boolean; msgs: Msg[] }>> = {};
 
+type LeadRead = ({ ok: true } & LeadDesk) | { ok: false; message: string } | undefined;
+
 export default function AuraHome({ role }: { role: HomeRole }) {
+  // Signed in, the lead reads the real desk; until it arrives, nothing is invented.
+  const signed = useSignedInPerson() !== null;
+  const read = useDoorQuery(door.leadDesk, signed && role === "Lead" ? {} : "skip") as LeadRead;
+  const desk: LeadDesk | null = !signed || role !== "Lead" ? SAMPLE_DESK : read?.ok ? read : null;
+  const failed = read && !read.ok ? read.message : null;
   const [open, setOpen] = useState(() => kept[role]?.open ?? false);
   const [board, setBoard] = useState(false);
   useEffect(() => {
@@ -51,8 +60,17 @@ export default function AuraHome({ role }: { role: HomeRole }) {
         </button>
       </div>
     );
-  if (!open) return <Today onStart={() => setOpen(true)} button="Start chat" line={LINE[role]} caption={CAPTION[role]} stats={startStats(role)} />;
-  return <Chat role={role} onBoard={() => setBoard(true)} />;
+  if (!open)
+    return (
+      <Today
+        onStart={() => setOpen(true)}
+        button="Start chat"
+        line={failed ?? LINE[role]}
+        caption={desk ? CAPTION[role] : failed ? "Start chat to see what AURA can still read." : "Reading the team…"}
+        stats={desk ? startStats(role, desk) : []}
+      />
+    );
+  return <Chat role={role} desk={desk} failed={failed} onBoard={() => setBoard(true)} />;
 }
 
 const TONE: Record<Tone, string> = {
@@ -65,7 +83,7 @@ const PILL = "shrink-0 whitespace-nowrap rounded-full px-[max(0.625rem,7px)] py-
 const ASK =
   "flex h-[max(2.5rem,32px)] items-center rounded-full border border-border bg-white px-[max(1rem,12px)] text-[max(0.875rem,12.5px)] text-ink transition-colors hover:border-border-strong";
 
-function Chat({ role, onBoard }: { role: HomeRole; onBoard: () => void }) {
+function Chat({ role, desk, failed, onBoard }: { role: HomeRole; desk: LeadDesk | null; failed: string | null; onBoard: () => void }) {
   const { first } = useMe();
   const [msgs, setMsgs] = useState<Msg[]>(() => kept[role]?.msgs ?? []);
   const [draft, setDraft] = useState("");
@@ -99,7 +117,7 @@ function Chat({ role, onBoard }: { role: HomeRole; onBoard: () => void }) {
     petSay("working", "Reading the desk…");
     // A short beat so the answer reads as AURA's turn; the backend read replaces it.
     setTimeout(() => {
-      const a = answer(role, t);
+      const a = desk ? answer(role, t, desk) : { say: failed ?? "Still reading the team. Ask again in a moment." };
       setMsgs((m) => m.map((x) => (x.id === id ? { ...x, reply: a } : x)));
       petSay("done", a.say);
     }, 450);
@@ -107,13 +125,13 @@ function Chat({ role, onBoard }: { role: HomeRole; onBoard: () => void }) {
 
   return (
     <div ref={root} className="flex min-h-0 flex-1 max-md:flex-col">
-      <Rail role={role} onAsk={send} onBoard={onBoard} />
+      <Rail role={role} team={desk?.team ?? []} onAsk={send} onBoard={onBoard} />
 
       <section className="flex min-h-0 flex-1 flex-col">
         <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto flex min-h-full w-full max-w-[max(53.75rem,300px)] flex-col justify-end gap-[max(2rem,18px)] px-[max(1.5rem,14px)] pb-[max(1.5rem,14px)] pt-8">
             <div data-first>
-              <Card a={{ ...brief(role), say: `Hi ${first}. ${brief(role).say}` }} />
+              {desk ? <Card a={{ ...brief(role, desk), say: `Hi ${first}. ${brief(role, desk).say}` }} /> : failed ? <Card a={{ say: failed }} /> : <Thinking />}
             </div>
             {msgs.map((m) => (
               <Fragment key={m.id}>
@@ -159,17 +177,17 @@ function Chat({ role, onBoard }: { role: HomeRole; onBoard: () => void }) {
 }
 
 /** The left rail: who the person is responsible for, each row asks AURA about them. */
-function Rail({ role, onAsk, onBoard }: { role: HomeRole; onAsk: (q: string) => void; onBoard: () => void }) {
-  const started = TEAM.filter((t) => t.day.started).length;
+function Rail({ role, team, onAsk, onBoard }: { role: HomeRole; team: LeadDesk["team"]; onAsk: (q: string) => void; onBoard: () => void }) {
+  const started = team.filter((t) => t.day.started).length;
   const head =
     role === "Lead"
-      ? { title: "The team", sub: `Today · ${started} of ${TEAM.length} started` }
+      ? { title: "The team", sub: `Today · ${started} of ${team.length} started` }
       : role === "Director"
         ? { title: "For your review", sub: `${WAITING.length} sets waiting` }
         : { title: "With clients", sub: `${WITH_CLIENT.length} sets out` };
   const rows: { key: string; lead: ReactNode; main: string; sub: string; subClass?: string; ask: string }[] =
     role === "Lead"
-      ? TEAM.map((t) => ({
+      ? team.map((t) => ({
           key: t.name,
           lead: <Ring done={t.day.done} of={t.day.of} eod={!!t.day.eod} />,
           main: t.name,
