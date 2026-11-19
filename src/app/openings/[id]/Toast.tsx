@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { DUR, EASE, gsap, useGSAP } from "@/lib/gsap";
+import { petSay } from "@/lib/pet";
 
 /** A short notice ("... shortlisted", "... uploaded") - rises, waits, sinks away.
  *  `warn` is for a refusal ("Needs a notice period before Director Review"): amber
@@ -10,6 +11,8 @@ import { DUR, EASE, gsap, useGSAP } from "@/lib/gsap";
  *  `key` each time so the same words can be said twice. */
 export default function Toast({ bold, rest, warn }: { bold?: string; rest: string; warn?: boolean }) {
   const el = useRef<HTMLDivElement>(null);
+  // The pet says it too: it jumps for a done thing and droops for a refusal (19 Nov 2026).
+  useEffect(() => void petSay(warn ? "failed" : "done", `${bold ?? ""}${rest}`), [bold, rest, warn]);
   useGSAP(
     (_, contextSafe) => {
       gsap.fromTo(el.current, { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: DUR.base, ease: EASE.pop });

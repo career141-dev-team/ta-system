@@ -14,6 +14,7 @@ import PillMenu, { type MenuOption } from "../openings/[id]/PillMenu";
 import { aboutTheDay, planDay, type Plan } from "./plan";
 import { answer, DESK, rank, startLine, type Answer, type Desk, type Tone } from "./desk";
 import { saveRow, TAS, useRows, type Row } from "../strategy/data";
+import { petSay } from "@/lib/pet";
 
 // T2 · Today, after Start workday (owner's design, 13 Nov 2026): the day's rail on
 // the left, AURA in the middle. Placeholder data until the backend is wired: with
@@ -534,6 +535,7 @@ const ASK =
 function Thinking() {
   const glow = useRef<HTMLSpanElement>(null);
   useEffect(() => {
+    petSay("working", "Planning your day…");
     if (!glow.current) return;
     const t = gsap.to(glow.current, { scale: 1.35, opacity: 0.15, duration: 0.9, ease: "sine.inOut", repeat: -1, yoyo: true });
     return () => {

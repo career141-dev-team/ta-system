@@ -19,6 +19,7 @@ import {
   type Reply,
 } from "./aura";
 import { POOL } from "./aura";
+import { petSay } from "@/lib/pet";
 
 // D1 · Database - search by chatting with AURA (owner's design, 14 Nov 2026).
 // Left: the chats (Today / Earlier) and New search - the history IS the chats, so
@@ -223,6 +224,7 @@ export default function DatabaseView() {
       ),
     );
     setThinking(true);
+    petSay("working", "Looking through the database…");
     // ponytail: a stand-in wait; with the backend this is the database search.
     timer.current = setTimeout(() => {
       setThreads((all) =>

@@ -15,6 +15,7 @@ import TopNav from "./TopNav";
 import Motion from "./Motion";
 import Board from "./Board";
 import Overview from "./Overview";
+import AuraPet from "./AuraPet";
 import { THEME_BOOT } from "@/lib/theme";
 import { Backend } from "@/lib/backend";
 
@@ -45,6 +46,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <Motion />
         </Backend>
         <Overview />
+        <AuraPet />
       </body>
     </html>
   );
