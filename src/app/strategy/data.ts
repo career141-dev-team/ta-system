@@ -89,7 +89,11 @@ export let TODAY = 1;
 export function setToday(n: number) {
   TODAY = n;
 }
-const dayName = (d: number) => WEEK[d].split(" ")[0];
+/** n days after today, never past the board's last day: on a Thursday or Friday "the
+ *  next days" stay inside this week (20 Nov 2026: Friday's +1 and +2 named days 5 and 6,
+ *  which do not exist, and the Strategy Planner crashed). */
+export const ahead = (n: number) => Math.min(TODAY + n, WEEK.length - 1);
+const dayName = (d: number) => (WEEK[Math.max(0, Math.min(d, WEEK.length - 1))] ?? "").split(" ")[0];
 /** "Today", "Fri", "Wed–Thu". */
 export const whenLabel = (from: number, to = from) => (from === to ? (from === TODAY ? "Today" : dayName(from)) : `${dayName(from)}–${dayName(to)}`);
 
@@ -204,11 +208,11 @@ export const counts = (all: Row[]) => ({
 export function auraPlan(j: Job): { text: string; rows: Row[] } {
   const light = [...TAS].sort((a, b) => a.week - b.week)[0];
   const own = j.tas.length ? ta(j.tas[0]) : light;
-  const next = TODAY + 1;
+  const next = ahead(1);
   const rowsOut: Row[] = [
     { job: j.id, name: "LinkedIn search", state: "open", ta: own.id, when: "Today", days: [TODAY, TODAY] },
     { job: j.id, name: "LinkedIn post", state: "open", ta: own.id, when: "Today", days: [TODAY, TODAY] },
-    { job: j.id, name: "Direct headhunt", state: "open", ta: light.id, when: whenLabel(next, next + 1), days: [next, next + 1] },
+    { job: j.id, name: "Direct headhunt", state: "open", ta: light.id, when: whenLabel(next, ahead(2)), days: [next, ahead(2)] },
     { job: j.id, name: "Referral extraction", state: "open", ta: light.id, when: "Fri", days: [4, 4] },
   ];
   const text =

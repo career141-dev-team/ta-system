@@ -42,6 +42,6 @@ export function readPlan(text: string, names: string[], tas: [string, string][],
     if (f.ta) last = f.ta;
     else picks.push({ name: f.name!, ta: last ?? people[0] });
   }
-  const day = /\btoday\b/.test(t) ? today : /\btomorrow\b/.test(t) ? today + 1 : DAYS.findIndex((d) => d.test(t));
+  const day = /\btoday\b/.test(t) ? today : /\btomorrow\b/.test(t) ? Math.min(today + 1, 4) : DAYS.findIndex((d) => d.test(t));
   return { picks, day: day >= 0 && day <= 4 ? day : undefined, off: /\b(off|remove|drop|cancel)\b/.test(t), tas: people };
 }
