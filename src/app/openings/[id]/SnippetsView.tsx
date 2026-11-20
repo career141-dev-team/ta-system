@@ -47,7 +47,7 @@ import { useOpeningView } from "./view";
 
 /** Placeholder: the opening's JD is approved (same as LinkedIn Job's). */
 
-type Snip = { level: number; colour: number; font: string; body: number; underline: boolean; bold: boolean; ink: number; version: number; line1: string; line2: string; sector: string; facts: string[]; bullets: string[] };
+type Snip = { level: number; colour: number; font: string; body: number; underline: boolean; bold: boolean; ink: number; version: number; line1: string; line2: string; sector: string; facts: string[]; bullets: string[]; email?: string; phone?: string };
 
 const COLOURS = [
   { name: "mint", words: ["mint", "green"], hex: "#01fea3" },
@@ -159,7 +159,8 @@ function wrap(ctx: CanvasRenderingContext2D, text: string, width: number) {
   return [...lines, line];
 }
 
-function drawCard(ctx: CanvasRenderingContext2D, s: Snip, logo: HTMLImageElement | null, who: Contact) {
+type Where = { email?: [number, number]; phone?: [number, number] };
+function drawCard(ctx: CanvasRenderingContext2D, s: Snip, logo: HTMLImageElement | null, who: Contact, where: Where = {}) {
   const k = 1080 / 660;
   const hex = COLOURS[s.colour].hex;
   const f = (w: number, px: number) => `${w} ${px}px "${s.font}", "Poppins", sans-serif`;
@@ -271,7 +272,7 @@ function drawCard(ctx: CanvasRenderingContext2D, s: Snip, logo: HTMLImageElement
   // Laid end to end by their widths (the gaps are the design's at the design's size), and
   // shrunk, if need be, to stay inside the card.
   ctx.fillStyle = "#000";
-  const parts: [string, number, number][] = [[`TA : ${who.ta}`, 700, 11], [`E : ${who.email}`, 500, 7], ["|", 500, 14], [`M : ${who.phone}`, 500, 0]];
+  const parts: [string, number, number][] = [["TA :", 700, 11], [`E : ${who.email}`, 500, 7], ["|", 500, 14], [`M : ${who.phone}`, 500, 0]];
   const span = (sz: number) =>
     parts.reduce((w, [t, wt, gap]) => {
       ctx.font = f(wt, sz);
@@ -280,18 +281,22 @@ function drawCard(ctx: CanvasRenderingContext2D, s: Snip, logo: HTMLImageElement
   let ft = foot;
   while (ft > 8 && 55 + span(ft) > 640) ft -= 0.25;
   let fx = 55;
-  for (const [t, wt, gap] of parts) {
+  parts.forEach(([t, wt, gap], n) => {
     ctx.font = f(wt, ft);
     ctx.fillText(t, fx, 641.5);
-    fx += ctx.measureText(t).width + gap * (ft / 15);
-  }
+    const w = ctx.measureText(t).width;
+    // Where the email and the phone really landed, for their edit boxes.
+    if (n === 1) where.email = [fx, w];
+    if (n === 3) where.phone = [fx, w];
+    fx += w + gap * (ft / 15);
+  });
   ctx.restore();
 }
 
 // ---- The parts of the card. Click one and it becomes a tag in the chat (/title, /salary...);
 // what you ask next is about those parts only, and the tag's x lets go of it (owner, 20 Nov
 // 2026). Each part's box is in the card's own 660-wide space, as drawn in drawCard.
-type Part = "level" | "sector" | "title" | "location" | "company" | "salary" | "gender" | "requirements" | "contact";
+type Part = "level" | "sector" | "title" | "location" | "company" | "salary" | "gender" | "requirements" | "email" | "phone";
 const PARTS: { key: Part; name: string; box: [number, number, number, number]; can: string }[] = [
   { key: "level", name: "the level badge", box: [401, 0, 241, 71], can: "change the level (“make it senior”) and so the card’s colour" },
   { key: "sector", name: "the sector band", box: [0, 133, 660, 62], can: "reword it (“to Garments”) or change the card’s colour" },
@@ -301,7 +306,8 @@ const PARTS: { key: Part; name: string; box: [number, number, number, number]; c
   { key: "salary", name: "the package", box: [57, 381, 249, 35], can: "reword it (“to 120K – 200K”)" },
   { key: "gender", name: "the gender line", box: [316, 381, 249, 35], can: "reword it (“to Female”)" },
   { key: "requirements", name: "the requirements", box: [0, 434, 660, 180], can: "“add …”, “remove the last one”, or “to …” (points separated by ;)" },
-  { key: "contact", name: "your contact line", box: [55, 620, 585, 30], can: "nothing here - it is your own name, email and phone from your account" },
+  { key: "email", name: "the email", box: [101, 620, 168, 30], can: "reword it (“to name@career141.com”)" },
+  { key: "phone", name: "the phone number", box: [290, 620, 142, 30], can: "reword it (“to +94 77 123 4567”)" },
 ];
 const FACT_AT: Partial<Record<Part, number>> = { location: 0, company: 1, salary: 2, gender: 3 };
 
@@ -365,12 +371,13 @@ function ask(text: string, cur: Snip, parts: Part[]): { patch: Partial<Snip>; re
   // New words for a picked part.
   if (parts.length && words && !title) {
     const value = words[1].trim();
-    const texty = parts.filter((k) => k === "title" || k === "sector" || k === "requirements" || FACT_AT[k] !== undefined);
+    const texty = parts.filter((k) => k === "title" || k === "sector" || k === "requirements" || FACT_AT[k] !== undefined || k === "email" || k === "phone");
     // New words need one place to go.
     if (texty.length > 1) return { patch, reply: `Which one should read “${value}”? Let go of all but one of ${texty.map((k) => "/" + k).join(" ")} (the x on a tag) and say it again.` };
     const first = texty[0];
     if (first === "title") did("the title", { line1: value.slice(0, 60) });
     else if (first === "sector") did("the sector", { sector: value.slice(0, 30) });
+    else if (first === "email" || first === "phone") did(PARTS.find((p) => p.key === first)!.name, { [first]: value.slice(0, 40) });
     else if (first === "requirements") did("the requirements", { bullets: value.split(/;|\n/).map((b) => b.trim().slice(0, 160)).filter(Boolean) });
     else if (first && FACT_AT[first] !== undefined) {
       const facts = [...cur.facts];
@@ -412,7 +419,7 @@ export default function SnippetsView() {
   const [s, setS] = useState(START);
   const me = useMe();
   // The signed-in person's own contact; placeholder email and phone (sample on a public link).
-  const who: Contact = { ta: me.first, email: `${me.first.toLowerCase()}@career141.com`, phone: "+94 77 000 0000" };
+  const who: Contact = { ta: me.first, email: s.email ?? `${me.first.toLowerCase()}@career141.com`, phone: s.phone ?? "+94 77 000 0000" };
   const { go } = useOpeningView();
   const [msgs, setMsgs] = useState<Msg[]>([{ who: "aura", text: FIRST }]);
   // The parts of the card picked to talk about (tags in the chat).
@@ -421,6 +428,7 @@ export default function SnippetsView() {
   const [toast, setToast] = useState<{ key: number; bold?: string; rest: string; warn?: boolean } | null>(null);
   const toasts = useRef(0);
   const canvas = useRef<HTMLCanvasElement>(null);
+  const [foot, setFoot] = useState<Where>({});
   const [logo, setLogo] = useState<HTMLImageElement | null>(null);
   const thread = useRef<HTMLDivElement>(null);
 
@@ -436,7 +444,12 @@ export default function SnippetsView() {
     const ctx = canvas.current?.getContext("2d");
     if (!ctx) return;
     let off = false;
-    Promise.all([300, 400, 500, 700].map((w) => document.fonts.load(`${w} 16px "${s.font}"`))).finally(() => !off && drawCard(ctx, s, logo, who));
+    Promise.all([300, 400, 500, 700].map((w) => document.fonts.load(`${w} 16px "${s.font}"`))).finally(() => {
+      if (off) return;
+      const w: Where = {};
+      drawCard(ctx, s, logo, who, w);
+      setFoot(w);
+    });
     return () => {
       off = true;
     };
@@ -516,10 +529,10 @@ export default function SnippetsView() {
       {/* The row is as tall as the card (41.25rem), so the chat fills what is left under the
           controls and scrolls inside itself instead of growing with the messages. */}
       <div className="flex items-start gap-[max(3.75rem,14px)] md:h-full md:max-h-[41.25rem] max-md:flex-col max-md:gap-6">
-        <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-surface md:h-full md:w-auto md:flex-none">
-          <canvas ref={canvas} width={1080} height={1080} role="img" aria-label={`Social card: ${s.line1} ${s.line2}, ${s.sector}`} className="size-full" />
+        <div className="relative aspect-square w-full rounded-lg bg-surface md:h-full md:w-auto md:flex-none">
+          <canvas ref={canvas} width={1080} height={1080} role="img" aria-label={`Social card: ${s.line1} ${s.line2}, ${s.sector}`} className="size-full rounded-lg" />
           {/* Click a part to talk about it: it shows as a tag in the chat. Not in the PNG. */}
-          {PARTS.map((p) => (
+          {PARTS.filter((p) => p.key !== "level").map((p) => (
             <button
               key={p.key}
               type="button"
@@ -527,12 +540,30 @@ export default function SnippetsView() {
               aria-label={`${sel.includes(p.key) ? "Let go of" : "Pick"} ${p.name} to change it`}
               title={`/${p.key} - click to change ${p.name} with AURA`}
               onClick={() => toggle(p.key)}
-              style={{ left: `${(p.box[0] / 660) * 100}%`, top: `${(p.box[1] / 660) * 100}%`, width: `${(p.box[2] / 660) * 100}%`, height: `${(p.box[3] / 660) * 100}%` }}
+              style={(() => {
+                // The email and phone boxes follow the text as it was drawn.
+                const at = p.key === "email" ? foot.email : p.key === "phone" ? foot.phone : undefined;
+                const b = at ? [at[0] - 6, p.box[1], at[1] + 12, p.box[3]] : p.box;
+                return { left: `${(b[0] / 660) * 100}%`, top: `${(b[1] / 660) * 100}%`, width: `${(b[2] / 660) * 100}%`, height: `${(b[3] / 660) * 100}%` };
+              })()}
               className={
-                "absolute rounded-md outline-2 -outline-offset-2 transition-[outline-color,background-color] hover:bg-brand/10 hover:outline hover:outline-brand/50 focus-visible:outline focus-visible:outline-brand " +
-                (sel.includes(p.key) ? "bg-brand/10 outline outline-brand" : "")
+                // No hard outline: a soft green wash and a small sparkle tag say "you can change this".
+                "group absolute rounded-md outline-none transition-[background-color,box-shadow] hover:bg-brand/10 hover:ring-1 hover:ring-brand/25 focus-visible:bg-brand/10 focus-visible:ring-2 focus-visible:ring-brand/40 " +
+                (sel.includes(p.key) ? "bg-brand/10 ring-2 ring-brand/30" : "")
               }
-            />
+            >
+              <span
+                aria-hidden="true"
+                className={
+                  "pointer-events-none absolute -right-2 -top-2 grid size-6 place-items-center rounded-full bg-brand text-white shadow-card transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 " +
+                  (sel.includes(p.key) ? "opacity-100" : "opacity-0")
+                }
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" className="size-3.5">
+                  <path d="M12 1.5c.7 5.6 4.9 9.8 10.5 10.5-5.6.7-9.8 4.9-10.5 10.5C11.3 16.9 7.1 12.7 1.5 12 7.1 11.3 11.3 7.1 12 1.5z" />
+                </svg>
+              </span>
+            </button>
           ))}
         </div>
 
