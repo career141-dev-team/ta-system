@@ -20,6 +20,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { saveReviewDetails } from "@/app/actions";
 import { primeStore } from "@/data/prime";
+import { primeApplication } from "@/lib/primeApplication";
 import { repo } from "@/data/store";
 import { mayOpenCv } from "@/lib/cvAccess";
 import { inline } from "@/lib/inlineResult";
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
   const user = await currentUser();
   if (!user) return signIn(req);
   const appId = req.nextUrl.searchParams.get("app") ?? "";
-  if (!repo.application(appId)) await primeStore({ allApplications: true });
+  await primeApplication(appId, user.id);
   const app = repo.application(appId);
   // A candidate's details are personal data: the same test as the Prepared CV.
   if (!app || !mayOpenCv(user, app.candidateId, app.id)) return answer(req, { ok: false, message: "That CV is not open to you." }, 404);
@@ -70,7 +71,7 @@ export async function POST(req: Request) {
   const read = readBoxBody(await req.json().catch(() => null));
   if (!read.ok) return answer(req, read, 400);
   const b = read.body;
-  if (!repo.application(b.appId)) await primeStore({ allApplications: true });
+  await primeApplication(b.appId, null);
   const app = repo.application(b.appId);
   if (!app || app.openingId !== b.openingId) return answer(req, { ok: false, message: "That candidate is not on this opening." }, 404);
   const form = new FormData();

@@ -30,6 +30,7 @@ import { isDeskWideUser } from "../ta/guard";
 import { NotSignedIn, uiUser } from "./me";
 import { clock, decisionOf, IN_PIPELINE, initials, tally, type Decision } from "./leadRules";
 import { daysOpen } from "./rules";
+import { colomboDayStart } from "../../src/lib/calendar";
 
 const MAX_ROLES = 300;
 const MAX_TAS = 40;
@@ -37,6 +38,8 @@ const MAX_TAS = 40;
 const OWN_PER_ROLE = 100;
 const FOLLOW_UP_CAP = 200;
 const ALERTS_CAP = 50;
+// ponytail: today's newest 500 applications per role; a role past that counts 500.
+const TODAY_CAP = 500;
 
 export type TeamTa = {
   name: string;
@@ -65,6 +68,7 @@ export const desk = query({
 
     const now = Date.now();
     const today = workdayDate(now);
+    const dayStart = colomboDayStart(now);
     const jobs = (await ctx.db.query("jobs").withIndex("by_status", (q) => q.eq("status", "active")).order("desc").take(MAX_ROLES)).filter((j) => !isGone(j));
 
     // Who is on each role (the active assignments), read once per role.
@@ -82,11 +86,17 @@ export const desk = query({
     const reads = new Map(
       await Promise.all(
         assigned.map(async (j) => {
-          const [posts, followUps] = await Promise.all([
+          const [posts, followUps, todays] = await Promise.all([
             ctx.db.query("jobPosts").withIndex("by_opening", (q) => q.eq("openingId", j._id)).take(50),
             ctx.db.query("applications").withIndex("by_job_stage", (q) => q.eq("jobId", j._id).eq("currentStage", "follow_up")).take(FOLLOW_UP_CAP),
+            ctx.db.query("applications").withIndex("by_jobId", (q) => q.eq("jobId", j._id).gte("_creationTime", dayStart)).take(TODAY_CAP),
           ]);
-          return [j._id as string, { posts, fu: followUps.length }] as const;
+          // CVs today = applicants filed to a live post since midnight Colombo, scoops
+          // left out - old AURA's own count (src/data/store.ts jobPosts). The stored
+          // jobPosts.cvCountToday is never increased or reset, so it read 0 (20 Nov audit).
+          const live = new Set(posts.filter((p) => p.status === "live").map((p) => p._id as string));
+          const cvsToday = todays.filter((a) => a.jobPostId && live.has(a.jobPostId as string) && !a.scoopByUserId && !a.scoopFromUserId).length;
+          return [j._id as string, { posts, fu: followUps.length, cvsToday }] as const;
         }),
       ),
     );
@@ -136,7 +146,7 @@ export const desk = query({
           li: [mine.filter((j) => li(j._id as string) === "connected").length, mine.length],
           noLink: mine.filter((j) => li(j._id as string) === "no_link").length,
           pipeline: apps.filter((a) => IN_PIPELINE.has(a.currentStage)).length,
-          cvs: mine.reduce((n, j) => n + (reads.get(j._id as string)?.posts ?? []).filter((p) => p.status === "live").reduce((m, p) => m + p.cvCountToday, 0), 0),
+          cvs: mine.reduce((n, j) => n + (reads.get(j._id as string)?.cvsToday ?? 0), 0),
           // ponytail: a set is a set number on their own candidates; the old dashboard counted closed sets only.
           sets: new Set(apps.map((a) => a.setNumber).filter((n): n is number => typeof n === "number")).size,
           alerts: unread.length,

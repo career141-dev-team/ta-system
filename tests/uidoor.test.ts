@@ -138,7 +138,9 @@ eq("openings: a TA sees only their own", openingsSrc.includes("by_userId_isActiv
   eq("dashboard: ownOnly skips the desk-wide assignment scan", read("convex/ta/workdays.ts").includes('teamView ? await ctx.db.query("jobAssignments").collect()'), true);
   eq("emails: the door asks for the last 31 days without the HTML", read("convex/ui/email.ts").includes("recent: true"), true);
   const lead = read("convex/ui/lead.ts");
-  eq("lead: a TA's own candidates from their index, not every role's newest", lead.includes('"by_workday_owner"') && !lead.includes('query("applications").withIndex("by_jobId"'), true);
+  eq("lead: a TA's own candidates from their index, not every role's newest", lead.includes('"by_workday_owner"'), true);
+  // 20 Nov: CVs today reads a role's applications by job, but only since midnight (bounded).
+  eq("lead: a role's applications by job only from today", lead.split('query("applications").withIndex("by_jobId"').slice(1).every((rest) => rest.slice(0, 80).includes('.gte("_creationTime", dayStart)')), true);
   eq("homes: open roles' stages only, never desk-wide by stage", read("convex/ui/homes.ts").includes('withIndex("by_stage"'), false);
   const compose = read("convex/lib/eodCompose.ts");
   eq("compose: only Director Review is read for the roster", compose.includes('eq("currentStage", "second_shortlist")') && !compose.includes('withIndex("by_jobId"'), true);
