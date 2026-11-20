@@ -10,12 +10,19 @@
 // Drag it anywhere; it runs the way you pull it and stays where you leave it (per person).
 // A click (not a drag) opens a small "Ask AURA" box that goes to the AURA chat.
 // "Change" under it, or "My pet" in the name menu, opens the picker.
+// It follows the day (owner 20 Nov): for a TA it is not there before Start workday,
+// greets with the real plan when the day starts, and only speaks when spoken to once
+// the day is finished. Leads, Director and Ops have no workday, so theirs is always on.
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { DUR, EASE, gsap } from "@/lib/gsap";
 import { PETS, useMyPet, type PetMood } from "@/lib/pet";
 import { useAlerts } from "./alerts/data";
+import { door, useDoorQuery } from "@/lib/backend";
+import { useRole, useSignedInPerson, worksADay } from "@/lib/role";
+import { useDayEnd, useWorkday } from "@/lib/workday";
+import { petGreeting, type GreetPlan } from "@/lib/petDay";
 import { Veil } from "./TopMenus";
 import { Toggle } from "./strategy/ui";
 
@@ -74,6 +81,15 @@ export default function AuraPet() {
   const [live, setLive] = useState<{ right: number; bottom: number } | null>(null);
   const { pet, hidden, at, moveTo } = useMyPet();
   const alerts = useAlerts();
+  // The day decides whether the pet is here at all (a TA) and whether it may speak first.
+  const role = useRole();
+  const day = useWorkday();
+  const ended = useDayEnd() > 0;
+  const signed = useSignedInPerson() !== null;
+  const tied = worksADay(role);
+  const away = tied && typeof day !== "number";
+  const quietDay = tied && ended;
+  const planRead = useDoorQuery(door.planToday, signed && tied && !away ? {} : "skip") as { ok: true; plan: GreetPlan | null } | { ok: false } | undefined;
   const quiet = useRef<ReturnType<typeof setTimeout>>(undefined);
   const drag = useRef<{ x: number; y: number; r: number; b: number; moved: boolean } | null>(null);
 
@@ -113,15 +129,22 @@ export default function AuraPet() {
     };
   }, []);
 
-  // once a visit: what is waiting for the person
+  // once a visit, when the pet arrives: for a TA the plan's next step, else what waits in the bell
   const unread = alerts.filter((a) => a.unread).length;
   const told = useRef(false);
+  // undefined while the plan is still being read; null = no plan (or sample mode)
+  const plan = signed ? (planRead === undefined ? undefined : planRead.ok ? planRead.plan : null) : null;
   useEffect(() => {
-    if (told.current || hidden || !unread) return;
+    if (told.current || hidden || away || quietDay) return;
+    // A TA waits for the plan to be read, then hears it; others hear the bell.
+    const greet = tied ? petGreeting(plan, new Date()) : null;
+    if (tied && greet === undefined) return;
+    const text = tied ? greet : unread ? `${unread} ${unread === 1 ? "alert needs" : "alerts need"} you. Open the bell.` : null;
+    if (!text) return;
     told.current = true;
-    const t = setTimeout(() => window.dispatchEvent(new CustomEvent("aura:pet", { detail: { mood: "waiting", text: `${unread} ${unread === 1 ? "alert needs" : "alerts need"} you. Open the bell.` } })), 1500);
+    const t = setTimeout(() => window.dispatchEvent(new CustomEvent("aura:pet", { detail: { mood: "waiting", text } })), 1500);
     return () => clearTimeout(t);
-  }, [unread, hidden]);
+  }, [unread, hidden, away, quietDay, tied, plan]);
 
   // The first render matches the server's (no window yet); the window's size is read after.
   const mounted = useSyncExternalStore(noop, () => true, () => false);
@@ -156,6 +179,9 @@ export default function AuraPet() {
       setState("waving");
     }
   };
+
+  // A TA's pet arrives with the workday (owner 20 Nov): nothing before Start workday.
+  if (away) return null;
 
   return (
     <>
