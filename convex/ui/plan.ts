@@ -10,9 +10,11 @@ import { v } from "convex/values";
 import { internalMutation, mutation, query, type MutationCtx, type QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { workdayDate } from "../../src/lib/workday";
+import { mapUser } from "../../src/data/convex/map";
+import { isDeskWideUser } from "../ta/guard";
 import { NotSignedIn, uiUser } from "./me";
 import { applyChange, dayStartOf, DEFAULT_FINISH, draftRefusal, historyOf, planTally, taskMoveRefusal, withDayEmails, type Change, type TaskState } from "./planRules";
-import { arm } from "./planRemind";
+import { arm, closePlan } from "./planRemind";
 
 type Refused = { ok: false; message: string };
 const refused = (message: string): Refused => ({ ok: false, message });
@@ -39,6 +41,7 @@ const shape = (plan: Doc<"auraDayPlans">, tasks: Doc<"auraPlanTasks">[]) => ({
   version: plan.version,
   quietUntil: plan.quietUntil ?? null,
   lastReminder: plan.lastReminder ?? null,
+  summary: plan.summary ?? null,
   tally: planTally(tasks),
   tasks: tasks.map((t) => ({
     key: t.key,
@@ -57,14 +60,28 @@ const shape = (plan: Doc<"auraDayPlans">, tasks: Doc<"auraPlanTasks">[]) => ({
   })),
 });
 
+/** What the last earlier plan left open - carried, or still open on a plan nobody
+ *  closed - offered first in today's draft (phase 5). Midday and EOD are not carried:
+ *  every plan gets its own (phase 4). */
+async function carriedFrom(ctx: QueryCtx | MutationCtx, userId: Id<"users">, date: string) {
+  const last = await ctx.db.query("auraDayPlans").withIndex("by_user_date", (q) => q.eq("userId", userId).lt("date", date)).order("desc").first();
+  if (!last || last.state === "draft") return { from: null, tasks: [] };
+  const open = (await tasksOf(ctx, last._id)).filter((t) => (t.state === "carried" || t.state === "planned" || t.state === "doing") && t.kind !== "midday_email" && t.kind !== "eod_email");
+  return {
+    from: last.date,
+    tasks: open.slice(0, 20).map((t) => ({ key: t.key, title: t.title, detail: t.detail ?? null, kind: t.kind, jobId: (t.jobId as string | undefined) ?? null, minutes: t.minutes, priority: t.priority })),
+  };
+}
+
 /** Today's plan, or null when there is none yet. */
 export const today = query({
   args: {},
   handler: async (ctx) => {
     const w = await who(ctx);
     if (!w.ok) return w;
-    const plan = await planOf(ctx, w.user._id, workdayDate(Date.now()));
-    return { ok: true as const, plan: plan ? shape(plan, await tasksOf(ctx, plan._id)) : null };
+    const date = workdayDate(Date.now());
+    const plan = await planOf(ctx, w.user._id, date);
+    return { ok: true as const, plan: plan ? shape(plan, await tasksOf(ctx, plan._id)) : null, carried: await carriedFrom(ctx, w.user._id, date) };
   },
 });
 
@@ -95,6 +112,10 @@ export const saveDraft = mutation({
     // Every plan carries the Midday and the EOD, the EOD just before the finish (phase 4).
     const tasks = why ? [] : withDayEmails(args.tasks, finishMin);
     if (why) return refused(why);
+
+    // A plan from an earlier day nobody closed is closed now, carrying its open work (phase 5).
+    for (const old of await ctx.db.query("auraDayPlans").withIndex("by_user_date", (q) => q.eq("userId", me).lt("date", date)).order("desc").take(3))
+      if (old.state === "approved") await closePlan(ctx, old, "system", now);
 
     let plan = await planOf(ctx, me, date);
     if (plan && plan.state !== "draft") return refused(plan.state === "approved" ? "Today's plan is already approved. Change it by asking AURA." : "Today's plan is closed.");
@@ -188,15 +209,8 @@ export const close = mutation({
     const plan = await planOf(ctx, w.user._id, workdayDate(now));
     if (!plan) return refused("There is no plan for today.");
     if (plan.state !== "approved") return refused(plan.state === "closed" ? "Today's plan is already closed." : "Approve the plan before closing it.");
-    let carried = 0;
-    for (const t of await tasksOf(ctx, plan._id)) {
-      if (t.state !== "planned" && t.state !== "doing") continue;
-      carried += 1;
-      await ctx.db.patch(t._id, { state: "carried", history: historyOf(t.history, { at: now, by: "ta", what: "Carried to the next day" }) });
-    }
-    await ctx.db.patch(plan._id, { state: "closed", closedAt: now, version: plan.version + 1, updatedAt: now });
-    await arm(ctx, plan._id); // a closed plan has no wake-up: this cancels it
-    return { ok: true as const, message: carried ? `Plan closed. ${carried} open ${carried === 1 ? "task carries" : "tasks carry"} to tomorrow.` : "Plan closed. Everything is done." };
+    const { summary } = await closePlan(ctx, plan, "ta", now);
+    return { ok: true as const, message: `Plan closed. ${summary}` };
   },
 });
 
@@ -300,3 +314,38 @@ export const applyTalk = internalMutation({
 });
 
 const hmOf = (min: number) => `${Math.floor(min / 60)}:${String(min % 60).padStart(2, "0")}`;
+
+/** Phase 5, the lead's read-only view (owner's Decision 4): every TA's plan for today -
+ *  approved or not, done of all, what is late, what is next, the summary once closed.
+ *  Desk-wide people only; nobody changes a plan here. Bounded: 40 TAs, 100 tasks each. */
+export const team = query({
+  args: {},
+  handler: async (ctx) => {
+    const w = await who(ctx);
+    if (!w.ok) return w;
+    if (!isDeskWideUser(w.user)) return refused("Only a TA Lead, Director, Ops or an admin sees the team's plans.");
+    const now = Date.now();
+    const date = workdayDate(now);
+    const nowMin = Math.floor((now - dayStartOf(date)) / 60_000);
+    const people = (await ctx.db.query("users").take(400)).filter((u) => u.isActive && ["ta", "ta_support"].includes(mapUser(u as never).role)).slice(0, 40);
+    const rows = await Promise.all(
+      people.map(async (u) => {
+        const plan = await planOf(ctx, u._id, date);
+        if (!plan) return { name: u.fullName, state: "none" as const };
+        const tasks = await tasksOf(ctx, plan._id);
+        const open = tasks.filter((t) => t.state === "planned" || t.state === "doing");
+        const next = open.sort((a, b) => a.startMin - b.startMin)[0];
+        return {
+          name: u.fullName,
+          state: plan.state,
+          finishMin: plan.finishMin,
+          tally: planTally(tasks),
+          late: open.filter((t) => t.startMin + t.minutes < nowMin).map((t) => t.title).slice(0, 5),
+          next: next ? { title: next.title, startMin: next.startMin } : null,
+          summary: plan.summary ?? null,
+        };
+      }),
+    );
+    return { ok: true as const, nowMin, team: rows };
+  },
+});

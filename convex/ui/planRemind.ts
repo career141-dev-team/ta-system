@@ -14,8 +14,8 @@ import { v } from "convex/values";
 import { internalMutation, type MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { makeFunctionReference } from "convex/server";
-import { dayStartOf, dueNow, LEAD_AFTER_MIN, nextWake, NUDGE_AFTER_MS, readyText, type RemTask, type TaskState } from "./planRules";
-import { checksForWorkType, type WorkdayJobView } from "../../src/lib/workday";
+import { dayStartOf, dueNow, historyOf, LEAD_AFTER_MIN, nextWake, NUDGE_AFTER_MS, readyText, summaryOf, type RemTask, type TaskState } from "./planRules";
+import { checksForWorkType, workdayDate, type WorkdayJobView } from "../../src/lib/workday";
 import { bell as eodBell, outstandingToday } from "../ta/eodReminders";
 import { leadDigestByLead } from "../../src/lib/eodReminders";
 
@@ -40,6 +40,24 @@ async function nudgeAt(ctx: MutationCtx, plan: Doc<"auraDayPlans">): Promise<num
   if (plan.state !== "draft" || plan.nudged) return null;
   const day = await ctx.db.query("taWorkdays").withIndex("by_user_date", (q) => q.eq("userId", plan.userId).eq("date", plan.date)).first();
   return day && !day.finishedAt ? day.startedAt + NUDGE_AFTER_MS : null;
+}
+
+/** Close a plan (phase 5, docs section 10): open tasks are carried - never marked done -
+ *  the summary is written and the pet says it. By the TA (Close my day), by the system
+ *  when the EOD ends the workday, or the next morning for a plan nobody closed. */
+export async function closePlan(ctx: MutationCtx, plan: Doc<"auraDayPlans">, by: "ta" | "system", now: number): Promise<{ carried: number; summary: string }> {
+  const tasks = await tasksOf(ctx, plan._id);
+  let carried = 0;
+  for (const t of tasks) {
+    if (t.state !== "planned" && t.state !== "doing") continue;
+    carried += 1;
+    t.state = "carried";
+    await ctx.db.patch(t._id, { state: "carried", history: historyOf(t.history, { at: now, by, what: "Carried to the next day" }) });
+  }
+  const summary = summaryOf(tasks.map((t) => ({ title: t.title, state: t.state as TaskState, doneBy: t.doneBy, reason: t.reason, history: t.history })));
+  await ctx.db.patch(plan._id, { state: "closed", closedAt: now, summary, lastReminder: { at: now, text: summary, moment: "summary" }, version: plan.version + 1, updatedAt: now });
+  await arm(ctx, plan._id); // a closed plan has no wake-up: this cancels it
+  return { carried, summary };
 }
 
 /** Cancel this plan's wake-up and schedule the next one, from the plan as it is now. */
@@ -109,6 +127,8 @@ export const wake = internalMutation({
     // An older plan's wake-up, or a closed plan: nothing to say.
     if (!plan || plan.version !== args.version || plan.state === "closed") return;
     const now = Date.now();
+    // Yesterday's plan says nothing today; it is closed with tomorrow's draft (phase 5).
+    if (plan.date !== workdayDate(now)) return;
 
     if (plan.state === "draft") {
       const n = await nudgeAt(ctx, plan);

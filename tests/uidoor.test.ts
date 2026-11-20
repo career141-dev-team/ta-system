@@ -283,7 +283,7 @@ eq("send: the ChatGPT rule is kept", sendSrc.includes("checkResearchSubmission")
   const planSrc = read("convex/ui/plan.ts");
   eq("plan: approve only after Start workday", planSrc.includes("Start your workday first, then approve the plan."), true);
   eq("plan: tasks are deleted only while the plan is a draft", planSrc.indexOf('plan.state !== "draft"') > 0 && planSrc.indexOf('plan.state !== "draft"') < planSrc.indexOf("ctx.db.delete"), true);
-  eq("plan: closing carries open tasks, never marks them done", /state: "carried"/.test(planSrc) && !/state: "done", history: historyOf\(t\.history, \{ at: now, by: "ta", what: "Carried/.test(planSrc), true);
+  eq("plan: closing carries open tasks, never marks them done", /state: "carried"/.test(read("convex/ui/planRemind.ts")) && !/state: "done", history: historyOf\(t\.history, \{ at: now, by, what: "Carried/.test(read("convex/ui/planRemind.ts")), true);
   eq("plan: bounded reads only", /\.collect\(\)/.test(planSrc), false);
 
   // Phase 2, reminders (19 Nov): four moments per task, each once, one at a time, no old burst.
@@ -376,6 +376,26 @@ eq("send: the ChatGPT rule is kept", sendSrc.includes("checkResearchSubmission")
   eq("evidence: 17:30 and 18:30 leave planned TAs to their plan", (crons.match(/withoutPlan\(ctx, await outstandingToday\(ctx\)\)/g) ?? []).length, 2);
   const remind = read("convex/ui/planRemind.ts");
   eq("evidence: the lead hears once, after the TA's own finish", remind.includes("leadTold: true") && remind.includes("LEAD_AFTER_MIN"), true);
+
+  // Phase 5, summary, carry-over, close and the lead's view (20 Nov).
+  const p5 = await import("../convex/ui/planRules");
+  const day5 = [
+    { title: "Review SAP", state: "done" as const, doneBy: "ta" },
+    { title: "Midday email", state: "done" as const, doneBy: "system", history: [{ what: "12:30–13:00 → 14:00–14:30. Chat: “move it”" }] },
+    { title: "Finance chase", state: "carried" as const },
+    { title: "LinkedIn post", state: "skipped" as const, reason: "client paused" },
+  ];
+  eq("close: the summary counts what the plan holds", p5.summaryOf(day5), "2 of 3 done (1 ticked by AURA). Skipped: LinkedIn post (client paused). 1 moved during the day. Carried to tomorrow: Finance chase.");
+  eq("close: a day with nothing left says so", p5.summaryOf([{ title: "A", state: "done" as const }]), "1 of 1 done. Nothing carried to tomorrow.");
+  eq("close: open work is carried, never done", p5.summaryOf([{ title: "A", state: "planned" as const }]).endsWith("Carried to tomorrow: A."), true);
+  const plan5Src = read("convex/ui/plan.ts");
+  const remSrc = read("convex/ui/planRemind.ts");
+  eq("close: one close for the TA, the EOD and the next morning", (plan5Src.match(/closePlan\(ctx, /g) ?? []).length === 2 && read("convex/ui/planEvidence.ts").includes('closePlan(ctx, fresh, "system"'), true);
+  eq("close: open tasks become carried, and the summary is stored", remSrc.includes('state: "carried"') && remSrc.includes("summary, lastReminder"), true);
+  eq("close: yesterday's plan wakes to nothing today", remSrc.includes("if (plan.date !== workdayDate(now)) return;"), true);
+  eq("carry: today offers the last plan's open work, not its emails", plan5Src.includes("carried: await carriedFrom(") && plan5Src.includes('t.kind !== "eod_email"'), true);
+  const teamSrc = plan5Src.slice(plan5Src.indexOf("export const team"));
+  eq("lead: the team's plans are desk-wide only and read only", teamSrc.includes("isDeskWideUser(w.user)") && !/ctx\.db\.(patch|insert|delete)/.test(teamSrc), true);
 }
 
 console.log(`\nuidoor: ${pass} passed, ${fail} failed`);
