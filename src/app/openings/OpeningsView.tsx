@@ -18,6 +18,7 @@ import { OPENINGS, ORDER, STATUS, TARGET, inList, type List, type Opening } from
 // TA, sort); "Find a role, client or person" opens the spotlight (also ⌘K on this
 // page); "New opening" opens the sheet where AURA reads a brief. Rules in ./data.ts.
 
+import { JoinSection, RequestsChip } from "./AccessPanels";
 const Spotlight = dynamic(() => import("./Spotlight"));
 const NewOpening = dynamic(() => import("./NewOpening"));
 
@@ -181,6 +182,7 @@ export default function OpeningsView() {
           clients={[...new Set(rows.map((o) => o.client))].sort()}
           tas={[...new Set(rows.flatMap((o) => o.team))].sort()}
         />
+        <RequestsChip tell={tell} />
         <button
           type="button"
           onClick={() => setSheet("")}
@@ -253,6 +255,7 @@ export default function OpeningsView() {
               </section>
             );
           })}
+          {tab === "all" && <JoinSection tell={tell} />}
         </div>
       </div>
 
