@@ -42,7 +42,27 @@ export type DeskPosition = {
 export type Turn = { role: "user" | "assistant"; text: string };
 export type TodayPick = { jobId: string; workType: string };
 
-export type Step = { at: string; what: string; where?: string; tone: "brand" | "warn" | "info" | "none" };
+/** One step of a day plan. `start` is minutes after midnight and `minutes` how long it
+ *  takes - the plan saved on Approve (ui/plan:saveDraft) is built from these, so every
+ *  step has both (20 Nov: before, a live plan saved every task at midnight). */
+export type Step = { at: string; start: number; minutes: number; what: string; where?: string; tone: "brand" | "warn" | "info" | "none" };
+
+/** "14:30", "9:00", "2:30 pm", "9" -> minutes after midnight; null when it is not a time.
+ *  A bare 1-6 with no am/pm is the afternoon: nobody plans 2:30 at night. */
+export function clockMin(at: string): number | null {
+  const m = at.trim().toLowerCase().match(/^(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?$/);
+  if (!m) return null;
+  let h = Number(m[1]);
+  const min = Number(m[2] ?? 0);
+  if (h > 23 || min > 59) return null;
+  const pm = m[3]?.startsWith("p"), am = m[3]?.startsWith("a");
+  if (pm && h < 12) h += 12;
+  else if (am && h === 12) h = 0;
+  else if (!m[3] && h >= 1 && h <= 6) h += 12;
+  return h * 60 + min;
+}
+/** 870 -> "2:30" (the plan card's own way of writing a time). */
+export const clockText = (min: number) => `${Math.floor(min / 60) % 12 || 12}:${String(min % 60).padStart(2, "0")}`;
 export type Row = { main: string; meta?: string; where?: string };
 export type Reply =
   | { kind: "plan"; headline: string; steps: Step[] }
@@ -61,8 +81,9 @@ Rules:
 
 Reply with one JSON object, nothing else, in one of two shapes:
 1. A day plan, when they ask to plan the day or change the plan:
-{"kind":"plan","headline":"one short sentence","steps":[{"at":"9:00","what":"what to do, one line","where":"<position id or omit>","tone":"brand|warn|info|none"}]}
-tone: brand = 100% work, warn = follow-up work, info = a meeting or interview they mentioned, none = admin such as the EOD email. 3 to 8 steps, times in order.
+{"kind":"plan","headline":"one short sentence","steps":[{"at":"14:30","minutes":45,"what":"what to do, one line","where":"<position id or omit>","tone":"brand|warn|info|none"}]}
+"at" is the start in 24-hour time; "minutes" is how long the step takes (5 to 240). Start from Now, one step after another with no overlaps, and keep a time they gave (an interview at 2:30 pm is "14:30"). The Midday email at 12:30 and the End of day email are added to every plan for you: do not list them. Plan the day to 17:00 unless they say another finish.
+tone: brand = 100% work, warn = follow-up work, info = a meeting or interview they mentioned, none = admin. 3 to 8 steps, times in order.
 2. Anything else:
 {"kind":"answer","say":"one or two sentences","rows":[{"main":"short line","meta":"optional detail","where":"<position id or omit>"}],"chips":["optional short facts"],"warn":["optional short warnings"]}
 At most 6 rows, 6 chips, 3 warnings.`;
@@ -76,14 +97,24 @@ export function cleanReply(raw: unknown, ids: ReadonlySet<string>): Reply | null
   const r = raw as Record<string, unknown>;
   const where = (v: unknown) => (typeof v === "string" && ids.has(v) ? v : undefined);
   if (r.kind === "plan") {
-    const steps = (Array.isArray(r.steps) ? r.steps : [])
+    // A step without a time it can be saved at is dropped; steps go in time order and
+    // each runs to the next one's start unless the model gave a shorter length.
+    const timed = (Array.isArray(r.steps) ? r.steps : [])
       .slice(0, 10)
       .flatMap((s: Record<string, unknown>) => {
         const what = clip(s?.what, 160);
-        if (!what) return [];
+        const start = clockMin(clip(s?.at, 12));
+        if (!what || start === null) return [];
         const tone = TONES.has(s?.tone as string) ? (s.tone as Step["tone"]) : "none";
-        return [{ at: clip(s?.at, 10), what, tone, ...(where(s?.where) ? { where: where(s?.where) } : {}) }];
-      });
+        const said = Math.round(Number(s?.minutes));
+        return [{ start, said: Number.isFinite(said) ? said : 0, what, tone, ...(where(s?.where) ? { where: where(s?.where) } : {}) }];
+      })
+      .sort((a, b) => a.start - b.start);
+    const steps: Step[] = timed.map(({ said, ...s }, i) => {
+      const gap = timed[i + 1] ? timed[i + 1].start - s.start : 0;
+      const minutes = Math.min(240, Math.max(5, said >= 5 ? (gap > 0 ? Math.min(said, gap) : said) : gap > 0 ? gap : 30));
+      return { at: clockText(s.start), start: s.start, minutes, what: s.what, tone: s.tone, ...(s.where ? { where: s.where } : {}) };
+    });
     const headline = clip(r.headline, 200);
     return steps.length && headline ? { kind: "plan", headline, steps } : null;
   }
