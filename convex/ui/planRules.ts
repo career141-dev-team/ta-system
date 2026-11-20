@@ -165,7 +165,7 @@ export const NUDGE_AFTER_MS = 60 * MIN;
 
 export type ChangeOp = "extend" | "move" | "set_end" | "snooze" | "shift_pending" | "add" | "skip" | "set_finish" | "done";
 export type Change = { op: ChangeOp; key?: string; minutes?: number; atMin?: number; title?: string; reason?: string; all?: boolean };
-export type TalkTask = { key: string; title: string; startMin: number; minutes: number; state: TaskState };
+export type TalkTask = { key: string; title: string; startMin: number; minutes: number; state: TaskState; kind?: string };
 export type Read = { change: Change } | { ask: string; options?: string[] } | null;
 
 const OPEN = (t: { state: TaskState }) => t.state === "planned" || t.state === "doing";
@@ -260,7 +260,7 @@ export function readChange(text: string, tasks: TalkTask[], nowMin: number): Rea
   return null;
 }
 
-export type AppliedTask = { key: string; startMin: number; minutes: number; state: TaskState; title: string; snoozeMin?: number; reason?: string; added?: boolean };
+export type AppliedTask = { key: string; startMin: number; minutes: number; state: TaskState; title: string; snoozeMin?: number; reason?: string; added?: boolean; kind?: string };
 export type Applied = { tasks: AppliedTask[]; finishMin: number; say: string; clashes: string[]; changed: string[] };
 
 const endOf = (t: { startMin: number; minutes: number }) => t.startMin + t.minutes;
@@ -281,7 +281,7 @@ function slide(list: AppliedTask[], first: string): string[] {
 
 /** Apply one change to a copy of the plan (section 7, steps 1-3); saving is the caller's. */
 export function applyChange(tasks: TalkTask[], change: Change, finishMin: number, nowMin: number): Applied | { refused: string } {
-  const list: AppliedTask[] = tasks.map((t) => ({ key: t.key, title: t.title, startMin: t.startMin, minutes: t.minutes, state: t.state }));
+  const list: AppliedTask[] = tasks.map((t) => ({ key: t.key, title: t.title, startMin: t.startMin, minutes: t.minutes, state: t.state, kind: t.kind }));
   const task = change.key ? list.find((t) => t.key === change.key) : undefined;
   if (change.key && (!task || !OPEN(task))) return { refused: "That task is not open any more." };
   let finish = finishMin;
@@ -365,6 +365,14 @@ export function applyChange(tasks: TalkTask[], change: Change, finishMin: number
       if (change.atMin === undefined || change.atMin < 6 * 60 || change.atMin > 23 * 60 + 59) return { refused: "The finish time must be between 6:00 and 23:59." };
       finish = change.atMin;
       say = `Your day now finishes at ${hm(finish)}.`;
+      // The EOD keeps its place before the finish (phase 4, docs section 9).
+      for (const t of list)
+        if (t.kind === "eod_email" && OPEN(t)) {
+          t.startMin = Math.max(0, finish - 30);
+          t.minutes = 30;
+          changed.push(t.key);
+          say += ` The EOD moves to ${hm(t.startMin)}.`;
+        }
       break;
     }
   }
@@ -377,4 +385,51 @@ export function applyChange(tasks: TalkTask[], change: Change, finishMin: number
   const slid = changed.slice(1).map((k) => list.find((t) => t.key === k)!).filter(Boolean);
   if (slid.length && change.op !== "shift_pending") say += ` ${slid.map((t) => `${t.title} moves to ${hm(t.startMin)}`).join("; ")}.`;
   return { tasks: list, finishMin: finish, say, clashes: clashes.slice(0, 3), changed: [...new Set(changed)] };
+}
+
+// ----- Phase 4: Midday and EOD as tasks, done from evidence (docs/AURA-DAY-AGENT.md
+// sections 5, 8, 9; owner's Decisions 1 and 5) -----
+// Every plan carries the two emails: Midday 12:30-13:00 and the EOD in the 30 minutes
+// before the planned finish, which moves when the finish moves. Both tick themselves
+// when the email is accepted (lib/dailyEmail finalizeDailyEmail -> ui/planEvidence).
+
+export const MIDDAY_START = 12 * 60 + 30; // owner 19 Nov (Decision 5)
+export const EMAIL_MINUTES = 30;
+/** The lead hears about a missing EOD this long after the TA's planned finish - the same
+ *  half hour the old 18:00 EOD and 18:30 digest kept apart. */
+export const LEAD_AFTER_MIN = 30;
+
+export const eodStart = (finishMin: number) => Math.max(0, finishMin - EMAIL_MINUTES);
+
+/** The draft with the Midday and EOD tasks in it: added when missing, the EOD placed
+ *  before the finish. Times the TA gave the Midday are kept. */
+export function withDayEmails(tasks: DraftTask[], finishMin: number): DraftTask[] {
+  const keys = new Set(tasks.map((t) => t.key));
+  const free = (base: string) => {
+    let k = base;
+    for (let i = 2; keys.has(k); i++) k = `${base}-${i}`;
+    keys.add(k);
+    return k;
+  };
+  const out = tasks.map((t) => (t.kind === "eod_email" ? { ...t, startMin: eodStart(finishMin), minutes: EMAIL_MINUTES } : t));
+  if (!out.some((t) => t.kind === "midday_email") && MIDDAY_START + EMAIL_MINUTES <= finishMin)
+    out.push({ key: free("midday"), title: "Send the Midday email", kind: "midday_email", startMin: MIDDAY_START, minutes: EMAIL_MINUTES, priority: "high" });
+  if (!out.some((t) => t.kind === "eod_email"))
+    out.push({ key: free("eod"), title: "Send the end-of-day email", kind: "eod_email", startMin: eodStart(finishMin), minutes: EMAIL_MINUTES, priority: "high" });
+  return out.sort((a, b) => a.startMin - b.startMin);
+}
+
+/** Which open tasks an accepted email ticks: its kind, on that position or on none. */
+export function ticksFor(tasks: { key: string; kind: string; jobId?: string | null; state: TaskState }[], kind: "midday_email" | "eod_email", jobId: string): string[] {
+  return tasks.filter((t) => t.kind === kind && OPEN(t) && (!t.jobId || t.jobId === jobId)).map((t) => t.key);
+}
+
+/** The EOD "ready check" said before the EOD: how many checks are done and what is open. */
+export function readyText(checks: { label: string; done: boolean }[]): string {
+  if (!checks.length) return "Time to prepare your end-of-day email.";
+  const open = checks.filter((c) => !c.done);
+  if (!open.length) return `All ${checks.length} checks done. Ready for the EOD?`;
+  const names = open.slice(0, 2).map((c) => c.label.toLowerCase());
+  const more = open.length > 2 ? ` and ${open.length - 2} more` : "";
+  return `${checks.length - open.length} of ${checks.length} checks done; still open: ${names.join(", ")}${more}. Ready for the EOD?`;
 }

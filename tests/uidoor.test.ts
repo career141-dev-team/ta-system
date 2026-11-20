@@ -347,6 +347,35 @@ eq("send: the ChatGPT rule is kept", sendSrc.includes("checkResearchSubmission")
   eq("talk: rules first, the model only when they cannot read it", talkSrc.indexOf("readChange(") < talkSrc.indexOf("getAnthropicClient("), true);
   eq("talk: the model's answer is checked (known op, real key)", talkSrc.includes("checked(jsonIn("), true);
   eq("talk: every model call goes in the ledger with the day limit", talkSrc.includes("internal.ui.auraLedger.record") && talkSrc.includes("AI_DAY_LIMIT_USD"), true);
+
+  // Phase 4, Midday and EOD as tasks, done from evidence (19 Nov).
+  const p4 = await import("../convex/ui/planRules");
+  const draft = [{ key: "a", title: "Review SAP suggestions", kind: "cv_review", startMin: 540, minutes: 30, priority: "high" }];
+  const full = p4.withDayEmails(draft, 17 * 60);
+  eq("evidence: every plan gets the Midday 12:30 and the EOD 16:30", full.map((t) => [t.kind, t.startMin, t.minutes]), [["cv_review", 540, 30], ["midday_email", 750, 30], ["eod_email", 990, 30]]);
+  eq("evidence: the EOD the screen placed sits before the finish", p4.withDayEmails([{ key: "e", title: "EOD", kind: "eod_email", startMin: 1020, minutes: 30, priority: "high" }], 19 * 60).find((t) => t.kind === "eod_email")?.startMin, 1110);
+  eq("evidence: no Midday added when the day ends before it", p4.withDayEmails([], 12 * 60).map((t) => t.kind), ["eod_email"]);
+  eq("evidence: a taken key is not reused", p4.withDayEmails([{ key: "midday", title: "x", kind: "other", startMin: 600, minutes: 30, priority: "normal" }], 17 * 60).filter((t) => t.kind === "midday_email")[0].key, "midday-2");
+  const ticks = [
+    { key: "m", kind: "midday_email", jobId: null, state: "planned" as const },
+    { key: "e1", kind: "eod_email", jobId: "J1", state: "planned" as const },
+    { key: "e2", kind: "eod_email", jobId: "J2", state: "doing" as const },
+    { key: "e3", kind: "eod_email", state: "skipped" as const },
+  ];
+  eq("evidence: a Midday ticks the Midday task", p4.ticksFor(ticks, "midday_email", "J9"), ["m"]);
+  eq("evidence: an EOD ticks only its own position's task", p4.ticksFor(ticks, "eod_email", "J2"), ["e2"]);
+  eq("evidence: ready check names what is open", p4.readyText([{ label: "Research link", done: false }, { label: "JD approved", done: true }, { label: "Suggestions", done: true }]), "2 of 3 checks done; still open: research link. Ready for the EOD?");
+  eq("evidence: ready check when all done", p4.readyText([{ label: "A", done: true }]), "All 1 checks done. Ready for the EOD?");
+  const fin2 = p4.applyChange([{ key: "e", title: "EOD", kind: "eod_email", startMin: 990, minutes: 30, state: "planned" }], { op: "set_finish", atMin: 21 * 60 }, 17 * 60, 600);
+  eq("evidence: a later finish moves the EOD with it", "refused" in fin2 ? fin2 : [fin2.tasks[0].startMin, fin2.changed], [1230, ["e"]]);
+  const mail = read("convex/lib/dailyEmail.ts");
+  eq("evidence: every accepted email (not a revision) reaches the plan", mail.includes("if (!email.parentId) await tickFromEmail("), true);
+  const ev = read("convex/ui/planEvidence.ts");
+  eq("evidence: ticked by the system, approved plans only", ev.includes('doneBy: "system"') && ev.includes('plan.state !== "approved"'), true);
+  const crons = read("convex/ta/eodReminders.ts");
+  eq("evidence: 17:30 and 18:30 leave planned TAs to their plan", (crons.match(/withoutPlan\(ctx, await outstandingToday\(ctx\)\)/g) ?? []).length, 2);
+  const remind = read("convex/ui/planRemind.ts");
+  eq("evidence: the lead hears once, after the TA's own finish", remind.includes("leadTold: true") && remind.includes("LEAD_AFTER_MIN"), true);
 }
 
 console.log(`\nuidoor: ${pass} passed, ${fail} failed`);

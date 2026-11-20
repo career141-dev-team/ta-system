@@ -14,7 +14,10 @@ import { v } from "convex/values";
 import { internalMutation, type MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { makeFunctionReference } from "convex/server";
-import { dayStartOf, dueNow, nextWake, NUDGE_AFTER_MS, type RemTask, type TaskState } from "./planRules";
+import { dayStartOf, dueNow, LEAD_AFTER_MIN, nextWake, NUDGE_AFTER_MS, readyText, type RemTask, type TaskState } from "./planRules";
+import { checksForWorkType, type WorkdayJobView } from "../../src/lib/workday";
+import { bell as eodBell, outstandingToday } from "../ta/eodReminders";
+import { leadDigestByLead } from "../../src/lib/eodReminders";
 
 const wakeRef = makeFunctionReference<"mutation", { planId: Id<"auraDayPlans">; version: number }>("ui/planRemind:wake");
 
@@ -52,7 +55,11 @@ export async function arm(ctx: MutationCtx, planId: Id<"auraDayPlans">): Promise
   }
   const now = Date.now();
   let at: number | null = null;
-  if (plan.state === "approved") at = nextWake((await tasksOf(ctx, plan._id)).map(remTask), dayStartOf(plan.date), now, plan.quietUntil);
+  if (plan.state === "approved") {
+    at = nextWake((await tasksOf(ctx, plan._id)).map(remTask), dayStartOf(plan.date), now, plan.quietUntil);
+    const lead = leadAt(plan);
+    if (lead !== null) at = Math.min(at ?? Infinity, Math.max(lead, now + 1000));
+  }
   else if (plan.state === "draft") {
     const n = await nudgeAt(ctx, plan);
     at = n === null ? null : Math.max(n, now + 1000);
@@ -63,6 +70,23 @@ export async function arm(ctx: MutationCtx, planId: Id<"auraDayPlans">): Promise
   }
   const job = await ctx.scheduler.runAt(at, wakeRef, { planId: plan._id, version: plan.version });
   await ctx.db.patch(plan._id, { wakeJobId: job, wakeAt: at });
+}
+
+/** Phase 4: when the lead hears about a missing EOD - 30 minutes after this TA's own
+ *  planned finish, once (owner, Decision 1). Null once told. */
+const leadAt = (plan: Doc<"auraDayPlans">) => (plan.leadTold ? null : dayStartOf(plan.date) + (plan.finishMin + LEAD_AFTER_MIN) * 60_000);
+
+/** The day's checks for the EOD ready check, read from the stored checklist. */
+async function dayChecks(ctx: MutationCtx, plan: Doc<"auraDayPlans">): Promise<{ label: string; done: boolean }[]> {
+  const day = plan.workdayId ? await ctx.db.get(plan.workdayId) : null;
+  if (!day) return [];
+  const out: { label: string; done: boolean }[] = [];
+  for (const wj of day.jobs) {
+    const row = await ctx.db.query("taWorkdayChecklists").withIndex("by_workday_job", (q) => q.eq("workdayId", day._id).eq("jobId", wj.jobId)).first();
+    const view = row?.view as WorkdayJobView | undefined;
+    for (const c of checksForWorkType(wj.workType, view?.checks ?? [])) out.push({ label: c.label, done: c.status === "complete" || !!c.exception });
+  }
+  return out;
 }
 
 async function bell(ctx: MutationCtx, plan: Doc<"auraDayPlans">, title: string, body: string, jobId?: Id<"jobs">, taskKey?: string) {
@@ -104,8 +128,16 @@ export const wake = internalMutation({
     }
     if (deliver) {
       const task = tasks.find((t) => t.key === deliver.key)!;
-      await bell(ctx, plan, "AURA", deliver.text, task.jobId, task.key);
-      await ctx.db.patch(plan._id, { lastReminder: { at: now, text: deliver.text, key: deliver.key, moment: deliver.moment } });
+      // Before the EOD, the ready check: what is done and what is still open (section 9).
+      const text = task.kind === "eod_email" && deliver.moment === "start" ? readyText(await dayChecks(ctx, plan)) : deliver.text;
+      await bell(ctx, plan, "AURA", text, task.jobId, task.key);
+      await ctx.db.patch(plan._id, { lastReminder: { at: now, text, key: deliver.key, moment: deliver.moment } });
+    }
+    // After the planned finish, the lead hears once about any EOD still not sent.
+    const lead = leadAt(plan);
+    if (lead !== null && now >= lead) {
+      for (const [leadId, msg] of leadDigestByLead(await outstandingToday(ctx, plan.userId))) await eodBell(ctx, leadId as Id<"users">, "eod_lead_digest", msg);
+      await ctx.db.patch(plan._id, { leadTold: true });
     }
     await arm(ctx, plan._id);
   },
