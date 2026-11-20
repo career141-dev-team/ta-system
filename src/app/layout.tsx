@@ -46,9 +46,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <Board>{children}</Board>
           <Motion />
           <PlanReminders />
+          {/* Inside the backend: its Ask box calls AURA (useAction), which needs the
+              Convex client; outside it a click crashed the page (20 Nov). */}
+          <AuraPet />
         </Backend>
         <Overview />
-        <AuraPet />
       </body>
     </html>
   );
