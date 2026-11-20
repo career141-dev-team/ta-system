@@ -78,6 +78,28 @@ export type LeadDesk = {
   team: TaToday[];
   decide: { title: string; client: string; why: string; red?: boolean }[];
   roles: { title: string; client: string; tas: string; on: boolean; fu: number; days: number }[];
+  /** Each TA's AURA day plan today, read only (ui/plan:team, phase 5); missing signed out. */
+  plans?: TeamPlan[];
+};
+export type TeamPlan = {
+  name: string;
+  state: "none" | "draft" | "approved" | "closed";
+  tally?: { done: number; of: number; open: number };
+  late?: string[];
+  next?: { title: string; startMin: number } | null;
+  finishMin?: number;
+  summary?: string | null;
+};
+const hm = (m: number) => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`;
+/** One TA's plan as a row: approved or not, done of all, what is late, what is next. */
+export const planLine = (p: TeamPlan): Line => {
+  if (p.state === "none") return { main: p.name, meta: "No plan today", tag: { text: "No plan", tone: "muted" } };
+  if (p.state === "draft") return { main: p.name, meta: "Plan not approved yet", tag: { text: "Draft", tone: "warn" } };
+  const t = p.tally ?? { done: 0, of: 0, open: 0 };
+  if (p.state === "closed") return { main: p.name, meta: p.summary ?? `${t.done} of ${t.of} done`, tag: { text: "Day closed", tone: "brand" } };
+  const late = p.late ?? [];
+  const meta = [`${t.done} of ${t.of} done`, late.length ? `late: ${late.join(", ")}` : p.next ? `next ${hm(p.next.startMin)} ${p.next.title}` : "", p.finishMin ? `finishes ${hm(p.finishMin)}` : ""].filter(Boolean).join(" · ");
+  return { main: p.name, meta, tag: late.length ? { text: `${late.length} late`, tone: "danger" } : { text: "On plan", tone: "muted" } };
 };
 /** The Director's and Ops's desks (ui/homes:director, ui/homes:ops), same shapes as the sample. */
 export type DirectorDesk = { waiting: typeof WAITING; stages: [string, number][]; clients: { name: string; open: number; sets: number; value?: number }[] };
@@ -133,6 +155,12 @@ function leadAnswer(q: string, d: LeadDesk): Answer {
       chips: ta.roles,
       warn,
     };
+  }
+  if (has(q, "plan")) {
+    if (!d.plans) return { say: "Each TA's day plan shows here when you are signed in." };
+    const late = d.plans.filter((p) => (p.late ?? []).length).length;
+    const approved = d.plans.filter((p) => p.state === "approved" || p.state === "closed").length;
+    return { say: `${approved} of ${plural(d.plans.length, "TA")} have an approved plan${late ? `; ${late} running late` : ""}.`, rows: d.plans.map(planLine) };
   }
   if (has(q, "not started", "hasn't", "has not", "who started", "absent", "late")) {
     const idle = d.team.filter((t) => !t.day.started);
@@ -209,7 +237,7 @@ export function answer(role: HomeRole, text: string, d: Desk = SAMPLE_DESK): Ans
 }
 
 export const SUGGEST: Record<HomeRole, string[]> = {
-  Lead: ["Team checks now", "Who hasn't started?", "What needs a decision?", "Who is under 10 CVs?", "Roles not on LinkedIn"],
+  Lead: ["Today's plans", "Team checks now", "Who hasn't started?", "What needs a decision?", "Who is under 10 CVs?", "Roles not on LinkedIn"],
   Director: ["Sets waiting for me", "Where is everyone?", "By client"],
   Ops: ["What to chase first", "Interviews to arrange", "Waiting on client feedback"],
 };

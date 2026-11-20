@@ -19,7 +19,7 @@ import { door, useDoorQuery } from "@/lib/backend";
 import { petSay } from "@/lib/pet";
 import Today from "./Today";
 import Home from "./Homes";
-import { answer, brief, SAMPLE_DESK, startStats, SUGGEST, type Desk, type HomeRole } from "./homeAnswers";
+import { answer, brief, SAMPLE_DESK, startStats, SUGGEST, type Desk, type HomeRole, type TeamPlan } from "./homeAnswers";
 import type { Answer, Tone } from "./desk";
 
 const LINE: Record<HomeRole, string> = {
@@ -48,8 +48,10 @@ export default function AuraHome({ role }: { role: HomeRole }) {
   const lead = useDoorQuery(door.leadDesk, signed && role === "Lead" ? {} : "skip") as Read;
   const director = useDoorQuery(door.directorDesk, signed && role === "Director" ? {} : "skip") as Read;
   const ops = useDoorQuery(door.opsDesk, signed && role === "Ops" ? {} : "skip") as Read;
+  // Each TA's day plan, read only (phase 5): the lead asks "Today's plans".
+  const plans = useDoorQuery(door.planTeam, signed && role === "Lead" ? {} : "skip") as { ok: true; team: TeamPlan[] } | { ok: false } | undefined;
   const read = role === "Lead" ? lead : role === "Director" ? director : ops;
-  const desk: Desk | null = !signed ? SAMPLE_DESK : read?.ok ? { ...EMPTY, ...read } : null;
+  const desk: Desk | null = !signed ? SAMPLE_DESK : read?.ok ? { ...EMPTY, ...read, ...(plans?.ok ? { plans: plans.team } : {}) } : null;
   const failed = read && !read.ok ? read.message : null;
   const [open, setOpen] = useState(() => kept[role]?.open ?? false);
   const [board, setBoard] = useState(false);

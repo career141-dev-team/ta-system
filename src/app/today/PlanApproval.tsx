@@ -18,7 +18,9 @@ import { askForPopups } from "../PlanReminders";
 
 type TaskState = "planned" | "doing" | "done" | "skipped" | "carried";
 type Task = { key: string; title: string; kind: string; jobId: string | null; startMin: number; minutes: number; priority: string; state: TaskState; reason: string | null; doneBy?: "system" | "ta" | null };
-type DayPlanView = { state: "draft" | "approved" | "closed"; finishMin: number; tasks: Task[]; tally: { done: number; of: number; open: number } };
+type DayPlanView = { state: "draft" | "approved" | "closed"; finishMin: number; tasks: Task[]; tally: { done: number; of: number; open: number }; summary?: string | null };
+/** What the last plan left open (phase 5), offered first in today's draft. */
+type Carried = { key: string; title: string; detail: string | null; kind: string; jobId: string | null; minutes: number; priority: string };
 type Answer = { ok: true; message: string } | { ok: false; message: string };
 
 const hm = (min: number) => `${Math.floor(min / 60)}:${String(min % 60).padStart(2, "0")}`;
@@ -75,7 +77,7 @@ const tallyOf = (tasks: Task[]) => {
 
 function useDayPlan() {
   const live = useSignedInPerson() !== null;
-  const read = useDoorQuery(door.planToday, live ? {} : "skip") as { ok: true; plan: DayPlanView | null } | { ok: false; message: string } | undefined;
+  const read = useDoorQuery(door.planToday, live ? {} : "skip") as { ok: true; plan: DayPlanView | null; carried?: { from: string | null; tasks: Carried[] } } | { ok: false; message: string } | undefined;
   const local = useSyncExternalStore(
     (f) => {
       subs.add(f);
@@ -91,7 +93,17 @@ function useDayPlan() {
   const snoozeIt = useDoorMutation(door.planSnooze);
   const plan = live ? (read?.ok ? read.plan : null) : local;
 
-  const approve = async (tasks: ReturnType<typeof toTasks>): Promise<Answer> => {
+  const carried = live && read?.ok ? read.carried ?? null : null;
+  const approve = async (planned: ReturnType<typeof toTasks>, keep: Carried[] = []): Promise<Answer> => {
+    // Kept leftovers go after the last task that is not an email, one after another.
+    const work = planned.filter((t) => t.kind !== "midday_email" && t.kind !== "eod_email");
+    let at = work.length ? Math.max(...work.map((t) => t.startMin + t.minutes)) : 9 * 60;
+    const extra = keep.map((c, i) => {
+      const t = { key: `c${i + 1}`, title: c.title, detail: c.detail ?? undefined, kind: c.kind, jobId: c.jobId ?? undefined, startMin: Math.min(at, 23 * 60), minutes: c.minutes, priority: c.priority };
+      at += c.minutes;
+      return t;
+    });
+    const tasks = [...planned, ...extra].sort((a, b) => a.startMin - b.startMin);
     if (!live) {
       const t: Task[] = tasks.map((x) => ({ ...x, jobId: null, state: "planned", reason: null }));
       setSample({ state: "approved", finishMin: 17 * 60, tasks: t, tally: tallyOf(t) });
@@ -115,7 +127,9 @@ function useDayPlan() {
       if (!sample) return { ok: false, message: "There is no plan for today." };
       const open = sample.tasks.filter((x) => x.state === "planned" || x.state === "doing").length;
       const t = sample.tasks.map((x) => (x.state === "planned" || x.state === "doing" ? { ...x, state: "carried" as const } : x));
-      setSample({ ...sample, state: "closed", tasks: t, tally: tallyOf(t) });
+      const done = t.filter((x) => x.state === "done").length;
+      const summary = `${done} of ${t.filter((x) => x.state !== "skipped").length} done. ${open ? `${open} carried to tomorrow.` : "Nothing carried to tomorrow."}`;
+      setSample({ ...sample, state: "closed", tasks: t, tally: tallyOf(t), summary });
       return { ok: true, message: open ? `Plan closed. ${open} open ${open === 1 ? "task carries" : "tasks carry"} to tomorrow.` : "Plan closed. Everything is done." };
     }
     return (await closeIt({})) as Answer;
@@ -123,7 +137,7 @@ function useDayPlan() {
   // Reminders run in the backend, so quieting them is for a signed-in plan only.
   const snooze = async (key: string | undefined, minutes: number): Promise<Answer> =>
     live ? ((await snoozeIt({ key, minutes })) as Answer) : { ok: true, message: "Reminders run when you are signed in." };
-  return { live, plan, loading: live && read === undefined, approve, setTask, close, snooze };
+  return { live, plan, carried, loading: live && read === undefined, approve, setTask, close, snooze };
 }
 
 const BTN_DARK = "flex h-[max(2.75rem,36px)] items-center gap-2 rounded-full bg-ink px-[max(1.25rem,14px)] text-[max(0.9375rem,13px)] font-medium text-white transition-colors hover:bg-black disabled:opacity-50";
@@ -131,20 +145,46 @@ const BTN_LINE = "flex h-[max(2.75rem,36px)] items-center rounded-full border bo
 
 /** Under AURA's latest plan: the approve button, then the approved plan itself. */
 export default function PlanApproval({ plan, positions }: { plan: Plan; positions: DayPosition[] }) {
-  const { live, plan: day, loading, approve } = useDayPlan();
+  const { live, plan: day, carried, loading, approve } = useDayPlan();
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState<string | null>(null);
+  const [dropped, setDropped] = useState<Set<string>>(() => new Set());
   if (loading) return null;
+  const left = carried?.tasks ?? [];
   if (day && day.state !== "draft") return <DayPlanCard />;
   return (
     <div data-plan-act className="flex flex-col gap-2">
+      {left.length > 0 && (
+        <div className="rounded-lg border border-border bg-white px-[max(1.25rem,12px)] py-[max(0.9rem,10px)]">
+          <p className="mb-[max(0.4rem,5px)] text-[max(0.875rem,12px)] text-ink-2">Still open from your last plan — keep {left.length === 1 ? "it" : "them"}?</p>
+          <ul className="flex flex-col gap-1">
+            {left.map((c) => {
+              const on = !dropped.has(c.key);
+              return (
+                <li key={c.key}>
+                  <label className="flex cursor-pointer items-center gap-2 text-[max(0.9375rem,13px)] text-ink">
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={() => setDropped((d) => { const n = new Set(d); if (on) n.add(c.key); else n.delete(c.key); return n; })}
+                      className="size-4 accent-[var(--color-brand)]"
+                    />
+                    <span className={on ? "" : "text-ink-3 line-through"}>{c.title}</span>
+                    <span className="text-[max(0.8125rem,11.5px)] text-ink-3">{c.minutes} min</span>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
       <button
         type="button"
         disabled={busy || plan.steps.length === 0}
         onClick={async () => {
           setBusy(true);
           askForPopups();
-          const a = await approve(toTasks(plan, positions, live));
+          const a = await approve(toTasks(plan, positions, live), left.filter((c) => !dropped.has(c.key)));
           setBusy(false);
           setSaid(a.ok ? null : a.message);
           petSay(a.ok ? "done" : "failed", a.message);
@@ -192,6 +232,7 @@ function DayPlanCard() {
         <span className="text-[max(0.875rem,12px)] text-ink-3">
           {day.tally.done} of {day.tally.of} done{day.tally.open ? ` · ${day.tally.open} open` : ""}
         </span>
+        {closed && day.summary && <p className="w-full text-[max(0.9375rem,13px)] text-ink-2">{day.summary}</p>}
         {!closed && live && (
           <button type="button" onClick={async () => petSay("done", (await snooze(undefined, 60)).message)} className="ml-auto text-[max(0.8125rem,11.5px)] text-ink-3 hover:text-ink">
             Pause reminders 1 h
