@@ -223,7 +223,8 @@ async function buildAndSendDraft(
         // bearer header on these PUT requests.
         headers: {
           "Content-Type": "application/octet-stream",
-          "Content-Length": String(chunk.byteLength),
+          // No Content-Length here: fetch (undici) sets it from the body and rejects a hand-set one
+          // with UND_ERR_INVALID_ARG (20 Nov 2026, Sanduni's EOD with a >3 MB CV).
           "Content-Range": `bytes ${start}-${end}/${bytes.byteLength}`,
         },
         body: chunk,
