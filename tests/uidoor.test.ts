@@ -418,5 +418,15 @@ eq("send: the ChatGPT rule is kept", sendSrc.includes("checkResearchSubmission")
   eq("myDay: a revised email is not counted twice", myDaySrc.includes("!e.parentId"), true);
 }
 
+// ── Team after creation (20 Nov) ───────────────────────────────────────────
+const teamSrc = read("convex/ui/team.ts");
+eq("team: only a lead or admin changes who is on", teamSrc.includes("Only a TA Lead or an admin can change who is on an opening."), true);
+eq("team: a team needs a TA", teamSrc.includes("A team needs at least one TA on it."), true);
+eq("team: only active TAs can be added", teamSrc.includes("Only active TAs can."), true);
+eq("team: work mode goes through the old setWorkingStage", teamSrc.includes("internal.ta.openings.setWorkingStage"), true);
+eq("team: a TA changes only their own mode", teamSrc.includes("You can change only your own work mode."), true);
+eq("team: new people are belled", teamSrc.includes('"opening_assigned"'), true);
+eq("team: seats are switched off, never deleted", /ctx\.db\.delete/.test(teamSrc), false);
+
 console.log(`\nuidoor: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
