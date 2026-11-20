@@ -606,7 +606,7 @@ export default function DatabaseView() {
         >
           <div className={(picked ? "mx-auto" : "ml-[7.7rem] mr-auto") + " flex max-w-[62.5rem] max-lg:ml-0 flex-col gap-[max(2.1rem,18px)]"}>
             {!thread ? (
-              <Welcome mode={mode} onTry={send} />
+              <Welcome mode={mode} live={live} onTry={send} />
             ) : (
               thread.turns.map((t) =>
                 t.from === "me" ? (
@@ -757,9 +757,11 @@ function ChatItem({
 /** A new chat: what AURA can do, as things to tap - no manual to read. */
 function Welcome({
   mode,
+  live,
   onTry,
 }: {
   mode: Mode;
+  live: boolean;
   onTry: (t: string) => void;
 }) {
   const tries =
@@ -769,8 +771,8 @@ function Welcome({
       ? [
           "SAP leads in Colombo, 8+ years",
           "“S/4HANA” AND manufacturing",
-          "Do we have Ruwan Silva and Priya Nair?",
-          "Find people like Kasun Perera",
+          // Signed in, no made-up people (20 Nov 2026): the sample names are not in the real database.
+          ...(live ? ["Accountants in Colombo with 5+ years"] : ["Do we have Ruwan Silva and Priya Nair?", "Find people like Kasun Perera"]),
           "(SAP OR ERP) AND Colombo NOT Accenture",
         ]
       : ["CIMA finance managers", '"S/4HANA" AND manufacturing'];

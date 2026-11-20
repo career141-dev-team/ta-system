@@ -18,6 +18,7 @@ import PipelineBoard from "./PipelineBoard";
 import { BackButton } from "./PipelineBoard";
 import { warmPdf } from "./CvPages";
 import { CAN_SOURCE } from "@/lib/user";
+import { door, jobFromAddress, useDoorQuery, useLive, type Answer } from "@/lib/backend";
 
 /** How far (px) the pointer may stray from a held bar before it sinks. */
 const AWAY = 64;
@@ -479,8 +480,17 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
 /** Referral Search lives in the Database chat, Referees mode (owner 14 Nov 2026: one
  *  chat, the mode in the search bar). This tab starts it with searches for this job. */
 function ReferralView() {
-  // ponytail: the demo opening's title and rivals; with the backend, the job's own.
-  const asks = ["SAP Leads at competitors", "HR Managers at Dialog", "Finance Directors at Hemas", "General Managers in retail"];
+  // Signed in, the chips come from this opening's own title (none while it loads);
+  // the preview keeps the design's samples.
+  const live = useLive();
+  const job = live ? jobFromAddress() : null;
+  const got = useDoorQuery(door.summary, job ? { openingId: job } : "skip") as Answer<{ opening: { title: string | null } }> | undefined;
+  const title = got?.ok ? got.opening.title?.trim() : "";
+  const asks = !live
+    ? ["SAP Leads at competitors", "HR Managers at Dialog", "Finance Directors at Hemas", "General Managers in retail"]
+    : title
+      ? [title, `${title} at competitors`]
+      : [];
   return (
     <div className="flex flex-1 flex-col px-[max(1.5rem,14px)] pt-[max(1.4rem,14px)] max-md:pt-11">
       <BackButton />
@@ -889,6 +899,8 @@ function ViewTabs({
   onHold: () => void;
 }) {
   const { view, go } = useOpeningView();
+  // The counts are the design's samples: signed in they would be wrong, so none.
+  const live = useLive();
   // Fresh each time the bar rises: the set of the view on screen (or, on the
   // opening, the one last looked at) until the switch is pointed at.
   const [set, setSet] = useState<ViewSet>(() => (view === "overview" ? lastSet() : setOf(view)));
@@ -1034,7 +1046,7 @@ function ViewTabs({
         <span data-glow aria-hidden="true" style={{ opacity: 0 }} className="absolute left-0 top-0 rounded-full bg-ink" />
         {tabsOf(set).map((value) => {
           const on = value === view;
-          const count = COUNTS[value];
+          const count = live ? undefined : COUNTS[value];
           return (
             <button
               key={value}

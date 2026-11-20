@@ -104,3 +104,25 @@ export function actionFor(
   }
   return null;
 }
+
+/**
+ * The L-sheet chips for the rows on screen (20 Nov audit: a lead's table read
+ * "L1 20 Nov 0" where old AURA read "L1 18 Nov (51)"). The TA System sends only
+ * the viewer's own sheets, dated when the viewer started them, but the rows are
+ * everyone's the viewer may see. So: every sheet number a row sits on, plus the
+ * viewer's own; dated by the earliest of its own start and its first row; only
+ * the viewer's own may be renamed or deleted.
+ */
+export function sheetsOf(
+  own: LiveLinks["sheets"],
+  rows: Pick<LiveRow, "sheet" | "createdAt">[],
+): { n: number; at: number; name: string | null; own: boolean }[] {
+  const out = new Map(own.map((s) => [s.n, { n: s.n, at: s.at || Infinity, name: s.name, own: true }]));
+  for (const r of rows) {
+    if (!r.sheet || r.sheet < 1) continue;
+    const s = out.get(r.sheet) ?? { n: r.sheet, at: Infinity, name: null, own: false };
+    if (r.createdAt) s.at = Math.min(s.at, r.createdAt);
+    out.set(r.sheet, s);
+  }
+  return [...out.values()].map((s) => ({ ...s, at: s.at === Infinity ? 0 : s.at })).sort((a, b) => a.n - b.n);
+}

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { DUR, EASE, gsap } from "@/lib/gsap";
+import { door, jobFromAddress, useDoorQuery, useLive, type Answer } from "@/lib/backend";
 import { liveRows, ta, useRows, type State } from "../../strategy/data";
 
 // Under the opening's ATS / Headhunting lists, reached by scrolling (owner's two
@@ -67,17 +68,48 @@ function Ring({ r }: { r: RingData }) {
   );
 }
 
-const STATUS: Record<Exclude<State, "na">, { text: string; dot: string }> = {
+type Status = Exclude<State, "na"> | "assigned";
+const STATUS: Record<Status, { text: string; dot: string }> = {
   done: { text: "Submitted", dot: "bg-brand" },
   working: { text: "In progress", dot: "bg-info" },
   waiting: { text: "Waiting to accept", dot: "bg-warn" },
+  assigned: { text: "Assigned", dot: "bg-warn" },
   open: { text: "Not started", dot: "bg-ink-3/60" },
 };
 
+/** One strategy card, from the sample planner or from ui/opening:strategies. */
+type Card = { key: string; name: string; when: string; state: Status; who: string };
+
+type DoorStrategy = { id: string; name: string; assignedTo: string[]; doneAt: number | null; submittedAt: number | null };
+type Summary = Answer<{ opening: { team: { id: string; name: string }[] } }>;
+const dayOf = (ms: number) => new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+
 export default function OpeningCards() {
   const ref = useRef<HTMLDivElement>(null);
-  const rows = liveRows(useRows(), JOB);
+  const live = useLive();
+  const job = live ? jobFromAddress() : null;
+  const sum = useDoorQuery(door.summary, job ? { openingId: job } : "skip") as Summary | undefined;
+  const real = useDoorQuery(door.strategies, job ? { openingId: job } : "skip") as Answer<{ rows: DoorStrategy[] }> | undefined;
+  const sample = liveRows(useRows(), JOB);
+  const team = new Map((sum?.ok ? sum.opening.team : []).map((t) => [t.id, t.name.split(" ")[0]]));
+  const rows: Card[] = live
+    ? (real?.ok ? real.rows : []).map((r) => ({
+        key: r.id,
+        name: r.name,
+        when: r.doneAt ? `Done ${dayOf(r.doneAt)}` : "No day set",
+        state: r.submittedAt ? "done" : r.doneAt ? "working" : r.assignedTo.length ? "assigned" : "open",
+        who: r.assignedTo.length ? r.assignedTo.map((id) => team.get(id) ?? "a teammate").join(", ") : "No one yet",
+      }))
+    : sample.map((x) => ({
+        key: x.name,
+        name: x.name,
+        when: x.state === "done" && x.done ? `Done ${x.done}` : x.when ? `Due ${x.when}` : "No day set",
+        state: x.state as Exclude<State, "na">,
+        who: (x.ta && ta(x.ta)?.first) || "No one yet",
+      }));
   const submitted = rows.filter((x) => x.state === "done").length;
+  // The cards can arrive after the first draw (the live read): set up again when they change.
+  const sig = rows.map((r) => r.key + r.state).join("|");
 
   // Draw in when the cards come into view, once: arcs from nothing, numbers counting
   // up, strategy cards rising one after another. Start states set first, then tweened
@@ -105,15 +137,17 @@ export default function OpeningCards() {
       // Never left at zero or hidden.
       tl.progress(1).kill();
     };
-  }, []);
+  }, [sig, live]);
 
   return (
     <div ref={ref} className="mt-[max(1rem,10px)] flex shrink-0 flex-col gap-[max(1rem,10px)]">
-      <section aria-label="Targets" className="grid grid-cols-1 gap-6 rounded-lg bg-white px-[max(4rem,20px)] py-[max(5rem,22px)] sm:grid-cols-3">
+      {/* Signed in the rings are hidden: their numbers are samples until a backend
+          read for CVs today / position CVs / LinkedIn target exists. */}
+      {!live && <section aria-label="Targets" className="grid grid-cols-1 gap-6 rounded-lg bg-white px-[max(4rem,20px)] py-[max(5rem,22px)] sm:grid-cols-3">
         {RINGS.map((r) => (
           <Ring key={r.label} r={r} />
         ))}
-      </section>
+      </section>}
       <section aria-labelledby="opening-strategies" className="rounded-lg bg-white px-[max(2.25rem,16px)] pb-[max(3.4rem,20px)] pt-[max(3.6rem,20px)]">
         <div className="flex items-baseline justify-between gap-4">
           <h2 id="opening-strategies" className="text-h3 font-semibold text-ink">
@@ -128,23 +162,24 @@ export default function OpeningCards() {
         {rows.length ? (
           <div className="mt-[max(2.3rem,14px)] grid grid-cols-1 gap-[max(1.45rem,10px)] sm:grid-cols-2 md:grid-cols-4">
             {rows.map((x) => {
-              const s = STATUS[x.state as Exclude<State, "na">];
-              const who = x.ta && ta(x.ta);
+              const s = STATUS[x.state];
               return (
-                <article key={x.name} data-strategy className="flex min-w-0 flex-col rounded-lg border border-border bg-white px-[max(1.6rem,14px)] py-[max(1.4rem,12px)]">
-                  <p className="truncate text-small text-ink-3">{x.state === "done" && x.done ? `Done ${x.done}` : x.when ? `Due ${x.when}` : "No day set"}</p>
+                <article key={x.key} data-strategy className="flex min-w-0 flex-col rounded-lg border border-border bg-white px-[max(1.6rem,14px)] py-[max(1.4rem,12px)]">
+                  <p className="truncate text-small text-ink-3">{x.when}</p>
                   <h3 className="mt-[max(1rem,8px)] line-clamp-2 text-body font-semibold text-ink">{x.name}</h3>
                   <div className="mt-auto flex items-center justify-between gap-3 pt-[max(1.6rem,12px)] text-small">
                     <span className="flex min-w-0 items-center gap-2 text-ink-2">
                       <span className={"size-2 shrink-0 rounded-full " + s.dot} aria-hidden="true" />
                       <span className="truncate">{s.text}</span>
                     </span>
-                    <span className="shrink-0 truncate text-ink-3">{who ? who.first : "No one yet"}</span>
+                    <span className="shrink-0 truncate text-ink-3">{x.who}</span>
                   </div>
                 </article>
               );
             })}
           </div>
+        ) : live && !real ? (
+          <div className="shimmer mt-4 h-[max(6rem,60px)] rounded-lg" />
         ) : (
           <p className="mt-4 text-small text-ink-3">No strategies planned for this job yet. A TA Lead plans them in the Strategy Planner.</p>
         )}

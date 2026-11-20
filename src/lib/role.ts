@@ -1,6 +1,6 @@
 // Who is looking: until sign-in is wired, the person's menu has "View as" so each
 // role's home and rights can be seen (owner 14 Nov 2026: homes for lead, Director, Ops).
-// ponytail: kept in this browser; with sign-in it is the person's real role.
+// Signed out: kept in this browser. Signed in: the real role, View as for this tab only.
 import { useSyncExternalStore } from "react";
 
 export type Role = "TA" | "TA Support" | "Lead" | "Admin" | "Director" | "Ops";
@@ -32,22 +32,23 @@ export const useSignedInPerson = () =>
  *  changes what is drawn; the backend still judges every call by the real account.
  *  Remove before the switch-over (Track E step E9). */
 export const canViewAs = () => !signed || signed.role === "Admin";
+// Signed in, "View as" lives only in this tab (sessionStorage, 20 Nov 2026): kept in
+// localStorage it outlived the session, so the real admin came back as "TA" with the
+// Strategy Planner gone. A fresh tab always opens on the real role. The preview
+// (signed out) keeps its pick in localStorage as before.
+const VIEW_KEY = "ta-ui:view-as";
+const store = () => (signed ? sessionStorage : localStorage);
+const stored = (): Role | null => {
+  try {
+    const r = store().getItem(signed ? VIEW_KEY : KEY) as Role | null;
+    return r && ROLES.includes(r) ? r : null;
+  } catch {
+    return null;
+  }
+};
 const read = (): Role => {
   if (signed && signed.role !== "Admin") return signed.role;
-  if (signed) {
-    try {
-      const r = localStorage.getItem(KEY) as Role | null;
-      return r && ROLES.includes(r) ? r : "Admin";
-    } catch {
-      return "Admin";
-    }
-  }
-  try {
-    const r = localStorage.getItem(KEY) as Role | null;
-    return r && ROLES.includes(r) ? r : "TA";
-  } catch {
-    return "TA";
-  }
+  return stored() ?? (signed ? "Admin" : "TA");
 };
 export const useRole = () =>
   useSyncExternalStore(
@@ -60,7 +61,7 @@ export const useRole = () =>
   );
 export function setRole(r: Role) {
   try {
-    localStorage.setItem(KEY, r);
+    store().setItem(signed ? VIEW_KEY : KEY, r);
   } catch {}
   subs.forEach((f) => f());
 }
@@ -85,8 +86,13 @@ export const PERSON: Record<Role, { name: string; title: string }> = {
  *  a fixed sample TA). `lead` is the old `opening.manage` / whole-job view: TA Lead,
  *  Director, Ops (and admin). */
 /** Who the top bar names: the signed-in person, else the sample one for the role. */
+// A live build only draws its screens signed in, so until whoAmI answers there is no
+// name yet - never the sample person's (20 Nov 2026: "Good evening, Rashmi" for the admin).
+const LIVE_BUILD = Boolean(process.env.NEXT_PUBLIC_CONVEX_URL && process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 export const personOf = (role: Role): { name: string; title: string } =>
-  !signed ? PERSON[role] : signed.role === role ? { name: signed.name, title: signed.title } : { name: signed.name, title: `${PERSON[role].title} view` };
+  !signed
+    ? LIVE_BUILD ? { name: "", title: "" } : PERSON[role]
+    : signed.role === role ? { name: signed.name, title: signed.title } : { name: signed.name, title: `Viewing as ${role}` };
 
 export function useMe() {
   const role = useRole();

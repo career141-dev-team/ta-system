@@ -18,7 +18,8 @@ import { NoResults, ResultLine, SearchField } from "../FilterBits";
 // (openings/openingsLive.ts, D9); signed out, the sample rows.
 
 type Kind = "opening" | "client";
-type Gone = { id: string; kind: Kind; name: string; client?: string; by: string; daysAgo: number };
+// purgeAt: when the TA System deletes it for good (live); the sample counts from daysAgo.
+type Gone = { id: string; kind: Kind; name: string; client?: string; by: string; daysAgo: number; purgeAt?: number };
 const DAYS = 7;
 const SAMPLE: Gone[] = [
   { id: "b1", kind: "opening", name: "Junior Accountant", client: "John Keells", by: "Rashmi", daysAgo: 1 },
@@ -28,11 +29,17 @@ const SAMPLE: Gone[] = [
   { id: "b5", kind: "opening", name: "Tea Taster", client: "Ceylon Tea Traders", by: "Rashmi", daysAgo: 2 },
 ];
 
-const goesOn = (left: number) => {
-  const d = new Date();
-  d.setDate(d.getDate() + Math.max(left, 0));
-  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-};
+const DAY = 86_400_000;
+const ago = (days: number) => (days <= 0 ? "today" : days === 1 ? "yesterday" : `${days} days ago`);
+/** What the right side says. From the real purge date when there is one; the old line
+ *  said "Gone for good today" for a client binned 53 days ago and could count past 7 (20 Nov). */
+function whenGone(x: Gone, now = Date.now()): { text: string; soon: boolean } {
+  const at = x.purgeAt ?? now + (DAYS - x.daysAgo) * DAY;
+  if (at <= now) return { text: "Gone for good soon", soon: true };
+  const left = Math.min(DAYS, Math.ceil((at - now) / DAY));
+  const on = new Date(at).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Asia/Colombo" });
+  return { text: `${left} ${left === 1 ? "day" : "days"} left · Goes for good on ${on}`, soon: left <= 1 };
+}
 
 const PILL = "flex h-[max(2.4rem,33px)] items-center gap-2 whitespace-nowrap rounded-full border border-border bg-surface px-[max(1rem,13px)] text-small text-ink-2";
 
@@ -51,7 +58,7 @@ export default function Bin() {
       setMayPurge(got.mayPurge);
       setItems(got.items.map((x) => ({
         id: x.id, kind: x.kind, name: x.name, client: x.clientName ?? undefined, by: x.binnedBy ?? "someone",
-        daysAgo: Math.max(0, Math.floor((now - x.binnedAt) / 86_400_000)),
+        daysAgo: Math.max(0, Math.floor((now - x.binnedAt) / DAY)), purgeAt: x.purgeAt || undefined,
       })));
     });
   }, [live]);
@@ -88,16 +95,16 @@ export default function Bin() {
         {list.length ? (
           <ul className="flex flex-col gap-2">
             {list.map((x) => {
-              const left = DAYS - x.daysAgo;
+              const left = whenGone(x);
               return (
                 <li key={x.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md bg-canvas px-[max(1.25rem,12px)] py-3">
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-small font-medium text-ink">{x.name}</span>
                     <span className="block text-caption text-ink-3">
-                      {x.client ? `${x.client} · ` : ""}deleted {x.daysAgo === 1 ? "yesterday" : `${x.daysAgo} days ago`} by {x.by}
+                      {x.client ? `${x.client} · ` : ""}deleted {ago(x.daysAgo)} by {x.by}
                     </span>
                   </span>
-                  <span className={"text-caption " + (left <= 1 ? "font-medium text-danger" : "text-ink-3")}>{left <= 0 ? "Gone for good today" : `${left} ${left === 1 ? "day" : "days"} left · Goes for good on ${goesOn(left)}`}</span>
+                  <span className={"text-caption " + (left.soon ? "font-medium text-danger" : "text-ink-3")}>{left.text}</span>
                   <button type="button" onClick={() => gone(x, kind === "opening" ? " restored, with its pipeline" : " restored", "restore")} className="rounded-full bg-ink px-4 py-2 text-small font-medium text-white hover:bg-black">
                     Restore
                   </button>

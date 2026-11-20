@@ -341,14 +341,14 @@ type LiveEmail = { _id: string; userId: string; date: string; submissionType: Ki
 type DoorEmails = Answer<{ emails: LiveEmail[]; missed: { date: string; count: number }[] }>;
 const LIVE_STATUS: Record<LiveEmail["status"], Status> = { draft: "draft", sending: "sending", accepted: "sent", failed: "failed", uncertain: "uncertain" };
 const dayOf = (iso: string) => fmtDay(new Date(`${iso}T12:00:00+05:30`));
-function fromLive(e: LiveEmail, meId: string | undefined, meName: string): Mail | null {
+function fromLive(e: LiveEmail, meId: string | undefined, meName: string, names: Map<string, string>): Mail | null {
   if (e.status === "draft") return null;
   return newMail(e.submissionType, e.number, {
     id: e._id,
     liveId: e._id,
     status: LIVE_STATUS[e.status],
     day: dayOf(e.date),
-    by: e.userId === meId ? meName : "Another TA",
+    by: e.userId === meId ? meName : (names.get(e.userId) ?? "a teammate"),
     sentAt: e.acceptedAt ?? e.startedAt,
     subject: e.snapshot?.subject ?? null,
     to: e.snapshot?.to ?? [],
@@ -377,7 +377,10 @@ export default function DailyEmailView() {
   // own drafts stay here; what the backend holds is shown as it is, read only.
   const whoami = useSignedIn();
   const emailsRead = useDoorQuery(door.emails, job ? { jobId: job } : "skip") as DoorEmails | undefined;
-  const history = emailsRead?.ok ? emailsRead.emails.flatMap((e) => fromLive(e, whoami?.ok ? whoami.id : undefined, me.name) ?? []) : [];
+  // Others' emails carry only a user id: name them from the opening's team.
+  const summary = useDoorQuery(door.summary, job ? { openingId: job } : "skip") as Answer<{ opening: { team: { id: string; name: string }[] } }> | undefined;
+  const names = new Map((summary?.ok ? summary.opening.team : []).map((t) => [t.id, t.name]));
+  const history = emailsRead?.ok ? emailsRead.emails.flatMap((e) => fromLive(e, whoami?.ok ? whoami.id : undefined, me.name, names) ?? []) : [];
   const liveMiddaysToday = history.filter((h) => h.kind === "midday" && h.day === TODAY).length;
   const liveEodToday = history.some((h) => h.kind === "eod" && h.day === TODAY && h.status !== "failed");
   const mails: Mail[] = signedIn

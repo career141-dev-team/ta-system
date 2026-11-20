@@ -223,7 +223,8 @@ function Plan({ j, aura }: { j: Job; aura: boolean }) {
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-[max(2rem,20px)] leading-tight text-ink">{j.title}</h1>
           <p className="truncate text-body text-ink-3">
-            {j.client} · {j.industry} · P{j.p} · day {j.day} of {j.of} · {names}
+            {/* Empty parts are skipped (a live job may have no industry): no "Client · · P3". */}
+            {[j.client, j.industry, j.p ? `P${j.p}` : "", j.of ? `day ${j.day} of ${j.of}` : "", names].filter(Boolean).join(" · ")}
           </p>
         </div>
         <button type="button" onClick={saveDraft} disabled={!changed.length} className={BTN + " border border-border-strong bg-surface text-ink hover:bg-surface-2 disabled:opacity-40"}>
@@ -237,6 +238,9 @@ function Plan({ j, aura }: { j: Job; aura: boolean }) {
       <div className="grid min-h-0 flex-1 grid-cols-[44fr_66fr_69fr] gap-[max(1.25rem,10px)] max-lg:grid-cols-2 max-md:grid-cols-1 max-md:flex-none">
         {/* What worked before, where the job is, AURA's plan. */}
         <section className={CARD + " gap-[max(1.75rem,14px)] max-lg:col-span-2 max-md:col-span-1"}>
+          {/* "What worked before" and "AURA suggests" are sample text, the same on every
+              job: signed in they are hidden until they come from real data (20 Nov 2026). */}
+          {!live && <>
           <div className="flex items-center gap-3">
             <span className="flex size-[max(2.5rem,30px)] shrink-0 items-center justify-center overflow-hidden rounded-full bg-black">
               <Image src="/aura-mark.png" alt="" width={56} height={56} className="size-full" />
@@ -261,13 +265,14 @@ function Plan({ j, aura }: { j: Job; aura: boolean }) {
               </li>
             ))}
           </ul>
-          <div className="border-t border-border pt-[max(1.25rem,10px)]">
+          </>}
+          <div className={live ? "" : "border-t border-border pt-[max(1.25rem,10px)]"}>
             <p className="text-caption font-medium uppercase text-ink-3">This job right now</p>
             <div className="mt-3 flex gap-[max(2.5rem,16px)]">
               {[
                 [j.pipeline, "in pipeline"],
                 [j.shortlist, "Director shortlist"],
-                [`${j.of - j.day} days`, `left of ${j.of}`],
+                j.day > j.of ? [`${j.day - j.of} days`, "past target"] : [`${j.of - j.day} days`, `left of ${j.of}`],
               ].map(([n, t]) => (
                 <p key={t}>
                   <span className="block whitespace-nowrap text-h2 font-light text-ink">{n}</span>
@@ -277,13 +282,13 @@ function Plan({ j, aura }: { j: Job; aura: boolean }) {
             </div>
             {!ran && <p className="mt-3 text-small text-danger">No strategy has been run on this job yet.</p>}
           </div>
-          <div className={"mt-auto rounded-md bg-violet-soft p-[max(1.25rem,12px)] " + (aura && !used ? "ring-2 ring-violet" : "")}>
+          {!live && <div className={"mt-auto rounded-md bg-violet-soft p-[max(1.25rem,12px)] " + (aura && !used ? "ring-2 ring-violet" : "")}>
             <p className="text-small font-medium text-violet">AURA suggests</p>
             <p className="mt-2 text-small text-ink">{auraPlan(j).text}</p>
             <button type="button" onClick={usePlan} disabled={used} className="mt-4 rounded-full bg-ink px-5 py-2.5 text-small font-medium text-white hover:bg-black disabled:opacity-50">
               {used ? "Plan added — check and send" : "Use this plan"}
             </button>
-          </div>
+          </div>}
         </section>
 
         {/* Every strategy, by group, with its switch; AURA's bar pinned under them. */}
