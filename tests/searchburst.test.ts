@@ -38,6 +38,7 @@ eq("every term is still awaited and a failed one still reported", many.includes(
 const engineSrc = read("src/lib/engineSearch.ts");
 eq("the warning names the part", /export function incompleteProblem\(/.test(engineSrc) && engineSrc.includes('"the meaning search"') && engineSrc.includes('"the word search"'), true);
 eq("both screens use it", read("src/app/database/results/page.tsx").includes("incompleteProblem(engine.incomplete)") && read("src/app/api/ui/database/route.ts").includes("incompleteProblem(engine.incomplete)"), true);
+eq("the chat gets the failed part's own reason, cut short", read("src/app/api/ui/database/route.ts").includes("detail: engine?.incomplete?.length ? engine.incomplete.map((d) => d.slice(0, 300)) : undefined"), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
