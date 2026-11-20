@@ -116,6 +116,8 @@ export type Read = {
   /** Work locations, each with how many people (old system: 1 to 50 rows; the
    *  opening's headcount is their sum). Empty = Sri Lanka, city not set. */
   locations: Loc[];
+  /** "3 people" said with no city: the number waits and goes onto the city picked next. */
+  headcount: number;
   priority: Priority;
   team: string[];
   musts: string;
@@ -133,6 +135,7 @@ export const EMPTY: Read = {
   client: "",
   clientKnown: false,
   locations: [],
+  headcount: 1,
   priority: 3,
   team: [],
   musts: "",
@@ -196,8 +199,12 @@ export function readBrief(text: string, desk: { clients?: string[]; team?: strin
   // Every city named, each with the number written next to it ("2 in Colombo",
   // "Kandy 1", "Colombo x2"); a city with no number takes the overall headcount
   // ("3 people") or 1.
-  const heads = t.match(/\b(\d{1,2})\s*(?:people|persons|positions|hires|heads|vacancies|openings)\b/);
-  const all = heads ? Number(heads[1]) : 1;
+  const WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+  const num = String.raw`(\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten)`;
+  const heads = t.match(new RegExp(String.raw`\b${num}\s*(?:people|persons|positions|hires|heads|vacancies|openings|candidates|recruits)\b|\bhiring\s+${num}\b(?!\s*(?:years?|yrs?|weeks?|months?))`));
+  const headsSaid = heads ? heads[1] ?? heads[2] : "";
+  const all = headsSaid ? Math.min(50, Math.max(1, Number(headsSaid) || WORDS[headsSaid] || 1)) : 1;
+  r.headcount = all;
   for (const c of CITIES) {
     const k = c.toLowerCase();
     if (!t.includes(k)) continue;

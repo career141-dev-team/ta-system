@@ -194,10 +194,10 @@ export default function NewOpening({
       key: "where",
       say: "Where is the job?",
       chips: [
-        ...["Colombo", "Kandy", "Galle"].map((c) => ({ label: c, go: () => set({ locations: [{ city: c, people: 1 }] }) })),
+        ...["Colombo", "Kandy", "Galle"].map((c) => ({ label: c, go: () => set({ locations: [{ city: c, people: r.headcount }] }) })),
         { label: "Not sure yet", go: () => skip("where") },
       ],
-      box: { hint: "Another city", go: (v) => set({ locations: [{ city: v, people: 1 }] }) },
+      box: { hint: "Another city", go: (v) => set({ locations: [{ city: v, people: r.headcount }] }) },
     });
   if (LEAD && !r.team.length && !done.includes("team"))
     asks.push({

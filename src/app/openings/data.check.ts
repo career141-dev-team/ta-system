@@ -50,6 +50,11 @@ assert.equal(readBrief("Need an Accountant for Galle.", { clients: [] }).client,
 assert.equal(readBrief("Looking for an organized Project Coordinator to help.").role, "Project Coordinator");
 assert.equal(readBrief("Must have 5 years in audit.").musts, "5 years in audit");
 
+assert.equal(readBrief("Need an Accountant, 3 people.").headcount, 3);
+assert.equal(readBrief("Need an Accountant, three people.").headcount, 3);
+assert.equal(readBrief("Hiring 4 accountants in Kandy.").locations[0].people, 4);
+assert.equal(readBrief("Need an Accountant, 5 years experience.").headcount, 1);
+assert.equal(readBrief("Need an Accountant.").headcount, 1);
 readBrief("Colombo again");
 assert.deepEqual(EMPTY.locations, []); // a reading never writes into the empty form
 console.log("brief reader: ok");
