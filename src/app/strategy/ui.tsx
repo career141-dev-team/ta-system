@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { DUR, gsap } from "@/lib/gsap";
 import { LIFT_OUT } from "../openings/[id]/liftMenu";
-import { TAS, TODAY, busy, ta, whenLabel, type Row, type TaId } from "./data";
+import { TAS, TODAY, ahead, busy, ta, whenLabel, type Row, type TaId } from "./data";
 
 /** A TA's initials in their colour. `ring` = given, not accepted yet (amber ring). */
 export function Initials({ id, ring, size = "md" }: { id: TaId; ring?: boolean; size?: "sm" | "md" }) {
@@ -82,7 +82,7 @@ export function AssignPanel({
 }) {
   const el = useRef<HTMLDivElement>(null);
   const [who, setWho] = useState<TaId | undefined>(row?.ta);
-  const next: [number, number] = [TODAY + 1, TODAY + 2];
+  const next: [number, number] = [ahead(1), ahead(2)];
   const [when, setWhen] = useState<Assign>({ ta: "DR", when: row?.when ?? "Today", days: row?.days ?? [TODAY, TODAY] });
   const [pos, setPos] = useState({ left: -9999, top: 0 });
   const date = useRef<HTMLInputElement>(null);
