@@ -67,6 +67,8 @@ const ALLOWED_PUBLIC = new Set<string>([
   "ui/homes:ops",
   "ui/myDay:today",
   "ui/plan:team",
+  "ui/searches:record",
+  "ui/searches:recent",
   "ui/plan:today",
   "ui/plan:saveDraft",
   "ui/plan:approve",
