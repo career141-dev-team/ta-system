@@ -37,12 +37,15 @@ export type LinkAction = keyof typeof LINK_ACTIONS;
 /** Actions whose old answer is a redirect back to the page, not a sentence. */
 export const REDIRECTING = new Set<LinkAction>(["addSheet", "deleteSheet", "restoreSheet"]);
 
-export function readLinkBody(body: unknown): { ok: true; action: LinkAction; fields: [string, string][] } | { ok: false; message: string } {
+export const readLinkBody = (body: unknown) => readUiBody(LINK_ACTIONS, body);
+
+/** Any new-UI form for an old action: `do` names it, only its own fields may come (shared by Headhunting, D8b). */
+export function readUiBody<T extends Record<string, readonly string[]>>(table: T, body: unknown): { ok: true; action: keyof T & string; fields: [string, string][] } | { ok: false; message: string } {
   if (!body || typeof body !== "object" || Array.isArray(body)) return { ok: false, message: "Nothing was sent." };
   const b = body as Record<string, unknown>;
   const what = b.do;
-  if (typeof what !== "string" || !(what in LINK_ACTIONS)) return { ok: false, message: "That button is not known. Reload the page." };
-  const allowed = LINK_ACTIONS[what as LinkAction] as readonly string[];
+  if (typeof what !== "string" || !Object.hasOwn(table, what)) return { ok: false, message: "That button is not known. Reload the page." };
+  const allowed = table[what];
   const fields: [string, string][] = [];
   for (const [k, v] of Object.entries(b)) {
     if (k === "do") continue;
@@ -54,7 +57,7 @@ export function readLinkBody(body: unknown): { ok: true; action: LinkAction; fie
     }
   }
   if (!fields.some(([k]) => k === "openingId")) return { ok: false, message: "Which opening is this for? Reload and try again." };
-  return { ok: true, action: what as LinkAction, fields };
+  return { ok: true, action: what, fields };
 }
 
 /** The new screen's three interest words, from the old table's. */
