@@ -1,4 +1,5 @@
 import { MutationCtx } from "../_generated/server";
+import { settleFill } from "../lib/placementCount";
 import { raiseOpsEvent } from "../lib/opsEvents";
 import { Doc, Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
@@ -278,6 +279,11 @@ export async function executeStageTransition(
       : null;
     if (daily && (daily.placements ?? 0) > 0) await ctx.db.patch(daily._id, { placements: daily.placements - 1 });
   }
+
+  // One of several places filled, or one lost (20 Nov): the opening moves to
+  // Placed only when the last place is taken, and opens again if it falls through.
+  if (targetStage === "placed") await settleFill(ctx, app.jobId, "in");
+  else if (currentStage === "placed") await settleFill(ctx, app.jobId, "out");
 
   if (targetStage === "placed") {
     await adjustGlobalStat(ctx, "placement");

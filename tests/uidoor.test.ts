@@ -7,6 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { cardLimit, inWords, scoopFileRefusal, normalizeQuestions, strategyRowsToSubmit, matchableEmail, moveRefusal, toCard, openingCard, withEdits, BOARD_STAGES, BACKEND_STAGES, daysOpen, columnCount } from "../convex/ui/rules";
+import { fillDecision, targetOf } from "../convex/lib/placementCount";
 import { isEodCandidateEligible } from "../src/lib/eodEligibility";
 
 let pass = 0, fail = 0;
@@ -427,6 +428,26 @@ eq("team: work mode goes through the old setWorkingStage", teamSrc.includes("int
 eq("team: a TA changes only their own mode", teamSrc.includes("You can change only your own work mode."), true);
 eq("team: new people are belled", teamSrc.includes('"opening_assigned"'), true);
 eq("team: seats are switched off, never deleted", /ctx\.db\.delete/.test(teamSrc), false);
+
+// ── Several placements on one opening (20 Nov) ─────────────────────────────
+eq("target: no number = 1", targetOf({}), 1);
+eq("target: headcount used", targetOf({ headcount: 4 }), 4);
+eq("fill: 1 of 4 placed stays Active", fillDecision("active", 4, 1, "in"), null);
+eq("fill: 4 of 4 placed moves to Placed", fillDecision("active", 4, 4, "in"), "fill");
+eq("fill: a single place fills at once", fillDecision("active", 1, 1, "in"), "fill");
+eq("fill: a hand-marked Placed is not overruled by a new placement", fillDecision("filled", 4, 2, "in"), null);
+eq("fill: on hold is never filled by a placement", fillDecision("on_hold", 2, 2, "in"), null);
+eq("reopen: one falls through, 3 of 4", fillDecision("filled", 4, 3, "out"), "reopen");
+eq("reopen: still full after a move out stays Placed", fillDecision("filled", 1, 1, "out"), null);
+eq("reopen: an Active opening is left alone on a fall-through", fillDecision("active", 4, 2, "out"), null);
+eq("target raised on a Placed opening reopens it", fillDecision("filled", 2, 1, "target"), "reopen");
+eq("target lowered to the placed number fills it", fillDecision("active", 2, 2, "target"), "fill");
+const pl = read("convex/ui/placements.ts");
+eq("placements: the target cannot go below the places filled", pl.includes("already filled. The target cannot be lower."), true);
+eq("placements: only lead, admin or primary TA", pl.includes("Only a TA Lead, an admin or the primary TA can change the places to fill."), true);
+const machine = read("convex/pipeline/pipelineStateMachine.ts");
+eq("stage machine: a move into Placed settles the fill", machine.includes('settleFill(ctx, app.jobId, "in")'), true);
+eq("stage machine: a move out of Placed settles the fill", machine.includes('settleFill(ctx, app.jobId, "out")'), true);
 
 console.log(`\nuidoor: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

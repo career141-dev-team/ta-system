@@ -54,6 +54,8 @@ const ALLOWED_PUBLIC = new Set<string>([
   "ui/team:team",
   "ui/team:setTeam",
   "ui/team:setStage",
+  "ui/placements:status",
+  "ui/placements:setTarget",
   "ui/posts:addPost",
   "ui/posts:updatePost",
   "ui/posts:setPostStatus",
