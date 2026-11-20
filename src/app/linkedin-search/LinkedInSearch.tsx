@@ -7,6 +7,7 @@ import { DUR, EASE, gsap, motionOK, popPanel, useSwap } from "@/lib/gsap";
 import type { Found, SearchResult } from "@/lib/linkedinSearch";
 import type { Profile } from "@/lib/linkedinProfile";
 import { Glow } from "../AuraBarGlow";
+import { SearchSteps, useSteps } from "../SearchSteps";
 import { LinkedInIcon } from "../openings/[id]/PipelineBoard";
 import { EMPTY, chipsOf, isEmpty, readAsk, type Ask } from "./read";
 import { useSignedHeaders } from "@/lib/backend";
@@ -57,7 +58,6 @@ export default function LinkedInSearch() {
   const [busy, setBusy] = useState<Ask | null>(null);
   const [error, setError] = useState("");
   const [toast, setToast] = useState<Toast | null>(null);
-  const [step, setStep] = useState(0);
   const [chat, setChat] = useState(false);
   const [filters, setFilters] = useState(false);
   const [recent, setRecent] = useState<{ label: string; n: number }[]>([]);
@@ -94,12 +94,7 @@ export default function LinkedInSearch() {
 
   // The steps AURA shows while it searches. The real search is one call, so the first
   // three tick over by themselves and the bar creeps along; "Ranking" waits for the answer.
-  useEffect(() => {
-    if (!busy) return;
-    setStep(0);
-    const t = [setTimeout(() => setStep(1), 700), setTimeout(() => setStep(2), 1500), setTimeout(() => setStep(3), 2300)];
-    return () => t.forEach(clearTimeout);
-  }, [busy]);
+  const step = useSteps(!!busy, 3, 750);
   useEffect(() => {
     const el = progress.current;
     if (step !== 3 || !el) return;
@@ -112,38 +107,8 @@ export default function LinkedInSearch() {
     };
   }, [step]);
 
-  // The steps come in one after another, each finished step pops and draws its tick,
-  // the step in progress breathes, and its words slide in (plain useEffect: see DESIGN.md motion).
-  const steps = useRef<HTMLOListElement>(null);
-  useEffect(() => {
-    const ol = steps.current;
-    if (!ol || !busy || !motionOK()) return;
-    const tw = gsap.fromTo(ol.children, { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.55, ease: "power3.out", stagger: 0.1, clearProps: "transform,opacity" });
-    return () => void tw.kill();
-  }, [busy]);
-  useEffect(() => {
-    const ol = steps.current;
-    if (!ol || !busy || !motionOK()) return;
-    const rows = Array.from(ol.children) as HTMLElement[];
-    const find = (r: HTMLElement | undefined, s: string) => r?.querySelector<HTMLElement>(s) ?? null;
-    const tl = gsap.timeline();
-    const prev = rows[step - 1];
-    const cur = rows[step];
-    const mark = find(prev, "[data-mark]");
-    const tick = find(prev, "[data-tick]");
-    if (mark) tl.fromTo(mark, { scale: 0.5 }, { scale: 1, duration: 0.5, ease: "back.out(2.4)", clearProps: "transform" }, 0);
-    if (tick) tl.fromTo(tick, { strokeDasharray: 14, strokeDashoffset: 14 }, { strokeDashoffset: 0, duration: 0.38, ease: "power2.out" }, 0.08);
-    const label = find(cur, "[data-label]");
-    if (label) tl.fromTo(label, { x: -10, opacity: 0.3 }, { x: 0, opacity: 1, duration: 0.45, ease: "power3.out", clearProps: "transform,opacity" }, 0);
-    const detail = find(cur, "[data-detail]");
-    if (detail) tl.fromTo(detail, { x: 10, opacity: 0 }, { x: 0, opacity: 1, duration: 0.45, ease: "power3.out", clearProps: "transform,opacity" }, 0.1);
-    const dot = find(cur, "[data-dot]");
-    const pulse = dot ? gsap.fromTo(dot, { scale: 1 }, { scale: 1.7, duration: 0.7, ease: "sine.inOut", yoyo: true, repeat: -1 }) : null;
-    return () => {
-      tl.kill();
-      pulse?.kill();
-    };
-  }, [step, busy]);
+  // The rows, ticks and breathing are SearchSteps'; the filter chips pop in here.
+  const steps = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const ol = steps.current;
     if (!ol || !filters || !motionOK()) return;
@@ -430,56 +395,34 @@ export default function LinkedInSearch() {
               <h1 className="text-[max(2rem,20px)] font-light text-ink">{title(busy)}</h1>
               <p className="text-small text-ink-2">AURA is searching LinkedIn now</p>
             </div>
-            <ol ref={steps} className="mt-4 flex flex-col gap-[max(1.1rem,12px)]">
-              {STEPS.map((s, i) => {
-                const done = i < step;
-                const now = i === step;
-                const detail = [chipsOf(busy).slice(0, 2).join(" · "), `${chipsOf(busy).length} things I read`, "", "reading 25 people", ""][i];
-                return (
-                  <li key={s} className="flex flex-col gap-2">
-                    <div className="flex items-center gap-4">
-                      <span
-                        data-mark
-                        aria-hidden="true"
-                        className={"flex size-[1.4rem] shrink-0 items-center justify-center rounded-full " + (done ? "bg-brand text-white" : now ? "border-2 border-violet bg-white" : "border border-border-strong")}
-                      >
-                        {done ? (
-                          <svg viewBox="0 0 11 11" className="size-[11px]" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                            <path data-tick d="M9.17 2.75 4.13 7.79 1.83 5.5" />
-                          </svg>
-                        ) : now ? (
-                          <span data-dot className="size-2 rounded-full bg-violet" />
-                        ) : null}
-                      </span>
-                      <span data-label className={"text-body " + (done || now ? "text-ink" : "text-ink-3")}>{s}</span>
-                      {(done || now) && (i === 2 || detail) && (
-                        <span data-detail className="ml-auto truncate text-small text-ink-3">
-                          {i === 2 ? (
-                            <button type="button" onClick={() => setFilters((v) => !v)} className="font-medium text-brand hover:underline">
-                              {filters ? "Hide them" : "See them"}
-                            </button>
-                          ) : (
-                            detail
-                          )}
-                        </span>
-                      )}
-                    </div>
-                    {i === 2 && filters && (done || now) && (
+            <div ref={steps} className="mt-4">
+              <SearchSteps
+                at={step}
+                steps={STEPS.map((label, i) => ({
+                  label,
+                  detail:
+                    i === 2 ? (
+                      <button type="button" onClick={() => setFilters((v) => !v)} className="font-medium text-brand hover:underline">
+                        {filters ? "Hide them" : "See them"}
+                      </button>
+                    ) : (
+                      [chipsOf(busy).slice(0, 2).join(" · "), `${chipsOf(busy).length} things I read`, "", "reading 25 people", ""][i] || undefined
+                    ),
+                  extra:
+                    i === 2 && filters ? (
                       <div className="flex flex-wrap gap-1.5 pl-10">
                         {chipsOf(busy).map((c) => (
                           <span key={c} data-chip className="rounded-full bg-violet-soft px-2.5 py-0.5 text-caption text-violet">{c}</span>
                         ))}
                       </div>
-                    )}
-                    {i === 3 && now && (
+                    ) : i === 3 && i === step ? (
                       <span className="ml-10 block h-1 overflow-hidden rounded-full bg-surface-3">
                         <span ref={progress} className="block h-full w-[2%] rounded-full bg-[length:300%_100%] bg-[linear-gradient(90deg,var(--color-aura-1),var(--color-aura-2),var(--color-aura-3),var(--color-aura-4))]" />
                       </span>
-                    )}
-                  </li>
-                );
-              })}
-            </ol>
+                    ) : undefined,
+                }))}
+              />
+            </div>
             <p className="pl-10 text-small text-ink-3">About a minute. The people appear here as soon as LinkedIn answers.</p>
             <div className="mt-auto flex shrink-0 flex-wrap items-center justify-center gap-5 pt-3">
               <div className="flex h-[3.75rem] w-[min(40rem,100%)] items-center gap-3 rounded-full py-2 pl-2.5 pr-2 shadow-float opacity-80 [background:white] ring-1 ring-border">

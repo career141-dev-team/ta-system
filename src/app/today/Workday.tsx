@@ -1,5 +1,6 @@
 "use client";
 
+import { SearchSteps, useSteps } from "../SearchSteps";
 import { Fragment, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import Image from "next/image";
@@ -330,14 +331,15 @@ export default function Workday({ startedAt }: { startedAt: number | null }) {
     setChat((c) => [...c, { id, text: t }]);
     setDraft("");
     setHint("");
-    // ponytail: a stand-in wait; with the backend this is the model's answer.
+    // ponytail: a stand-in wait (long enough for a plan to show its steps); with the
+    // backend this is the model's answer.
     timers.current.push(
       setTimeout(() => {
         // Today's positions in AURA's order, each with its strategies due today.
         const day = ranked.filter((r) => picked[r.d.id]).map((r) => ({ ...r.d, type: picked[r.d.id], todo: r.due.map((x) => x.name) }));
         const reply: Plan | Answer | "na" = told ?? (planning ? planDay(day, said.current) : "na");
         setChat((c) => c.map((m) => (m.id === id ? { ...m, reply } : m)));
-      }, 800),
+      }, planning && !told ? 2400 : 800),
     );
   };
   const change = () => {
@@ -634,16 +636,23 @@ function Thinking() {
     };
   }, []);
   return (
-    <div role="status" className="flex items-center gap-[max(0.875rem,10px)]">
+    <div className="flex items-start gap-[max(0.875rem,10px)]">
       <span className="relative flex size-[max(2.5rem,30px)] shrink-0">
         <span ref={glow} aria-hidden="true" className="absolute inset-0 rounded-full bg-[conic-gradient(from_0deg,var(--color-aura-1),var(--color-aura-2),var(--color-aura-3),var(--color-aura-4),var(--color-aura-1))] opacity-40" />
         <span className="relative flex size-full items-center justify-center overflow-hidden rounded-full bg-black">
           <Image src="/aura-mark.png" alt="" width={56} height={56} className="size-full" />
         </span>
       </span>
-      <p className="text-[max(1rem,13.5px)] text-ink-3">Planning your day…</p>
+      <PlanSteps />
     </div>
   );
+}
+
+/** What AURA does while it plans (20 Nov 2026: steps, like every search); the last waits. */
+const PLAN_STEPS = ["Reading your positions", "Strategies due today", "Placing Midday and EOD", "Writing your plan"];
+function PlanSteps() {
+  const at = useSteps(true, PLAN_STEPS.length - 1, 600);
+  return <SearchSteps className="min-w-0 flex-1" at={at} steps={PLAN_STEPS.map((label) => ({ label }))} />;
 }
 
 const DOT = { brand: "bg-brand", warn: "bg-warn", info: "bg-info", none: "border-[1.5px] border-border-strong bg-white" } as const;

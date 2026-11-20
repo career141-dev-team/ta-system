@@ -1,5 +1,6 @@
 "use client";
 
+import { RunSteps } from "../../SearchSteps";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import Image from "next/image";
 import { useWorkdayGate } from "@/lib/workday";
@@ -383,6 +384,7 @@ export default function ResearchView() {
         <WorkdayBlocked what="mark the research reviewed" className="mt-4" />
       )}
 
+      {busy && <RunSteps steps={RESEARCH_STEPS} every={12000} />}
       {signedIn && !data ? null : run !== "done" && people.length === 0 ? (
         // Not researched yet: what Research does, and the one button.
         <div className="m-auto flex max-w-[34rem] flex-col items-center gap-[max(0.9rem,10px)] py-10 text-center">
@@ -943,3 +945,6 @@ const RunIcon = () => (
     <path d="M20 4v4h-4" />
   </svg>
 );
+
+/** What a Research run does, as one line of steps (20 Nov 2026); about a minute, the last waits. */
+const RESEARCH_STEPS = ["Searching the client and its rivals", "Reading their websites", "Filling the eight answers", "Finding who does this job today"];

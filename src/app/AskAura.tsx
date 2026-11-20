@@ -6,6 +6,7 @@
 // "open X" opens that screen, a search goes to the Database page with the words in its
 // box, and anything else goes to AURA's Today chat (Claude Haiku on the person's desk)
 // and is answered here, never longer than the 20 s the backend allows.
+import { SearchSteps, useSteps } from "./SearchSteps";
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -86,10 +87,7 @@ export function AskReply({ answer, onLeave }: { answer: Asked; onLeave?: () => v
   return (
     <div className="mt-2 rounded-md bg-surface-2 px-3 py-2.5 text-small text-ink">
       {answer.busy ? (
-        <p className="flex items-center gap-2 text-ink-2">
-          <span className="size-2 animate-pulse rounded-full bg-info" aria-hidden="true" />
-          Thinking…
-        </p>
+        <AskSteps />
       ) : (
         <>
           <p>{answer.say}</p>
@@ -122,4 +120,11 @@ export function AskReply({ answer, onLeave }: { answer: Asked; onLeave?: () => v
       )}
     </div>
   );
+}
+
+/** What AURA does while it answers, as one line of steps (20 Nov 2026); the last waits. */
+const ASK_STEPS = ["Read your question", "Looking at your desk", "Writing the answer"];
+function AskSteps() {
+  const at = useSteps(true, ASK_STEPS.length - 1, 700);
+  return <SearchSteps compact at={at} steps={ASK_STEPS.map((label) => ({ label }))} />;
 }
