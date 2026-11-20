@@ -6,15 +6,23 @@ import { DUR, gsap } from "@/lib/gsap";
 import { LIFT_OUT } from "../openings/[id]/liftMenu";
 import { TAS, TODAY, ahead, busy, ta, whenLabel, type Row, type TaId } from "./data";
 
+/** A TA's two letters, read from the name: the id a live TA carries is a long code, never
+ *  something to draw (owner, 20 Nov 2026: it printed over the card). */
+export const lettersOf = (name: string) => {
+  const w = name.replace(/[.]/g, " ").split(/\s+/).filter(Boolean);
+  return ((w[0]?.[0] ?? "") + (w.length > 1 ? w[w.length - 1][0] : "")).toUpperCase() || "?";
+};
+
 /** A TA's initials in their colour. `ring` = given, not accepted yet (amber ring). */
 export function Initials({ id, ring, size = "md" }: { id: TaId; ring?: boolean; size?: "sm" | "md" }) {
   const s = size === "sm" ? "size-[max(1.75rem,22px)] text-[max(0.6875rem,9.5px)]" : "size-[max(2.25rem,28px)] text-caption";
+  const t = TAS.find((x) => x.id === id);
   return (
     <span
-      title={ta(id).name}
-      className={"flex shrink-0 items-center justify-center rounded-full font-semibold " + s + " " + (ring ? "border-2 border-warn bg-surface text-warn" : ta(id).chip)}
+      title={t?.name ?? ""}
+      className={"flex shrink-0 items-center justify-center overflow-hidden rounded-full font-semibold " + s + " " + (ring ? "border-2 border-warn bg-surface text-warn" : t?.chip ?? "bg-surface-2 text-ink-2")}
     >
-      {id}
+      {t ? lettersOf(t.name) : "?"}
     </span>
   );
 }
