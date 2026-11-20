@@ -9,7 +9,7 @@ import { BackButton } from "./PipelineBoard";
 import Toast from "./Toast";
 import { useLiftMenu } from "./liftMenu";
 import { useMe } from "@/lib/role";
-import { candidateCall, door, jobFromAddress, useDoorQuery, useLive, type Answer } from "@/lib/backend";
+import { candidateCall, door, jobFromAddress, useDoorMutation, useDoorQuery, useLive, type Answer } from "@/lib/backend";
 import { matchChips, parseJd, type Requirements } from "./jdLive";
 import { ViewSkeleton } from "@/app/Skeleton";
 
@@ -68,7 +68,7 @@ function LiveJd() {
   const o = got.opening;
   return (
     <JdScreen
-      key={job}
+      key={job + ":" + (o.jd.markdown ?? "")}
       live={{ job, title: o.title ?? "", markdown: o.jd.markdown, approved: o.jd.status === "approved", chips: matchChips(o.requirements, o.locations) }}
     />
   );
@@ -80,7 +80,11 @@ function JdScreen({ live }: { live?: LiveJdData }) {
   const approved = live ? live.approved : sampleApproved;
   const setApproved = setJdApproved;
   const parsed = live ? parseJd(live.markdown, live.title) : null;
-  const canEdit = CAN_WRITE && !live;
+  const canEdit = CAN_WRITE;
+  // A real JD is edited as its own text (lossless); one press of Done saves it through the door.
+  const saveJd = useDoorMutation(door.saveJd);
+  const [rawText, setRawText] = useState("");
+  const [saving, setSaving] = useState(false);
   const me = useMe();
   // Who approved and when - kept in this view for the visit (sample; the backend keeps it).
   const [approvedBy, setApprovedBy] = useState("");
@@ -217,7 +221,27 @@ function JdScreen({ live }: { live?: LiveJdData }) {
               {canEdit && (
                 <button
                   type="button"
-                  onClick={() => {
+                  disabled={saving}
+                  onClick={async () => {
+                    if (live) {
+                      if (!editing) {
+                        setRawText(live.markdown ?? "");
+                        setEditing(true);
+                        return;
+                      }
+                      if (rawText === (live.markdown ?? "")) return setEditing(false);
+                      if (!rawText.trim()) return setToast({ rest: "Add the job description before saving it.", n: Date.now() });
+                      setSaving(true);
+                      try {
+                        const r = (await saveJd({ openingId: live.job, markdown: rawText })) as { ok: boolean; message: string };
+                        setToast(r.ok ? { bold: "JD saved", rest: " - " + r.message, n: Date.now() } : { rest: r.message, n: Date.now() });
+                        if (r.ok) setEditing(false);
+                      } catch {
+                        setToast({ rest: "The JD could not be saved. Try again.", n: Date.now() });
+                      }
+                      setSaving(false);
+                      return;
+                    }
                     if (editing) {
                       // Leaving edit mode drops empty lines.
                       setSections((all) => all.map((x) => (x.list ? { ...x, list: x.list.filter((l) => l.trim()) } : x)));
@@ -225,17 +249,17 @@ function JdScreen({ live }: { live?: LiveJdData }) {
                     setEditing((v) => !v);
                   }}
                   aria-pressed={editing}
-                  title={editing ? "Done editing - changes are already saved" : "Edit the job description"}
+                  title={editing ? (live ? "Save the job description" : "Done editing - changes are already saved") : "Edit the job description"}
                   className={"flex items-center gap-1.5 rounded-full px-3 py-1 text-small font-medium " + (editing ? "bg-brand text-white hover:bg-brand-strong" : "text-ink-2 hover:bg-surface-2 hover:text-ink")}
                 >
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className="size-[1rem]" aria-hidden="true">
                     {editing ? <path d="m5 12.5 4.5 4.5L19 7.5" /> : <path d="M4 20h4L19 9l-4-4L4 16v4ZM13.5 6.5l4 4" />}
                   </svg>
-                  {editing ? "Done" : "Edit"}
+                  {saving ? "Saving..." : editing ? (live ? "Save" : "Done") : "Edit"}
                 </button>
               )}
             </div>
-            {editing ? (
+            {editing && !live ? (
               <>
                 <textarea value={title} onChange={(e) => setTitle(e.target.value)} rows={1} aria-label="Job title" className={EDIT + " field-sizing-content text-h1 font-light text-ink"} />
                 <input value={metaText} onChange={(e) => setMetaText(e.target.value)} aria-label="Client, place, type, reports to - separated by commas" className={EDIT + " text-small text-ink-2"} />
@@ -255,8 +279,16 @@ function JdScreen({ live }: { live?: LiveJdData }) {
           </header>
 
           <div ref={doc} className="flex max-w-[70ch] flex-col gap-[max(1.5rem,14px)] pt-[max(1.5rem,14px)]">
-            {!sections.length && <p className="text-body text-ink-3">No job description yet.</p>}
-            {sections.map((s, i) => (
+            {live && editing && (
+              <textarea
+                value={rawText}
+                onChange={(e) => setRawText(e.target.value)}
+                aria-label="Job description text"
+                className={EDIT + " field-sizing-content min-h-[20rem] font-mono text-small text-ink-2"}
+              />
+            )}
+            {!(live && editing) && !sections.length && <p className="text-body text-ink-3">No job description yet.</p>}
+            {!(live && editing) && sections.map((s, i) => (
               <section key={i} className="flex flex-col gap-2">
                 {editing ? (
                   <input value={s.h} onChange={(e) => setSection(i, { h: e.target.value })} aria-label="Section heading" className={EDIT + " text-caption font-medium uppercase text-ink-3"} />
