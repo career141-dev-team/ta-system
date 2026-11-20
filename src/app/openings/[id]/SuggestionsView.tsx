@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useFilters } from "@/lib/filters";
-import { jobFromAddress } from "@/lib/backend";
+import { door, jobFromAddress, useDoorMutation, useLive, type DoorDone } from "@/lib/backend";
+import { askHh, sendHh, useHh, type HhData, type HhSuggestion } from "./hhLive";
 import Image from "next/image";
 import Link from "next/link";
 import { useSwap } from "@/lib/gsap";
@@ -21,9 +22,10 @@ import { useOpeningView } from "./view";
 // - a person another TA kept is theirs ("Leave this one alone");
 // - Find CV looks in our own database before the person is added again;
 // - what the TA tells AURA steers the next round; Refine runs it.
-// Sample data until the backend.
+// Signed in, the people, rounds and assistant are the old page's and every button
+// runs its old action (hhLive.ts, D8b); signed out, the sample below.
 
-const MAX_ROUNDS = 3;
+const SAMPLE_MAX_ROUNDS = 3;
 /** How long the sample round takes; the real one is a few minutes. */
 const RUN_MS = 2500;
 /** How many new people the sample round finds; 0 shows the "found nobody" reason box. */
@@ -31,7 +33,7 @@ const NEXT_ROUND_FINDS: number = 2;
 /** Sample: false shows the first-round state (nothing suggested yet). */
 const SUGGESTED_YET: boolean = true;
 /** People ticked under Benchmark on Research - they steer the search. Sample. */
-const BENCHMARKED = ["Ruwan Gunawardena"];
+const SAMPLE_BENCHMARKED = ["Ruwan Gunawardena"];
 /** Cards shown before "Show more"; also when search and sort appear. */
 const PAGE = 6;
 
@@ -57,6 +59,8 @@ type Person = {
   /** Which round found them (sample START: 1 if "earlier round", else 2). */
   round?: number;
   keptBy?: string;
+  /** Live: the LinkedIn profile, and whether it can be selected (it needs one). */
+  url?: string | null;
   /** People in our own database who may be this person (Find CV). */
   matches?: { name: string; detail: string }[];
 };
@@ -195,6 +199,23 @@ const START: Person[] = [
 // One person on the list another TA already kept: theirs to work.
 START[5] = { ...START[5], keptBy: "Hasini" };
 
+/** A suggestion from the TA System, in this screen's shape. */
+const liveCard = (s: HhSuggestion): Person => ({
+  id: s.id,
+  name: s.name,
+  title: s.headline,
+  company: s.company ?? "",
+  city: s.location ?? "",
+  // The old tiers: Priority reads as Strong, Screen as Good.
+  fit: s.tier === "priority" ? "strong" : "good",
+  why: [s.why],
+  confirm: s.concern ?? undefined,
+  status: s.status === "dismissed" ? "dropped" : s.status,
+  round: s.round,
+  keptBy: s.takenBy ?? undefined,
+  url: s.url,
+});
+
 type Msg = { from: "aura" | "me"; text: string };
 const FIRST: Msg[] = [
   {
@@ -217,13 +238,39 @@ const PILL =
 export default function SuggestionsView() {
   const { go } = useOpeningView();
   const gate = useWorkdayGate();
-  const [people, setPeople] = useState(SUGGESTED_YET ? START : []);
+  const live = useLive();
+  const [job] = useState(jobFromAddress);
+  const signedIn = live && !!job;
+  const { data, error, reload } = useHh(job, signedIn);
+  const saveCheck = useDoorMutation(door.saveCheck);
+  const S = data?.suggestions;
+  const MAX_ROUNDS = S ? S.maxRounds : SAMPLE_MAX_ROUNDS;
+  const BENCHMARKED = S ? S.picked : SAMPLE_BENCHMARKED;
+  const [people, setPeople] = useState(SUGGESTED_YET && !signedIn ? START : []);
   const [tab, setTab] = useState<Status>("new");
-  const [round, setRound] = useState(SUGGESTED_YET ? 2 : 0);
+  const [round, setRound] = useState(SUGGESTED_YET && !signedIn ? 2 : 0);
   const [running, setRunning] = useState(false);
   // Decisions made since the last round: a round with none runs the same search again.
   const [judged, setJudged] = useState(2); // sample: two picked this round, as AURA says
-  const [chat, setChat] = useState<Msg[]>(FIRST);
+  const [chat, setChat] = useState<Msg[]>(signedIn ? [] : FIRST);
+  // A round that found nobody needs a reason on the workday (the old system's
+  // "Why this search found no profiles" check).
+  const [emptyRound, setEmptyRound] = useState<number | null>(null);
+  const [why, setWhy] = useState("");
+  const saveWhy = () => {
+    if (!why.trim()) return;
+    if (signedIn && job) {
+      void (saveCheck({ jobId: job, kind: "emptySuggestions", reason: why.trim() }) as Promise<DoorDone>)
+        .then((res) => {
+          if (res.ok) setEmptyRound(null);
+          say(res.ok ? "Reason saved for today's checks" : res.message, undefined, !res.ok);
+        })
+        .catch(() => say("Could not save. Check your connection and try again.", undefined, true));
+      return;
+    }
+    setEmptyRound(null);
+    say("Reason saved for today's checks");
+  };
   const [notice, setNotice] = useState<{
     bold?: string;
     rest: string;
@@ -234,6 +281,30 @@ export default function SuggestionsView() {
     setNotice((n) => ({ bold, rest, warn, n: (n?.n ?? 0) + 1 }));
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
+
+  // Each new read replaces the screen (React's pattern for state that follows a value).
+  const [seen, setSeen] = useState<HhData | null>(null);
+  if (data && data !== seen) {
+    setSeen(data);
+    const sg = data.suggestions;
+    setPeople(sg.rows.map(liveCard));
+    setRound(sg.round);
+    setJudged(sg.steered);
+    setChat(sg.chat.map((m) => ({ from: m.role === "user" ? "me" : "aura", text: m.body })));
+    if (sg.needsEmptyReason) setEmptyRound(sg.round);
+  }
+  const [seenError, setSeenError] = useState<string | null>(null);
+  if (error !== seenError) {
+    setSeenError(error);
+    if (error) say(error, undefined, true);
+  }
+  /** One old Suggestions action; its sentence is said, then the page is read again. */
+  const call = async (body: Record<string, unknown>) => {
+    const res = await sendHh({ openingId: job, ...body });
+    say(res.message, undefined, !res.ok);
+    await reload();
+    return res.ok;
+  };
 
   const grid = useRef<HTMLDivElement>(null);
   useSwap(grid, tab);
@@ -272,13 +343,17 @@ export default function SuggestionsView() {
     setMore(0);
   };
 
-  // A round that found nobody needs a reason on the workday (the old system's
-  // "Why this search found no profiles" check).
-  const [emptyRound, setEmptyRound] = useState<number | null>(null);
-  const [why, setWhy] = useState("");
 
   const decide = (x: Person, to: Status) => {
     if (gate) return;
+    if (signedIn) {
+      // Select adds them to Excel Tables (old keepSuggestion); there is no old "back to review".
+      if (to === "new") return say("Bringing someone back to review is not switched on here yet - do it in AURA for now.", undefined, true);
+      if (to === "kept" && !x.url) return say("This suggestion has no LinkedIn profile to add.", undefined, true);
+      setPeople((all) => all.map((y) => (y.id === x.id ? { ...y, status: to } : y)));
+      void call({ do: to === "kept" ? "keep" : "dismiss", suggestionId: x.id });
+      return;
+    }
     setPeople((all) =>
       all.map((y) => (y.id === x.id ? { ...y, status: to } : y)),
     );
@@ -299,6 +374,14 @@ export default function SuggestionsView() {
   const refine = () => {
     if (refineWhy || running) return;
     setRunning(true);
+    if (signedIn) {
+      // A few minutes on the TA System; the button waits for its answer.
+      void call({ do: "suggestions" }).then(() => {
+        setRunning(false);
+        pickTab("new");
+      });
+      return;
+    }
     if (round === 0) {
       // Round 1: the first cards.
       timer.current = setTimeout(() => {
@@ -365,6 +448,12 @@ export default function SuggestionsView() {
   };
 
   const send = (text: string) => {
+    if (signedIn) {
+      // The old assistant reads it: re-sort what is here, or spend a round finding more.
+      setChat((c) => [...c, { from: "me", text }]);
+      void call({ do: "chat", body: text });
+      return;
+    }
     setChat((c) => [
       ...c,
       { from: "me", text },
@@ -463,9 +552,7 @@ export default function SuggestionsView() {
                 value={why}
                 onChange={(e) => setWhy(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key !== "Enter" || !why.trim()) return;
-                  setEmptyRound(null);
-                  say("Reason saved for today's checks");
+                  if (e.key === "Enter") saveWhy();
                 }}
                 maxLength={1000}
                 placeholder="For example: very senior role, few people public on LinkedIn"
@@ -475,10 +562,7 @@ export default function SuggestionsView() {
             <button
               type="button"
               disabled={!why.trim()}
-              onClick={() => {
-                setEmptyRound(null);
-                say("Reason saved for today's checks");
-              }}
+              onClick={saveWhy}
               className="rounded-full bg-brand px-4 py-2 text-small font-medium text-white hover:bg-brand-strong disabled:opacity-40"
             >
               Save the reason
@@ -564,6 +648,21 @@ export default function SuggestionsView() {
                   x={x}
                   blocked={!!gate}
                   onDecide={decide}
+                  find={
+                    signedIn
+                      ? {
+                          find: async () => {
+                            const res = await askHh<{ hits: { candidateId: string; fullName: string; currentTitle: string | null; currentEmployer: string | null; hasCv: boolean }[] }>(
+                              { do: "findCv", openingId: job, suggestionId: x.id },
+                            );
+                            return res.ok
+                              ? { ok: true as const, hits: res.hits.map((h) => ({ id: h.candidateId, name: h.fullName, detail: [h.currentTitle, h.currentEmployer, h.hasCv ? "CV on file" : "no CV yet"].filter(Boolean).join(" · ") })) }
+                              : res;
+                          },
+                          choose: (id) => call({ do: "chooseCv", suggestionId: x.id, candidateId: id }),
+                        }
+                      : undefined
+                  }
                   onLinked={() =>
                     say(" - their CV is linked from the database", x.name)
                   }
@@ -644,11 +743,13 @@ function Card({
   blocked,
   onDecide,
   onLinked,
+  find,
 }: {
   x: Person;
   blocked: boolean;
   onDecide: (x: Person, to: Status) => void;
   onLinked: () => void;
+  find?: Parameters<typeof FindCvButton>[0]["live"];
 }) {
   const fit = FIT[x.fit];
   return (
@@ -656,7 +757,7 @@ function Card({
       <div className="flex items-center gap-2">
         <h3 className="min-w-0 truncate text-h3 font-medium">{x.name}</h3>
         <a
-          href="https://www.linkedin.com/"
+          href={x.url ?? "https://www.linkedin.com/"}
           target="_blank"
           rel="noreferrer"
           aria-label={`${x.name} on LinkedIn`}
@@ -785,6 +886,7 @@ function Card({
           <FindCvButton
             name={x.name}
             matches={x.matches}
+            live={find}
             onLinked={onLinked}
             up
             className="ml-auto"

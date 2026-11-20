@@ -8,6 +8,8 @@ import {
   type KeyboardEvent,
 } from "react";
 import { useMe } from "@/lib/role";
+import { jobFromAddress, useLive } from "@/lib/backend";
+import { cellsOf, changesOf, dayLabel, readReferees, sendReferees, withIds, type LiveReferees } from "./refereeLive";
 import { useWorkdayGate } from "@/lib/workday";
 import { BackButton } from "./PipelineBoard";
 import PillMenu, { type MenuOption } from "./PillMenu";
@@ -23,12 +25,13 @@ import { FIELD_PILL } from "./filters";
 // - a TA writes only their own calls and only today's; past days are read only;
 // - a TA Lead sees every TA's calls, with the TA column filled;
 // - the day's calls go into tonight's End of day email by themselves.
-// Sample data until the backend; a cell is saved when you leave it.
+// Signed in, the sheet is the old page's and saves through its own Save a moment
+// after typing stops (refereeLive.ts, D8c); signed out, the sample below.
 
 type Cells = [string, string, string, string];
 type Result = "positive" | "negative";
 /** `result` is set only when a person flips it; otherwise it is read off the feedback. */
-type Call = { cells: Cells; ta: string; result?: Result };
+type Call = { cells: Cells; ta: string; result?: Result; id?: string; mine?: boolean };
 const COLS = [
   { label: "Company", max: 200, width: "w-[22%]" },
   { label: "Referral", max: 200, width: "w-[19.5%]" },
@@ -38,12 +41,12 @@ const COLS = [
 const MAX_ROWS = 300;
 const MIN_ROWS = 11;
 
-const DAYS: MenuOption[] = [
+const SAMPLE_DAYS: MenuOption[] = [
   { value: "today", label: "Today · Tue 12 Nov" },
   { value: "mon", label: "Mon 11 Nov" },
   { value: "fri", label: "Fri 8 Nov" },
 ];
-const LOCATIONS = ["Colombo", "Kandy"];
+const SAMPLE_LOCATIONS = [{ id: "Colombo", name: "Colombo" }, { id: "Kandy", name: "Kandy" }];
 
 const c = (a: string, b = "", d = "", e = "", ta = "You"): Call => ({
   cells: [a, b, d, e],
@@ -138,16 +141,82 @@ const RESULT_LABEL: Record<Result, string> = {
 export default function RefereeCallsView() {
   const gate = useWorkdayGate();
   const me = useMe();
+  const live = useLive();
+  const [job] = useState(jobFromAddress);
+  const signedIn = live && !!job;
+  // Signed in: the TA System's sheet for the chosen day and location.
+  const [data, setData] = useState<LiveReferees | null>(null);
+  const [fault, setFault] = useState<string | null>(null);
   // TA Support writes their own calls like a TA and sees every TA's rows like a lead.
-  const SEES_WHOLE_JOB = me.lead || me.role === "TA Support";
-  const [day, setDay] = useState("today");
-  const [loc, setLoc] = useState("Colombo");
-  const [grids, setGrids] = useState(START);
+  const SEES_WHOLE_JOB = data ? data.showTa : me.lead || me.role === "TA Support";
+  const DAYS: MenuOption[] = data ? data.days.map((d) => ({ value: d, label: dayLabel(d, data.today) })) : SAMPLE_DAYS;
+  const LOCATIONS = data ? data.locations : SAMPLE_LOCATIONS;
+  const [day, setDay] = useState(signedIn ? "" : "today");
+  const [loc, setLoc] = useState(signedIn ? "" : "Colombo");
+  const [grids, setGrids] = useState<Record<string, Call[]>>(signedIn ? {} : START);
   const key = `${day}|${loc}`;
   const rows = grids[key] ?? [];
-  const today = day === "today";
+  const today = data ? day === data.today : day === "today";
   // Only a TA writes, only their own rows, only today - and after Start workday.
-  const canEdit = today && !me.lead && !gate;
+  // Signed in, the TA System says whether this sheet may be changed (old page rule).
+  const canEdit = (data ? data.canEdit : today && !me.lead) && !gate;
+
+  // When the last change was kept (shown as "Saved h:mm").
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
+  // What the TA System last said it holds of this person's calls, for the next save.
+  const saved = useRef(new Map<string, Cells>());
+  const gridsNow = useRef(grids);
+  useEffect(() => {
+    gridsNow.current = grids;
+  }, [grids]);
+  const load = async (d: string, l: string) => {
+    if (!job) return;
+    const got = await readReferees(job, d, l);
+    if (!got.ok) return setFault(got.message);
+    const v = got.data;
+    const k = `${v.day}|${v.workLocationId ?? ""}`;
+    saved.current = new Map(v.calls.filter((x) => x.addedBy === v.me).map((x) => [x.id, cellsOf(x)]));
+    setData(v);
+    setFault(null);
+    setDay(v.day);
+    setLoc(v.workLocationId ?? "");
+    setGrids({
+      [k]: v.calls.map((x) => ({ id: x.id, mine: x.addedBy === v.me, cells: cellsOf(x), ta: x.addedBy === v.me ? "You" : x.by, result: x.result ?? undefined })),
+    });
+  };
+  useEffect(() => {
+    if (!signedIn) return;
+    const t = setTimeout(() => void load("", ""), 0);
+    return () => clearTimeout(t);
+    // The first read only; later reads follow a day or location choice.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signedIn]);
+  // A moment after typing stops, today's changes go in one old Save.
+  const saving = useRef(false);
+  const save = async () => {
+    if (!job || saving.current) return;
+    const ch = changesOf(saved.current, gridsNow.current[key] ?? []);
+    if (!ch.any) return;
+    saving.current = true;
+    const res = await sendReferees({
+      do: "save", openingId: job, workLocationId: loc, day,
+      changes: JSON.stringify({ add: ch.add, update: ch.update, remove: ch.remove }),
+    });
+    saving.current = false;
+    if (!res.ok || !res.calls) return setFault(res.message);
+    const before = new Set(saved.current.keys());
+    saved.current = new Map(res.calls.map((x) => [x.id, cellsOf(x)]));
+    setGrids((g) => ({ ...g, [key]: withIds(g[key] ?? [], res.calls!, before) }));
+    setFault(null);
+    setSavedAt(new Date());
+  };
+  useEffect(() => {
+    if (!signedIn || !canEdit) return;
+    const t = setTimeout(() => void save(), 1200);
+    return () => clearTimeout(t);
+    // Saves follow what is on the sheet.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grids, key, signedIn, canEdit]);
   const calls = rows.filter(isCall).length;
   // Always room to keep typing: the minimum, or one empty row past the last.
   const shownRows = Math.min(MAX_ROWS, Math.max(MIN_ROWS, rows.length + 1));
@@ -165,9 +234,7 @@ export default function RefereeCallsView() {
   // The grid takes the keyboard only once a person has clicked or typed in it, so
   // opening the screen does not take the arrows from the bottom bar.
   const [active, setActive] = useState(false);
-  // When the last change was kept (shown as "Saved h:mm"), and the row just deleted
-  // with where it was, for Undo.
-  const [savedAt, setSavedAt] = useState<Date | null>(null);
+  // The row just deleted, with where it was, for Undo.
   const [removed, setRemoved] = useState<{
     key: string;
     at: number;
@@ -178,11 +245,11 @@ export default function RefereeCallsView() {
 
   const cell = (r: number, col: number) => rows[r]?.cells[col] ?? "";
   const write = (changes: { r: number; c: number; v: string }[]) => {
-    setSavedAt(new Date());
+    if (!signedIn) setSavedAt(new Date());
     setGrids((g) => {
       const next = [...(g[key] ?? [])];
       for (const { r, c: col, v } of changes) {
-        if (r >= MAX_ROWS) continue;
+        if (r >= MAX_ROWS || next[r]?.mine === false) continue;
         while (next.length <= r)
           next.push({ cells: ["", "", "", ""], ta: "You" });
         const cells = [...next[r].cells] as Cells;
@@ -196,12 +263,12 @@ export default function RefereeCallsView() {
     });
   };
   const setRows = (f: (rows: Call[]) => Call[]) => {
-    setSavedAt(new Date());
+    if (!signedIn) setSavedAt(new Date());
     setGrids((g) => ({ ...g, [key]: f(g[key] ?? []) }));
   };
   const deleteRow = (r: number) => {
     const row = rows[r];
-    if (!row) return;
+    if (!row || row.mine === false) return;
     setTyped(null);
     setRows((all) => all.filter((_, i) => i !== r));
     setRemoved({ key, at: r, row });
@@ -211,13 +278,25 @@ export default function RefereeCallsView() {
     const { key: k, at: i, row } = removed;
     setGrids((g) => {
       const next = [...(g[k] ?? [])];
-      next.splice(Math.min(i, next.length), 0, row);
+      // Saved again as a new call: the TA System already let the old one go.
+      next.splice(Math.min(i, next.length), 0, signedIn ? { ...row, id: undefined } : row);
       return { ...g, [k]: next };
     });
     setRemoved(null);
   };
   // A person's own sort of the call, over the one read off the feedback.
-  const flip = (r: number) =>
+  const flip = (r: number) => {
+    const x = rows[r];
+    if (signedIn && x) {
+      if (!x.id || !job) return setFault("This call is still saving - try again in a moment.");
+      const value = resultOf(x) === "positive" ? "negative" : "positive";
+      void sendReferees({ do: "result", openingId: job, callId: x.id, field: "result", value }).then((res) => {
+        if (!res.ok) return setFault(res.message);
+        setFault(null);
+        setGrids((g) => ({ ...g, [key]: (g[key] ?? []).map((y) => (y.id === x.id ? { ...y, result: value } : y)) }));
+      });
+      return;
+    }
     setRows((all) =>
       all.map((x, i) =>
         i === r
@@ -228,6 +307,7 @@ export default function RefereeCallsView() {
           : x,
       ),
     );
+  };
   // The Undo is offered for a short while, as a toast would be.
   useEffect(() => {
     if (!removed) return;
@@ -335,6 +415,7 @@ export default function RefereeCallsView() {
           onChange={(d) => {
             commit();
             setDay(d);
+            if (signedIn) void load(d, loc);
             setAt({ r: 0, c: 0 });
             setActive(false);
           }}
@@ -343,7 +424,7 @@ export default function RefereeCallsView() {
           pillClass={FIELD_PILL + " font-medium"}
         />
         <div role="tablist" aria-label="Work location" className="flex gap-1">
-          {LOCATIONS.map((l) => (
+          {LOCATIONS.map(({ id: l, name }) => (
             <button
               key={l}
               type="button"
@@ -352,6 +433,7 @@ export default function RefereeCallsView() {
               onClick={() => {
                 commit();
                 setLoc(l);
+                if (signedIn) void load(day, l);
                 setAt({ r: 0, c: 0 });
                 setActive(false);
               }}
@@ -362,7 +444,7 @@ export default function RefereeCallsView() {
                   : "text-ink-2 hover:bg-surface-2 hover:text-ink")
               }
             >
-              {l}
+              {name}
             </button>
           ))}
         </div>
@@ -382,7 +464,7 @@ export default function RefereeCallsView() {
         ref={grid}
         tabIndex={0}
         role="grid"
-        aria-label={`Referee calls, ${loc}, ${DAYS.find((d) => d.value === day)?.label}`}
+        aria-label={`Referee calls, ${LOCATIONS.find((x) => x.id === loc)?.name ?? ""}, ${DAYS.find((d) => d.value === day)?.label}`}
         aria-readonly={!canEdit}
         onKeyDown={onGridKey}
         className="mt-[max(1.4rem,12px)] min-h-0 flex-1 overflow-auto rounded-lg border border-border bg-surface outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
@@ -571,7 +653,11 @@ export default function RefereeCallsView() {
           {calls > 0 &&
             ` · ${rows.filter((x) => isCall(x) && resultOf(x) === "positive").length} positive`}
         </span>
-        {removed?.key === key ? (
+        {fault ? (
+          <span role="status" className="ml-auto text-small text-danger max-md:ml-0">
+            {fault}
+          </span>
+        ) : removed?.key === key ? (
           <span
             role="status"
             className="ml-auto flex items-center gap-2 text-small text-ink-2 max-md:ml-0"
