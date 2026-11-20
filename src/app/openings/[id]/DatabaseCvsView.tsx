@@ -600,12 +600,13 @@ export default function DatabaseCvsView() {
             </svg>
           </button>
         </form>
-        <p className="flex items-center gap-4 rounded-full bg-ink px-5 py-3 text-small text-white max-md:hidden">
+        {/* The keys only do something with people in the list (owner, 20 Nov 2026: the box showed on an empty one). */}
+        {shown.length > 0 && <p className="flex items-center gap-4 rounded-full bg-ink px-5 py-3 text-small text-white max-md:hidden">
           <span className="flex items-center gap-2"><kbd className={keyHint}>↑ ↓</kbd> move</span>
           <span className="flex items-center gap-2"><kbd className={keyHint}>S</kbd> shortlist</span>
           <span className="flex items-center gap-2"><kbd className={keyHint}>X</kbd> not for this job</span>
           <span className="flex items-center gap-2"><kbd className={keyHint}>Space</kbd> open the CV</span>
-        </p>
+        </p>}
       </div>
       {undo && (
         <div role="status" className="fixed bottom-[max(4rem,48px)] left-1/2 z-[90] flex max-w-[calc(100vw-24px)] -translate-x-1/2 items-center gap-3 rounded-full bg-ink px-[max(1.3rem,14px)] py-[max(0.7rem,8px)] text-[max(0.9125rem,13.5px)] text-white shadow-float">

@@ -197,6 +197,8 @@ export const door = {
   team: makeFunctionReference<"query">("ui/team:team"),
   setTeam: makeFunctionReference<"mutation">("ui/team:setTeam"),
   setTeamStage: makeFunctionReference<"mutation">("ui/team:setStage"),
+  placements: makeFunctionReference<"query">("ui/placements:status"),
+  setTarget: makeFunctionReference<"mutation">("ui/placements:setTarget"),
   setFollowUp: makeFunctionReference<"mutation">("ui/opening:setFollowUp"),
   setQuestions: makeFunctionReference<"mutation">("ui/manage:setQuestions"),
   scoops: makeFunctionReference<"query">("ui/opening:scoops"),

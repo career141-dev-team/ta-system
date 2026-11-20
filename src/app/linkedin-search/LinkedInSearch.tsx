@@ -688,12 +688,13 @@ export default function LinkedInSearch() {
               )}
               {auraBar("Type or speak — tell AURA what to change")}
               </div>
-              <p className="flex items-center gap-4 rounded-full bg-ink px-5 py-3 text-small text-white max-md:hidden">
+              {/* The keys only do something with people in the list (owner, 20 Nov 2026: the box showed on an empty one). */}
+              {rows.length > 0 && <p className="flex items-center gap-4 rounded-full bg-ink px-5 py-3 text-small text-white max-md:hidden">
                 <span className="flex items-center gap-2"><kbd className={keyHint}>↑ ↓</kbd> move</span>
                 <span className="flex items-center gap-2"><kbd className={keyHint}>S</kbd> save</span>
                 <span className="flex items-center gap-2"><kbd className={keyHint}>X</kbd> not a fit</span>
                 <span className="flex items-center gap-2"><kbd className={keyHint}>Space</kbd> open the profile</span>
-              </p>
+              </p>}
             </div>
           </>
         )}
