@@ -433,3 +433,25 @@ export function readyText(checks: { label: string; done: boolean }[]): string {
   const more = open.length > 2 ? ` and ${open.length - 2} more` : "";
   return `${checks.length - open.length} of ${checks.length} checks done; still open: ${names.join(", ")}${more}. Ready for the EOD?`;
 }
+
+// ----- Phase 5: the summary, carry-over and close (docs/AURA-DAY-AGENT.md section 10) -----
+// The summary is plain counting over the plan's own tasks and history - no model, so it
+// is always true. Open work is carried, never marked done.
+
+export type SumTask = { title: string; state: TaskState; doneBy?: string | null; reason?: string | null; history?: { what: string }[] };
+
+export function summaryOf(tasks: SumTask[]): string {
+  const counted = tasks.filter((t) => t.state !== "skipped");
+  const done = counted.filter((t) => t.state === "done");
+  const byAura = done.filter((t) => t.doneBy === "system").length;
+  const skipped = tasks.filter((t) => t.state === "skipped");
+  const carried = tasks.filter((t) => t.state === "carried" || OPEN(t));
+  const moved = tasks.filter((t) => (t.history ?? []).some((h) => h.what.includes("→"))).length;
+  const names = (list: SumTask[], why = false) =>
+    list.slice(0, 3).map((t) => (why && t.reason ? `${t.title} (${t.reason})` : t.title)).join(", ") + (list.length > 3 ? ` and ${list.length - 3} more` : "");
+  const parts = [`${done.length} of ${counted.length} done${byAura ? ` (${byAura} ticked by AURA)` : ""}.`];
+  if (skipped.length) parts.push(`Skipped: ${names(skipped, true)}.`);
+  if (moved) parts.push(`${moved} moved during the day.`);
+  parts.push(carried.length ? `Carried to tomorrow: ${names(carried)}.` : "Nothing carried to tomorrow.");
+  return parts.join(" ");
+}
