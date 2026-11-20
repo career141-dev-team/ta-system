@@ -60,11 +60,22 @@ export const DEFAULT_DEPS: ResearchDeps = {
 };
 
 /**
+ * The client's industry as a search word, or "" when it is a placeholder (20 Nov):
+ * a client filed under "Other" searched for '"John Keells" Other' and
+ * "top Other companies in Sri Lanka", which only added noise.
+ */
+export function industryWord(industry: string): string {
+  const t = industry.trim();
+  return /^(other|others|n\/?a|none|unknown|-+)$/i.test(t) ? "" : t;
+}
+
+/**
  * The first six searches of every Research run, in this order: the client,
  * its LinkedIn page, where it is, its competitors, its market, and the role.
  * Shared with the search benchmark so it measures the searches Research makes.
  */
 export function clientQueries(name: string, industry: string, where: string, title: string, anchor = ""): string[] {
+  industry = industryWord(industry);
   // `anchor` is the client's own domain when the desk gave it: "SQ" alone
   // finds a dozen companies, "SQ" next to sqsolutions.lk finds the one.
   const a = anchor ? ` ${anchor}` : "";
@@ -77,7 +88,7 @@ export function clientQueries(name: string, industry: string, where: string, tit
     `"${name}"${a} site:linkedin.com/company`,
     `"${name}"${a} about head office ${where}`,
     `"${name}"${a} competitors ${where}`.trim(),
-    `top ${industry || "companies"} companies in ${where}`,
+    `top ${industry ? `${industry} ` : ""}companies in ${where}`,
     `"${title}" jobs ${where}`,
   ];
 }
@@ -277,7 +288,7 @@ export async function researchViaSearch(input: ResearchInput, given: ResearchDep
   };
   const name = input.clientName.trim();
   if (!name || /^(the client|confidential|unknown|internal)\b/i.test(name)) return { ok: false, reason: "client_not_searchable" };
-  const industry = input.industry.trim();
+  const industry = industryWord(input.industry);
   const where = input.where.trim() || "Sri Lanka";
   const hints = clientHints(input.clientNotes ?? "");
   // Put in front of every model call that decides who the client is.
