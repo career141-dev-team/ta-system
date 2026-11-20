@@ -84,7 +84,11 @@ export const job = (id: string) => JOBS.find((j) => j.id === id);
 
 /** The week on the team board (sample week; Tuesday is today). */
 export const WEEK = ["Mon 11", "Tue 12", "Wed 13", "Thu 14", "Fri 15"];
-export const TODAY = 1;
+export let TODAY = 1;
+/** Signed in: the real week's today (strategyLive.ts). */
+export function setToday(n: number) {
+  TODAY = n;
+}
 const dayName = (d: number) => WEEK[d].split(" ")[0];
 /** "Today", "Fri", "Wed–Thu". */
 export const whenLabel = (from: number, to = from) => (from === to ? (from === TODAY ? "Today" : dayName(from)) : `${dayName(from)}–${dayName(to)}`);

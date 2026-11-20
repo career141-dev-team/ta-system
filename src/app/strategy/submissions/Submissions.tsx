@@ -6,6 +6,9 @@ import { useSwap } from "@/lib/gsap";
 import Toast from "../../openings/[id]/Toast";
 import { job, minutesAgo, setRows, ta, useRows, type Row } from "../data";
 import { CheckIcon, Initials } from "../ui";
+import { usePlannerLive } from "../strategyLive";
+import { useLive } from "@/lib/backend";
+import { CardsSkeleton } from "../../Skeleton";
 
 // S4, new submissions (owner's design, 14 Nov 2026): what TAs submitted, newest first,
 // read one at a time - the TA's note, their proof pictures, what it brought into the
@@ -15,6 +18,21 @@ import { CheckIcon, Initials } from "../ui";
 const key = (x: Row) => x.job + "|" + x.name;
 
 export default function Submissions() {
+  // Signed in: the old planner is read first (strategyLive.ts, D10a); the sample otherwise.
+  const on = useLive();
+  const lv = usePlannerLive(on);
+  if (on && !lv.ready)
+    return lv.error ? (
+      <main className="flex flex-1 items-center justify-center px-6 text-center text-small text-ink-2">{lv.error}</main>
+    ) : (
+      <main className="flex min-h-0 flex-1 flex-col px-11 py-10">
+        <CardsSkeleton />
+      </main>
+    );
+  return <List />;
+}
+
+function List() {
   const rows = useRows();
   // The list is the ones unread when the page opened; read ones stay until you leave.
   const [ids] = useState(() =>

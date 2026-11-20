@@ -9,8 +9,11 @@ import { useSwap } from "@/lib/gsap";
 import Count from "../Count";
 import Toast from "../openings/[id]/Toast";
 import { useLiftMenu } from "../openings/[id]/liftMenu";
-import { JOBS, TAS, groupsOf, namesOf, useCatalogue, counts, jobStatus, liveRows, saveRow, setRows, ta, useRows, type Job, type Row, type State, type TaId } from "./data";
+import { JOBS, TAS, groupsOf, namesOf, useCatalogue, counts, jobStatus, liveRows, ta, useRows, type Job, type Row, type State, type TaId } from "./data";
 import { AssignPanel, CheckIcon, Initials } from "./ui";
+import { putRow, usePlannerLive } from "./strategyLive";
+import { useLive } from "@/lib/backend";
+import { CardsSkeleton } from "../Skeleton";
 
 // S1 Board and S2 Matrix (owner's designs, 14 Nov 2026): the TA Lead's Strategy
 // Planner. Three counts on top (jobs not planned, strategies waiting for a TA to
@@ -31,6 +34,21 @@ type Sort = (typeof SORTS)[number][0];
 const plan = (j: Job) => `/strategy/plan?job=${j.id}`;
 
 export default function Planner() {
+  // Signed in: the old planner is read first (strategyLive.ts, D10a); the sample otherwise.
+  const on = useLive();
+  const lv = usePlannerLive(on);
+  if (on && !lv.ready)
+    return lv.error ? (
+      <main className="flex flex-1 items-center justify-center px-6 text-center text-small text-ink-2">{lv.error}</main>
+    ) : (
+      <main className="flex min-h-0 flex-1 flex-col px-11 py-10">
+        <CardsSkeleton />
+      </main>
+    );
+  return <Board />;
+}
+
+function Board() {
   const rows = useRows();
   const c = counts(rows);
   const router = useRouter();
@@ -297,18 +315,17 @@ function Matrix({ jobs, rows, say }: { jobs: Job[]; rows: Row[]; say: (bold: str
           onClose={() => setOpen(null)}
           onAssign={(a) => {
             const was = cell(open.job, open.name);
-            saveRow({ job: open.job.id, name: open.name, state: "waiting", ta: a.ta, when: a.when, days: a.days, assigned: "today" });
+            putRow(rows, open.job.id, open.name, { job: open.job.id, name: open.name, state: "waiting", ta: a.ta, when: a.when, days: a.days, assigned: "today" });
             setOpen(null);
             say(open.name, was?.ta && was.ta !== a.ta ? ` moved to ${ta(a.ta).first}, who gets a bell` : ` given to ${ta(a.ta).first}, who gets a bell`);
           }}
           onStrike={(na) => {
-            if (na) saveRow({ job: open.job.id, name: open.name, state: "na" });
-            else setRows((rs) => rs.filter((x) => !(x.job === open.job.id && x.name === open.name)));
+            putRow(rows, open.job.id, open.name, na ? { job: open.job.id, name: open.name, state: "na" } : undefined);
             setOpen(null);
             say(open.name, na ? " struck for this job" : " can be used again");
           }}
           onRemove={() => {
-            setRows((rs) => rs.filter((x) => !(x.job === open.job.id && x.name === open.name)));
+            putRow(rows, open.job.id, open.name, undefined);
             setOpen(null);
             say(open.name, " taken off this job");
           }}

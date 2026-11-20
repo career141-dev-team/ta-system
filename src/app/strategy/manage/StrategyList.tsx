@@ -4,7 +4,10 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Toast from "../../openings/[id]/Toast";
 import { BackButton } from "../../openings/[id]/PipelineBoard";
-import { band, setCatalogue, setRows, useCatalogue, useRows, type Entry } from "../data";
+import { band, setRows, useCatalogue, useRows, type Entry } from "../data";
+import { putEntry, usePlannerLive } from "../strategyLive";
+import { useLive } from "@/lib/backend";
+import { CardsSkeleton } from "../../Skeleton";
 
 // The strategy list (owner 14 Nov 2026: "add, rename or retire strategies"; old system
 // /strategy/manage). Add one under a heading; rename, describe or move it in place;
@@ -16,6 +19,21 @@ import { band, setCatalogue, setRows, useCatalogue, useRows, type Entry } from "
 const FIELD = "rounded-sm border border-border bg-surface px-3 py-2 text-small text-ink outline-none focus:border-brand";
 
 export default function StrategyList() {
+  // Signed in: the old planner is read first (strategyLive.ts, D10a); the sample otherwise.
+  const on = useLive();
+  const lv = usePlannerLive(on);
+  if (on && !lv.ready)
+    return lv.error ? (
+      <main className="flex flex-1 items-center justify-center px-6 text-center text-small text-ink-2">{lv.error}</main>
+    ) : (
+      <main className="flex min-h-0 flex-1 flex-col px-11 py-10">
+        <CardsSkeleton />
+      </main>
+    );
+  return <Manage />;
+}
+
+function Manage() {
   const cat = useCatalogue();
   const rows = useRows();
   const router = useRouter();
@@ -38,21 +56,21 @@ export default function StrategyList() {
     if (!n) return setErr("Give the strategy a name.");
     if (n.length > 120) return setErr("Keep the name under 120 characters.");
     if (clash(n)) return setErr("That name is already on the list.");
-    setCatalogue((c) => [...c, { name: n, group: group.trim() || "Other", description: desc.trim(), active: true }]);
+    void putEntry(undefined, { name: n, group: group.trim() || "Other", description: desc.trim(), active: true });
     setName("");
     setDesc("");
     setErr("");
     say(n, " added to the list");
   };
   const save = (was: Entry, next: Entry) => {
-    setCatalogue((c) => c.map((e) => (e.name === was.name ? next : e)));
+    void putEntry(was, next);
     // ponytail: rows follow the new name; with the backend they point at the strategy's id.
     if (next.name !== was.name) setRows((rs) => rs.map((r) => (r.name === was.name ? { ...r, name: next.name } : r)));
     say(next.name, " saved");
   };
   const retire = (e: Entry, on: boolean) => {
     if (on && clash(e.name)) return say(e.name, " — a strategy with that name is already on the list");
-    setCatalogue((c) => c.map((x) => (x.name === e.name ? { ...x, active: on } : x)));
+    void putEntry(e, { ...e, active: on });
     say(e.name, on ? " is back on the list" : " retired — jobs already using it keep it");
   };
 
