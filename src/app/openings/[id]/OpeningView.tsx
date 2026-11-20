@@ -114,12 +114,8 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
   // keeps it for as long as this opening is open.
   const [opened, setOpened] = useState<View[]>(["overview"]);
 
-  // The views this person really opened: the board of tabs shows a real picture only
-  // of those, and a light sketch of the rest - nothing is loaded just to draw a picture.
-  const visited = useRef(new Set<View>());
   const show = useCallback((next: View) => {
     current.current = next;
-    visited.current.add(next);
     if (next !== "overview") lastIn[setOf(next)] = next;
     setView(next);
     setOpened((o) => (o.includes(next) ? o : [...o, next]));
@@ -199,7 +195,7 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
     // job's name with an ATS | Headhunting switch that swaps the tiles in place, a tab
     // never opened is a light sketch (no data is read to draw it), and on a phone Back
     // simply goes to the job page. Pick one and it opens; Esc goes back where you were.
-    const board = (set: ViewSet, replace: boolean) => {
+    const board = async (set: ViewSet, replace: boolean) => {
       const left = current.current;
       const stage = stageRef.current;
       if (left === "overview" || !stage) return;
@@ -211,6 +207,22 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
       // come back it misses the overview"); its list on the opening page does not have it.
       const keys: View[] = [...(set === "hh" ? (["hh-overview"] as View[]) : []), ...rows.map(([, v]) => v)];
       if (setOf(left) === set && !keys.includes(left)) keys.unshift(left);
+      // Every tab of the set shows its real page (owner, 20 Nov 2026: "remove the skeleton,
+      // show the real pages when they come back"): any tab not drawn yet is mounted now
+      // and waited for (a second and a half at most, until its own loading shimmer is
+      // gone), so the board never shows a grey sketch where a page should be.
+      const drawn = () => keys.every((k) => stage.querySelector(`[data-panel="${k}"]`));
+      const settled = () => keys.every((k) => { const pk = stage.querySelector(`[data-panel="${k}"]`); return !!pk && !pk.querySelector(".shimmer"); });
+      if (!settled()) {
+        if (!drawn()) setOpened((o) => [...o, ...keys.filter((k) => !o.includes(k))]);
+        const t0 = performance.now();
+        await new Promise<void>((done) => {
+          const tick = () => (settled() || performance.now() - t0 > 1500 ? done() : void setTimeout(tick, 60));
+          setTimeout(tick, 60);
+        });
+        // Left for another view meanwhile: no board.
+        if (current.current !== left) return;
+      }
       const r = here.getBoundingClientRect();
       const box = { left: r.left, top: r.top, width: r.width, height: r.height };
       const tiles = [
@@ -218,7 +230,7 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
         ...keys.map((k) => {
           const label = rows.find(([, v]) => v === k)?.[0] ?? viewLabel(k);
           const p = stage.querySelector<HTMLElement>(`[data-panel="${k}"]`);
-          return { key: k, label, rect: box, ...(p && visited.current.has(k) ? copyOf(p, here.className) : sketch(here.className)) };
+          return { key: k, label, rect: box, ...(p ? copyOf(p, here.className) : sketch(here.className)) };
         }),
       ];
       const title = stage.querySelector("h1")?.textContent?.trim() || "This job";
@@ -233,7 +245,7 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
               { key: "hh", label: "Headhunting", on: set === "hh" },
             ]
           : undefined,
-        onSet: (k) => board(k as ViewSet, true),
+        onSet: (k) => void board(k as ViewSet, true),
         tip: "Tip: the bar at the bottom switches tabs in one click",
         replace,
       });
@@ -243,7 +255,7 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
       // A phone is too narrow for a board of pictures: Back goes to the job page.
       if (window.innerWidth < 768) return list();
       // Two frames, so a view that just opened has drawn before its picture is taken.
-      requestAnimationFrame(() => requestAnimationFrame(() => board(setOf(current.current), false)));
+      requestAnimationFrame(() => requestAnimationFrame(() => void board(setOf(current.current), false)));
     };
     window.addEventListener(LIST, list);
     window.addEventListener(SHOW_TABS, back);
@@ -254,13 +266,15 @@ export default function OpeningView({ overview }: { overview: ReactNode }) {
       window.removeEventListener("popstate", pop);
     };
   }, [show, go]);
-  // While someone works in a view, the one view the ATS | Headhunting switch would
-  // land on is drawn quietly in the background, so the switch is instant. Only that one:
-  // the board of tabs no longer draws every tab (owner's review, 18 Nov 2026 - with the
-  // backend each drawn view reads its data, and a picture is not worth that).
+  // While someone works in a view, the other tabs of its set (and the one view the
+  // ATS | Headhunting switch would land on) are drawn quietly in the background once the
+  // screen is idle, so Back's board of real pages and the switch are instant (owner,
+  // 20 Nov 2026: the board shows the real pages, not sketches).
   useEffect(() => {
     if (view === "overview") return;
-    const keys: View[] = [landingOf(setOf(view) === "hh" ? "ats" : "hh")].filter((v) => CAN_SOURCE || setOf(v) !== "hh");
+    const set = setOf(view);
+    const mine: View[] = [...(set === "hh" ? (["hh-overview"] as View[]) : []), ...(set === "hh" ? HH_ROWS : ATS_ROWS).map(([, v]) => v)];
+    const keys: View[] = [...mine, landingOf(set === "hh" ? "ats" : "hh")].filter((v) => CAN_SOURCE || setOf(v) !== "hh");
     const idle = window.requestIdleCallback?.bind(window) ?? ((f: () => void) => window.setTimeout(f, 600));
     const cancel = window.cancelIdleCallback?.bind(window) ?? window.clearTimeout;
     const id = idle(() => setOpened((o) => (keys.every((v) => o.includes(v)) ? o : [...o, ...keys.filter((v) => !o.includes(v))])));

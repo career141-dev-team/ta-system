@@ -323,15 +323,40 @@ export default function DatabaseView() {
 
       {/* The chats */}
       <aside className={(chats ? "flex" : "hidden") + " w-[23.4%] min-w-[max(15rem,200px)] shrink-0 flex-col gap-[max(0.6rem,6px)] border-r border-border px-[max(1.75rem,14px)] pb-6 max-md:w-auto max-md:border-b max-md:border-r-0 max-md:pb-3 max-md:pt-4 " + (picked ? "pt-[max(4.7rem,52px)]" : "pt-[max(2.25rem,20px)]")}>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-[max(2rem,24px)]">
           <button
             type="button"
             onClick={newSearch}
-            className="flex h-[max(3.1rem,40px)] items-center gap-2 rounded-full bg-brand px-[max(1rem,12px)] text-body font-medium text-white hover:bg-brand-strong"
+            className="flex h-[max(3.1rem,40px)] min-w-0 items-center gap-2 whitespace-nowrap rounded-full bg-brand px-[max(1rem,12px)] text-body font-medium text-white hover:bg-brand-strong"
           >
             <PlusIcon />
             New search
           </button>
+
+          {/* What to search (owner 14 Nov 2026: not inside the typing bar; 20 Nov: "right in
+              front of the New search button, like a toggle, only icons"). Two icons in one
+              soft pill; the one in use is lifted white. The words live in the tooltip and the
+              screen-reader label. Picking one starts a fresh search in that mode. */}
+          <div role="radiogroup" aria-label="What to search" className="flex shrink-0 items-center gap-0.5 rounded-full bg-surface-2 p-[3px] md:ml-auto">
+            {MODES.map(([k, label, icon, hint]) => (
+              <button
+                key={k}
+                type="button"
+                role="radio"
+                aria-checked={mode === k}
+                aria-label={label}
+                title={`${label} - ${hint}`}
+                onClick={() => {
+                  if (mode === k) return;
+                  setMode(k);
+                  newSearch();
+                }}
+                className={"flex size-[max(2.4rem,32px)] items-center justify-center rounded-full transition-colors " + (mode === k ? "bg-white text-brand shadow-sm" : "text-ink-3 hover:text-ink")}
+              >
+                {icon}
+              </button>
+            ))}
+          </div>
 
           <button
             type="button"
@@ -342,31 +367,6 @@ export default function DatabaseView() {
             {showHistory ? "Hide chats" : "Chats"}
           </button>
         </div>
-        {/* What to search (owner 14 Nov 2026: not inside the typing bar, and each one
-            must say what it is for). Picking one starts a fresh search in that mode. */}
-        <div role="radiogroup" aria-label="What to search" className="mt-[max(1.25rem,10px)] flex flex-col gap-1 max-md:flex-row max-md:flex-wrap">
-          <p className="mb-1 text-caption font-medium uppercase text-ink-3 max-md:hidden">Search for</p>
-          {MODES.map(([k, label, icon, hint]) => (
-            <button
-              key={k}
-              type="button"
-              role="radio"
-              aria-checked={mode === k}
-              onClick={() => {
-                if (mode === k) return;
-                setMode(k);
-                newSearch();
-              }}
-              className={"flex items-start gap-2.5 rounded-sm px-2.5 py-2 text-left transition-colors max-md:items-center max-md:rounded-full max-md:py-1.5 " + (mode === k ? "bg-brand-soft text-brand" : "text-ink-2 hover:bg-surface-2 hover:text-ink")}
-            >
-              <span className="mt-0.5 shrink-0 max-md:mt-0">{icon}</span>
-              <span className="min-w-0">
-                <span className="block text-small font-medium">{label}</span>
-                <span className={"block text-caption max-md:hidden " + (mode === k ? "text-brand/80" : "text-ink-3")}>{hint}</span>
-              </span>
-            </button>
-          ))}
-        </div>
         <nav
           aria-label="Chats"
           className={
@@ -376,7 +376,7 @@ export default function DatabaseView() {
         >
           {(["today", "earlier"] as const).map((when) => (
             <div key={when} className="mb-2 flex flex-col gap-1">
-              <p className="mb-1 text-caption font-medium uppercase text-ink-3">
+              <p className="mb-1 px-[max(0.9rem,10px)] text-[max(0.8125rem,11.5px)] font-medium uppercase tracking-wide text-ink-3">
                 {when}
               </p>
               {threads
@@ -527,7 +527,7 @@ function ChatItem({
         }}
         maxLength={80}
         aria-label="Chat name"
-        className="rounded-md bg-surface px-[max(0.9rem,10px)] py-[max(0.6rem,7px)] text-small text-ink outline-none ring-2 ring-brand/30"
+        className="rounded-md bg-surface px-[max(0.9rem,10px)] py-[max(0.7rem,8px)] text-body text-ink outline-none ring-2 ring-brand/30"
       />
     );
   return (
@@ -547,7 +547,7 @@ function ChatItem({
         aria-current={on ? "true" : undefined}
         title={title}
         className={
-          "min-w-0 flex-1 truncate px-[max(0.9rem,10px)] py-[max(0.6rem,7px)] text-left text-small " +
+          "min-w-0 flex-1 truncate px-[max(0.9rem,10px)] py-[max(0.7rem,8px)] text-left text-body " +
           (on ? "text-ink" : "text-ink-2 group-hover:text-ink")
         }
       >

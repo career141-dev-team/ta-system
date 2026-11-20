@@ -117,9 +117,12 @@ export default async function OpeningPage({ params }: PageProps<"/openings/[id]"
 
       {/* The lists keep their size and the page scrolls to the cards under them (owner,
           18 Nov 2026: "add these after, the user scrolls to see them, do not change the
-          tab"). Not positioned, so the Status / Stage menus above open over it. */}
+          tab"). Not positioned, so the Status / Stage menus above open over it. 
+          20 Nov 2026: the lists card now takes the whole height on screen (it used to stop
+          5.75rem short, so the cards under it peeked in cut off) and is a little taller
+          (rows a little roomier); the cards below are reached by scrolling. */}
       <div className="mt-12.5 flex flex-col md:min-h-0 md:flex-1 md:overflow-y-auto md:overscroll-contain">
-      <div className="relative grid rounded-lg bg-white max-md:flex-none md:h-[calc(100%-5.75rem)] md:max-h-[44.125rem] md:min-h-[17rem] md:flex-none md:grid-cols-2">
+      <div className="relative grid rounded-lg bg-white max-md:flex-none md:h-full md:max-h-[52rem] md:min-h-[36rem] md:flex-none md:grid-cols-2">
         <Column name="ATS" items={ATS} base={base} first inPlace />
         {CAN_SOURCE && <Column name="Headhunting" items={HEADHUNTING} base={base} inPlace />}
         {CAN_SOURCE && (

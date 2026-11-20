@@ -84,39 +84,81 @@ const ICON: Record<Icon, { path: ReactNode; tint: string }> = {
   bell: { path: <path d="M6 9a6 6 0 1 1 12 0c0 5 2 6.5 2 6.5H4S6 14 6 9ZM10 19a2 2 0 0 0 4 0" />, tint: "bg-surface-2 text-ink-2" },
 };
 
+/** The same message several times (a health check that fires every few hours, a voice note
+ *  per sender...) becomes one row with a count (owner, 20 Nov 2026: the bell was a wall of
+ *  the same line, cut off at the edge). Unread if any one of them is. */
+type Group = { a: Alert; ids: string[]; count: number; unread: boolean };
+function groupAlerts(list: Alert[]): Group[] {
+  const by = new Map<string, Group>();
+  for (const a of list) {
+    const key = `${a.title}|${a.body}`;
+    const g = by.get(key);
+    if (g) {
+      g.ids.push(a.id);
+      g.count++;
+      g.unread ||= a.unread;
+    } else by.set(key, { a, ids: [a.id], count: 1, unread: a.unread });
+  }
+  return [...by.values()];
+}
+
+/** "Problem: no WhatsApp has arrived on +94..." -> a Problem tag and the sentence after it. */
+function splitProblem(title: string): { problem: boolean; text: string } {
+  const m = /^problem:\s*/i.exec(title);
+  if (!m) return { problem: false, text: title };
+  const rest = title.slice(m[0].length);
+  return { problem: true, text: rest.charAt(0).toUpperCase() + rest.slice(1) };
+}
+
+const SHOWN = 5;
+
 export function Bell() {
   const [open, setOpen] = useState<Place | null>(null);
+  const [more, setMore] = useState<Record<string, boolean>>({});
   const alerts = useAlerts();
   const unread = alerts.filter((a) => a.unread).length;
   const close = () => setOpen(null);
 
-  const row = (a: Alert) => (
-    <li key={a.id} data-row>
-      <Link
-        href={a.href}
-        prefetch={false}
-        onClick={() => {
-          markRead(a.id);
-          close();
-        }}
-        className={"flex items-center gap-3.5 rounded-sm px-3 py-[max(0.75rem,8px)] transition-colors hover:bg-surface-2 " + (a.unread ? "bg-canvas" : "")}
-      >
-        <span className={"flex size-[max(2.375rem,30px)] shrink-0 items-center justify-center rounded-full " + ICON[a.icon].tint}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-[45%]" aria-hidden="true">
-            {ICON[a.icon].path}
-          </svg>
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-small font-medium text-ink">{a.title}</span>
-          <span className="block truncate text-caption text-ink-3">{a.body}</span>
-        </span>
-        {a.unread && <span aria-label="Not read yet" className="size-2 shrink-0 rounded-full bg-brand" />}
-      </Link>
-    </li>
-  );
-  const groups: [string, Alert[]][] = [
-    ["Needs you", alerts.filter((a) => a.needs)],
-    ["Updates", alerts.filter((a) => !a.needs)],
+  const row = (g: Group) => {
+    const { a } = g;
+    const { problem, text } = splitProblem(a.title);
+    return (
+      <li key={a.id} data-row>
+        <Link
+          href={a.href}
+          prefetch={false}
+          onClick={() => {
+            g.ids.forEach((id) => markRead(id));
+            close();
+          }}
+          className={"flex items-start gap-3.5 rounded-sm px-3 py-[max(0.8rem,9px)] transition-colors hover:bg-surface-2 " + (g.unread ? "bg-canvas" : "")}
+        >
+          <span className={"mt-0.5 flex size-[max(2.375rem,30px)] shrink-0 items-center justify-center rounded-full " + (problem ? "bg-warn-soft text-warn" : ICON[a.icon].tint)}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-[45%]" aria-hidden="true">
+              {problem ? <path d="M12 9v4m0 4h.01M10.3 4.3 2.8 17.5A2 2 0 0 0 4.5 20.5h15a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0Z" /> : ICON[a.icon].path}
+            </svg>
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="flex items-start gap-2">
+              <span className="text-small font-medium leading-snug text-ink [overflow-wrap:anywhere]">{text}</span>
+              {g.count > 1 && (
+                <span title={`${g.count} times`} className="mt-px shrink-0 rounded-full bg-surface-3 px-2 py-0.5 text-chip font-medium text-ink-2">
+                  ×{g.count}
+                </span>
+              )}
+            </span>
+            <span className="mt-0.5 block text-caption leading-snug text-ink-3 [overflow-wrap:anywhere]">{a.body}</span>
+          </span>
+          {g.unread && <span aria-label="Not read yet" className="mt-2 size-2 shrink-0 rounded-full bg-brand" />}
+        </Link>
+      </li>
+    );
+  };
+  // A problem asks for someone to look at it, so it sits under "Needs you" too.
+  const asks = (a: Alert) => a.needs || splitProblem(a.title).problem;
+  const groups: [string, Group[]][] = [
+    ["Needs you", groupAlerts(alerts.filter(asks))],
+    ["Updates", groupAlerts(alerts.filter((a) => !asks(a)))],
   ];
 
   return (
@@ -140,18 +182,29 @@ export function Bell() {
         <Pop pos={open} onClose={close} label="Alerts" className="w-[max(32rem,300px)] p-[max(1.125rem,10px)] pt-[max(1.5rem,14px)]">
           <div className="mb-1 flex items-baseline px-3">
             <h2 className="text-h2 text-ink">Alerts</h2>
+            {unread > 0 && <span className="ml-2 text-small text-ink-3">{unread} new</span>}
             <button type="button" disabled={!unread} onClick={() => markRead()} className="ml-auto text-small text-ink-3 hover:text-ink disabled:opacity-50">
               Mark all read
             </button>
           </div>
-          {groups.map(([name, list]) =>
-            list.length ? (
+          {groups.map(([name, list]) => {
+            if (!list.length) return null;
+            const all = !!more[name];
+            const shown = all ? list : list.slice(0, SHOWN);
+            return (
               <section key={name} className="mb-1">
-                <p className="mb-1.5 mt-3 px-3 text-caption font-medium uppercase text-ink-3">{name}</p>
-                <ul className="flex flex-col gap-1.5">{list.map(row)}</ul>
+                <p className="mb-1.5 mt-3 px-3 text-caption font-medium uppercase text-ink-3">
+                  {name} <span className="font-normal normal-case">· {list.length}</span>
+                </p>
+                <ul className="flex flex-col gap-1.5">{shown.map(row)}</ul>
+                {list.length > SHOWN && (
+                  <button type="button" onClick={() => setMore((m) => ({ ...m, [name]: !all }))} className="mt-1.5 rounded-full px-3 py-1.5 text-small font-medium text-brand-strong hover:bg-surface-2">
+                    {all ? "Show fewer" : `Show ${list.length - SHOWN} more`}
+                  </button>
+                )}
               </section>
-            ) : null,
-          )}
+            );
+          })}
           {!alerts.length && <p className="px-3 py-6 text-center text-small text-ink-3">Nothing new.</p>}
         </Pop>
       )}

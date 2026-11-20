@@ -9,8 +9,8 @@ import { DECLINE_REASONS, REJECT_REASONS, type Needs, type StageDef } from "./pi
 export type Ask = { needs: Needs | "job"; name: string; from: string; to: StageDef; jobs?: { id: string; label: string }[] };
 
 const FIELD =
-  "h-[max(2.4rem,33px)] w-full rounded-xl border border-border bg-white px-3 text-[max(0.85rem,12.5px)] text-ink outline-none focus-visible:ring-2 focus-visible:ring-brand/30";
-const LABEL = "block text-[max(0.75rem,11px)] font-medium text-ink-2";
+  "h-[max(2.4rem,33px)] w-full rounded-xl border border-border bg-white px-3 text-[max(0.9125rem,13.5px)] text-ink outline-none focus-visible:ring-2 focus-visible:ring-brand/30";
+const LABEL = "block text-[max(0.8125rem,12px)] font-medium text-ink-2";
 
 const day = (iso: string) => new Date(iso + "T00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 
@@ -97,9 +97,9 @@ export default function MoveForm({
           {title}
         </h2>
         {needs === "job" && (
-          <p className="mt-1 text-[max(0.8rem,11.5px)] text-ink-2">They go into TA Follow-Up there, and stay on this job too.</p>
+          <p className="mt-1 text-[max(0.8625rem,12.5px)] text-ink-2">They go into TA Follow-Up there, and stay on this job too.</p>
         )}
-        <p className={"mt-1 flex-wrap items-center gap-x-1.5 text-[max(0.8rem,11.5px)] text-ink-2 " + (needs === "job" ? "hidden" : "flex")}>
+        <p className={"mt-1 flex-wrap items-center gap-x-1.5 text-[max(0.8625rem,12.5px)] text-ink-2 " + (needs === "job" ? "hidden" : "flex")}>
           {needs !== "reason" && <span className="font-semibold text-ink">{name}</span>}
           <span>{from}</span>
           <span aria-hidden="true">→</span>
@@ -132,7 +132,7 @@ export default function MoveForm({
                 {(declined ? DECLINE_REASONS : REJECT_REASONS).map((r, i) => (
                   <label
                     key={r}
-                    className="cursor-pointer rounded-full border border-border px-[max(0.9rem,11px)] py-[max(0.4rem,5px)] text-[max(0.8rem,11.5px)] text-ink transition-colors hover:bg-surface-2 has-[:checked]:border-brand has-[:checked]:bg-brand has-[:checked]:text-white has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand/30"
+                    className="cursor-pointer rounded-full border border-border px-[max(0.9rem,11px)] py-[max(0.4rem,5px)] text-[max(0.8625rem,12.5px)] text-ink transition-colors hover:bg-surface-2 has-[:checked]:border-brand has-[:checked]:bg-brand has-[:checked]:text-white has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand/30"
                   >
                     {/* One `required` covers the group: the form will not save with none picked. */}
                     <input type="radio" name="reason" value={r} required autoFocus={i === 0} onChange={() => setReason(r)} className="sr-only" />
@@ -250,10 +250,10 @@ export default function MoveForm({
                     const f = e.target.files?.[0];
                     e.target.setCustomValidity(f && f.size > 10 * 1048576 ? "The offer letter must be under 10 MB." : "");
                   }}
-                  className="mt-1 block w-full text-[max(0.8rem,11.5px)] text-ink file:mr-3 file:h-[max(2.2rem,30px)] file:cursor-pointer file:rounded-full file:border-0 file:bg-surface-2 file:px-4 file:text-ink"
+                  className="mt-1 block w-full text-[max(0.8625rem,12.5px)] text-ink file:mr-3 file:h-[max(2.2rem,30px)] file:cursor-pointer file:rounded-full file:border-0 file:bg-surface-2 file:px-4 file:text-ink"
                 />
               </label>
-              <p className="text-[max(0.75rem,11px)] text-ink-2">After this, mark the opening Placed in its Status menu.</p>
+              <p className="text-[max(0.8125rem,12px)] text-ink-2">After this, mark the opening Placed in its Status menu.</p>
             </>
           )}
         </div>
@@ -262,14 +262,14 @@ export default function MoveForm({
           <button
             type="button"
             onClick={onCancel}
-            className="h-[max(2.4rem,33px)] rounded-full border border-border px-[max(1.2rem,15px)] text-[max(0.85rem,12.5px)] text-ink hover:bg-surface-2"
+            className="h-[max(2.4rem,33px)] rounded-full border border-border px-[max(1.2rem,15px)] text-[max(0.9125rem,13.5px)] text-ink hover:bg-surface-2"
           >
             Cancel
           </button>
           <button
             type="submit"
             className={
-              "h-[max(2.4rem,33px)] rounded-full px-[max(1.4rem,17px)] text-[max(0.85rem,12.5px)] font-medium text-white " +
+              "h-[max(2.4rem,33px)] rounded-full px-[max(1.4rem,17px)] text-[max(0.9125rem,13.5px)] font-medium text-white " +
               (to.name === "Rejected" ? "bg-danger hover:bg-danger" : "bg-brand hover:bg-brand-strong")
             }
           >
