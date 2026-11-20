@@ -7,7 +7,6 @@ import { DUR, EASE, gsap, useExit, useSwap, useTabGlide } from "@/lib/gsap";
 import { useMe } from "@/lib/role";
 import { door, useDoorQuery, useLive, type DoorOpenings } from "@/lib/backend";
 import { clientOf, createFields, readOpeningForm, sendOpenings, type OpeningForm } from "./openingsLive";
-import Count from "@/app/Count";
 import { useFilters } from "@/lib/filters";
 import { NoResults, ResultLine } from "@/app/FilterBits";
 import Toast from "./[id]/Toast";
@@ -151,7 +150,8 @@ export default function OpeningsView() {
                 }
               >
                 {t === "all" ? "All" : STATUS[t].label}
-                <Count n={n} className="text-ink-3" />
+                {/* Plain numbers: counting up on every visit read as still loading (owner, 20 Nov). */}
+                <span className="tabular-nums text-ink-3">{n}</span>
               </button>
             );
           })}
@@ -206,7 +206,7 @@ export default function OpeningsView() {
               <section key={l} aria-label={STATUS[l].label} className="flex flex-col gap-[max(1.125rem,12px)]">
                 <div className="flex items-center gap-3">
                   <h2 className="text-h2 font-normal text-ink">{STATUS[l].label}</h2>
-                  {loadingList ? <span className="shimmer h-4 w-6 rounded-sm" /> : <Count n={list.length} className="text-body text-ink-3" />}
+                  {loadingList ? <span className="shimmer h-4 w-6 rounded-sm" /> : <span className="tabular-nums text-body text-ink-3">{list.length}</span>}
                   {tab === "all" && list.length > 4 && (
                     <button type="button" onClick={() => setTab(l)} className="ml-auto flex items-center gap-1.5 text-small text-ink-2 hover:text-ink">
                       See more
