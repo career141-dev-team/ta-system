@@ -22,7 +22,7 @@ import { repo } from "@/data/store";
 import { EMPTY_CRITERIA } from "@/data/types";
 import { can } from "@/lib/auth";
 import { booleanScore, booleanTerms } from "@/lib/booleanScore";
-import { cachedEngineSearch, deskCriteria, engineSearch, quickEngineSearch, type EngineSearch } from "@/lib/engineSearch";
+import { cachedEngineSearch, deskCriteria, engineSearch, incompleteProblem, quickEngineSearch, type EngineSearch } from "@/lib/engineSearch";
 import { conversationText, describe, parseBoolean, parseConversation } from "@/lib/query";
 import { keywordRetrieve } from "@/lib/retrieve";
 import { currentUser } from "@/lib/session";
@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
     const h = hits.get(r.candidate.id);
     return personOf(r.candidate, h ? h.score : null, h?.reason ?? "");
   });
-  if (engine?.incomplete?.length) problem = "Part of the search could not run just now, so some matching people may be missing. Search again in a moment.";
+  if (engine?.incomplete?.length) problem = incompleteProblem(engine.incomplete);
   else if (!problem && !total) problem = "Nothing in the database matched that search.";
   return answer(req, {
     ok: true,

@@ -81,6 +81,16 @@ export interface EngineSearch {
 }
 
 /**
+ * The warning for an answer with a route down, naming which part (20 Nov): it
+ * said only "part of the search", so nobody could tell the word search timing
+ * out from the meaning search failing without the server's log.
+ */
+export function incompleteProblem(incomplete: string[]): string {
+  const parts = [...new Set(incomplete.map((d) => (d.startsWith("meaning") ? "the meaning search" : d.startsWith("company") ? "the company search" : "the word search")))];
+  return `Part of the search could not run just now (${parts.join(" and ")}), so some matching people may be missing. Search again in a moment.`;
+}
+
+/**
  * Ask the engine.
  *
  * ── Which criteria are passed, and why not all of them ──────────────────────
