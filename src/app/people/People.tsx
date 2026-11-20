@@ -6,6 +6,8 @@ import PillMenu, { type MenuOption } from "../openings/[id]/PillMenu";
 import { useRole, useSignedInPerson } from "@/lib/role";
 import { useFilters, matchesAll } from "@/lib/filters";
 import { NoResults } from "@/app/FilterBits";
+import { useLive } from "@/lib/backend";
+import { sendPeople, usePeopleLive } from "./peopleLive";
 
 // People and roles (owner 18 Nov 2026: "get the details from old AURA, with our design
 // guidelines"). What the old /people page does for people (src/app/people/page.tsx and
@@ -17,7 +19,8 @@ import { NoResults } from "@/app/FilterBits";
 // Owner 19 Nov 2026: the desk settings are off this page, and the page is drawn the way
 // TA Track is - a light H1 with white pill controls on the right, then big white cards:
 // the desk on the left, the numbers, invites and older accounts on the right.
-// ponytail: sample rows; with the backend, the desk's users and Clerk's invites.
+// Signed in (R1, 20 Nov), the desk, invites and older accounts are old AURA's own
+// (/api/ui/people) and every button runs the old /people action; signed out, the sample.
 
 type RoleKey = "ta" | "ta_support" | "ta_lead" | "director" | "ops" | "admin" | "viewer" | "client";
 const ROLES: { value: RoleKey; label: string; note: string }[] = [
@@ -131,14 +134,25 @@ const RoleChip = ({ role }: { role: RoleKey }) => (
 export default function People() {
   const role = useRole();
   const signed = useSignedInPerson();
-  // user.manage: an admin only. Signed in, the account says so; on the sample, the Lead view stands in.
-  const canEdit = signed ? signed.title === "Admin" : role === "Lead" || role === "Admin";
-  // ponytail: the sample's own row; with the backend, the signed-in person's id.
-  const meId = "u1";
+  const live = useLive();
+  const { data, error, reload } = usePeopleLive(live);
+  // user.manage: an admin only. Live, the TA System says so; on the sample, the Lead view stands in.
+  const canEdit = live ? !!data?.canEdit : signed ? signed.title === "Admin" : role === "Lead" || role === "Admin";
+  const meId = live ? data?.me ?? "" : "u1";
 
-  const [people, setPeople] = useState(SAMPLE);
-  const [invites, setInvites] = useState(INVITES);
-  const [others, setOthers] = useState(OTHERS);
+  const [samplePeople, setPeople] = useState(SAMPLE);
+  const [sampleInvites, setInvites] = useState(INVITES);
+  const [sampleOthers, setOthers] = useState(OTHERS);
+  const asRole = (r: string | null): RoleKey => (ROLES.some((x) => x.value === r) ? (r as RoleKey) : "viewer");
+  const people: Person[] = live
+    ? (data?.people ?? []).map((p) => ({ id: p.id, name: p.name, email: p.email, phone: p.phone, role: asRole(p.role), country: p.workCountry, inbox: p.routingEmail, active: p.active }))
+    : samplePeople;
+  const invites: Invite[] = live
+    ? (data?.invites ?? []).map((i) => ({ id: i.id, email: i.email, role: asRole(i.role ?? "ta"), sent: new Date(i.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) }))
+    : sampleInvites;
+  const others: Other[] = live
+    ? (data?.accounts ?? []).map((a) => ({ email: a.email, name: a.fullName, oldRole: a.oldAppRole, canSignIn: a.canSignInHere, records: a.duplicates }))
+    : sampleOthers;
   // Search, role group and "who have left" are kept for the visit; Reset clears them
   // (src/lib/filters.ts, the one filter rule across screens).
   const { f, set: setF, reset, active: nFilters } = useFilters("people", { q: "", group: "all" as Group, showGone: false as boolean }, ["showGone"]);
@@ -153,6 +167,14 @@ export default function People() {
   const [toast, setToast] = useState<{ key: number; bold?: string; rest: string; warn?: boolean } | null>(null);
   const seq = useRef(0);
   const say = (bold: string | undefined, rest: string, warn?: boolean) => setToast({ key: ++seq.current, bold, rest, warn });
+  // Live: one old /people action, its own sentence said, then the desk read again.
+  const run = async (body: Record<string, string>) => {
+    const res = await sendPeople(body);
+    say(undefined, res.message, !res.ok);
+    void reload();
+    return res.ok;
+  };
+  const personBody = (p: Person) => ({ name: p.name.trim(), email: p.email.trim(), phone: p.phone.trim(), routingEmail: p.inbox.trim(), role: p.role, workCountry: p.country });
 
   const onDesk = people.filter((p) => p.active);
   const matching = people.filter((p) => IN_GROUP[group](p.role) && matchesAll(q, p.name, p.email, p.phone, ROLE_LABEL[p.role]));
@@ -177,26 +199,40 @@ export default function People() {
     if (!isEmail(draft.email)) return say(undefined, "That email does not look right.", true);
     if (people.some((x) => x.email.toLowerCase() === draft.email.trim().toLowerCase()) || invites.some((i) => i.email === draft.email.trim()))
       return say(undefined, "That person is already on the desk or invited.", true);
+    if (live) {
+      void run({ do: "invite", email: draft.email.trim(), role: draft.role }).then((ok) => ok && setPanel(null));
+      return;
+    }
     setInvites((all) => [{ id: `i${Date.now()}`, email: draft.email.trim(), role: draft.role, sent: "today" }, ...all]);
     setPanel(null);
     say(draft.email.trim(), ` invited as ${ROLE_LABEL[draft.role]}. They get an email to set up their sign-in.`);
   };
   const add = () => {
-    const why = check(draft, false);
+    // The TA System signs people in by email, so live it needs one.
+    const why = check(draft, live);
     if (why) return say(undefined, why, true);
+    if (live) {
+      void run({ do: "add", ...personBody(draft) }).then((ok) => ok && setPanel(null));
+      return;
+    }
     setPeople((all) => [{ ...draft, id: `u${Date.now()}`, name: draft.name.trim(), inbox: draft.inbox.trim() || `${draft.name.trim().split(" ")[0].toLowerCase()}.jobs@career141.com` }, ...all]);
     setPanel(null);
     say(draft.name.trim(), " added to the desk.");
   };
   const save = () => {
     if (!editing) return;
-    const why = check(editing, false);
+    const why = check(editing, live);
     if (why) return say(undefined, why, true);
+    if (live) {
+      void run({ do: "update", userId: editing.id, ...personBody(editing) }).then((ok) => ok && setEditing(null));
+      return;
+    }
     setPeople((all) => all.map((p) => (p.id === editing.id ? editing : p)));
     setEditing(null);
     say(editing.name, " saved.");
   };
   const setActive = (p: Person, on: boolean) => {
+    if (live) return void run({ do: "active", userId: p.id, active: on ? "1" : "0" });
     setPeople((all) => all.map((x) => (x.id === p.id ? { ...x, active: on } : x)));
     say(p.name, on ? " is back on the desk." : " is marked as left. They come off every picker; their history stays.");
   };
@@ -305,7 +341,9 @@ export default function People() {
               </div>
             )}
 
-            {shown.length ? (
+            {live && !data ? (
+              <p className="py-6 text-small text-ink-3" role="status">{error ?? "Reading the desk…"}</p>
+            ) : shown.length ? (
               <ul className="-mx-3 flex flex-col">
                 {shown.map((p) =>
                   editing?.id === p.id ? (
@@ -373,7 +411,11 @@ export default function People() {
                         <span className="block truncate text-small font-medium text-ink">{i.email}</span>
                         <span className="block text-caption text-ink-3">{ROLE_LABEL[i.role]} · sent {i.sent}</span>
                       </span>
-                      <button type="button" onClick={() => { setInvites((all) => all.filter((x) => x.id !== i.id)); say(i.email, " invite revoked."); }} className={ROW_BTN + " hover:text-danger"}>
+                      <button type="button" onClick={() => {
+                        if (live) return void run({ do: "revoke", invitationId: i.id });
+                        setInvites((all) => all.filter((x) => x.id !== i.id));
+                        say(i.email, " invite revoked.");
+                      }} className={ROW_BTN + " hover:text-danger"}>
                         Revoke
                       </button>
                     </li>
@@ -402,6 +444,7 @@ export default function People() {
                           type="button"
                           onClick={() => {
                             const r = otherRole[a.email] ?? "ta";
+                            if (live) return void run({ do: "add", name: a.name, email: a.email, role: r });
                             setOthers((all) => all.filter((x) => x.email !== a.email));
                             setPeople((all) => [{ id: `u${Date.now()}`, name: a.name, email: a.email, phone: "", role: r, country: "Sri Lanka", inbox: "", active: true }, ...all]);
                             say(a.name, ` now has access as ${ROLE_LABEL[r]}.`);
