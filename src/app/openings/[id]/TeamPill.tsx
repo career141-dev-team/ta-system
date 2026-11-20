@@ -5,7 +5,8 @@
 // makes one primary; each TA's work mode (100% / Follow-up / Add-on) is here too,
 // and a TA can change only their own. Signed in only: a preview has no team.
 // Every change saves at once through ui/team and the list follows by itself.
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { DUR, gsap } from "@/lib/gsap";
 import { door, jobFromAddress, useDoorMutation, useDoorQuery, useLive, type Answer, type DoorDone } from "@/lib/backend";
 import { useLiftMenu } from "./liftMenu";
 
@@ -24,6 +25,21 @@ export function TeamPill({ pillClass }: { pillClass: string }) {
   const { open, setOpen, root, panel, shown } = useLiftMenu();
   const [why, setWhy] = useState("");
   const [busy, setBusy] = useState(false);
+  // GSAP: a TA who joins rises into the list; one who is taken off slides out first.
+  const list = useRef<HTMLUListElement>(null);
+  const seen = useRef<string[] | null>(null);
+  const idKey = got?.ok ? got.members.map((m) => m.userId).join(",") : "";
+  useEffect(() => {
+    if (!got?.ok) return;
+    const now = got.members.map((m) => m.userId);
+    const before = seen.current;
+    seen.current = now;
+    if (!before || !list.current) return;
+    const fresh = now.filter((i) => !before.includes(i));
+    const rows = fresh.map((i) => list.current!.querySelector(`[data-member="${i}"]`)).filter(Boolean);
+    if (rows.length) gsap.fromTo(rows, { opacity: 0, y: -8 }, { opacity: 1, y: 0, duration: DUR.fast, stagger: 0.05, clearProps: "transform,opacity" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idKey]);
   if (!live || !job) return null;
   if (!got) return <span className={pillClass}><span className="shimmer inline-block h-[0.8em] w-[8ch] rounded-md" /></span>;
   if (!got.ok) return null;
@@ -34,7 +50,10 @@ export function TeamPill({ pillClass }: { pillClass: string }) {
     setBusy(true);
     const d = (await call()) as DoorDone | undefined;
     setBusy(false);
-    if (d && !d.ok) setWhy(d.message);
+    if (d && !d.ok) {
+      setWhy(d.message);
+      if (list.current) gsap.to(list.current.children, { opacity: 1, x: 0, duration: DUR.fast });
+    }
   };
   const save = (ids: string[], primaryId: string) => run(() => setTeam({ openingId: job, userIds: ids, primaryId }));
   const ids = members.map((m) => m.userId);
@@ -53,12 +72,12 @@ export function TeamPill({ pillClass }: { pillClass: string }) {
       </button>
       {shown && (
         <div ref={panel} className="absolute left-0 top-full z-30 mt-2 w-[min(22rem,90vw)] rounded-md border border-border bg-surface p-3 shadow-float">
-          <ul className="grid gap-1.5">
+          <ul ref={list} className="grid gap-1.5">
             {members.map((m) => {
               const isPrimary = m.userId === primary;
               const mayStage = canEdit || m.userId === mine;
               return (
-                <li key={m.userId} role="menuitem" className="flex items-center gap-2">
+                <li key={m.userId} data-member={m.userId} role="menuitem" className="flex items-center gap-2">
                   <span className="grid size-6 shrink-0 place-items-center rounded-full bg-surface-3 text-caption font-medium">{letters(m.name)}</span>
                   <span className="min-w-0 flex-1 truncate text-small">{m.name}</span>
                   {isPrimary ? (
@@ -72,7 +91,12 @@ export function TeamPill({ pillClass }: { pillClass: string }) {
                   </select>
                   {canEdit && (
                     <button type="button" aria-label={`Take ${m.name} off`} disabled={busy || members.length < 2}
-                      onClick={() => { const rest = ids.filter((i) => i !== m.userId); void save(rest, isPrimary ? rest[0]! : primary); }}
+                      onClick={(e) => {
+                        const rest = ids.filter((i) => i !== m.userId);
+                        const row = e.currentTarget.closest("li");
+                        if (row) gsap.to(row, { opacity: 0, x: 10, duration: DUR.fast, ease: "power2.in" });
+                        void save(rest, isPrimary ? rest[0]! : primary);
+                      }}
                       className="text-ink-3 hover:text-danger disabled:opacity-30">×</button>
                   )}
                 </li>
