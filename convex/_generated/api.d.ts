@@ -300,6 +300,8 @@ import type * as ui_manage from "../ui/manage.js";
 import type * as ui_aura from "../ui/aura.js";
 import type * as ui_auraLedger from "../ui/auraLedger.js";
 import type * as ui_auraRules from "../ui/auraRules.js";
+import type * as ui_brief from "../ui/brief.js";
+import type * as ui_briefRules from "../ui/briefRules.js";
 import type * as ui_day from "../ui/day.js";
 import type * as ui_desk from "../ui/desk.js";
 import type * as ui_email from "../ui/email.js";
@@ -621,6 +623,8 @@ declare const fullApi: ApiFromModules<{
   "ui/aura": typeof ui_aura;
   "ui/auraLedger": typeof ui_auraLedger;
   "ui/auraRules": typeof ui_auraRules;
+  "ui/brief": typeof ui_brief;
+  "ui/briefRules": typeof ui_briefRules;
   "ui/day": typeof ui_day;
   "ui/desk": typeof ui_desk;
   "ui/email": typeof ui_email;
@@ -876,6 +880,8 @@ declare const fullApi: ApiFromModules<{
   "ui/aura": typeof ui_aura;
   "ui/auraLedger": typeof ui_auraLedger;
   "ui/auraRules": typeof ui_auraRules;
+  "ui/brief": typeof ui_brief;
+  "ui/briefRules": typeof ui_briefRules;
   "ui/day": typeof ui_day;
   "ui/desk": typeof ui_desk;
   "ui/email": typeof ui_email;
