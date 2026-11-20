@@ -197,7 +197,19 @@ eq("send: the ChatGPT rule is kept", sendSrc.includes("checkResearchSubmission")
   const ids = new Set(["j1"]);
   eq("aura: daily limit is $5", AI_DAY_LIMIT_USD, 5);
   eq("aura: Haiku 5.5 price (1M in + 1M out = $0.60)", Math.round(costOf(1_000_000, 1_000_000) * 100) / 100, 0.6);
-  eq("aura: a plan keeps its steps", cleanReply({ kind: "plan", headline: "Close SAP by lunch", steps: [{ at: "9:00", what: "Review", where: "j1", tone: "brand" }] }, ids), { kind: "plan", headline: "Close SAP by lunch", steps: [{ at: "9:00", what: "Review", tone: "brand", where: "j1" }] });
+  eq("aura: a plan keeps its steps", cleanReply({ kind: "plan", headline: "Close SAP by lunch", steps: [{ at: "9:00", what: "Review", where: "j1", tone: "brand" }] }, ids), { kind: "plan", headline: "Close SAP by lunch", steps: [{ at: "9:00", start: 540, minutes: 30, what: "Review", tone: "brand", where: "j1" }] });
+  // Plan my day (D11 item 2, 20 Nov): every step carries a start and a length the saved
+  // plan uses - before, a live plan was saved with every task at midnight.
+  const { clockMin } = await import("../convex/ui/auraRules");
+  eq("plan time: 24-hour, 12-hour, pm and a bare afternoon hour", ["14:30", "9:00", "2:30 pm", "2:30", "12:30", "9.15", "noon"].map(clockMin), [870, 540, 870, 870, 750, 555, null]);
+  const dayPlan = cleanReply({ kind: "plan", headline: "h", steps: [
+    { at: "14:30", minutes: 60, what: "Interview", tone: "info" },
+    { at: "9:00", minutes: 400, what: "Review six suggestions", tone: "brand" },
+    { at: "soon", what: "Has no time", tone: "none" },
+    { at: "10:00", minutes: 20, what: "Chase two candidates", tone: "warn" },
+  ] }, ids) as { steps: { at: string; start: number; minutes: number; what: string }[] };
+  eq("plan: steps in time order, a step without a time dropped", dayPlan.steps.map((s) => [s.at, s.start]), [["9:00", 540], ["10:00", 600], ["2:30", 870]]);
+  eq("plan: a length never runs into the next step; the last keeps its own", dayPlan.steps.map((s) => s.minutes), [60, 20, 60]);
   eq("aura: an unknown position id is dropped, not trusted", (cleanReply({ kind: "answer", say: "x", rows: [{ main: "a", where: "evil" }] }, ids) as { rows: { where?: string }[] }).rows[0].where, undefined);
   eq("aura: a bad tone becomes none", (cleanReply({ kind: "plan", headline: "h", steps: [{ at: "9", what: "w", tone: "<b>" }] }, ids) as { steps: { tone: string }[] }).steps[0].tone, "none");
   eq("aura: an answer without words is refused", cleanReply({ kind: "answer", say: " " }, ids), null);
