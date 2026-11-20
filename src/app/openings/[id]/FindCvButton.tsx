@@ -9,6 +9,7 @@ export default function FindCvButton({
   name,
   matches,
   onLinked,
+  live,
   up = false,
   className = "",
 }: {
@@ -16,6 +17,11 @@ export default function FindCvButton({
   /** People in our database who may be this person; sample until the backend. */
   matches?: { name: string; detail: string }[];
   onLinked: () => void;
+  /** Live (D8b): ask the TA System who this may be, and link the one picked. */
+  live?: {
+    find: () => Promise<{ ok: true; hits: { id: string; name: string; detail: string }[] } | { ok: false; message: string }>;
+    choose: (id: string) => Promise<boolean>;
+  };
   /** Open the panel above the button (cards low on the screen). */
   up?: boolean;
   className?: string;
@@ -25,7 +31,9 @@ export default function FindCvButton({
   const [linked, setLinked] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
-  const hits = matches ?? [];
+  const [found, setFound] = useState<{ id: string; name: string; detail: string }[] | null>(null);
+  const [fault, setFault] = useState<string | null>(null);
+  const hits = live ? found ?? [] : (matches ?? []).map((m) => ({ id: m.detail, ...m }));
 
   if (linked)
     return (
@@ -40,6 +48,15 @@ export default function FindCvButton({
         onClick={() => {
           if (open) return setOpen(false);
           setLooking(true);
+          if (live) {
+            void live.find().then((res) => {
+              setLooking(false);
+              setFound(res.ok ? res.hits : []);
+              setFault(res.ok ? null : res.message);
+              setOpen(true);
+            });
+            return;
+          }
           timer.current = setTimeout(() => {
             setLooking(false);
             setOpen(true);
@@ -60,7 +77,9 @@ export default function FindCvButton({
             " absolute right-0 z-30 w-[min(20rem,calc(100vw-32px))] rounded-md border border-border bg-surface p-[max(0.9rem,10px)] shadow-float"
           }
         >
-          {hits.length === 0 ? (
+          {fault ? (
+            <p className="text-small text-ink-2">{fault}</p>
+          ) : hits.length === 0 ? (
             <p className="text-small text-ink-2">
               Nobody in our database matches {name} - a new person. Select them
               to approach on LinkedIn.
@@ -73,7 +92,7 @@ export default function FindCvButton({
               <ul className="mt-2 flex flex-col gap-2">
                 {hits.map((h) => (
                   <li
-                    key={h.detail}
+                    key={h.id}
                     className="flex items-center gap-2 rounded-sm bg-surface-2 px-2.5 py-2"
                   >
                     <div className="min-w-0 flex-1">
@@ -86,6 +105,7 @@ export default function FindCvButton({
                       type="button"
                       onClick={() => {
                         setOpen(false);
+                        if (live) return void live.choose(h.id).then((ok) => ok && setLinked(true));
                         setLinked(true);
                         onLinked();
                       }}

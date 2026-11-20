@@ -1,8 +1,10 @@
 "use client";
 
 import Count from "@/app/Count";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useMe } from "@/lib/role";
+import { jobFromAddress, useLive } from "@/lib/backend";
+import { useHh } from "./hhLive";
 import { BackButton } from "./PipelineBoard";
 import { useOpeningView, type View } from "./view";
 
@@ -10,31 +12,55 @@ import { useOpeningView, type View } from "./view";
 // "HH Overview - how headhunting is going", 13 Nov 2026). The old TA System's
 // numbers: LinkedIn profiles saved in the Excel Tables (L1-L3), how many were
 // approached, how many sent a CV, and the day's eye-marks (three a day).
-// Sample numbers until the backend; every line below is worked out from them.
-const SAVED: number = 48;
-const APPROACHED = 31;
-const CVS = 9;
-const EYE_DONE = 2;
+// Signed in, the numbers are the old page's, from every Excel Tables row on the
+// job (hhLive.ts, D8b); signed out, these samples. Every line is worked out from them.
+const SAMPLE_SAVED: number = 48;
+const SAMPLE_APPROACHED = 31;
+const SAMPLE_CVS = 9;
+const SAMPLE_EYE_DONE = 2;
 const EYE_TARGET = 3;
 const NOT_APPROACHED_IN = "L2 and L3";
-const BENCHMARKS_FOUND = 4;
+const SAMPLE_BENCHMARKS_FOUND = 4;
 // Every eye-mark on the job so far, and how many of them reached a CV: the old
 // page's "eye-mark yield", its honest measure of sourcing quality.
-const EYE_ALL: number = 3;
-const EYE_ALL_CV = 2;
+const SAMPLE_EYE_ALL: number = 3;
+const SAMPLE_EYE_ALL_CV = 2;
 // The Pick a benchmark card goes once one is chosen on Research (the old page
 // showed it always).
-const BENCHMARK_CHOSEN: boolean = false;
+const SAMPLE_BENCHMARK_CHOSEN: boolean = false;
 
 const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0);
 
 export default function HhOverview() {
-  // A TA sees their own headhunting numbers; a lead sees the whole job's.
-  const SEES_WHOLE_JOB = useMe().lead;
+  const lead = useMe().lead;
   const { go } = useOpeningView();
-  const notApproached = SAVED - APPROACHED;
+  const live = useLive();
+  const [job] = useState(jobFromAddress);
+  const { data, error } = useHh(job, live && !!job);
+  const o = data?.overview;
+  // Live, the old page's numbers: every row on the job, eye-marks out of three
+  // (the old page has no "today"), and which benchmark was picked.
+  const SAVED = o ? o.links : SAMPLE_SAVED;
+  const APPROACHED = o ? o.approached : SAMPLE_APPROACHED;
+  const CVS = o ? o.reached : SAMPLE_CVS;
+  const EYE_DONE = o ? o.eye : SAMPLE_EYE_DONE;
+  const EYE_ALL = o ? o.eye : SAMPLE_EYE_ALL;
+  const EYE_ALL_CV = o ? o.eyeReached : SAMPLE_EYE_ALL_CV;
+  const BENCHMARK_CHOSEN = o ? o.benchmarkPicked > 0 : SAMPLE_BENCHMARK_CHOSEN;
+  const BENCHMARKS_FOUND = data ? data.research.benchmarks.length : SAMPLE_BENCHMARKS_FOUND;
+  // Live every TA sees the whole job's rows, as on old AURA's page; the sample: a lead.
+  const SEES_WHOLE_JOB = o ? true : lead;
+  const notApproached = o ? o.notApproached : SAVED - APPROACHED;
   const noCvYet = APPROACHED - CVS;
   const eyeLeft = Math.max(EYE_TARGET - EYE_DONE, 0);
+  // Waiting for the read, or the TA System said why not (no sourcing seat, say).
+  if (live && job && !data)
+    return (
+      <div className="flex min-h-0 flex-1 flex-col px-[max(1.5rem,14px)] pt-[max(2.6rem,24px)]">
+        <BackButton />
+        {error && <p className="m-auto max-w-[46ch] text-center text-small text-ink-3">{error}</p>}
+      </div>
+    );
 
   // Nothing saved yet: say what to do instead of a page of zeros.
   if (SAVED === 0) {
@@ -95,7 +121,7 @@ export default function HhOverview() {
           <Stat
             n={`${EYE_DONE} / ${EYE_TARGET}`}
             tone="text-warn"
-            label="eye-marked today"
+            label={o ? "eye-marked" : "eye-marked today"}
             sub={
               eyeLeft
                 ? `${eyeLeft === 1 ? "one" : eyeLeft} more to go`
@@ -140,7 +166,7 @@ export default function HhOverview() {
               <Next
                 icon={<LinkIcon />}
                 title={`Approach ${notApproached} saved profile${notApproached === 1 ? "" : "s"}`}
-                sub={`They’re in ${NOT_APPROACHED_IN}`}
+                sub={o ? "No outreach logged against them yet" : `They’re in ${NOT_APPROACHED_IN}`}
                 to="hh-tables"
                 link="Open Excel Tables"
                 go={go}
@@ -150,7 +176,7 @@ export default function HhOverview() {
               <Next
                 icon={<EyeIcon />}
                 title={`Eye-mark ${eyeLeft === 1 ? "one more profile" : `${eyeLeft} more profiles`}`}
-                sub={SEES_WHOLE_JOB ? `${EYE_DONE} of ${EYE_TARGET} today` : `You have ${EYE_DONE} of ${EYE_TARGET} today`}
+                sub={o ? `${EYE_DONE} of ${EYE_TARGET} eye-marked on this job` : SEES_WHOLE_JOB ? `${EYE_DONE} of ${EYE_TARGET} today` : `You have ${EYE_DONE} of ${EYE_TARGET} today`}
                 to="hh-tables"
                 link="Open Excel Tables"
                 go={go}
@@ -160,7 +186,7 @@ export default function HhOverview() {
               <Next
                 icon={<TargetIcon />}
                 title="Pick a benchmark"
-                sub={`${BENCHMARKS_FOUND} people found doing this job today`}
+                sub={BENCHMARKS_FOUND ? `${BENCHMARKS_FOUND} people found doing this job today` : "It steers the next Suggestions round"}
                 to="hh-research"
                 link="Open Research"
                 go={go}

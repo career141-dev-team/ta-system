@@ -4,6 +4,8 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import Image from "next/image";
 import { useWorkdayGate } from "@/lib/workday";
 import { useMe } from "@/lib/role";
+import { door, jobFromAddress, useDoorMutation, useLive, type DoorDone } from "@/lib/backend";
+import { answersOf, editedOf, editOf, FIELD_OF, ranOn as ranOnOf, sendHh, useHh, type HhData } from "./hhLive";
 import { BackButton } from "./PipelineBoard";
 import Toast from "./Toast";
 import WorkdayBlocked from "./WorkdayBlocked";
@@ -20,18 +22,19 @@ import { useLiftMenu } from "./liftMenu";
 //   needs a reason why it could not be sourced;
 // - Benchmark rows are ticked to steer the next Suggestions round; each name opens
 //   where it was found.
-// Sample data until the backend.
+// Signed in, the report, sources and Benchmark are the old page's and every button
+// runs its old action (hhLive.ts, D8b); signed out, the sample below.
 
-const CLIENT = "PGP Glass";
+const SAMPLE_CLIENT = "PGP Glass";
 const RESEARCHED_ON = "12 Nov";
 /** Has Research run on this opening yet? Sample switch until the backend. */
 const HAS_REPORT: boolean = true;
 /** How long the sample run takes; the real one is about a minute. */
 const RUN_MS = 2500;
 /** Sample: the role reads junior, so Research does not benchmark it (old system). */
-const JUNIOR: boolean = false;
+const SAMPLE_JUNIOR: boolean = false;
 /** Sample: this TA works the job at 100% today (only they review the research). */
-const ON_100 = true;
+const SAMPLE_ON_100 = true;
 /** Sample: who reviewed it, for a lead's eyes. */
 const REVIEWED_BY: string | null = "Chathura Sampath";
 
@@ -57,6 +60,7 @@ const LABEL: Record<Key, string> = {
 /** Answers shown as chips: written as a list, one item per comma. */
 const CHIPS: Key[] = ["titles", "rivals"];
 
+const EMPTY: Record<Key, string> = { titles: "", rivals: "", website: "", country: "", location: "", social: "", services: "", overview: "" };
 const START: Record<Key, string> = {
   titles:
     "Head of SAP, ERP Programme Manager, S/4HANA Lead, Digital Transformation Mgr",
@@ -71,7 +75,7 @@ const START: Record<Key, string> = {
     "A fast-growing manufacturer replacing its 15-year-old ERP. Expect candidates from FMCG and building materials with plant-floor SAP experience.",
 };
 
-const SOURCES = [
+const SAMPLE_SOURCES = [
   {
     title: "Hemas - Morison - https://hemas.com",
     url: "https://hemas.com",
@@ -145,21 +149,32 @@ const PRIMARY =
 export default function ResearchView() {
   const gate = useWorkdayGate();
   const me = useMe();
+  const live = useLive();
+  const [job] = useState(jobFromAddress);
+  const signedIn = live && !!job;
+  const { data, error, reload } = useHh(job, signedIn);
+  const saveCheck = useDoorMutation(door.saveCheck);
+  const R = data?.research;
+  const CLIENT = R ? R.client?.name ?? "the client" : SAMPLE_CLIENT;
+  const SOURCES = R ? R.report?.sources ?? [] : SAMPLE_SOURCES;
+  const JUNIOR = R ? !R.benchmarksByDefault : SAMPLE_JUNIOR;
+  const ON_100 = R ? R.reviewHere : SAMPLE_ON_100;
   // A TA runs Research once and Find them once an opening; after that only a lead.
   const [researchRuns, setResearchRuns] = useState(HAS_REPORT ? 1 : 0);
   const [findRuns, setFindRuns] = useState(HAS_REPORT ? 1 : 0);
-  const researchLocked = !me.lead && researchRuns > 0;
-  const findLocked = !me.lead && findRuns > 0;
-  const [fields, setFields] = useState(START);
+  // Live, the TA System's own run limits answer the press; the sample shows them here.
+  const researchLocked = !signedIn && !me.lead && researchRuns > 0;
+  const findLocked = !signedIn && !me.lead && findRuns > 0;
+  const [fields, setFields] = useState(() => (signedIn ? EMPTY : START));
   const [edited, setEdited] = useState<Key[]>([]);
-  const [picked, setPicked] = useState<string[]>(["b1"]);
+  const [picked, setPicked] = useState<string[]>(() => (signedIn ? [] : ["b1"]));
   const [reviewed, setReviewed] = useState(false);
   // Research: not run yet, running, or done. A run fills every answer again except
   // the ones a person corrected by hand.
   const [run, setRun] = useState<"none" | "running" | "done">(
-    HAS_REPORT ? "done" : "none",
+    HAS_REPORT && !signedIn ? "done" : "none",
   );
-  const [people, setPeople] = useState(HAS_REPORT ? PEOPLE : []);
+  const [people, setPeople] = useState(HAS_REPORT && !signedIn ? PEOPLE : []);
   const [finding, setFinding] = useState(false);
   const [ranOn, setRanOn] = useState(RESEARCHED_ON);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -171,8 +186,39 @@ export default function ResearchView() {
   const say = (rest: string) =>
     setNotice((n) => ({ rest, n: (n?.n ?? 0) + 1 }));
 
+  // Each new read replaces the screen (React's pattern for state that follows a value).
+  const [seen, setSeen] = useState<HhData | null>(null);
+  if (data && data !== seen) {
+    setSeen(data);
+    const rep = data.research.report;
+    setFields(rep ? answersOf(rep.fields, CHIPS) : EMPTY);
+    setEdited(rep ? editedOf(rep.edited) : []);
+    setRun((x) => (x === "running" ? x : rep ? "done" : "none"));
+    if (rep) setRanOn(ranOnOf(rep.generatedAt));
+    setPeople(
+      data.research.benchmarks.map((b) => ({
+        id: b.id, name: b.name ?? "Name not established", title: b.title, company: b.company,
+        confidence: b.confidence, source: b.url ?? b.sourceUrl ?? "",
+      })),
+    );
+    setPicked(data.research.benchmarks.filter((b) => b.picked).map((b) => b.id));
+  }
+  const [seenError, setSeenError] = useState<string | null>(null);
+  if (error !== seenError) {
+    setSeenError(error);
+    if (error) say(error);
+  }
+  /** One old Research action; its sentence is said, then the page is read again. */
+  const send = async (body: Record<string, unknown>) => {
+    const res = await sendHh({ openingId: job, ...body });
+    say(res.message);
+    await reload();
+    return res.ok;
+  };
+
   const save = (k: Key, v: string) => {
     if (v === fields[k]) return;
+    if (signedIn) void send({ do: "editField", ...editOf(k, v) });
     setFields((f) => ({ ...f, [k]: v }));
     setEdited((e) => (e.includes(k) ? e : [...e, k]));
     say(
@@ -186,6 +232,12 @@ export default function ResearchView() {
 
   const runResearch = () => {
     if (busy) return;
+    if (signedIn) {
+      // About a minute on the TA System; the button waits for its answer.
+      setRun("running");
+      void send({ do: "research" }).then(() => setRun((x) => (x === "running" ? "done" : x)));
+      return;
+    }
     setResearchRuns((n) => n + 1);
     const first = run === "none";
     setRun("running");
@@ -208,6 +260,11 @@ export default function ResearchView() {
   // found again are kept.
   const findPeople = () => {
     if (finding || findLocked) return;
+    if (signedIn) {
+      setFinding(true);
+      void send({ do: "benchmark" }).then(() => setFinding(false));
+      return;
+    }
     setFindRuns((n) => n + 1);
     setFinding(true);
     later(() => {
@@ -217,8 +274,10 @@ export default function ResearchView() {
       say(`${PEOPLE.length} people found - each with where we found them`);
     });
   };
-  const toggle = (id: string) =>
+  const toggle = (id: string) => {
+    if (signedIn) void send({ do: "pickBenchmark", entryId: id });
     setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  };
 
   const field = (k: Key, className = "") => (
     <Field
@@ -246,7 +305,9 @@ export default function ResearchView() {
           className="size-[max(1.75rem,22px)] rounded-full"
         />
         <p className="text-small text-ink-2" role="status">
-          {busy
+          {signedIn && !data
+            ? error ?? "Reading the research…"
+            : busy
             ? `Researching ${CLIENT} - about a minute. You can keep working.`
             : run === "none"
               ? `${CLIENT} has not been researched yet`
@@ -274,9 +335,13 @@ export default function ResearchView() {
             </span>
           )}
           <CorrectCompany
+            client={CLIENT}
+            start={R?.client?.notes ?? ""}
             first={run === "none"}
             busy={busy}
-            onSaved={() => {
+            onSaved={(notes) => {
+              // The old action saves on the client and runs Research and Suggestions after.
+              if (signedIn) return void send({ do: "correctClient", researchNotes: notes });
               say(`Saved on ${CLIENT} - Research runs again with it`);
               runResearch();
             }}
@@ -293,7 +358,20 @@ export default function ResearchView() {
               empty={empty}
               reviewed={reviewed}
               blocked={!!gate || busy}
-              onDone={() => {
+              onDone={(why) => {
+                if (signedIn && job) {
+                  // The workday check: the TA System re-checks every empty answer has a reason.
+                  const reasons = Object.fromEntries(
+                    Object.entries(why).filter(([, v]) => v?.trim()).map(([k, v]) => [FIELD_OF[k as Key], v!.trim()]),
+                  );
+                  void (saveCheck({ jobId: job, kind: "research", reasons }) as Promise<DoorDone>)
+                    .then((res) => {
+                      if (res.ok) setReviewed(true);
+                      say(res.ok ? "Research marked as reviewed for today" : res.message);
+                    })
+                    .catch(() => say("Could not save. Check your connection and try again."));
+                  return;
+                }
                 setReviewed(true);
                 say("Research marked as reviewed for today");
               }}
@@ -305,7 +383,7 @@ export default function ResearchView() {
         <WorkdayBlocked what="mark the research reviewed" className="mt-4" />
       )}
 
-      {run !== "done" && people.length === 0 ? (
+      {signedIn && !data ? null : run !== "done" && people.length === 0 ? (
         // Not researched yet: what Research does, and the one button.
         <div className="m-auto flex max-w-[34rem] flex-col items-center gap-[max(0.9rem,10px)] py-10 text-center">
           <p className="text-h3">
@@ -658,16 +736,21 @@ function Field({
  *  client (every job for them uses it), then Research and a new Suggestions round
  *  run again. A website or LinkedIn link written here is used as it is. */
 function CorrectCompany({
+  client: CLIENT,
+  start,
   onSaved,
   first,
   busy,
 }: {
-  onSaved: () => void;
+  client: string;
+  start: string;
+  onSaved: (notes: string) => void;
   first: boolean;
   busy: boolean;
 }) {
   const { open, setOpen, root, panel, shown } = useLiftMenu();
-  const [notes, setNotes] = useState("");
+  // What is already saved on the client, to change rather than retype.
+  const [notes, setNotes] = useState(start);
   return (
     <div ref={root} className="relative">
       <button
@@ -716,7 +799,7 @@ function CorrectCompany({
               disabled={!notes.trim() || busy}
               onClick={() => {
                 setOpen(false);
-                onSaved();
+                onSaved(notes.trim());
               }}
               className="rounded-full bg-brand px-3.5 py-1.5 text-small font-medium text-white hover:bg-brand-strong disabled:opacity-40"
             >
@@ -740,7 +823,7 @@ function Review({
   empty: Key[];
   reviewed: boolean;
   blocked: boolean;
-  onDone: () => void;
+  onDone: (why: Partial<Record<Key, string>>) => void;
 }) {
   const { open, setOpen, root, panel, shown } = useLiftMenu();
   const [why, setWhy] = useState<Partial<Record<Key, string>>>({});
@@ -771,7 +854,7 @@ function Review({
         type="button"
         disabled={blocked}
         aria-expanded={empty.length ? open : undefined}
-        onClick={() => (empty.length ? setOpen((o) => !o) : onDone())}
+        onClick={() => (empty.length ? setOpen((o) => !o) : onDone({}))}
         className={PRIMARY}
       >
         I reviewed the research
@@ -814,7 +897,7 @@ function Review({
               disabled={missing.length > 0}
               onClick={() => {
                 setOpen(false);
-                onDone();
+                onDone(why);
               }}
               className="rounded-full bg-brand px-3.5 py-1.5 text-small font-medium text-white hover:bg-brand-strong disabled:opacity-40"
             >
