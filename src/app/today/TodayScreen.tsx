@@ -6,7 +6,9 @@ import Today from "./Today";
 import Workday from "./Workday";
 import Home from "./Homes";
 import AuraHome from "./AuraHome";
-import { useRole, worksADay } from "@/lib/role";
+import { useRole, useSignedInPerson, worksADay } from "@/lib/role";
+import { door, useDoorQuery } from "@/lib/backend";
+import type { MyDay } from "@/lib/askAura";
 
 // Which Today to show: T1 "Good morning" until the workday is started, then T2.
 // The started day itself lives in src/lib/workday.ts, because the opening's
@@ -23,11 +25,28 @@ export default function TodayScreen() {
   // No workday of their own: an admin keeps the team board; a TA Lead, Director or Ops
   // person starts on the AURA chat (owner 19 Nov 2026).
   const role = useRole();
+  // Signed in, the line and numbers under Start workday are the TA's own (ui/myDay:today,
+  // owner 20 Nov 2026); signed out they stay the design's sample.
+  const signed = useSignedInPerson() !== null;
+  const read = useDoorQuery(door.myDay, signed && worksADay(role) ? {} : "skip") as ({ ok: true } & MyDay) | { ok: false } | undefined;
+  const mine = read && read.ok ? read.totals : null;
+  const real = mine
+    ? {
+        line: `${mine.positions} ${mine.positions === 1 ? "position is" : "positions are"} yours today.`,
+        stats: [
+          [String(mine.sentYesterday), "CVs to Director yesterday"],
+          [String(mine.shortlistedToday), "shortlisted today"],
+          [String(mine.cvsToday), "new CVs today"],
+        ] as [string, string][],
+      }
+    : signed
+      ? { line: "Reading your day…", stats: [] as [string, string][] }
+      : {};
   if (role === "Admin") return <Home key={role} role="Lead" />;
   if (!worksADay(role)) return <AuraHome key={role} role={role as "Lead" | "Director" | "Ops"} />;
 
   if (started === "pending") return <div className="flex-1" />;
-  if (started === "none" && live) return choosing ? <Workday startedAt={null} /> : <Today onStart={() => setChoosing(true)} />;
-  if (started === "none") return <Today onStart={startWorkday} />;
+  if (started === "none" && live) return choosing ? <Workday startedAt={null} /> : <Today onStart={() => setChoosing(true)} {...real} />;
+  if (started === "none") return <Today onStart={startWorkday} {...real} />;
   return <Workday startedAt={started} />;
 }
