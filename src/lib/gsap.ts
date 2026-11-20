@@ -176,7 +176,8 @@ export function useExit(open: boolean, ref: RefObject<HTMLElement | null>, vars:
  *  (owner, 14 Nov 2026: motion that shows what changed). The row is `list`; inside
  *  it one `[data-tab-glide]` element is the highlight, and the chosen tab carries
  *  aria-selected="true". It lands with a small overshoot, and follows the row when
- *  the window changes size. */
+ *  any tab changes size (20 Nov 2026: Openings' counts arrive after the highlight is
+ *  placed and widen their tabs; it stayed put and sat half on the next tab). */
 export function useTabGlide(list: RefObject<HTMLElement | null>, key: unknown) {
   const placed = useRef(false);
   const place = (animate: boolean) => {
@@ -191,10 +192,17 @@ export function useTabGlide(list: RefObject<HTMLElement | null>, key: unknown) {
   };
   useGSAP(() => place(true), { dependencies: [key], revertOnUpdate: false });
   useEffect(() => {
-    const again = () => place(false);
-    addEventListener("resize", again);
-    return () => removeEventListener("resize", again);
-  });
+    const l = list.current;
+    if (!l) return;
+    // The row and every tab: a tab growing moves the ones after it, the row
+    // re-wrapping on a narrower window moves them all.
+    const seen = new ResizeObserver(() => place(false));
+    seen.observe(l);
+    for (const tab of Array.from(l.children)) seen.observe(tab);
+    return () => seen.disconnect();
+    // Once per row: watching again on every render would cut a glide short.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 }
 
 /** Flip (the CV preview's frame growing to full view and back, 12 Nov 2026),
