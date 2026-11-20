@@ -29,12 +29,24 @@ export default function NewOpening({
   start,
   onClose,
   onCreate,
+  clients,
+  team,
+  lead,
 }: {
   start: string;
   onClose: () => void;
-  onCreate: (o: Opening) => void;
+  /** The opening as the list shows it, what was read from the brief, and the brief. */
+  onCreate: (o: Opening, read: Read, brief: string) => void;
+  /** Signed in (D9): the desk's real clients and TAs, and whether this person leads. */
+  clients?: string[];
+  team?: string[];
+  lead?: boolean;
 }) {
-  const { first: ME, lead: LEAD } = useMe();
+  const me = useMe();
+  const ME = me.first;
+  const LEAD = lead ?? me.lead;
+  const CLIENT_LIST = clients ?? CLIENTS;
+  const TEAM_LIST = team ?? TEAM;
   const [step, setStep] = useState<"write" | "check">("write");
   const [text, setText] = useState(start);
   const [file, setFile] = useState("");
@@ -80,7 +92,9 @@ export default function NewOpening({
     // ponytail: a stand-in wait; with the backend this is one model call.
     timer.current = setTimeout(() => {
       setReading(false);
-      setR(withMe(readBrief(text)));
+      const got = readBrief(text);
+      // Known = one of the desk's clients (the real list when signed in).
+      setR(withMe({ ...got, clientKnown: CLIENT_LIST.some((c) => c.toLowerCase() === got.client.trim().toLowerCase()) }));
       setDone([]);
       setStep("check");
     }, READ_MS);
@@ -99,7 +113,7 @@ export default function NewOpening({
       made: 0,
       referee: r.referee,
       website: r.website,
-    });
+    }, r, text);
   };
   const set = (p: Partial<Read>) => setR((x) => ({ ...x, ...p }));
 
@@ -116,8 +130,8 @@ export default function NewOpening({
     asks.push({
       key: "client",
       say: "Which client is it for?",
-      chips: CLIENTS.slice(0, 3).map((c) => ({ label: c, go: () => set({ client: c, clientKnown: true }) })),
-      box: { hint: "Or type the client", go: (v) => set({ client: v, clientKnown: CLIENTS.includes(v) }) },
+      chips: CLIENT_LIST.slice(0, 3).map((c) => ({ label: c, go: () => set({ client: c, clientKnown: true }) })),
+      box: { hint: "Or type the client", go: (v) => set({ client: v, clientKnown: CLIENT_LIST.includes(v) }) },
     });
   else if (!r.clientKnown && !done.includes("newClient"))
     asks.push({
@@ -146,7 +160,7 @@ export default function NewOpening({
       key: "team",
       say: "Who works on it?",
       chips: [
-        ...TEAM.slice(0, 3).map((n) => ({ label: n, go: () => set({ team: [n] }) })),
+        ...TEAM_LIST.slice(0, 3).map((n) => ({ label: n, go: () => set({ team: [n] }) })),
         { label: "Leave unassigned", go: () => skip("team") },
       ],
     });
@@ -300,13 +314,13 @@ export default function NewOpening({
                   <input
                     value={r.client}
                     list="clients"
-                    onChange={(e) => set({ client: e.target.value, clientKnown: CLIENTS.includes(e.target.value) })}
+                    onChange={(e) => set({ client: e.target.value, clientKnown: CLIENT_LIST.includes(e.target.value) })}
                     aria-label="Client"
                     placeholder="Choose or type a client"
                     className={INPUT}
                   />
                   <datalist id="clients">
-                    {CLIENTS.map((c) => (
+                    {CLIENT_LIST.map((c) => (
                       <option key={c} value={c} />
                     ))}
                   </datalist>
@@ -340,7 +354,7 @@ export default function NewOpening({
                   </div>
                 </Field>
                 <Field label="Team" ai={r.read.includes("team")}>
-                  <Team team={r.team} onChange={(team) => set({ team })} />
+                  <Team team={r.team} all={TEAM_LIST} lead={LEAD} onChange={(team) => set({ team })} />
                 </Field>
                 <Field label="Must-haves" ai={r.read.includes("musts")}>
                   <textarea
@@ -471,10 +485,10 @@ function Field({ label, ai = false, children }: { label: string; ai?: boolean; c
 
 /** Who works it: chips with an x, and + to add. A TA is on their own opening and only
  *  a lead adds others. */
-function Team({ team, onChange }: { team: string[]; onChange: (t: string[]) => void }) {
-  const { first: ME, lead: LEAD } = useMe();
+function Team({ team, all, lead: LEAD, onChange }: { team: string[]; all: string[]; lead: boolean; onChange: (t: string[]) => void }) {
+  const { first: ME } = useMe();
   const { open, setOpen, root, panel, shown } = useLiftMenu();
-  const left = TEAM.filter((n) => !team.includes(n));
+  const left = all.filter((n) => !team.includes(n));
   return (
     <div className="mt-1 flex flex-wrap items-center gap-2">
       {team.map((n, i) => (
