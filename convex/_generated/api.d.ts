@@ -308,6 +308,7 @@ import type * as ui_homes from "../ui/homes.js";
 import type * as ui_lead from "../ui/lead.js";
 import type * as ui_leadRules from "../ui/leadRules.js";
 import type * as ui_me from "../ui/me.js";
+import type * as ui_myDay from "../ui/myDay.js";
 import type * as ui_opening from "../ui/opening.js";
 import type * as ui_openings from "../ui/openings.js";
 import type * as ui_pipeline from "../ui/pipeline.js";
@@ -627,6 +628,7 @@ declare const fullApi: ApiFromModules<{
   "ui/lead": typeof ui_lead;
   "ui/leadRules": typeof ui_leadRules;
   "ui/me": typeof ui_me;
+  "ui/myDay": typeof ui_myDay;
   "ui/opening": typeof ui_opening;
   "ui/openings": typeof ui_openings;
   "ui/pipeline": typeof ui_pipeline;
@@ -880,6 +882,7 @@ declare const fullApi: ApiFromModules<{
   "ui/lead": typeof ui_lead;
   "ui/leadRules": typeof ui_leadRules;
   "ui/me": typeof ui_me;
+  "ui/myDay": typeof ui_myDay;
   "ui/opening": typeof ui_opening;
   "ui/openings": typeof ui_openings;
   "ui/pipeline": typeof ui_pipeline;
