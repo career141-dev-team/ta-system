@@ -1430,7 +1430,7 @@ const stroke = {
 function LinkedInLink({ url, name, className }: { url?: string; name: string; className?: string }) {
   return (
     <a
-      href={url ?? "https://www.linkedin.com"}
+      href={url?.startsWith("https://") ? url : "https://www.linkedin.com"}
       target="_blank"
       rel="noopener noreferrer"
       title={`Open ${name} on LinkedIn`}
