@@ -193,6 +193,7 @@ export const door = {
   shortlist: makeFunctionReference<"mutation">("ui/pipeline:shortlist"),
   openings: makeFunctionReference<"query">("ui/openings:list"),
   summary: makeFunctionReference<"query">("ui/opening:summary"),
+  saveJd: makeFunctionReference<"mutation">("ui/opening:saveJd"),
   setFollowUp: makeFunctionReference<"mutation">("ui/opening:setFollowUp"),
   setQuestions: makeFunctionReference<"mutation">("ui/manage:setQuestions"),
   scoops: makeFunctionReference<"query">("ui/opening:scoops"),
