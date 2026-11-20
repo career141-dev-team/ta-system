@@ -17,7 +17,9 @@ import { ROLES, useRole, type Role } from "@/lib/role";
 export const LINKS: [string, string, Role[]][] = [
   ["Today", "/today", ROLES],
   ["Openings", "/openings", ROLES],
-  ["Strategy Planner", "/strategy", ROLES],
+  // Only those who plan (owner, 20 Nov 2026: "no need for the TA view"): a TA works their
+  // strategies inside each opening, so a TA and TA Support do not see this link.
+  ["Strategy Planner", "/strategy", ROLES.filter((r) => r !== "TA" && r !== "TA Support")],
   ["Database", "/database", ROLES],
   ["LinkedIn Search", "/linkedin-search", ROLES],
   ["Excel Tables", "/excel-tables", ["TA Support"]],
@@ -40,11 +42,13 @@ export function NavLinks({ pathname = "" }: { pathname?: string }) {
   };
 
   return (
+    // The links are never squeezed on a laptop or wider (20 Nov 2026: the last link was cut
+    // off beside the search box); the search box gives way first (TopNav: min-w-36 shrink).
     // Five links fit a laptop window. On a phone or tablet they take their own row under
     // the logo (TopNav) and slide sideways when they do not fit.
     <nav
       onMouseLeave={(e) => glide.out(glowOf(e.currentTarget))}
-      className="relative ml-[max(2.5rem,16px)] mr-2 flex min-w-0 shrink items-stretch self-stretch overflow-x-auto whitespace-nowrap border-l border-border text-nav [scrollbar-width:none] max-lg:order-last max-lg:mx-0 max-lg:mt-2 max-lg:h-[44px] max-lg:w-full max-lg:self-auto max-lg:border-l-0"
+      className="relative ml-[max(2.5rem,16px)] mr-2 flex min-w-0 shrink-0 items-stretch self-stretch overflow-x-auto max-lg:shrink whitespace-nowrap border-l border-border text-nav [scrollbar-width:none] max-lg:order-last max-lg:mx-0 max-lg:mt-2 max-lg:h-[44px] max-lg:w-full max-lg:self-auto max-lg:border-l-0"
     >
       <span
         data-glow

@@ -10,6 +10,8 @@ import Toast from "./Toast";
 import { useLiftMenu } from "./liftMenu";
 import { useMe } from "@/lib/role";
 import { candidateCall, door, jobFromAddress, useDoorQuery, useLive, type Answer } from "@/lib/backend";
+import { matchChips, parseJd, type Requirements } from "./jdLive";
+import { ViewSkeleton } from "@/app/Skeleton";
 
 // The Job Description view (shane123-tech's branch, Figma): the draft on the left; on
 // the right the approval bar, a chat to change the draft, and what candidates are
@@ -36,89 +38,58 @@ const CHIP = "rounded-full px-3 py-1 text-caption font-medium";
 /** A field that looks like the text it edits, with a quiet outline. */
 const EDIT = "w-full resize-none rounded-sm border border-border bg-surface px-2 py-1.5 outline-none focus:border-brand focus:ring-2 focus:ring-brand/20";
 
-// Signed in (19 Nov, D4): the opening's real JD from ui/opening:summary, read-only
-// until editing, approving and versions move into the door (D7). The design's
-// editor below stays the preview.
+// Signed in (20 Nov 2026): the same screen as the preview - the draft in the middle, the
+// approval bar, the chat and "what we match candidates on" on the right (the live page used
+// to show only the text) - with the opening's own JD. Approve and Re-read run the old
+// actions on the old server (ta-system #30), so approving still starts the details reading,
+// matching, Research and Suggestions. Editing, versions and the chat that rewrites the JD
+// are not behind a backend yet, so they are not offered / say so instead of pretending.
 export default function JobDescriptionView() {
-  return useLive() ? <LiveJd /> : <SampleJd />;
+  return useLive() ? <LiveJd /> : <JdScreen />;
 }
+
+type LiveJdData = { job: string; title: string; markdown: string | null; approved: boolean; chips: string[] };
 
 function LiveJd() {
   const job = jobFromAddress();
-  // Approve and re-read run the old actions on the old server (D7, ta-system #30), so
-  // approving still starts the details reading, matching, Research and Suggestions.
-  const [busy, setBusy] = useState("");
-  const [said, setSaid] = useState<{ ok: boolean; message: string } | null>(null);
-  const run = async (what: "approveJd" | "rereadJd", jd: string) => {
-    if (!job || busy) return;
-    setBusy(what);
-    const r = await candidateCall(what === "approveJd" ? { do: what, openingId: job, jdMarkdown: jd } : { do: what, openingId: job });
-    setBusy("");
-    setSaid(r);
-  };
   const got = useDoorQuery(door.summary, job ? { openingId: job } : "skip") as
-    | Answer<{ opening: { title: string | null; jd: { markdown: string | null; status: string | null; approvedAt: number | null } } }>
+    | Answer<{
+        opening: {
+          title: string | null;
+          locations?: string[];
+          requirements?: Requirements | null;
+          jd: { markdown: string | null; status: string | null; approvedAt: number | null };
+        };
+      }>
     | undefined;
+  if (!job) return <p className="px-6 pt-14 text-small text-ink-3">Open an opening from the Openings page to see its job description.</p>;
+  if (!got) return <ViewSkeleton />;
+  if (!got.ok) return <p className="px-6 pt-14 text-small text-danger">{got.message}</p>;
+  const o = got.opening;
   return (
-    <div className="flex min-h-0 flex-1 flex-col px-[max(1.5rem,14px)] pb-[max(1.4rem,12px)] pt-[max(1.4rem,14px)] max-md:pt-11">
-      <BackButton />
-      <article className="mx-auto mt-6 w-full max-w-[56rem] min-h-0 flex-1 overflow-y-auto rounded-lg border border-border bg-surface px-[max(2.5rem,16px)] py-[max(2rem,14px)]">
-        {!got ? (
-          <p className="text-small text-ink-3">Loading the job description…</p>
-        ) : !got.ok ? (
-          <p className="text-small text-danger">{got.message}</p>
-        ) : (
-          <>
-            <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-h2 text-ink">{got.opening.title}</h1>
-              <span className={CHIP + (got.opening.jd.status === "approved" ? " bg-brand-soft text-brand-strong" : " bg-warn-soft text-warn")}>
-                {got.opening.jd.status === "approved" ? "Approved" : "Not approved yet"}
-              </span>
-            </div>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              {got.opening.jd.status !== "approved" ? (
-                <button
-                  type="button"
-                  disabled={!!busy || !got.opening.jd.markdown?.trim()}
-                  onClick={() => void run("approveJd", got.opening.jd.markdown ?? "")}
-                  className="h-9 rounded-full bg-ink px-4 text-small font-medium text-white hover:bg-ink-2 disabled:opacity-50"
-                >
-                  {busy === "approveJd" ? "Approving…" : "Approve the job description"}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  disabled={!!busy}
-                  onClick={() => void run("rereadJd", "")}
-                  className="h-9 rounded-full border border-border px-4 text-small text-ink hover:bg-surface-2 disabled:opacity-50"
-                >
-                  {busy === "rereadJd" ? "Reading…" : "Re-read the job details"}
-                </button>
-              )}
-              {said && <span className={"text-small " + (said.ok ? "text-brand-strong" : "text-danger")}>{said.message}</span>}
-            </div>
-            <p className="mt-2 text-small text-ink-3">Editing the text here is not switched on yet - edit it in AURA for now.</p>
-            <div className="mt-6 whitespace-pre-wrap text-body text-ink-2">{got.opening.jd.markdown?.trim() || "No job description yet."}</div>
-          </>
-        )}
-      </article>
-    </div>
+    <JdScreen
+      key={job}
+      live={{ job, title: o.title ?? "", markdown: o.jd.markdown, approved: o.jd.status === "approved", chips: matchChips(o.requirements, o.locations) }}
+    />
   );
 }
 
-function SampleJd() {
+function JdScreen({ live }: { live?: LiveJdData }) {
   // Shared with LinkedIn Job, Snippets and Database CVs (jdState).
-  const approved = useJdApproved();
+  const sampleApproved = useJdApproved();
+  const approved = live ? live.approved : sampleApproved;
   const setApproved = setJdApproved;
+  const parsed = live ? parseJd(live.markdown, live.title) : null;
+  const canEdit = CAN_WRITE && !live;
   const me = useMe();
   // Who approved and when - kept in this view for the visit (sample; the backend keeps it).
   const [approvedBy, setApprovedBy] = useState("");
   const [version, setVersion] = useState(3);
   // The JD's text lives in state so it can be edited here; edits save themselves.
   // ponytail: kept for the visit only; the backend keeps the saved text.
-  const [title, setTitle] = useState(getJd().title);
-  const [metaText, setMetaText] = useState(getJd().metaText);
-  const [sections, setSections] = useState(getJd().sections);
+  const [title, setTitle] = useState(parsed ? parsed.title : getJd().title);
+  const [metaText, setMetaText] = useState(parsed ? parsed.metaText : getJd().metaText);
+  const [sections, setSections] = useState(parsed ? parsed.sections : getJd().sections);
   const [editing, setEditing] = useState(false);
   const [savedAt, setSavedAt] = useState("");
   const first = useRef(true);
@@ -134,7 +105,7 @@ function SampleJd() {
   }, [title, metaText, sections]);
   const meta = metaText.split(",").map((m) => m.trim()).filter(Boolean);
   const setSection = (i: number, patch: Partial<Section>) => setSections((all) => all.map((x, j) => (j === i ? { ...x, ...patch } : x)));
-  const [turns, setTurns] = useState<Turn[]>([
+  const [turns, setTurns] = useState<Turn[]>(live ? [] : [
     {
       me: "Mention it’s hybrid, 3 days in office. Shorter intro.",
       aura: "Done — version 3 says “hybrid, 3 days a week at the Colombo office” and the intro is two lines shorter. Version 2 is in history if you want it back.",
@@ -143,6 +114,7 @@ function SampleJd() {
   const [ask, setAsk] = useState("");
   const [reading, setReading] = useState(false);
   const [readAt, setReadAt] = useState("");
+  const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<{ bold?: string; rest: string; n: number } | null>(null);
   const bar = useRef<HTMLDivElement>(null);
   const talk = useRef<HTMLDivElement>(null);
@@ -154,7 +126,15 @@ function SampleJd() {
   // A restored version switches in like any changed content.
   useSwap(doc, version);
 
-  const approve = () => {
+  const approve = async () => {
+    if (live) {
+      if (busy || !live.markdown?.trim()) return;
+      setBusy(true);
+      const r = await candidateCall({ do: "approveJd", openingId: live.job, jdMarkdown: live.markdown });
+      setBusy(false);
+      setToast(r.ok ? { bold: "JD approved", rest: " - " + r.message, n: Date.now() } : { rest: r.message, n: Date.now() });
+      return;
+    }
     setApproved(true);
     setApprovedBy(`Approved by ${me.name} · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`);
     setToast({
@@ -180,8 +160,16 @@ function SampleJd() {
       setToast({ rest: "Could not copy - your browser blocked it", n: Date.now() });
     }
   };
-  const reread = () => {
+  const reread = async () => {
     if (reading || !approved) return;
+    if (live) {
+      setReading(true);
+      const r = await candidateCall({ do: "rereadJd", openingId: live.job });
+      setReading(false);
+      setReadAt(r.ok ? "Read just now" : "");
+      setToast(r.ok ? { bold: "Job details re-read", rest: " - " + r.message, n: Date.now() } : { rest: r.message, n: Date.now() });
+      return;
+    }
     setReading(true);
     timer.current = setTimeout(() => {
       setReading(false);
@@ -202,18 +190,18 @@ function SampleJd() {
           <header className="flex flex-col gap-[max(0.75rem,8px)] border-b border-border pb-[max(1.5rem,14px)]">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
               <span className={CHIP + (approved ? " bg-success-soft text-success" : " bg-warn-soft text-warn")}>
-                {approved ? `Approved · version ${version}` : `Draft · version ${version}`}
+                {live ? (approved ? "Approved" : "Not approved yet") : approved ? `Approved · version ${version}` : `Draft · version ${version}`}
               </span>
               <span className="truncate text-caption text-ink-3" title={approved ? approvedBy : undefined}>
-                {approved ? approvedBy || "Approved" : `Saved ${savedAt || (VERSIONS.find((v) => v.n === version)?.when ?? "")}`}
+                {live ? "" : approved ? approvedBy || "Approved" : `Saved ${savedAt || (VERSIONS.find((v) => v.n === version)?.when ?? "")}`}
               </span>
-              <History
+              {!live && <History
                 version={version}
                 onRestore={(n) => {
                   setVersion(n);
                   setToast({ bold: `Version ${n}`, rest: approved ? " is back. It stays approved." : " is back.", n: Date.now() });
                 }}
-              />
+              />}
               <button
                 type="button"
                 onClick={copy}
@@ -226,7 +214,7 @@ function SampleJd() {
                   <path d="M5 15V6a2 2 0 0 1 2-2h9" />
                 </svg>
               </button>
-              {CAN_WRITE && (
+              {canEdit && (
                 <button
                   type="button"
                   onClick={() => {
@@ -267,6 +255,7 @@ function SampleJd() {
           </header>
 
           <div ref={doc} className="flex max-w-[70ch] flex-col gap-[max(1.5rem,14px)] pt-[max(1.5rem,14px)]">
+            {!sections.length && <p className="text-body text-ink-3">No job description yet.</p>}
             {sections.map((s, i) => (
               <section key={i} className="flex flex-col gap-2">
                 {editing ? (
@@ -278,7 +267,7 @@ function SampleJd() {
                   (editing ? (
                     <textarea value={s.p} onChange={(e) => setSection(i, { p: e.target.value })} aria-label={s.h} className={EDIT + " field-sizing-content text-body text-ink-2"} />
                   ) : (
-                    <p className="text-body text-ink-2">{s.p}</p>
+                    <p className="whitespace-pre-line text-body text-ink-2">{s.p}</p>
                   ))}
                 {s.list &&
                   (editing ? (
@@ -322,13 +311,14 @@ function SampleJd() {
             {!approved && CAN_WRITE && (
               <button
                 type="button"
-                onClick={approve}
-                className="flex items-center gap-2 whitespace-nowrap rounded-full bg-brand py-[max(0.625rem,7px)] pl-[max(1.25rem,14px)] pr-[max(1.375rem,15px)] text-small font-medium text-white transition-colors hover:bg-brand-strong"
+                onClick={() => void approve()}
+                disabled={busy || (!!live && !live.markdown?.trim())}
+                className="flex items-center gap-2 whitespace-nowrap rounded-full bg-brand disabled:opacity-50 py-[max(0.625rem,7px)] pl-[max(1.25rem,14px)] pr-[max(1.375rem,15px)] text-small font-medium text-white transition-colors hover:bg-brand-strong"
               >
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-4" aria-hidden="true">
                   <path d="M13.33 4 6 11.33 2.67 8" />
                 </svg>
-                Approve JD
+                {busy ? "Approving…" : "Approve JD"}
               </button>
             )}
           </div>
@@ -340,6 +330,7 @@ function SampleJd() {
               <p className="text-body font-medium text-ink">Change it by chatting</p>
             </div>
             <div ref={talk} className="flex max-h-[max(16rem,180px)] flex-col gap-3 overflow-y-auto">
+              {!turns.length && <p className="text-small text-ink-3">Tell AURA what to change - for example “Mention it’s hybrid, 3 days in the office.”</p>}
               {turns.map((t, i) => (
                 <div key={i} className="flex flex-col gap-2">
                   <p className="self-end rounded-md bg-surface px-4 py-2.5 text-small text-ink">{t.me}</p>
@@ -390,7 +381,7 @@ function SampleJd() {
               <p className="text-body font-medium text-ink">What we match candidates on</p>
               <button
                 type="button"
-                onClick={reread}
+                onClick={() => void reread()}
                 disabled={reading || !CAN_WRITE || !approved}
                 title={approved ? "Read the job details from the JD again" : "Approve the JD first"}
                 className="ml-auto flex items-center gap-1.5 text-small text-ink-3 hover:text-ink disabled:hover:text-ink-3"
@@ -402,11 +393,12 @@ function SampleJd() {
               </button>
             </div>
             <ul className="flex flex-wrap gap-2">
-              {MATCH.map((m) => (
+              {(live ? live.chips : MATCH).map((m) => (
                 <li key={m} className={CHIP + " bg-surface-2 text-ink-2"}>
                   {m}
                 </li>
               ))}
+              {live && !live.chips.length && <li className="text-small text-ink-3">Nothing read from the JD yet.</li>}
             </ul>
           </div>
         </aside>

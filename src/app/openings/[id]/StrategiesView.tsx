@@ -396,7 +396,7 @@ export default function StrategiesView() {
             >
               Strategies
             </button>
-            <span className="ml-auto whitespace-nowrap text-[max(0.8125rem,12px)] text-ink-2">
+            <span className="ml-auto whitespace-nowrap text-[max(0.875rem,13px)] text-ink-2">
               {doneCount} of {activeTotal} done
             </span>
           </div>
@@ -490,7 +490,7 @@ export default function StrategiesView() {
             {todoItems.length > 0 && (
               <>
                 <div className="flex items-center px-3 pb-1.5 pt-3">
-                  <span className="text-[max(0.6875rem,10.5px)] font-medium uppercase tracking-[0.06em] text-ink-3">
+                  <span className="text-[max(0.75rem,11.5px)] font-medium uppercase tracking-[0.06em] text-ink-3">
                     TO DO
                   </span>
                 </div>
@@ -521,7 +521,7 @@ export default function StrategiesView() {
             {freshItems.length > 0 && (
               <>
                 <div className="flex items-center px-3 pb-1.5 pt-3.5">
-                  <span className="text-[max(0.6875rem,10.5px)] font-medium uppercase tracking-[0.06em] text-ink-3">
+                  <span className="text-[max(0.75rem,11.5px)] font-medium uppercase tracking-[0.06em] text-ink-3">
                     NEW FROM {lead.toUpperCase()}
                   </span>
                   <button
@@ -559,7 +559,7 @@ export default function StrategiesView() {
             {doneItems.length > 0 && (
               <>
                 <div className="flex items-center px-3 pb-1.5 pt-3.5">
-                  <span className="text-[max(0.6875rem,10.5px)] font-medium uppercase tracking-[0.06em] text-ink-3">
+                  <span className="text-[max(0.75rem,11.5px)] font-medium uppercase tracking-[0.06em] text-ink-3">
                     DONE
                   </span>
                 </div>
@@ -598,7 +598,7 @@ export default function StrategiesView() {
             <button
               type="button"
               onClick={() => setMode("all-15")}
-              className="flex items-center gap-1.5 text-[max(0.8125rem,12px)] font-medium text-brand transition-colors hover:text-brand-strong"
+              className="flex items-center gap-1.5 text-[max(0.875rem,13px)] font-medium text-brand transition-colors hover:text-brand-strong"
             >
               <span>See all 15 strategies</span>
               <ChevronRightSvg className="size-3.25" />

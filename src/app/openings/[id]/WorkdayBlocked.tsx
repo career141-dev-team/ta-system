@@ -12,15 +12,15 @@ export default function WorkdayBlocked({ what, className = "" }: { what: string;
         className
       }
     >
-      <span aria-hidden="true" className="flex size-[max(1.5rem,20px)] shrink-0 items-center justify-center rounded-full bg-warn text-[max(0.8rem,11px)] font-semibold text-white">
+      <span aria-hidden="true" className="flex size-[max(1.5rem,20px)] shrink-0 items-center justify-center rounded-full bg-warn text-[max(0.8625rem,12px)] font-semibold text-white">
         !
       </span>
-      <p className="min-w-0 flex-1 text-[max(0.9rem,12px)] text-ink">
+      <p className="min-w-0 flex-1 text-[max(0.9625rem,13px)] text-ink">
         <b className="font-semibold">You cannot {what} yet.</b> <span className="text-ink-2">Your workday has not started today.</span>
       </p>
       <Link
         href="/today"
-        className="flex h-[max(1.9rem,26px)] items-center rounded-full bg-ink px-[max(1rem,12px)] text-[max(0.85rem,12px)] font-medium text-white hover:bg-black"
+        className="flex h-[max(1.9rem,26px)] items-center rounded-full bg-ink px-[max(1rem,12px)] text-[max(0.9125rem,13px)] font-medium text-white hover:bg-black"
       >
         Start workday
       </Link>

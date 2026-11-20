@@ -28,7 +28,7 @@ export default function Toast({ bold, rest, warn }: { bold?: string; rest: strin
     <div
       ref={el}
       role="status"
-      className="fixed bottom-[max(4rem,48px)] left-1/2 z-[90] flex max-w-[calc(100vw-24px)] -translate-x-1/2 items-center gap-2 rounded-full bg-ink px-[max(1.3rem,14px)] py-[max(0.7rem,8px)] text-[max(0.85rem,12.5px)] text-white shadow-float"
+      className="fixed bottom-[max(4rem,48px)] left-1/2 z-[90] flex max-w-[calc(100vw-24px)] -translate-x-1/2 items-center gap-2 rounded-full bg-ink px-[max(1.3rem,14px)] py-[max(0.7rem,8px)] text-[max(0.9125rem,13.5px)] text-white shadow-float"
     >
       <span className={"flex size-[1.3em] shrink-0 items-center justify-center rounded-full " + (warn ? "bg-warn" : "bg-success")}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="size-3/5" aria-hidden="true">

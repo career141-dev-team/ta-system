@@ -85,11 +85,11 @@ export default function Today({
       {/* AURA itself: a living light behind the button (AuraGlow). */}
       <AuraGlow hover={hover} pulse={pulse} />
 
-      <div className="relative my-auto flex flex-col items-center py-6 text-center">
+      <div className="relative my-auto flex flex-col items-center py-[clamp(8px,2dvh,1.5rem)] text-center">
         <p data-date className="min-h-[1.5em] text-[max(0.875rem,12px)] text-ink-3">
           {date}
         </p>
-        <h1 className="mt-[max(1.25rem,8px)] text-display font-light text-ink">
+        <h1 className="mt-[clamp(8px,2dvh,1.25rem)] text-display font-light text-ink">
           {/* Each word rises from behind its own edge. The space sits between the
               words, outside them: inside an inline-block it was dropped. */}
           {words.map((w, i) => (
@@ -115,19 +115,19 @@ export default function Today({
           onPointerLeave={() => setHover(false)}
           onFocus={() => setHover(true)}
           onBlur={() => setHover(false)}
-          className="group mt-[max(4rem,22px)] flex h-[max(4.75rem,52px)] items-center gap-[max(1rem,10px)] rounded-full bg-ink pl-[max(0.625rem,7px)] pr-[max(2.125rem,20px)] text-[max(1.3125rem,16px)] font-medium text-white shadow-[0_18px_40px_-12px_rgba(15,23,31,0.45)] transition-[scale,box-shadow] hover:shadow-[0_22px_48px_-12px_rgba(15,23,31,0.55)]"
+          className="group mt-[clamp(22px,6dvh,4rem)] flex h-[max(4.75rem,52px)] items-center gap-[max(1rem,10px)] rounded-full bg-ink pl-[max(0.625rem,7px)] pr-[max(2.125rem,20px)] text-[max(1.3125rem,16px)] font-medium text-white shadow-[0_18px_40px_-12px_rgba(15,23,31,0.45)] transition-[scale,box-shadow] hover:shadow-[0_22px_48px_-12px_rgba(15,23,31,0.55)]"
         >
           <span className="flex size-[max(3.5rem,38px)] shrink-0 items-center justify-center overflow-hidden rounded-full bg-black">
             <Image src="/aura-mark.png" alt="" width={56} height={56} priority className="size-full" />
           </span>
           {button}
         </button>
-        <p data-caption className="mt-[max(1.75rem,12px)] text-[max(0.875rem,12px)] text-ink-3">
+        <p data-caption className="mt-[clamp(12px,3dvh,1.75rem)] text-[max(0.875rem,12px)] text-ink-3">
           {caption}
         </p>
       </div>
 
-      <ul className="relative mb-[max(3.5rem,18px)] flex shrink-0 flex-wrap items-baseline justify-center gap-x-[max(2.5rem,18px)] gap-y-1">
+      <ul className="relative mb-[clamp(18px,4dvh,3.5rem)] flex shrink-0 flex-wrap items-baseline justify-center gap-x-[max(2.5rem,18px)] gap-y-1">
         {stats.map(([n, label]) => (
           <li key={label} data-stat className="flex items-baseline gap-[max(0.5rem,6px)]">
             <span className="text-[max(1rem,14px)] font-medium text-ink">

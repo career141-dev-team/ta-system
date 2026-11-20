@@ -230,7 +230,7 @@ export default function CvPages({
   return (
     <div ref={box} className="h-full w-full overflow-y-auto">
       {failed ? (
-        <p className="flex h-full items-center justify-center text-[max(0.85rem,12px)] text-ink-2">This CV could not be opened.</p>
+        <p className="flex h-full items-center justify-center text-[max(0.9125rem,13px)] text-ink-2">This CV could not be opened.</p>
       ) : !doc ? (
         // Until the file is read: a blank page of the right shape, so nothing jumps.
         <div className="flex h-full items-start justify-center p-3">

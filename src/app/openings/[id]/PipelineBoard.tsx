@@ -257,7 +257,7 @@ const FADE_OUT = { opacity: 0 };
 const MENU_OUT = { opacity: 0, y: -6, scale: 0.97 };
 
 const TOOL_PILL =
-  "flex h-[max(2.4rem,33px)] items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-white px-[max(1rem,13px)] text-[max(0.85rem,12.5px)] text-ink";
+  "flex h-[max(2.4rem,33px)] items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-white px-[max(1rem,13px)] text-[max(0.9125rem,13.5px)] text-ink";
 
 /** The element on screen for `sel`: Next keeps earlier visits of this page in the
  *  document, hidden, so a page-wide lookup could find a copy nobody sees. */
@@ -822,7 +822,7 @@ export default function PipelineBoard() {
           <button
             type="button"
             onClick={() => (gate ? refuse(gate + " Start it on Today, then add candidates.") : setAdding(true))}
-            className="flex h-[max(2.6rem,35px)] items-center gap-1.5 whitespace-nowrap rounded-full bg-brand px-[max(1.3rem,16px)] text-[max(0.85rem,12.5px)] font-medium text-white hover:bg-brand-strong"
+            className="flex h-[max(2.6rem,35px)] items-center gap-1.5 whitespace-nowrap rounded-full bg-brand px-[max(1.3rem,16px)] text-[max(0.9125rem,13.5px)] font-medium text-white hover:bg-brand-strong"
           >
             <PlusIcon />
             Add candidate
@@ -843,7 +843,7 @@ export default function PipelineBoard() {
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search candidates..."
             aria-label="Search candidates"
-            className="min-w-0 flex-1 bg-transparent text-[max(0.85rem,12.5px)] outline-none placeholder:text-ink-2"
+            className="min-w-0 flex-1 bg-transparent text-[max(0.9125rem,13.5px)] outline-none placeholder:text-ink-2"
           />
         </label>
         <PillMenu options={JOBS} initial={job} onChange={setJob} mark="tick" pillClass={TOOL_PILL} />
@@ -857,11 +857,11 @@ export default function PipelineBoard() {
         )}
 
         {active > 0 && (
-          <button type="button" onClick={reset} className="h-[max(2.4rem,33px)] rounded-full px-3 text-[max(0.85rem,12.5px)] font-medium text-brand-strong hover:bg-surface-2">
+          <button type="button" onClick={reset} className="h-[max(2.4rem,33px)] rounded-full px-3 text-[max(0.9125rem,13.5px)] font-medium text-brand-strong hover:bg-surface-2">
             Reset{active > 1 ? ` (${active})` : ""}
           </button>
         )}
-        <div className="ml-auto flex items-center rounded-full bg-surface-2 p-[3px] text-[max(0.85rem,12.5px)]">
+        <div className="ml-auto flex items-center rounded-full bg-surface-2 p-[3px] text-[max(0.9125rem,13.5px)]">
           {(
             [
               ["board", "Board", <BoardIcon key="b" />],
@@ -1106,19 +1106,19 @@ function MovedNotice({
           </span>
           Candidate moved
         </h2>
-        <p className="mt-[max(0.6rem,8px)] text-[max(0.85rem,12.5px)] leading-relaxed text-ink-2">
+        <p className="mt-[max(0.6rem,8px)] text-[max(0.9125rem,13.5px)] leading-relaxed text-ink-2">
           <span className="font-semibold text-ink">{name}</span> moved from <Stage s={from} /> to{" "}
           <Stage s={to} />.
         </p>
         {note && (
-          <p className="mt-[max(0.5rem,6px)] rounded-xl bg-surface-2 px-3 py-2 text-[max(0.8rem,11.5px)] leading-relaxed text-ink">{note}</p>
+          <p className="mt-[max(0.5rem,6px)] rounded-xl bg-surface-2 px-3 py-2 text-[max(0.8625rem,12.5px)] leading-relaxed text-ink">{note}</p>
         )}
         <div className="mt-[max(1.4rem,16px)] flex justify-end gap-[max(0.6rem,8px)]">
           {!note && (
             <button
               type="button"
               onClick={onUndo}
-              className="h-[max(2.4rem,33px)] rounded-full border border-border px-[max(1.2rem,15px)] text-[max(0.85rem,12.5px)] text-ink hover:bg-surface-2"
+              className="h-[max(2.4rem,33px)] rounded-full border border-border px-[max(1.2rem,15px)] text-[max(0.9125rem,13.5px)] text-ink hover:bg-surface-2"
             >
               Undo
             </button>
@@ -1127,7 +1127,7 @@ function MovedNotice({
             type="button"
             autoFocus
             onClick={onDone}
-            className="h-[max(2.4rem,33px)] rounded-full bg-brand px-[max(1.4rem,17px)] text-[max(0.85rem,12.5px)] font-medium text-white hover:bg-brand-strong"
+            className="h-[max(2.4rem,33px)] rounded-full bg-brand px-[max(1.4rem,17px)] text-[max(0.9125rem,13.5px)] font-medium text-white hover:bg-brand-strong"
           >
             Done
           </button>
@@ -1285,7 +1285,7 @@ function ListView({
   const rows = board[stage].filter(match);
   // The owner's List design (17 Nov 2026): stages as soft rounded buttons on the left
   // behind a hairline, each candidate a rounded row with its details spread evenly.
-  const pill = "shrink-0 rounded-full px-[max(0.5rem,6px)] py-0.5 text-[max(0.6875rem,10px)] font-medium ";
+  const pill = "shrink-0 rounded-full px-[max(0.5rem,6px)] py-0.5 text-[max(0.75rem,11px)] font-medium ";
   return (
     <div className="mx-[max(1.5rem,14px)] mb-[max(1.2rem,12px)] mt-[max(1.25rem,10px)] flex min-h-0 flex-1 max-md:flex-col">
       <nav
@@ -1299,7 +1299,7 @@ function ListView({
             aria-pressed={stage === s.name}
             onClick={() => setStage(s.name)}
             className={
-              "flex flex-1 min-h-[max(2rem,28px)] items-center whitespace-nowrap rounded-sm border px-[max(0.875rem,11px)] text-left text-[max(0.9375rem,12.5px)] text-ink transition-colors max-md:h-[max(2.25rem,30px)] max-md:flex-initial max-md:shrink-0 " +
+              "flex flex-1 min-h-[max(2rem,28px)] items-center whitespace-nowrap rounded-sm border px-[max(0.875rem,11px)] text-left text-[max(1rem,13.5px)] text-ink transition-colors max-md:h-[max(2.25rem,30px)] max-md:flex-initial max-md:shrink-0 " +
               (stage === s.name ? "border-transparent bg-surface-2 font-medium" : "border-border bg-surface hover:bg-surface-2")
             }
           >
@@ -1313,7 +1313,7 @@ function ListView({
           a phone slides the table sideways. */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto pl-[max(1.5rem,14px)] [scrollbar-width:thin] max-md:pl-0">
         <div className="min-w-[56rem]">
-          <div role="row" className={LIST_COLS + " sticky top-0 z-10 border-b border-border bg-surface py-[max(0.6rem,7px)] text-[max(0.75rem,10.5px)] font-medium uppercase tracking-wide text-ink-3"}>
+          <div role="row" className={LIST_COLS + " sticky top-0 z-10 border-b border-border bg-surface py-[max(0.6rem,7px)] text-[max(0.8125rem,11.5px)] font-medium uppercase tracking-wide text-ink-3"}>
             <span role="columnheader">Candidate</span>
             <span role="columnheader">Title</span>
             <span role="columnheader">Experience</span>
@@ -1333,10 +1333,10 @@ function ListView({
               <article
                 key={p.id}
                 role="row"
-                className={LIST_COLS + " h-[max(3.5rem,46px)] border-b border-border text-[max(0.8125rem,11px)] text-ink-2 transition-colors hover:bg-surface-2/60"}
+                className={LIST_COLS + " h-[max(3.5rem,46px)] border-b border-border text-[max(0.875rem,12px)] text-ink-2 transition-colors hover:bg-surface-2/60"}
               >
                 <span className="flex min-w-0 items-center gap-[max(0.6rem,7px)]">
-                  <span className="flex size-[max(2.25rem,30px)] shrink-0 items-center justify-center rounded-full bg-info-soft text-[max(0.8125rem,11px)] font-semibold text-info">
+                  <span className="flex size-[max(2.25rem,30px)] shrink-0 items-center justify-center rounded-full bg-info-soft text-[max(0.875rem,12px)] font-semibold text-info">
                     {initials(p.name)}
                   </span>
                   <button
@@ -1347,7 +1347,7 @@ function ListView({
                     title={p.name}
                     // mr-auto: the LinkedIn mark sits at the column's right edge in every
                     // row, not straight after names of different lengths (owner, 20 Nov 2026).
-                    className="mr-auto min-w-0 truncate text-left text-[max(0.9375rem,12.5px)] font-semibold text-ink hover:text-brand"
+                    className="mr-auto min-w-0 truncate text-left text-[max(1rem,13.5px)] font-semibold text-ink hover:text-brand"
                   >
                     {p.name}
                   </button>
