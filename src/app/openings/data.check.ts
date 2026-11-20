@@ -22,6 +22,34 @@ assert.equal(readBrief("Need a Finance Manager, 2 in Colombo.").role, "Finance M
 const c = readBrief("Need 3 people for Galle, a Store Manager.");
 assert.deepEqual(c.locations, [{ city: "Galle", people: 3 }]);
 
+
+// The owner's pasted JD (20 Nov): "Sri Lanka" read as Lanka Tiles, the role came out
+// empty, "1–3 years" became "3+ years" and the salary range was missed.
+const jd = readBrief(`Project Coordinator:
+Job Title: Project Coordinator
+Department / Reporting Line: Operations | Reports to: Senior Project Manager
+Location & Work Model: Colombo, Sri Lanka (Hybrid – 3 days in office)
+Compensation & Benefits: LKR 120,000 – 150,000/month + Health Insurance & Performance Bonus
+We are looking for an organized Project Coordinator to help plan, track, and deliver client projects.
+• Must-Have: 1–3 years of experience in project coordination or operations; strong organizational skills.`);
+assert.equal(jd.client, ""); // no client named: AURA asks, it never guesses one
+assert.equal(jd.clientKnown, false);
+assert.equal(jd.role, "Project Coordinator");
+assert.deepEqual(jd.locations, [{ city: "Colombo", people: 1 }]);
+assert.equal(jd.musts, "1–3 years of experience in project coordination or operations · LKR 120,000–150,000");
+
+// Only the desk's real clients count, and only by a name that is theirs.
+assert.equal(readBrief("Need a Finance Manager in Colombo, Sri Lanka.", { clients: ["Lanka Tiles"] }).client, "");
+assert.equal(readBrief("Hayleys need a Finance Manager.", { clients: ["Hayleys Fabric PLC"] }).client, "Hayleys Fabric PLC");
+assert.equal(readBrief("Hayleys need a Finance Manager.", { clients: ["Hayleys Fabric", "Hayleys Solar"] }).client, ""); // two Hayleys: ask
+const acme = readBrief("Client: Acme Holdings\nRole: Accountant", { clients: [] });
+assert.equal(acme.client, "Acme Holdings");
+assert.equal(acme.clientKnown, false); // named outright: offered as a new client
+assert.equal(acme.role, "Accountant");
+assert.equal(readBrief("Need an Accountant for Galle.", { clients: [] }).client, ""); // "for Galle" is not a client
+assert.equal(readBrief("Looking for an organized Project Coordinator to help.").role, "Project Coordinator");
+assert.equal(readBrief("Must have 5 years in audit.").musts, "5 years in audit");
+
 readBrief("Colombo again");
 assert.deepEqual(EMPTY.locations, []); // a reading never writes into the empty form
 console.log("brief reader: ok");

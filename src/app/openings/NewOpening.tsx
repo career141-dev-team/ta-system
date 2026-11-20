@@ -92,7 +92,7 @@ export default function NewOpening({
     // ponytail: a stand-in wait; with the backend this is one model call.
     timer.current = setTimeout(() => {
       setReading(false);
-      const got = readBrief(text);
+      const got = readBrief(text, { clients: CLIENT_LIST, team: TEAM_LIST });
       // Known = one of the desk's clients (the real list when signed in).
       setR(withMe({ ...got, clientKnown: CLIENT_LIST.some((c) => c.toLowerCase() === got.client.trim().toLowerCase()) }));
       setDone([]);

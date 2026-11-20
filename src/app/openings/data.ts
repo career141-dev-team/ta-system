@@ -146,22 +146,49 @@ export const EMPTY: Read = {
   read: [],
 };
 
+/** One of the desk's clients named in the words: its whole name, or a first word only
+ *  it has, written with its capital ("Hayleys" for Hayleys Fabric). "Sri Lanka" is
+ *  taken out first - it once read as Lanka Tiles (owner, 20 Nov). */
+export function clientIn(text: string, clients: string[]): string | null {
+  const plain = text.replace(/\bSri\s+Lanka\b/gi, " ");
+  const esc = (w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const has = (w: string, flags: string) => new RegExp(`(^|[^\\w])${esc(w)}($|[^\\w])`, flags).test(plain);
+  const whole = clients.filter((c) => c.trim() && has(c.trim(), "i"));
+  if (whole.length) return whole.sort((a, b) => b.length - a.length)[0];
+  const first = (c: string) => c.trim().split(/\s+/)[0];
+  const hits = clients.filter((c) => {
+    const w = first(c);
+    return w.length >= 3 && /^[A-Z]/.test(w) && clients.filter((x) => first(x) === w).length === 1 && has(w, "");
+  });
+  return hits.length === 1 ? hits[0] : null;
+}
+
 /** A stand-in for AURA reading a brief or a JD: what the words plainly say, nothing
  *  guessed. ponytail: word rules only; with the backend this is one model call that
  *  returns the same fields. */
-export function readBrief(text: string): Read {
+export function readBrief(text: string, desk: { clients?: string[]; team?: string[] } = {}): Read {
   const r: Read = { ...EMPTY, read: [], locations: [], team: [] };
   const t = text.toLowerCase();
-  const client = CLIENTS.find((c) => new RegExp(`\\b${c.split(" ")[0].toLowerCase()}\\b`).test(t));
+  const client = clientIn(text, desk.clients ?? CLIENTS);
   if (client) Object.assign(r, { client, clientKnown: true });
   else {
-    const m = text.match(/\b(?:client|for|at)\s+([A-Z][\w&.]+(?:\s[A-Z][\w&.]+)*)/);
-    if (m) r.client = m[1];
+    // A new client only when the brief names it outright ("Client: Acme Ltd"). A JD's
+    // "for", "at" or a place ("Sri Lanka") once became a client (owner, 20 Nov), and
+    // Create would have added that client for real.
+    const m = text.match(/^[ \t]*(?:client|company|employer|organi[sz]ation)(?:\s+name)?\s*[:–-]\s*(.+?)\s*$/im);
+    if (m) r.client = m[1].slice(0, 80);
   }
   if (r.client) r.read.push("client");
 
-  const role = text.match(/\b(?:[Ww]ants?|[Nn]eeds?|[Hh]iring|[Ll]ooking for)\s+(?:an?\s+)?([A-Z][^,.—–-]*?)(?=\s+(?:for|in|at|to|who)\b|\s*[,.—–-]|$)/);
-  if (role) {
+  // A JD names the role on its own line ("Job Title: Project Coordinator"); a spoken
+  // brief says it after "wants / needs / looking for" - a small word before the title
+  // is passed over ("an organized Project Coordinator").
+  const titled = text.match(/^[ \t]*(?:job\s*title|title|position|role|designation|vacancy)\s*[:–-]\s*(.+?)\s*$/im);
+  const role = text.match(/\b(?:[Ww]ants?|[Nn]eeds?|[Hh]iring|[Ll]ooking for)\s+(?:an?\s+)?(?:[a-z]+\s+)?([A-Z][^,.—–-]*?)(?=\s+(?:for|in|at|to|who)\b|\s*[,.—–-]|$)/);
+  if (titled) {
+    r.role = titled[1].slice(0, 120);
+    r.read.push("role");
+  } else if (role) {
     const move = text.match(/\bfor their\s+(.+?)\s+(?:move|project|programme|rollout)\b/i);
     r.role = move ? `${role[1].trim()} — ${move[1]}` : role[1].trim();
     r.read.push("role");
@@ -185,16 +212,25 @@ export function readBrief(text: string): Read {
   if (p) r.priority = Number(p[1]) as Priority;
   else if (weeks) r.priority = Number(weeks[1]) <= 2 ? 1 : Number(weeks[1]) <= 3 ? 2 : Number(weeks[1]) <= 4 ? 3 : 4;
   if (p || weeks) r.read.push("priority");
-  r.team = TEAM.filter((n) => new RegExp(`\\b${n.toLowerCase()}\\b`).test(t));
+  r.team = (desk.team ?? TEAM).filter((n) => new RegExp(`\\b${n.toLowerCase()}\\b`).test(t));
   if (r.team.length) r.read.push("team");
 
   const musts: string[] = [];
-  const years = t.match(/(\d+)\s*\+?\s*(?:\+\s*)?years?/);
-  if (years) musts.push(`${years[1]}+ years`);
-  const must = text.match(/\bmust (?:have\s+)?(.+?)(?:[.;]|$)/i);
-  if (must) musts.push(must[1].trim());
+  // "1–3 years" is a range, not "3+"; "5 years" / "5+ years" mean at least 5.
+  const range = t.match(/(\d{1,2})\s*(?:–|—|-|to)\s*(\d{1,2})\s*\+?\s*years?/);
+  const years = t.match(/(\d{1,2})\s*\+?\s*(?:\+\s*)?years?/);
+  const yearsSaid = range ? `${range[1]}–${range[2]} years` : years ? `${years[1]}+ years` : "";
+  // "must have led ..." in a brief, or a JD's "Must-Have: ..." line.
+  const must = text.match(/\bmust(?:[\s-]+have)?\s*:?\s+(.+?)(?:[.;]|$)/im);
+  const mustText = must?.[1].trim() ?? "";
+  const said = (range ?? years)?.[0];
+  if (yearsSaid && !(said && mustText.toLowerCase().includes(said))) musts.push(yearsSaid);
+  if (mustText) musts.push(mustText);
+  // "LKR 120,000 – 150,000/month" as written; "budget around 1.2M" as ~LKR 1.2M.
+  const lkr = text.match(/\b(?:LKR|Rs\.?)\s*([\d,.]*\d\s*[MK]?)(?:\s*(?:–|—|-|to)\s*(?:LKR|Rs\.?)?\s*([\d,.]*\d\s*[MK]?))?/i);
   const pay = text.match(/\b(?:budget|salary|package|pay)\b[^\d]{0,15}([\d.]+\s*[MK])/i);
-  if (pay) musts.push(`~LKR ${pay[1].replace(/\s/g, "")}`);
+  if (lkr) musts.push(`LKR ${lkr[1].trim()}${lkr[2] ? `–${lkr[2].trim()}` : ""}`);
+  else if (pay) musts.push(`~LKR ${pay[1].replace(/\s/g, "")}`);
   if (musts.length) {
     r.musts = musts.join(" · ");
     r.read.push("musts");
