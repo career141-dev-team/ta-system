@@ -10,7 +10,7 @@
 // Signed in, every role's answers read the real desk (ui/lead:desk, ui/homes:director,
 // ui/homes:ops, 19 Nov); the sample desk only when signed out.
 // ponytail: plain-word answers (homeAnswers.ts); the Haiku answer comes later (E5).
-import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, cloneElement, isValidElement, useEffect, useRef, useState, type ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { DUR, EASE, gsap, motionOK } from "@/lib/gsap";
@@ -133,7 +133,7 @@ function Chat({ role, desk, failed, onBoard }: { role: HomeRole; desk: Desk | nu
 
   return (
     <div ref={root} className="flex min-h-0 flex-1 max-md:flex-col">
-      <Rail role={role} desk={desk ?? EMPTY} onAsk={send} onBoard={onBoard} />
+      <Rail role={role} desk={desk ?? EMPTY} loading={!desk && !failed} onAsk={send} onBoard={onBoard} />
 
       <section className="flex min-h-0 flex-1 flex-col">
         <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
@@ -185,11 +185,16 @@ function Chat({ role, desk, failed, onBoard }: { role: HomeRole; desk: Desk | nu
 }
 
 /** The left rail: who the person is responsible for, each row asks AURA about them. */
-function Rail({ role, desk, onAsk, onBoard }: { role: HomeRole; desk: Desk; onAsk: (q: string) => void; onBoard: () => void }) {
+/** How many rows the rail shows before "Show more" (owner, 20 Nov 2026: 16 TAs in a row was too long). */
+const RAIL_FIRST = 5;
+
+function Rail({ role, desk, loading, onAsk, onBoard }: { role: HomeRole; desk: Desk; loading: boolean; onAsk: (q: string) => void; onBoard: () => void }) {
   const { team, waiting, withClient } = desk;
+  const [all, setAll] = useState(false);
   const started = team.filter((t) => t.day.started).length;
-  const head =
-    role === "Lead"
+  const head = loading
+    ? { title: role === "Lead" ? "The team" : role === "Director" ? "For your review" : "With clients", sub: "Reading the desk…" }
+    : role === "Lead"
       ? { title: "The team", sub: `Today · ${started} of ${team.length} started` }
       : role === "Director"
         ? { title: "For your review", sub: `${waiting.length} ${waiting.length === 1 ? "set" : "sets"} waiting` }
@@ -211,17 +216,19 @@ function Rail({ role, desk, onAsk, onBoard }: { role: HomeRole; desk: Desk; onAs
   return (
     <aside
       data-rail
-      className="flex w-[max(21.25rem,230px)] shrink-0 flex-col gap-[max(1.5rem,14px)] overflow-y-auto border-r border-border pb-[max(2.25rem,16px)] pl-[max(2.25rem,18px)] pr-[max(1.75rem,14px)] pt-[max(2.5rem,18px)] [scrollbar-width:thin] max-md:max-h-[38dvh] max-md:w-full max-md:gap-3 max-md:border-b max-md:border-r-0 max-md:p-4"
+      className="flex w-[max(23rem,240px)] shrink-0 flex-col gap-[max(1.5rem,14px)] overflow-y-auto border-r border-border pb-[max(2.25rem,16px)] pl-[max(2.25rem,18px)] pr-[max(1.75rem,14px)] pt-[max(2.5rem,18px)] [scrollbar-width:thin] max-md:max-h-[38dvh] max-md:w-full max-md:gap-3 max-md:border-b max-md:border-r-0 max-md:p-4"
     >
       <div>
         <h1 className="text-[max(1.75rem,20px)] leading-tight text-ink">{head.title}</h1>
         <p className="mt-1 text-[max(0.875rem,12px)] text-ink-3">{head.sub}</p>
       </div>
-      <ul className="flex flex-col gap-[max(0.25rem,2px)] max-md:flex-row max-md:overflow-x-auto max-md:[scrollbar-width:none]">
-        {rows.map((r) => (
+      <ul className="flex flex-col gap-[max(0.5rem,5px)] max-md:flex-row max-md:overflow-x-auto max-md:[scrollbar-width:none]">
+        {loading
+          ? Array.from({ length: RAIL_FIRST }, (_, i) => <RailSkeleton key={i} />)
+          : (all ? rows : rows.slice(0, RAIL_FIRST)).map((r, i) => (
           <li key={r.key} className="shrink-0">
-            <button type="button" onClick={() => onAsk(r.ask)} title={r.ask} className="flex w-full items-center gap-[max(0.875rem,10px)] rounded-md px-[max(0.75rem,8px)] py-[max(0.7rem,7px)] text-left transition-colors hover:bg-surface-2/70">
-              {r.lead}
+            <button type="button" onClick={() => onAsk(r.ask)} title={r.ask} className="flex w-full items-center gap-[max(1.1rem,12px)] rounded-md px-[max(0.75rem,8px)] py-[max(0.85rem,8px)] text-left transition-colors hover:bg-surface-2/70">
+              {isValidElement<{ delay?: number }>(r.lead) && r.lead.type === Ring ? cloneElement(r.lead, { delay: (i % RAIL_FIRST) * 0.06 }) : r.lead}
               <span className="min-w-0">
                 <span className="block truncate text-[max(1rem,13.5px)] font-medium text-ink">{r.main}</span>
                 <span className={"block truncate text-[max(0.875rem,12px)] " + (r.subClass ?? "text-ink-3")}>{r.sub}</span>
@@ -230,6 +237,19 @@ function Rail({ role, desk, onAsk, onBoard }: { role: HomeRole; desk: Desk; onAs
           </li>
         ))}
       </ul>
+      {!loading && rows.length > RAIL_FIRST && (
+        <button
+          type="button"
+          onClick={() => setAll((v) => !v)}
+          aria-expanded={all}
+          className="-mt-2 flex items-center gap-1.5 self-start rounded-full px-[max(0.75rem,8px)] py-1.5 text-[max(0.875rem,12px)] font-medium text-brand-strong transition-colors hover:bg-surface-2"
+        >
+          {all ? "Show less" : `Show ${rows.length - RAIL_FIRST} more`}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={"size-3.5 transition-transform " + (all ? "rotate-180" : "")} aria-hidden="true">
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+        </button>
+      )}
       <button type="button" onClick={onBoard} className="mt-auto flex items-center justify-between rounded-md bg-surface-2 px-4 py-3 text-left transition-colors hover:bg-surface-3 max-md:mt-0">
         <span>
           <span className="block text-[max(0.875rem,12px)] font-medium text-ink">Team board</span>
@@ -243,18 +263,85 @@ function Rail({ role, desk, onAsk, onBoard }: { role: HomeRole; desk: Desk; onAs
   );
 }
 
-/** A TA's checks as a ring: green when the EOD is sent, amber under half, red not started. */
-function Ring({ done, of, eod }: { done: number; of: number; eod: boolean }) {
+/** A TA's checks as a ring: green when the EOD is sent, amber under half, red not started.
+ *  The arc draws in and the number counts up when the row appears (owner, 20 Nov 2026);
+ *  the figure shrinks with its length so "3/209" sits inside the ring. */
+function Ring({ done, of, eod, delay = 0 }: { done: number; of: number; eod: boolean; delay?: number }) {
   const share = of ? done / of : 0;
   const tone = eod ? "stroke-brand" : !of ? "stroke-danger" : share < 0.5 ? "stroke-warn" : "stroke-info";
+  const arc = useRef<SVGCircleElement>(null);
+  const num = useRef<HTMLSpanElement>(null);
+  const label = of ? `${done}/${of}` : "–";
+  const target = Math.max(of ? 4 : 0, share * 100);
+  useEffect(() => {
+    const el = arc.current;
+    const n = num.current;
+    if (!el || !n) return;
+    el.style.strokeDasharray = `${target} 100`;
+    if (!motionOK() || !of) return;
+    const c = { v: 0, d: 0 };
+    el.style.strokeDasharray = "0 100";
+    n.textContent = `0/${of}`;
+    const t = gsap.to(c, {
+      v: target,
+      d: done,
+      duration: 0.9,
+      delay,
+      ease: EASE.out,
+      onUpdate: () => {
+        el.style.strokeDasharray = `${c.v} 100`;
+        n.textContent = `${Math.round(c.d)}/${of}`;
+      },
+    });
+    return () => {
+      t.progress(1).kill();
+      n.textContent = label;
+      el.style.strokeDasharray = `${target} 100`;
+    };
+  }, [target, done, of, delay, label]);
+  // Smaller type for longer figures, so they stay inside the ring.
+  const size =
+    label.length <= 3
+      ? "text-[max(0.9375rem,12px)]"
+      : label.length === 4
+        ? "text-[max(0.8125rem,11px)]"
+        : label.length === 5
+          ? "text-[max(0.75rem,10px)]"
+          : "text-[max(0.6875rem,9px)]";
   return (
-    <span className="relative flex size-[max(2.5rem,30px)] shrink-0 items-center justify-center">
+    <span className="relative flex size-[max(3.5rem,44px)] shrink-0 items-center justify-center">
       <svg viewBox="0 0 36 36" className="absolute inset-0 size-full -rotate-90" aria-hidden="true">
         <circle cx="18" cy="18" r="15" fill="none" strokeWidth="3.5" className="stroke-surface-2" />
-        <circle cx="18" cy="18" r="15" fill="none" strokeWidth="3.5" strokeLinecap="round" pathLength={100} strokeDasharray={`${Math.max(of ? 4 : 0, share * 100)} 100`} className={tone} />
+        <circle ref={arc} cx="18" cy="18" r="15" fill="none" strokeWidth="3.5" strokeLinecap="round" pathLength={100} strokeDasharray={`${target} 100`} className={tone} />
       </svg>
-      <span className="text-[max(0.6875rem,10px)] font-medium tabular-nums text-ink-2">{of ? `${done}/${of}` : "–"}</span>
+      <span ref={num} className={"font-medium tabular-nums leading-none tracking-tight text-ink-2 " + size}>
+        {label}
+      </span>
     </span>
+  );
+}
+
+/** A rail row while the desk is read: a ring with a turning arc and two shimmering lines. */
+function RailSkeleton() {
+  const spin = useRef<SVGSVGElement>(null);
+  useEffect(() => {
+    if (!spin.current || !motionOK()) return;
+    const t = gsap.to(spin.current, { rotate: 360, duration: 1.1, ease: "none", repeat: -1, transformOrigin: "50% 50%" });
+    return () => void t.kill();
+  }, []);
+  return (
+    <li role="status" aria-label="Loading" className="flex shrink-0 items-center gap-[max(1.1rem,12px)] px-[max(0.75rem,8px)] py-[max(0.85rem,8px)]">
+      <span className="relative flex size-[max(3.5rem,44px)] shrink-0 items-center justify-center">
+        <svg ref={spin} viewBox="0 0 36 36" className="absolute inset-0 size-full" aria-hidden="true">
+          <circle cx="18" cy="18" r="15" fill="none" strokeWidth="3.5" className="stroke-surface-2" />
+          <circle cx="18" cy="18" r="15" fill="none" strokeWidth="3.5" strokeLinecap="round" pathLength={100} strokeDasharray="22 100" className="stroke-brand" />
+        </svg>
+      </span>
+      <span className="flex min-w-0 flex-col gap-2">
+        <span className="shimmer block h-3.5 w-24 rounded-md" />
+        <span className="shimmer block h-3 w-32 rounded-md" />
+      </span>
+    </li>
   );
 }
 
