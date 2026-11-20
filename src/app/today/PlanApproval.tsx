@@ -49,7 +49,8 @@ export function toTasks(plan: Plan, positions: DayPosition[], live: boolean) {
   return plan.steps.map((s, i) => {
     const pos = s.where ? positions.find((p) => short(p) === s.where || p.title === s.where) : undefined;
     const next = starts[i + 1];
-    const minutes = Math.min(480, Math.max(5, next !== undefined && next > starts[i] ? next - starts[i] : 30));
+    const gap = next !== undefined && next > starts[i] ? next - starts[i] : 30;
+    const minutes = Math.min(480, Math.max(5, s.length && s.length > 0 ? Math.min(s.length, gap) : gap));
     return {
       key: `t${i + 1}`,
       title: s.what.slice(0, 120),

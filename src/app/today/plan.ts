@@ -9,7 +9,8 @@
 export type WorkType = "100%" | "Follow-up" | "Add-on";
 /** `todo`: Rashmi's strategies on it due today (17 Nov 2026), worked first on that position. */
 export type DayPosition = { id: string; title: string; client: string; type: WorkType; todo?: string[] };
-export type Step = { at: string; minutes: number; what: string; tone: "brand" | "warn" | "info" | "none"; where?: string; href?: string };
+/** `minutes` is the start (minutes after midnight); `length` how long it takes, when known. */
+export type Step = { at: string; minutes: number; length?: number; what: string; tone: "brand" | "warn" | "info" | "none"; where?: string; href?: string };
 export type Plan = { headline: string; steps: Step[]; first?: string };
 
 /** The short name the design uses for a position ("SAP", "Finance"). */

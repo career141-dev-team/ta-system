@@ -314,7 +314,10 @@ export default function Workday({ startedAt }: { startedAt: number | null }) {
           if (!d.ok) return { say: d.message };
           const a = d.reply;
           if (a.kind === "plan")
-            return { headline: a.headline, steps: a.steps.map((x) => ({ at: x.at, minutes: 0, what: x.what, tone: x.tone, where: title(x.where), href: href(x.where) })) };
+            return { headline: a.headline, steps: a.steps.map((x) => ({
+              // The real start and length (D11 item 2); before, 0 saved every task at midnight.
+              at: x.at, minutes: x.start ?? Number.NaN, length: x.minutes, what: x.what, tone: x.tone, where: title(x.where), href: href(x.where),
+            })) };
           return { say: a.say, chips: a.chips, warn: a.warn, rows: a.rows.map((x, i) => ({ n: i + 1, main: x.main, meta: x.meta, href: href(x.where) })) };
         })
         .catch((): Answer => ({ say: "AURA could not answer just now. Try again." }))

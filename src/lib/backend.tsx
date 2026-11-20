@@ -286,7 +286,8 @@ export type DoorDeskPosition = {
 };
 /** AURA's reply on Today (ui/aura:askToday). `where` is a position id on the desk. */
 export type AuraReply =
-  | { kind: "plan"; headline: string; steps: { at: string; what: string; where?: string; tone: "brand" | "warn" | "info" | "none" }[] }
+  // start = minutes after midnight, minutes = length (ta-system #44; absent before it).
+  | { kind: "plan"; headline: string; steps: { at: string; start?: number; minutes?: number; what: string; where?: string; tone: "brand" | "warn" | "info" | "none" }[] }
   | { kind: "answer"; say: string; rows: { main: string; meta?: string; where?: string }[]; chips: string[]; warn: string[] };
 
 export type Answer<T> = ({ ok: true } & T) | { ok: false; message: string };
