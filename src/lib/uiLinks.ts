@@ -50,13 +50,14 @@ export function readUiBody<T extends Record<string, readonly string[]>>(table: T
   for (const [k, v] of Object.entries(b)) {
     if (k === "do") continue;
     if (!allowed.includes(k)) return { ok: false, message: `The form had a field it should not: ${k.slice(0, 40)}.` };
-    const values = Array.isArray(v) && k === "entryId" ? v.slice(0, 200) : [v];
+    const values = Array.isArray(v) && (k === "entryId" || k === "assignedTaIds") ? v.slice(0, 200) : [v];
     for (const one of values) {
       if (typeof one !== "string" || one.length > 50_000) return { ok: false, message: "A field on the form was not readable." };
       fields.push([k, one]);
     }
   }
-  if (!fields.some(([k]) => k === "openingId")) return { ok: false, message: "Which opening is this for? Reload and try again." };
+  // A form that names an opening must name it (create and the Bin have none).
+  if (allowed.includes("openingId") && !fields.some(([k]) => k === "openingId")) return { ok: false, message: "Which opening is this for? Reload and try again." };
   return { ok: true, action: what, fields };
 }
 
