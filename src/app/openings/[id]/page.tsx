@@ -2,6 +2,7 @@ import OpeningCards from "./OpeningCards";
 import LiveName from "./LiveName";
 import { StagePill, StatusPill } from "./LivePills";
 import { TeamPill } from "./TeamPill";
+import { PlacedChip } from "./PlacedChip";
 import RowLink from "./RowLink";
 import { type MenuOption } from "./PillMenu";
 import Notch from "./Notch";
@@ -115,6 +116,7 @@ export default async function OpeningPage({ params }: PageProps<"/openings/[id]"
         <Divider />
         <StagePill options={STAGE} sample={OPENING.stage} pillClass={PILL} />
         <TeamPill pillClass={PILL} />
+        <PlacedChip pillClass={PILL} />
       </div>
 
       {/* The lists keep their size and the page scrolls to the cards under them (owner,
