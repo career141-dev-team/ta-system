@@ -3,27 +3,12 @@ import Link from "next/link";
 import ActiveNavLinks, { SearchShortcut } from "./NavLinks";
 import { Bell, Person } from "./TopMenus";
 import { OverviewButton } from "./Overview";
+import AskBar from "./AskBar";
 
 
 const CIRCLE =
   "flex size-[max(2.5rem,34px)] shrink-0 items-center justify-center rounded-full";
 
-function SearchIcon({ className }: { className: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      className={className}
-      aria-hidden="true"
-    >
-      <circle cx="11" cy="11" r="7" />
-      <path d="m20 20-3.5-3.5" />
-    </svg>
-  );
-}
 
 // The owner's second top bar (TopNavV2, 12 Nov 2026): five links, "Search or ask
 // AURA" and a soft shadow. Sizes are on Tailwind's rem scale (5rem = 80px at
@@ -59,34 +44,8 @@ export default function TopNav() {
           page turn, slow pages - 14 Nov 2026). The board reads the path the same way. */}
       <ActiveNavLinks />
 
-      <form
-        action="/database"
-        role="search"
-        className="ml-auto hidden h-[max(2.875rem,36px)] w-[max(21.25rem,180px)] min-[1520px]:flex min-w-36 shrink items-center gap-[max(0.625rem,6px)] rounded-full bg-surface-2 pl-[max(1.125rem,12px)] pr-[max(0.625rem,6px)] has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-brand/30"
-      >
-        <SearchIcon className="size-[max(0.9375rem,13px)] shrink-0 text-ink-2" />
-        <input
-          name="q"
-          type="search"
-          placeholder="Search or ask AURA"
-          aria-label="Search or ask AURA"
-          className="min-w-0 flex-1 text-ellipsis bg-transparent text-nav text-ink outline-none placeholder:text-ink-2"
-        />
-        <kbd className="shrink-0 rounded-md bg-white px-[max(0.375rem,4px)] py-px font-sans text-[max(0.6875rem,10px)] text-ink-2">
-          ⌘K
-        </kbd>
-        <SearchShortcut />
-      </form>
-      {/* Under a 1520 window the box is a round button, so the top bar has room for
-          every link a role needs (owner 14 Nov 2026). */}
-      <Link
-        href="/database"
-        prefetch={false}
-        aria-label="Search or ask AURA"
-        className={CIRCLE + " ml-auto bg-surface-2 text-ink min-[1520px]:hidden"}
-      >
-        <SearchIcon className="size-[45%]" />
-      </Link>
+      <AskBar circle={CIRCLE} />
+      <SearchShortcut />
 
       {/* The bell's list and the person's menu (TopMenus): what the TA System's
           bell and name button open (FLOW-CHECK 7.1, 7.3). */}

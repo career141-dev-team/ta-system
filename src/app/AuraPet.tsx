@@ -15,7 +15,6 @@
 // the day is finished. Leads, Director and Ops have no workday, so theirs is always on.
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
 import { DUR, EASE, gsap } from "@/lib/gsap";
 import { PETS, useMyPet, type PetMood } from "@/lib/pet";
 import { useAlerts } from "./alerts/data";
@@ -23,6 +22,7 @@ import { door, useDoorQuery } from "@/lib/backend";
 import { useRole, useSignedInPerson, worksADay } from "@/lib/role";
 import { useDayEnd, useWorkday } from "@/lib/workday";
 import { petGreeting, type GreetPlan } from "@/lib/petDay";
+import { AskReply, useAsk } from "./AskAura";
 import { Veil } from "./TopMenus";
 import { Toggle } from "./strategy/ui";
 
@@ -227,7 +227,8 @@ export default function AuraPet() {
 /** A click on the pet: one line to AURA, answered in the AURA chat. */
 function Ask({ onClose }: { onClose: () => void }) {
   const [q, setQ] = useState("");
-  const router = useRouter();
+  // Read first, then answer here, open, search or ask the Today chat (src/app/AskAura.tsx).
+  const { run, answer } = useAsk(onClose);
   const box = useRef<HTMLFormElement>(null);
   // The latest close, read on Escape: the effect must run once. With onClose as a
   // dependency it re-ran on every sprite frame (a new function each render), restarting
@@ -251,20 +252,21 @@ function Ask({ onClose }: { onClose: () => void }) {
       onSubmit={(e) => {
         e.preventDefault();
         if (!q.trim()) return;
-        onClose();
-        router.push(`/database?q=${encodeURIComponent(q.trim())}`);
+        void run(q);
+        setQ("");
       }}
       className="absolute bottom-full right-0 mb-1 w-[max(20rem,260px)] rounded-md bg-surface p-3 shadow-float"
     >
       <p className="mb-2 px-1 text-caption font-medium text-ink-3">Ask AURA</p>
       <span className="flex items-center gap-2 rounded-full bg-surface-2 py-1 pl-4 pr-1 focus-within:ring-2 focus-within:ring-brand/30">
-        <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find, plan or open anything" aria-label="Ask AURA" className="min-w-0 flex-1 bg-transparent py-1.5 text-small text-ink outline-none placeholder:text-ink-3" />
+        <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ask about your day, find people, open a screen" aria-label="Ask AURA" className="min-w-0 flex-1 bg-transparent py-1.5 text-small text-ink outline-none placeholder:text-ink-3" />
         <button type="submit" aria-label="Ask" disabled={!q.trim()} className="flex size-8 shrink-0 items-center justify-center rounded-full bg-ink text-white transition-opacity disabled:opacity-30">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="size-4">
             <path d="M12 19V5m0 0-6 6m6-6 6 6" />
           </svg>
         </button>
       </span>
+      {answer && <AskReply answer={answer} onLeave={onClose} />}
     </form>
   );
 }
