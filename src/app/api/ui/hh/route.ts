@@ -16,7 +16,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 import {
-  chooseCv, correctClientAndRerun, dismissSuggestion, editResearchField, keepSuggestion, pickBenchmark,
+  chooseCv, correctClientAndRerun, findCv, dismissSuggestion, editResearchField, keepSuggestion, pickBenchmark,
   runBenchmark, runResearch, runSuggestions, sendChatMessage,
 } from "@/app/actions";
 import { primeStore } from "@/data/prime";
@@ -122,7 +122,17 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: Request) {
   if (!req.headers.get("authorization")?.startsWith("Bearer ")) return signIn(req);
-  const read = readUiBody(HH_ACTIONS, await req.json().catch(() => null));
+  const raw = (await req.json().catch(() => null)) as Record<string, unknown> | null;
+  // Find CV only reads: database people who may be this suggested profile.
+  if (raw?.do === "findCv") {
+    if (typeof raw.openingId !== "string" || typeof raw.suggestionId !== "string") return answer(req, { ok: false, message: "Which profile is this? Reload and try again." }, 400);
+    try {
+      return answer(req, await findCv({ openingId: raw.openingId, suggestionId: raw.suggestionId }));
+    } catch {
+      return signIn(req);
+    }
+  }
+  const read = readUiBody(HH_ACTIONS, raw);
   if (!read.ok) return answer(req, read, 400);
   const form = new FormData();
   for (const [k, v] of read.fields) form.append(k, v);

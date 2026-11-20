@@ -20,7 +20,7 @@ ok("a button carries only its old form's fields", () => {
   assert.equal(readUiBody(HH_ACTIONS, { do: "toString", openingId: "o" }).ok, false);
 });
 ok("every button runs an old action", () => {
-  for (const fn of ["runResearch", "runBenchmark", "pickBenchmark", "correctClientAndRerun", "editResearchField", "runSuggestions", "keepSuggestion", "dismissSuggestion", "chooseCv", "sendChatMessage"]) assert.ok(route.includes(fn), fn);
+  for (const fn of ["runResearch", "runBenchmark", "pickBenchmark", "correctClientAndRerun", "editResearchField", "runSuggestions", "keepSuggestion", "dismissSuggestion", "chooseCv", "sendChatMessage", "findCv({ openingId: raw.openingId, suggestionId: raw.suggestionId })"]) assert.ok(route.includes(fn), fn);
   for (const k of Object.keys(HH_ACTIONS)) assert.ok(route.includes(` ${k}: `) || route.includes(` ${k},`), k);
 });
 ok("overview counts as the old page", () => {
