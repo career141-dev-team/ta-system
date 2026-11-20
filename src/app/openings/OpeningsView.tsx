@@ -6,6 +6,7 @@ import Link from "next/link";
 import { DUR, EASE, gsap, useExit, useSwap, useTabGlide } from "@/lib/gsap";
 import { useMe } from "@/lib/role";
 import { door, useDoorQuery, useLive, type DoorOpenings } from "@/lib/backend";
+import { clientOf, createFields, readOpeningForm, sendOpenings, type OpeningForm } from "./openingsLive";
 import Count from "@/app/Count";
 import { useFilters } from "@/lib/filters";
 import { NoResults, ResultLine } from "@/app/FilterBits";
@@ -51,7 +52,6 @@ export default function OpeningsView() {
     if (real?.ok) setRows(real.openings as Opening[]);
     setRefusal(real && !real.ok ? real.message : null);
   }
-  const notYet = (what: string) => setToast({ bold: what, rest: " is not switched on here yet - do it in AURA for now.", n: ++said.current });
   // Tab, lists shown, client, TA and sort are kept for the visit (Back and reload find
   // them) and Reset clears them - src/lib/filters.ts. The sort is not counted as a filter.
   const { f, set, reset, active } = useFilters("openings", { tab: "all" as Tab, show: ORDER as string[], client: "", ta: "", sort: "new" as Sort }, ["tab", "sort"]);
@@ -65,6 +65,31 @@ export default function OpeningsView() {
   const [spot, setSpot] = useState(false);
   const [sheet, setSheet] = useState<string | null>(null);
   const [toast, setToast] = useState<{ bold?: string; rest: string; n: number } | null>(null);
+  // Signed in: the old TA System answers each press in its own words (openingsLive.ts, D9).
+  const tell = (rest: string, bold?: string) => setToast({ bold, rest, n: Date.now() });
+  // Signed in: the old New opening page's clients and TAs, read when the sheet opens.
+  const [form, setForm] = useState<OpeningForm | null>(null);
+  useEffect(() => {
+    if (!live || sheet === null || form) return;
+    void readOpeningForm().then((got) => (got.ok ? setForm(got) : tell(got.message)));
+  }, [live, sheet, form]);
+  const create = async (read: Parameters<typeof createFields>[0], brief: string) => {
+    if (!form) return tell("Still reading the desk's clients - try again in a moment.");
+    let clientId = clientOf(read.client, form.clients)?.id;
+    if (!clientId) {
+      if (!form.canAddClient) return tell(" is not a client yet. Ask a lead to add it first.", read.client.trim());
+      const made = await sendOpenings({ do: "client", name: read.client.trim() });
+      if (!made.ok || !made.client) return tell(made.message);
+      const added = { ...made.client, industry: "" };
+      clientId = added.id;
+      setForm((f) => (f ? { ...f, clients: [...f.clients, added] } : f));
+    }
+    const res = await sendOpenings({ do: "create", ...createFields(read, brief, clientId, form.tas) });
+    tell(res.message);
+    if (!res.ok) return;
+    setSheet(null);
+    setTab("all");
+  };
   const body = useRef<HTMLDivElement>(null);
   const said = useRef(0);
   const tabsRow = useRef<HTMLDivElement>(null);
@@ -99,7 +124,8 @@ export default function OpeningsView() {
   // The Bin button asks first (a box over the card); "Move to Bin" there bins it.
   const bin = (o: Opening) => {
     setArming(null);
-    if (live) return notYet("Moving to the Bin");
+    // The list is the backend's own, so the opening leaves it by itself.
+    if (live) return void sendOpenings({ do: "bin", openingId: o.id }).then((res) => tell(res.message));
     setRows((r) => r.filter((x) => x.id !== o.id));
     setToast({ bold: o.title, rest: " is in the Bin for 7 days. Anyone on the desk can put it back from the Bin.", n: ++said.current });
   };
@@ -214,7 +240,7 @@ export default function OpeningsView() {
                         armed={arming === o.id}
                         onArm={() => setArming(o.id)}
                         onBin={() => bin(o)}
-                        onWeb={() => live ? notYet("The website switch") : setRows((r) => r.map((x) => (x.id === o.id ? { ...x, website: !x.website } : x)))}
+                        onWeb={() => live ? void sendOpenings({ do: "website", openingId: o.id, listed: o.website ? "off" : "on" }).then((res) => tell(res.message)) : setRows((r) => r.map((x) => (x.id === o.id ? { ...x, website: !x.website } : x)))}
                         onDisarm={() => setArming(null)}
                       />
                     ))}
@@ -244,11 +270,11 @@ export default function OpeningsView() {
         <NewOpening
           start={sheet}
           onClose={() => setSheet(null)}
-          onCreate={(o) => {
-            if (live) {
-              setSheet(null);
-              return notYet("Creating an opening");
-            }
+          clients={live ? (form?.clients ?? []).map((c) => c.name) : undefined}
+          team={live ? (form?.tas ?? []).map((t) => t.name) : undefined}
+          lead={live && form ? form.isLead : undefined}
+          onCreate={(o, read, brief) => {
+            if (live) return void create(read, brief);
             setRows((r) => [{ ...o, made: Math.max(...r.map((x) => x.made)) + 1 }, ...r]);
             setSheet(null);
             setTab("all");
