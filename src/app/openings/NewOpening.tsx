@@ -1,5 +1,6 @@
 "use client";
 
+import { SearchSteps, useSteps } from "../SearchSteps";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
@@ -16,7 +17,8 @@ import { CITIES, CLIENTS, EMPTY, TARGET_WORDS, TEAM, readBrief, type Loc, type O
 // may put any TAs on it and none is allowed (Unassigned); a TA is put on it themself
 // and a lead adds others; the JD is drafted after it is made.
 
-const READ_MS = 900;
+// ponytail: the sample stand-in, long enough to show the reading steps.
+const READ_MS = 2200;
 
 // One-tap starts under the box (owner, 17 Nov 2026: "Add Chat suggestions"): the short
 // label is the chip, the whole brief goes into the box to edit, then Read it.
@@ -304,7 +306,8 @@ export default function NewOpening({
                 </div>
               </div>
               {/* Hidden, not removed, once there are words: the line under it stays put. */}
-              <div className={"-mt-3 flex flex-wrap items-center gap-2 " + (text.trim() ? "invisible" : "")} aria-hidden={!!text.trim()}>
+              {reading && <BriefSteps />}
+              <div className={"-mt-3 flex flex-wrap items-center gap-2 " + (reading ? "hidden" : text.trim() ? "invisible" : "")} aria-hidden={!!text.trim()}>
                 <span className="text-small text-ink-3">Try</span>
                 {STARTS.map(([label, full]) => (
                   <button
@@ -823,4 +826,11 @@ function Places({ locs, onChange }: { locs: Loc[]; onChange: (l: Loc[]) => void 
       {locs.length > 1 && <span className="w-full text-caption text-ink-3">{locs.reduce((n, l) => n + l.people, 0)} people in all</span>}
     </div>
   );
+}
+
+/** What AURA does while it reads the brief, as one line of steps (20 Nov 2026). */
+const BRIEF_STEPS = ["Reading the brief", "Matching the client to your list", "Role, places, years and salary", "Filling the sheet"];
+function BriefSteps() {
+  const at = useSteps(true, BRIEF_STEPS.length - 1, 650);
+  return <SearchSteps compact className="-mt-3" at={at} steps={BRIEF_STEPS.map((label) => ({ label }))} />;
 }

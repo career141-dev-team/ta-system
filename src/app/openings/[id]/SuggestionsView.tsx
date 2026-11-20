@@ -1,5 +1,6 @@
 "use client";
 
+import { RunSteps } from "../../SearchSteps";
 import { useEffect, useRef, useState } from "react";
 import { useFilters } from "@/lib/filters";
 import { door, jobFromAddress, useDoorMutation, useLive, type DoorDone } from "@/lib/backend";
@@ -702,6 +703,7 @@ export default function SuggestionsView() {
           </div>
         </div>
         <Thread chat={chat} />
+        {running && <RunSteps steps={SUGGEST_STEPS} every={15000} />}
         <button
           type="button"
           onClick={refine}
@@ -968,3 +970,6 @@ function Ask({ onSend }: { onSend: (text: string) => void }) {
     </div>
   );
 }
+
+/** What a Suggestions round does (20 Nov 2026); a few minutes, the last step waits. */
+const SUGGEST_STEPS = ["Reading the job and Research", "Searching LinkedIn", "Checking each profile", "Picking the best to headhunt"];

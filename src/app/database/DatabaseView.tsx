@@ -8,6 +8,7 @@ import { useWorkdayGate } from "@/lib/workday";
 import { useLiftMenu } from "../openings/[id]/liftMenu";
 import { jdText } from "../openings/[id]/jdState";
 import AuraBarGlow from "../AuraBarGlow";
+import { SearchSteps, useSteps } from "../SearchSteps";
 import { refereeReply, toCsv, type Referee } from "./referees";
 import {
   JOBS,
@@ -163,7 +164,27 @@ const initials = (n: string) =>
     .map((w) => w[0])
     .slice(0, 2)
     .join("");
-const LOOK_MS = 900;
+// ponytail: the sample's stand-in wait, long enough to show the steps it stands in for.
+const LOOK_MS = 2000;
+
+// What AURA is doing while it looks, step by step (owner 20 Nov 2026: the same steps as
+// LinkedIn Search on every search). `wait` is the step that waits for the backend: live,
+// the quick answer moves "people" on to the full search for real.
+const LOOKS = {
+  people: { wait: 2, steps: ["Read your words", "Picked the filters", "Quick list from the people we hold", "Full search: reading every CV and ranking"] },
+  boolean: { wait: 2, steps: ["Read your search", "Checked AND, OR and NOT", "Reading every CV with those words", "Counting the matches"] },
+  referees: { wait: 2, steps: ["Read your words", "Picked title, company and industry", "Looking through referees named on CVs", "Grouping them by person"] },
+  names: { wait: 1, steps: ["Read the names", "Checking each name in our database", "Counting who we have"] },
+  add: { wait: 1, steps: ["Found them on screen", "Adding them to the job"] },
+  download: { wait: 1, steps: ["Found them on screen", "Fetching their CVs"] },
+};
+type Look = { id: string; kind: keyof typeof LOOKS; real: number; detail?: string };
+
+function Looking({ look, compact }: { look: Look; compact: boolean }) {
+  const { wait, steps } = LOOKS[look.kind];
+  const at = useSteps(true, wait, 650, look.real);
+  return <SearchSteps compact={compact} className="min-w-0 flex-1 pt-[0.15rem]" at={at} steps={steps.map((label, i) => ({ label, detail: i === at ? look.detail : undefined }))} />;
+}
 
 export default function DatabaseView() {
   const gate = useWorkdayGate();
@@ -194,6 +215,7 @@ export default function DatabaseView() {
   }, [live, recent]);
   const [mode, setMode] = useState<Mode>("people");
   const [thinking, setThinking] = useState(false);
+  const [look, setLook] = useState<Look | null>(null);
   const [text, setText] = useState("");
   const [expanded, setExpanded] = useState<string[]>([]);
   const [picked, setPicked] = useState<Person | null>(null);
@@ -285,6 +307,7 @@ export default function DatabaseView() {
       ),
     );
     setThinking(true);
+    setLook({ id: nid(), real: 0, kind: names ? "names" : mode_ === "referees" ? "referees" : /\b(AND|OR|NOT)\b/.test(t) ? "boolean" : "people" });
     petSay("working", "Looking through the database…");
     // ponytail: a stand-in wait; with the backend this is the database search.
     timer.current = setTimeout(() => {
@@ -299,6 +322,7 @@ export default function DatabaseView() {
         ),
       );
       setThinking(false);
+      setLook(null);
       // Download: hand each file to the browser.
       for (const f of answer.files ?? []) {
         const a = document.createElement("a");
@@ -327,6 +351,9 @@ export default function DatabaseView() {
       );
     const keep = lastRan?.ran;
     setThinking(true);
+    const kind: Look["kind"] | null =
+      ask.kind === "names" || ask.kind === "add" || ask.kind === "download" ? ask.kind : ask.kind === "search" ? (ask.mode === "boolean" ? "boolean" : "people") : ask.kind === "like" ? "people" : null;
+    if (kind) setLook({ id: nid(), kind, real: 0 });
     petSay("working", "Looking through the database…");
     const search = async (q: string, mode: "natural" | "boolean", what = "", skip = "") => {
       const a = await searchLive({ q, mode });
@@ -339,8 +366,10 @@ export default function DatabaseView() {
       };
       show(a);
       if (!a.refining) return;
-      // The quick answer is on screen; the full engine (models read and re-rank) replaces it.
+      // The quick answer is on screen; the full engine (models read and re-rank) replaces it,
+      // and the steps (one line now, under the quick list) say so.
       setThinking(false);
+      setLook((l) => l && { ...l, real: 3 });
       const full = await searchLive({ q, mode, full: true });
       if (full.ok) show(full);
     };
@@ -383,7 +412,9 @@ export default function DatabaseView() {
         }
       } else if (ask.kind === "names") {
         const refs: { asked: string; found?: Person }[] = [];
-        for (const name of ask.names.slice(0, 10)) {
+        const asked = ask.names.slice(0, 10);
+        for (const name of asked) {
+          setLook((l) => l && { ...l, real: 1, detail: `${refs.length + 1} of ${asked.length}` });
           const a = await searchLive({ q: `"${name}"`, mode: "boolean" });
           const words = name.toLowerCase().split(/\s+/);
           const hit = a.ok ? a.rows.find((r) => words.every((w) => r.name.toLowerCase().includes(w))) : undefined;
@@ -402,6 +433,7 @@ export default function DatabaseView() {
       } else await search(ask.q, ask.mode);
     } finally {
       setThinking(false);
+      setLook(null);
     }
   };
 
@@ -603,18 +635,10 @@ export default function DatabaseView() {
                 ),
               )
             )}
-            {thinking && (
-              <div
-                ref={orb}
-                className="flex items-center gap-[max(0.9rem,10px)]"
-                role="status"
-              >
-                <Orb breathing />
-                <p className="text-body text-ink-3">
-                  {mode === "people"
-                    ? "Looking through the people we hold…"
-                    : "Looking through the referees named on our CVs…"}
-                </p>
+            {look && (
+              <div ref={orb} className="flex items-start gap-[max(0.9rem,10px)]">
+                <Orb breathing={thinking} />
+                <Looking key={look.id} look={look} compact={!thinking} />
               </div>
             )}
           </div>
