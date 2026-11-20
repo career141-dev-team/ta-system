@@ -1345,7 +1345,9 @@ function ListView({
                     onPointerEnter={() => warmPdf()}
                     aria-label={`Open the CV of ${p.name}`}
                     title={p.name}
-                    className="min-w-0 truncate text-left text-[max(0.9375rem,12.5px)] font-semibold text-ink hover:text-brand"
+                    // mr-auto: the LinkedIn mark sits at the column's right edge in every
+                    // row, not straight after names of different lengths (owner, 20 Nov 2026).
+                    className="mr-auto min-w-0 truncate text-left text-[max(0.9375rem,12.5px)] font-semibold text-ink hover:text-brand"
                   >
                     {p.name}
                   </button>
