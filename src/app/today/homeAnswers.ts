@@ -3,7 +3,7 @@
 // asks AURA what is going on and how each TA is doing). Read from the words, no model
 // yet - the same sample desk the dashboard shows (homeData.ts). With the backend this is
 // one small read per question and the Haiku answer (E5, like the TA's Today chat).
-import type { Answer, Line } from "./desk";
+import type { Answer, Group, Line } from "./desk";
 
 export type TaToday = { name: string; ini: string; roles: string[]; li: [number, number]; noLink: number; pipeline: number; cvs: number; sets: number; alerts: number; day: { started?: string; done: number; of: number; eod?: string } };
 export const TEAM: TaToday[] = [
@@ -123,14 +123,15 @@ function leadBrief(d: LeadDesk): Answer {
   const idle = d.team.filter((t) => !t.day.started);
   const low = d.team.filter((t) => t.cvs < CVS_GOAL);
   const busy = d.team.filter((t) => t.alerts > ALERTS_MAX);
-  const warn = [
-    ...idle.map((t) => `${first(t)} has not started`),
-    low.length ? `${plural(low.length, "TA")} under ${CVS_GOAL} CVs today` : "",
-    ...busy.map((t) => `${first(t)} has ${t.alerts} alerts`),
-  ].filter(Boolean);
+  // Grouped, so each kind of trouble reads as one aligned line of names.
+  const groups: Group[] = [
+    { label: "Not started", tone: "danger" as const, items: idle.map((t) => ({ name: first(t) })) },
+    { label: `Under ${CVS_GOAL} CVs today`, tone: "warn" as const, items: [...low].sort((a, b) => a.cvs - b.cvs).map((t) => ({ name: first(t), n: t.cvs })) },
+    { label: `Over ${ALERTS_MAX} alerts`, tone: "warn" as const, items: [...busy].sort((a, b) => b.alerts - a.alerts).map((t) => ({ name: first(t), n: t.alerts })) },
+  ].filter((g) => g.items.length);
   return {
     say: `${plural(d.team.length - idle.length, "TA")} of ${d.team.length} started, ${plural(d.team.filter((t) => t.day.eod).length, "EOD")} sent, ${plural(d.decide.length, "decision")} waiting on you.`,
-    warn,
+    groups,
     rows: d.decide.map((d) => ({ main: d.title, meta: `${d.client} · ${d.why}`, tag: { text: "Decide", tone: d.red ? "danger" : "warn" } })),
   };
 }

@@ -18,7 +18,7 @@ assert.equal(answer("Lead", "roles not on linkedin").rows?.length, 3);
 // Nothing understood: says what it can do, no rows.
 assert.equal(answer("Lead", "banana").rows, undefined);
 // The brief names who is behind.
-assert.ok(brief("Lead").warn?.includes("Ravindu has not started"));
+assert.ok(brief("Lead").groups?.find((g) => g.label === "Not started")?.items.some((i) => i.name === "Ravindu"));
 // Director and Ops.
 assert.equal(answer("Director", "sets waiting for me").rows?.length, 3);
 assert.equal(answer("Ops", "interviews to arrange").rows?.length, 3);

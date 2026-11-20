@@ -594,7 +594,8 @@ export default function DatabaseView() {
       </aside>
 
       {/* The talk */}
-      <section className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+      {/* overflow-hidden: the glow behind the typing bar hangs below it and made the whole page scroll (owner, 20 Nov 2026: "the whole tab is moving"). */}
+      <section className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[max(7.5rem,60px)] bg-gradient-to-b from-surface to-transparent"

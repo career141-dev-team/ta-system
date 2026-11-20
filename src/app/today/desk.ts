@@ -114,7 +114,10 @@ export type Tone = "brand" | "warn" | "danger" | "muted";
  *  a chip on the right, a strategy that can be accepted, a page to open. */
 export type Line = { n?: number; main: string; meta?: string; tag?: { text: string; tone: Tone }; accept?: Row; href?: string };
 /** AURA's answer: one sentence, then any of a few numbers, chips and rows. */
-export type Answer = { say: string; stats?: [string, string][]; chips?: string[]; warn?: string[]; rows?: Line[] };
+/** A list of names under one heading ("Not started", "Over 3 alerts"), each with an optional
+ *  number - drawn as one aligned row instead of a run of loose warning chips (owner, 20 Nov 2026). */
+export type Group = { label: string; tone: "danger" | "warn"; items: { name: string; n?: number }[] };
+export type Answer = { say: string; stats?: [string, string][]; chips?: string[]; warn?: string[]; groups?: Group[]; rows?: Line[] };
 
 const STATE_TAG = (r: Row): Line["tag"] =>
   r.state === "waiting" ? { text: "To accept", tone: "warn" } : r.state === "working" ? { text: "Working", tone: "brand" } : r.state === "done" ? { text: "Done", tone: "muted" } : { text: "Not given yet", tone: "muted" };

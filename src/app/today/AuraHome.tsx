@@ -216,7 +216,7 @@ function Rail({ role, desk, loading, onAsk, onBoard }: { role: HomeRole; desk: D
   return (
     <aside
       data-rail
-      className="flex w-[max(25rem,280px)] shrink-0 flex-col gap-[max(1.5rem,14px)] overflow-y-auto border-r border-border pb-[max(2.25rem,16px)] pl-[max(2.25rem,18px)] pr-[max(1.75rem,14px)] pt-[max(2.5rem,18px)] [scrollbar-width:thin] max-md:max-h-[38dvh] max-md:w-full max-md:gap-3 max-md:border-b max-md:border-r-0 max-md:p-4"
+      className="flex w-[max(28rem,320px)] shrink-0 flex-col gap-[max(1.5rem,14px)] overflow-y-auto border-r border-border pb-[max(2.25rem,16px)] pl-[max(2.25rem,18px)] pr-[max(1.75rem,14px)] pt-[max(2.5rem,18px)] [scrollbar-width:thin] max-md:max-h-[38dvh] max-md:w-full max-md:gap-3 max-md:border-b max-md:border-r-0 max-md:p-4"
     >
       <div>
         <h1 className="text-[max(1.75rem,20px)] leading-tight text-ink">{head.title}</h1>
@@ -230,8 +230,8 @@ function Rail({ role, desk, loading, onAsk, onBoard }: { role: HomeRole; desk: D
             <button type="button" onClick={() => onAsk(r.ask)} title={r.ask} className="flex w-full items-center gap-[max(1.25rem,14px)] rounded-md px-[max(0.75rem,8px)] py-[max(1.1rem,10px)] text-left transition-colors hover:bg-surface-2/70">
               {isValidElement<{ delay?: number }>(r.lead) && r.lead.type === Ring ? cloneElement(r.lead, { delay: (i % RAIL_FIRST) * 0.06 }) : r.lead}
               <span className="min-w-0">
-                <span className="block truncate text-[max(1rem,13.5px)] font-medium text-ink">{r.main}</span>
-                <span className={"block truncate text-[max(0.875rem,12px)] " + (r.subClass ?? "text-ink-3")}>{r.sub}</span>
+                <span className="block truncate text-[max(1.25rem,16px)] font-semibold text-ink">{r.main}</span>
+                <span className={"mt-0.5 block truncate text-[max(1rem,13.5px)] " + (r.subClass ?? "text-ink-3")}>{r.sub}</span>
               </span>
             </button>
           </li>
@@ -302,14 +302,14 @@ function Ring({ done, of, eod, delay = 0 }: { done: number; of: number; eod: boo
   // Smaller type for longer figures, so they stay inside the ring.
   const size =
     label.length <= 3
-      ? "text-[max(1.25rem,16px)]"
+      ? "text-[max(1.5rem,19px)]"
       : label.length === 4
-        ? "text-[max(1.125rem,14.5px)]"
+        ? "text-[max(1.375rem,17.5px)]"
         : label.length === 5
-          ? "text-[max(1rem,13px)]"
-          : "text-[max(0.875rem,11.5px)]";
+          ? "text-[max(1.25rem,16px)]"
+          : "text-[max(1.0625rem,14px)]";
   return (
-    <span className="relative flex size-[max(4.75rem,60px)] shrink-0 items-center justify-center">
+    <span className="relative flex size-[max(6rem,76px)] shrink-0 items-center justify-center">
       <svg viewBox="0 0 36 36" className="absolute inset-0 size-full -rotate-90" aria-hidden="true">
         <circle cx="18" cy="18" r="15" fill="none" strokeWidth="3.5" className="stroke-surface-2" />
         <circle ref={arc} cx="18" cy="18" r="15" fill="none" strokeWidth="3.5" strokeLinecap="round" pathLength={100} strokeDasharray={`${target} 100`} className={tone} />
@@ -331,7 +331,7 @@ function RailSkeleton() {
   }, []);
   return (
     <li role="status" aria-label="Loading" className="flex shrink-0 items-center gap-[max(1.1rem,12px)] px-[max(0.75rem,8px)] py-[max(0.85rem,8px)]">
-      <span className="relative flex size-[max(4.75rem,60px)] shrink-0 items-center justify-center">
+      <span className="relative flex size-[max(6rem,76px)] shrink-0 items-center justify-center">
         <svg ref={spin} viewBox="0 0 36 36" className="absolute inset-0 size-full" aria-hidden="true">
           <circle cx="18" cy="18" r="15" fill="none" strokeWidth="3.5" className="stroke-surface-2" />
           <circle cx="18" cy="18" r="15" fill="none" strokeWidth="3.5" strokeLinecap="round" pathLength={100} strokeDasharray="22 100" className="stroke-brand" />
@@ -393,7 +393,7 @@ function Card({ a }: { a: Answer }) {
     const t = gsap.to(parts, { opacity: 1, x: 0, duration: DUR.base, ease: EASE.out, stagger: 0.05, clearProps: "opacity,transform" });
     return () => void t.progress(1).kill();
   }, []);
-  const body = a.stats || a.chips?.length || a.warn?.length || a.rows?.length;
+  const body = a.stats || a.chips?.length || a.warn?.length || a.groups?.length || a.rows?.length;
   return (
     <div className="flex flex-col gap-[max(0.875rem,9px)]">
       <div className="flex items-center gap-[max(0.875rem,10px)]">
@@ -425,6 +425,28 @@ function Card({ a }: { a: Answer }) {
                 </span>
               ))}
             </div>
+          ) : null}
+          {a.groups?.length ? (
+            // One line per kind of trouble: the heading in its own column, the names lined up after it.
+            <dl data-part className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-[max(1.25rem,12px)] gap-y-[max(0.625rem,7px)] pb-[max(0.875rem,9px)] max-md:grid-cols-1 max-md:gap-y-1">
+              {a.groups.map((g) => (
+                <div key={g.label} className="contents">
+                  <dt className={"flex items-center gap-2 pt-[3px] text-[max(0.8125rem,11.5px)] font-semibold " + (g.tone === "danger" ? "text-danger" : "text-warn")}>
+                    <span className={"size-1.5 shrink-0 rounded-full " + (g.tone === "danger" ? "bg-danger" : "bg-warn")} aria-hidden="true" />
+                    {g.label}
+                    <span className="font-mono font-normal text-ink-3">{g.items.length}</span>
+                  </dt>
+                  <dd className="flex flex-wrap gap-1.5 max-md:mb-1.5">
+                    {g.items.map((i) => (
+                      <span key={i.name} className={PILL + " inline-flex items-center gap-1.5 bg-surface-2 font-normal text-ink"}>
+                        {i.name}
+                        {i.n != null && <span className={"font-mono font-semibold " + (g.tone === "danger" ? "text-danger" : "text-warn")}>{i.n}</span>}
+                      </span>
+                    ))}
+                  </dd>
+                </div>
+              ))}
+            </dl>
           ) : null}
           {a.rows && a.rows.length > 0 && (
             <ol className="divide-y divide-border">
