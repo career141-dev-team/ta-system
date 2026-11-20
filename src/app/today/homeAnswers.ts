@@ -192,7 +192,7 @@ function leadAnswer(q: string, d: LeadDesk): Answer {
   if (has(q, "check", "team", "status", "everyone", "how is", "how are", "today", "going on", "progress")) {
     return { say: "Here is the team right now.", rows: d.team.map(dayLine) };
   }
-  return { say: "I can tell you how each TA is doing, who has not started, the checks, CVs, alerts, EODs, open roles and what needs your decision. Try a name, like “How is Chathura doing?”" };
+  return { unknown: true, say: "I can tell you how each TA is doing, who has not started, the checks, CVs, alerts, EODs, open roles and what needs your decision. Try a name, like “How is Chathura doing?”" };
 }
 
 function directorAnswer(q: string, d: Desk): Answer {
@@ -207,7 +207,7 @@ function directorAnswer(q: string, d: Desk): Answer {
   if (has(q, "client", "company")) {
     return { say: `${plural(d.clients.length, "client")} with open roles.`, rows: d.clients.map((c) => ({ main: c.name, meta: `${plural(c.open, "open role")} · ${plural(c.sets, "set")} sent` })) };
   }
-  return { say: "Ask me which sets wait on your review, where every candidate is, or how each client stands." };
+  return { unknown: true, say: "Ask me which sets wait on your review, where every candidate is, or how each client stands." };
 }
 
 function opsAnswer(q: string, d: Desk): Answer {
@@ -222,7 +222,7 @@ function opsAnswer(q: string, d: Desk): Answer {
   if (has(q, "client", "feedback", "waiting", "position", "my")) {
     return { say: `${plural(d.withClient.length, "set")} with clients.`, rows: d.withClient.map((w) => ({ main: w.who, meta: `${w.title} · ${w.client}`, tag: w.days >= 3 ? { text: `${w.days} days quiet`, tone: "danger" } : { text: w.days ? `${plural(w.days, "day")}` : "Today", tone: "muted" } })) };
   }
-  return { say: "Ask me what waits on client feedback, the interviews to arrange, or what to chase first." };
+  return { unknown: true, say: "Ask me what waits on client feedback, the interviews to arrange, or what to chase first." };
 }
 
 /** AURA's first words when the chat opens. */

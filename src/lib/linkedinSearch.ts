@@ -38,7 +38,15 @@ export type SearchResult = { checked: Found[]; others: Found[]; pages: number; o
 type Raw = Record<string, unknown>;
 const str = (v: unknown) => (typeof v === "string" ? v : "");
 const arr = (v: unknown) => (Array.isArray(v) ? (v as Raw[]) : []);
-const urlOf = (p: Raw) => str(p.linkedinUrl) || str(p.profileUrl) || str(p.url);
+// The search actor's link field has more than one name (20 Nov 2026: two live searches
+// found 0 people while the call itself answered - every row was dropped for "no link").
+// The handle builds the link when no URL field is there.
+const urlOf = (p: Raw) => {
+  const u = str(p.linkedinUrl) || str(p.profileUrl) || str(p.url) || str(p.linkedinProfileUrl) || str(p.publicProfileUrl) || str(p.navigationUrl);
+  if (u) return u;
+  const handle = str(p.publicIdentifier) || str(p.publicId) || str(p.username);
+  return handle ? `https://www.linkedin.com/in/${handle}` : "";
+};
 const placeOf = (p: Raw) => (typeof p.location === "string" ? p.location : str((p.location as Raw | undefined)?.linkedinText));
 const nameOf = (p: Raw) => [str(p.firstName), str(p.lastName)].filter(Boolean).join(" ") || str(p.name) || "Name not shown";
 const skillsOf = (p: Raw) => arr(p.skills).map((s) => (typeof s === "string" ? s : str(s.name))).filter(Boolean);
@@ -143,8 +151,16 @@ export async function linkedinSearch(token: string | undefined, body: unknown): 
     if (a.locations.length) input.locations = a.locations;
     if (a.keywords.length) input.searchQuery = a.keywords.join(" ");
     if (a.years) input.yearsOfExperienceIds = [a.years];
-    const list = (await run(token, SEARCH, input)).filter((p) => urlOf(p));
-    if (!list.length) return Response.json({ checked: [], others: [], pages: 1, opened: 0, cost: PAGE_PRICE } satisfies SearchResult);
+    const rows = await run(token, SEARCH, input);
+    const list = rows.filter((p) => urlOf(p));
+    if (!list.length) {
+      // Say what came back, so "nobody found" and "found but unreadable" are told apart
+      // (field names only - no person's details).
+      const note = rows.length
+        ? `LinkedIn sent ${rows.length} people, but none had a profile link this screen can read (fields: ${Object.keys(rows[0] ?? {}).slice(0, 15).join(", ")}).`
+        : undefined;
+      return Response.json({ checked: [], others: [], pages: 1, opened: 0, cost: PAGE_PRICE, note } satisfies SearchResult);
+    }
 
     // 2. Open only the 10 most likely, by headline.
     const ranked = [...list].sort((x, y) => likely(y, a) - likely(x, a));

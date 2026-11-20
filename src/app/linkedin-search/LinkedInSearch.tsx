@@ -148,7 +148,7 @@ export default function LinkedInSearch() {
       setPanel(false);
       setThread((m) => [
         ...m,
-        n ? { aura: `${n} people. The closest are first.`, sub: `I read ${n} and opened ${result.opened}.`, options: true } : { aura: "LinkedIn found nobody for this.", sub: "Try fewer words, or a wider place.", options: true },
+        n ? { aura: `${n} people. The closest are first.`, sub: `I read ${n} and opened ${result.opened}.`, options: true } : { aura: result.note ? "LinkedIn sent people, but I could not read them." : "LinkedIn found nobody for this.", sub: result.note ?? "Try fewer words, or a wider place.", options: true },
       ]);
       if (n) setRecent((r) => [{ label: title(next), n }, ...r.filter((x) => x.label !== title(next))].slice(0, 3));
       if (refine) say(`Done. ${n} people now.`, true);

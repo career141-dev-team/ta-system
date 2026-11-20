@@ -11,9 +11,9 @@ import { BackButton } from "../../openings/[id]/PipelineBoard";
 import { TAS, groupsOf, namesOf, useCatalogue, TODAY, WEEK, WORKED, auraPlan, busy, drafts, job, liveRows, ta, useRows, whenLabel, type Job, type Row, type TaId } from "../data";
 import { AssignPanel, CalendarIcon, Initials, Toggle, type Assign } from "../ui";
 import AuraBarGlow from "../../AuraBarGlow";
-import { readPlan } from "./talk";
+import { readPlan, type Said } from "./talk";
 import { putJob, usePlannerLive } from "../strategyLive";
-import { useLive } from "@/lib/backend";
+import { door, useDoorAction, useLive } from "@/lib/backend";
 
 // S3, planning one job (owner's design, 14 Nov 2026): what worked on roles like it,
 // where the job stands, AURA's suggested plan; every strategy with a switch, who and
@@ -117,8 +117,19 @@ function Plan({ j, aura }: { j: Job; aura: boolean }) {
   // A line typed to AURA (owner, 17 Nov 2026: "Add Chat Bar"): the strategies it names
   // go on, to the TA and day it names, through the same assign as the switches and the
   // drag. What it cannot place it says, in one line - it never guesses.
-  const talk = (text: string) => {
+  // Signed in, what the word matching cannot place goes to AURA (ui/homeAsk:plan,
+  // Haiku): only strategies on this list, only these TAs, a day of this week. The
+  // change still shows here first and nothing is sent until Send (D11 item 5).
+  const live = useLive();
+  const askPlan = useDoorAction(door.planAsk);
+  const talk = (text: string): string | Promise<string> => {
     const s = readPlan(text, STRATEGIES, TAS.map((t) => [t.id, t.first]), TODAY);
+    if (s.picks.length || !live) return place(s);
+    return (askPlan({ text, strategies: STRATEGIES, tas: TAS.map((t) => ({ id: t.id, name: t.name })), today: TODAY }) as Promise<PlanReply | undefined>)
+      .then((d) => (!d ? place(s) : !d.ok ? d.message : d.ask ? d.ask : place(d)))
+      .catch(() => place(s));
+  };
+  const place = (s: Said) => {
     if (!s.picks.length)
       return s.tas.length
         ? `Which strategy for ${list(s.tas.map((t) => ta(t as TaId).first))}? Name one from the list, like “Direct headhunt”.`
@@ -375,7 +386,9 @@ const list = (a: string[]) => (a.length < 2 ? (a[0] ?? "") : `${a.slice(0, -1).j
 
 /** AURA's bar at the foot of the Strategies column: one line in, AURA's one-line
  *  answer above it (the latest only), arriving by the one switch. */
-function PlanChat({ onSend }: { onSend: (text: string) => string }) {
+type PlanReply = ({ ok: true; ask?: string } & Said) | { ok: false; message: string };
+
+function PlanChat({ onSend }: { onSend: (text: string) => string | Promise<string> }) {
   const [text, setText] = useState("");
   const [reply, setReply] = useState<{ n: number; said: string } | null>(null);
   const line = useRef<HTMLParagraphElement>(null);
@@ -385,8 +398,10 @@ function PlanChat({ onSend }: { onSend: (text: string) => string }) {
     if (!t) return;
     // The plan changes here, in the event, not inside a state updater (that runs during render).
     const said = onSend(t);
-    setReply((r) => ({ n: (r?.n ?? 0) + 1, said }));
     setText("");
+    if (typeof said === "string") return setReply((r) => ({ n: (r?.n ?? 0) + 1, said }));
+    setReply((r) => ({ n: (r?.n ?? 0) + 1, said: "AURA is reading that…" }));
+    void said.then((x) => setReply((r) => ({ n: (r?.n ?? 0) + 1, said: x })));
   };
   return (
     <div className="relative isolate flex shrink-0 flex-col gap-2 px-[max(1.25rem,12px)] pb-[max(1.25rem,12px)] pt-[max(0.5rem,4px)]">

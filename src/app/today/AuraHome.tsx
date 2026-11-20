@@ -15,7 +15,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { DUR, EASE, gsap, motionOK } from "@/lib/gsap";
 import { useMe, useSignedInPerson } from "@/lib/role";
-import { door, useDoorQuery } from "@/lib/backend";
+import { door, useDoorAction, useDoorQuery } from "@/lib/backend";
 import { petSay } from "@/lib/pet";
 import Today from "./Today";
 import Home from "./Homes";
@@ -78,7 +78,7 @@ export default function AuraHome({ role }: { role: HomeRole }) {
         stats={desk ? startStats(role, desk) : []}
       />
     );
-  return <Chat role={role} desk={desk} failed={failed} onBoard={() => setBoard(true)} />;
+  return <Chat role={role} desk={desk} failed={failed} signed={signed} onBoard={() => setBoard(true)} />;
 }
 
 const TONE: Record<Tone, string> = {
@@ -91,7 +91,10 @@ const PILL = "shrink-0 whitespace-nowrap rounded-full px-[max(0.625rem,7px)] py-
 const ASK =
   "flex h-[max(2.5rem,32px)] items-center rounded-full border border-border bg-white px-[max(1rem,12px)] text-[max(0.875rem,12.5px)] text-ink transition-colors hover:border-border-strong";
 
-function Chat({ role, desk, failed, onBoard }: { role: HomeRole; desk: Desk | null; failed: string | null; onBoard: () => void }) {
+type HomeReply = { ok: true; reply: { say: string; chips: string[]; warn: string[]; rows: { main: string; meta?: string }[] } } | { ok: false; message: string };
+
+function Chat({ role, desk, failed, signed, onBoard }: { role: HomeRole; desk: Desk | null; failed: string | null; signed: boolean; onBoard: () => void }) {
+  const askHome = useDoorAction(door.homeAsk);
   const { first } = useMe();
   const [msgs, setMsgs] = useState<Msg[]>(() => kept[role]?.msgs ?? []);
   const [draft, setDraft] = useState("");
@@ -126,8 +129,17 @@ function Chat({ role, desk, failed, onBoard }: { role: HomeRole; desk: Desk | nu
     // A short beat so the answer reads as AURA's turn; the backend read replaces it.
     setTimeout(() => {
       const a = desk ? answer(role, t, desk) : { say: failed ?? "Still reading the team. Ask again in a moment." };
-      setMsgs((m) => m.map((x) => (x.id === id ? { ...x, reply: a } : x)));
-      petSay("done", a.say);
+      const put = (reply: typeof a) => {
+        setMsgs((m) => m.map((x) => (x.id === id ? { ...x, reply } : x)));
+        petSay("done", reply.say);
+      };
+      if (!(a.unknown && signed)) return put(a);
+      // The rules do not know this question: AURA answers it from the same desk, read
+      // again on the backend as this person (ui/homeAsk:home, Haiku).
+      void (askHome({ role, text: t }) as Promise<HomeReply | undefined>)
+        .then((d) => (!d ? a : !d.ok ? { say: d.message } : { say: d.reply.say, chips: d.reply.chips, warn: d.reply.warn, rows: d.reply.rows.map((x) => ({ main: x.main, meta: x.meta })) }))
+        .catch(() => a)
+        .then(put);
     }, 450);
   };
 
