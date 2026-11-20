@@ -19,7 +19,9 @@ export const TAS: Ta[] = [
   { id: "DK", name: "Dinuka K.", first: "Dinuka", week: 9, chip: "bg-info-soft text-info" },
   { id: "RM", name: "Ravindu M.", first: "Ravindu", week: 3, chip: "bg-sticky-sky text-info" },
 ];
-export const ta = (id: TaId) => TAS.find((t) => t.id === id)!;
+// A TA the list does not hold (a job can name someone who left) reads as a plain grey TA
+// instead of breaking the screen.
+export const ta = (id: TaId): Ta => TAS.find((t) => t.id === id) ?? { id, name: "A TA", first: "A TA", week: 0, chip: "bg-surface-2 text-ink-2" };
 /** 8 or more in a week is full; the planner says so. */
 export const busy = (t: Ta) => t.week >= 8;
 
