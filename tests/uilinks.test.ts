@@ -36,6 +36,7 @@ ok("rows are the old table's: its scope, interest and read-only rule", () => {
   assert.ok(route.includes("interestOf(r, app)") && route.includes("rowApplication(r, onPipeline"));
   assert.ok(route.includes("readOnly: seesEveryTaRow(user) && r.addedBy !== user.id && !deskWide.has(r.addedBy)"));
   assert.deepEqual(INTEREST_WORD, { pending: "approach", interested: "yes", not_interested: "no" });
+  assert.ok(route.includes("outcome: r.outcome,")); // the edit form sends it back unchanged
 });
 ok("who is asking comes first; CORS only for the new UI", () => {
   const get = route.slice(route.indexOf("export async function GET"));

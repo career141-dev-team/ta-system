@@ -85,6 +85,9 @@ export async function GET(req: NextRequest) {
         phone: r.phoneNumber ?? null,
         phoneSource: r.phoneSource ?? null,
         interest: INTEREST_WORD[interestOf(r, app)] ?? "approach",
+        // The stored outcome as it is: the old edit form sends it back with every
+        // save, so a phone or name edit never changes it (D8a UI, 20 Nov).
+        outcome: r.outcome,
         why: declined?.note ?? null,
         eye: !!r.isEyeMarked,
         hasCv: r.cvMatch?.hasCv ?? !!r.candidateId,
