@@ -62,6 +62,8 @@ const ALLOWED_PUBLIC = new Set<string>([
   "ui/desk:desk",
   "ui/desk:things",
   "ui/aura:askToday",
+  // AURA reads a new opening's brief (20 Nov, D11 item 1).
+  "ui/brief:read",
   "ui/lead:desk",
   "ui/homes:director",
   "ui/homes:ops",
