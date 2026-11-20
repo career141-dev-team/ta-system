@@ -25,4 +25,5 @@ eq("anything else = chat", readAsk("write a nice note to a candidate", P), { kin
 eq("shortlisted answer", dayAnswer(SAMPLE_DAY, "shortlisted").say, "You shortlisted 3 candidates today.");
 eq("overview without a workday", dayAnswer(SAMPLE_DAY, "overview").say, "Your workday has not started yet.");
 eq("searches answer is honest", dayAnswer(SAMPLE_DAY, "searches").say.startsWith("I do not count"), true);
+eq("searches counted", dayAnswer({ ...SAMPLE_DAY, totals: { ...SAMPLE_DAY.totals, searchesToday: 4 } }, "searches").say, "You ran 4 database searches today.");
 console.log("askAura: all checks pass");

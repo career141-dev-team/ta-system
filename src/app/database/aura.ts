@@ -24,6 +24,8 @@ export type Person = {
   tags: string[];
   score: number;
   cv?: string;
+  /** Why the real search found them, in its own words (live.ts). */
+  why?: string;
   /** Roles, newest first, for the Database CVs rows (sample; the backend gives the real ones). */
   career?: { period: string; title: string; company: string }[];
 };
@@ -197,6 +199,7 @@ const TAG_WORDS: Record<string, string> = {
 
 /** Why this person came up, in a few plain words read off their record. */
 export const reasonOf = (p: Person) =>
+  p.why ??
   [
     ...p.tags
       .map((t) => TAG_WORDS[t])

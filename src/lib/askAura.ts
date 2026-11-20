@@ -12,7 +12,7 @@ export type MyDay = {
   workday: { startedAt: number; finishedAt: number | null; positions: number } | null;
   plan: { state: string; done: number; of: number; open: number; next: { title: string; startMin: number } | null; late: number } | null;
   checks: { done: number; of: number };
-  totals: { positions: number; cvsToday: number; shortlistedToday: number; directorToday: number; sentToday: number; sentYesterday: number };
+  totals: { positions: number; cvsToday: number; shortlistedToday: number; directorToday: number; sentToday: number; sentYesterday: number; searchesToday?: number };
   positions: DayPosition[];
 };
 
@@ -133,7 +133,9 @@ export function dayAnswer(day: MyDay, topic: Topic): Said {
     case "plan":
       return { say: planLine(), rows: [] };
     case "searches":
-      return { say: "I do not count your database searches yet. That comes with the real Database chat.", rows: [] };
+      // Counted from the Database chat's searches (ui/searches:record); older backends do not send it.
+      if (t.searchesToday === undefined) return { say: "I do not count your database searches yet.", rows: [] };
+      return { say: t.searchesToday ? `You ran ${n(t.searchesToday, "database search", "database searches")} today.` : "No database searches yet today.", rows: [{ main: "Open the Database chat", href: "/database" }] };
     default:
       return {
         say: day.workday ? `Your day started at ${clock(day.workday.startedAt)}${day.workday.finishedAt ? ` and finished at ${clock(day.workday.finishedAt)}` : ""}, on ${n(day.workday.positions, "position")}.` : "Your workday has not started yet.",

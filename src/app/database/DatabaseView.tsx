@@ -23,6 +23,10 @@ import {
 import { POOL, filterReply, panelOf } from "./aura";
 import FilterBar from "./FilterBar";
 import { petSay } from "@/lib/pet";
+import { candidateCall, cvHeaders, cvUrl, door, OLD_SERVER, saveLiveFile, useDoorMutation, useDoorQuery } from "@/lib/backend";
+import { useSignedInPerson } from "@/lib/role";
+import type { MyDay } from "@/lib/askAura";
+import { chipsOf, jobIn, pastChats, personOf, readLive, whoIn, type LiveAnswer } from "./live";
 
 // D1 · Database - search by chatting with AURA (owner's design, 14 Nov 2026).
 // Left: the chats (Today / Earlier) and New search - the history IS the chats, so
@@ -46,13 +50,38 @@ type Mode = "people" | "referees";
 
 type Turn =
   | { id: string; from: "me"; text: string }
-  | ({ id: string; from: "aura" } & Reply);
+  | ({ id: string; from: "aura"; ran?: string } & Reply);
 type Thread = {
   id: string;
   title: string;
   when: "today" | "earlier";
   turns: Turn[];
+  /** A past search (signed in): run again when the chat is opened. */
+  q?: string;
 };
+
+// Signed in, the chat searches the real database through old AURA's own search
+// (ta-system #42, /api/ui/database): the engine and the desk rules.
+const DB_URL = `${OLD_SERVER}/api/ui/database`;
+const NO_LINE = "Could not reach the TA System. Check your connection and try again.";
+async function searchLive(body: { q: string; mode: "natural" | "boolean"; full?: boolean }): Promise<LiveAnswer | { ok: false; message: string }> {
+  const res = await fetch(DB_URL, { method: "POST", headers: { "Content-Type": "application/json", ...(await cvHeaders(DB_URL)) }, body: JSON.stringify(body) }).catch(() => null);
+  const got = (await res?.json().catch(() => null)) as (LiveAnswer | { ok: false; message: string }) | null;
+  return got ?? { ok: false, message: NO_LINE };
+}
+const cardsOf = (a: LiveAnswer, skip = "") => a.rows.filter((r) => r.id !== skip).map((r) => personOf(r, r.hasCv ? cvUrl({ candidate: r.id }) : undefined));
+const liveNext = (people: Person[]) =>
+  people.length
+    ? [
+        { label: `People like ${people[0].name.split(" ")[0]}`, prompt: `Find people like ${people[0].name}` },
+        { label: people.length > 1 ? `Add the top ${Math.min(3, people.length)} to a job` : `Add ${people[0].name.split(" ")[0]} to a job`, prompt: people.length > 1 ? `Add the top ${Math.min(3, people.length)} to a job` : `Add ${people[0].name} to a job` },
+        { label: "Download their CVs", prompt: "Download their CVs" },
+      ]
+    : [{ label: "Start over", prompt: "Start over" }];
+const foundLine = (a: LiveAnswer, what = "") =>
+  a.total
+    ? `${a.total} ${a.total === 1 ? "person matches" : "people match"}${what}${a.read ? ` - ${a.read}` : ""}.${a.problem ? ` ${a.problem}` : ""}`
+    : (a.problem ?? "Nothing in the database matched that search.");
 
 let seq = 0;
 const nid = () => `t${++seq}`;
@@ -138,8 +167,31 @@ const LOOK_MS = 900;
 
 export default function DatabaseView() {
   const gate = useWorkdayGate();
+  const live = useSignedInPerson() !== null;
   const [threads, setThreads] = useState(START);
   const [openId, setOpenId] = useState("sap");
+  const recent = useDoorQuery(door.searchRecent, live ? {} : "skip") as { ok: true; searches: { id: string; query: string; count: number; at: number }[] } | { ok: false } | undefined;
+  const day = useDoorQuery(door.myDay, live ? {} : "skip") as ({ ok: true } & MyDay) | { ok: false } | undefined;
+  const positions = day?.ok ? day.positions : [];
+  const record = useDoorMutation(door.searchRecord);
+  // Signed in: the chats are this person's own past searches, never the samples.
+  const loaded = useRef(false);
+  useEffect(() => {
+    if (!live || loaded.current) return;
+    if (!recent?.ok) {
+      queueMicrotask(() => setThreads((all) => (all === START ? [] : all)));
+      return;
+    }
+    loaded.current = true;
+    const today = new Date().toDateString();
+    queueMicrotask(() => {
+      setThreads((all) => [
+        ...(all === START ? [] : all),
+        ...pastChats(recent.searches).map((r) => ({ id: `s${r.id}`, title: titleOf(r.query.split("\n")[0]), when: (new Date(r.at).toDateString() === today ? "today" : "earlier") as Thread["when"], turns: [], q: r.query })),
+      ]);
+      setOpenId((o) => (o === "sap" ? "" : o));
+    });
+  }, [live, recent]);
   const [mode, setMode] = useState<Mode>("people");
   const [thinking, setThinking] = useState(false);
   const [text, setText] = useState("");
@@ -205,6 +257,11 @@ export default function DatabaseView() {
       ]);
       setOpenId(id);
     }
+    if (live && mode_ === "people") {
+      setThreads((all) => all.map((x) => (x.id === id ? { ...x, turns: [...x.turns, { id: nid(), from: "me", text: t }] } : x)));
+      void answerLive(id, t, turns);
+      return;
+    }
     const { chips, last } = contextOf(turns);
     // Referees mode reads the sentence into titles and companies; a pasted list of
     // names is still the people check ("do we have ...").
@@ -250,6 +307,102 @@ export default function DatabaseView() {
         a.click();
       }
     }, LOOK_MS);
+  };
+
+  // One message on the real database. Searches go to old AURA's own search; adding to
+  // a job is the Database shortlist (shortlistMatch, ta-system #30); CVs come with the
+  // person's session. Each search is kept (ui/searches:record) for "searches today".
+  const answerLive = async (id: string, t: string, turns: Turn[]) => {
+    const lastRan = [...turns].reverse().find((x) => x.from === "aura") as Extract<Turn, { from: "aura" }> | undefined;
+    const { last } = contextOf(turns);
+    const ask = readLive(t, lastRan?.ran ?? "");
+    const turnId = nid();
+    const put = (r: Reply & { ran?: string }) =>
+      setThreads((all) =>
+        all.map((x) => {
+          if (x.id !== id) return x;
+          const turn = { id: turnId, from: "aura" as const, ...r };
+          return { ...x, turns: x.turns.some((y) => y.id === turnId) ? x.turns.map((y) => (y.id === turnId ? turn : y)) : [...x.turns, turn] };
+        }),
+      );
+    const keep = lastRan?.ran;
+    setThinking(true);
+    petSay("working", "Looking through the database…");
+    const search = async (q: string, mode: "natural" | "boolean", what = "", skip = "") => {
+      const a = await searchLive({ q, mode });
+      if (!a.ok) return put({ text: a.message, warn: true, ran: keep });
+      void record({ query: q, count: a.total });
+      const ran = mode === "natural" ? q : undefined;
+      const show = (x: LiveAnswer) => {
+        const people = cardsOf(x, skip);
+        put({ text: foundLine(x, what), chips: chipsOf(x.chips), people, actions: liveNext(people), warn: !x.total, ran, ...(mode === "boolean" ? { boolean: q } : {}) });
+      };
+      show(a);
+      if (!a.refining) return;
+      // The quick answer is on screen; the full engine (models read and re-rank) replaces it.
+      setThinking(false);
+      const full = await searchLive({ q, mode, full: true });
+      if (full.ok) show(full);
+    };
+    try {
+      if (ask.kind === "startOver") put({ text: "Cleared. Who are you looking for?", chips: [] });
+      else if (ask.kind === "remove")
+        put({ text: "A live search is the words you said, so a filter cannot be taken off here. Say it the new way, or start over.", warn: true, ran: keep, actions: [{ label: "Start over", prompt: "Start over" }] });
+      else if (ask.kind === "takeOut") put({ text: "Take them out on the opening's Pipeline. Nothing changed here.", warn: true, ran: keep });
+      else if (ask.kind === "download") {
+        const who = whoIn(t, last).filter((p) => p.cv);
+        let saved = 0;
+        for (const p of who) if (await saveLiveFile(p.cv!, `${p.name} - CV.pdf`)) saved++;
+        put({
+          text: !last.length ? "There is nobody on screen yet. Search first." : saved ? `Downloaded ${saved} CV${saved === 1 ? "" : "s"}.${saved < who.length ? ` ${who.length - saved} could not be fetched.` : ""}` : "None of them has a CV file to download.",
+          warn: !saved,
+          ran: keep,
+        });
+      } else if (ask.kind === "add") {
+        const who = whoIn(ask.who, last);
+        const job = jobIn(ask.job, positions);
+        if (!who.length) put({ text: "Who should go in? Search first, or name them.", warn: true, ran: keep });
+        else if (gate) put({ text: `${gate} Adding people to a job waits until then.`, warn: true, ran: keep });
+        else if (!job)
+          put({
+            text: positions.length ? `Which job should ${who.length === 1 ? who[0].name : `these ${who.length}`} go into?` : "You have no open positions to add them to.",
+            actions: positions.slice(0, 8).map((j) => ({ label: `${j.title} · ${j.client}`, prompt: `Add ${who.map((p) => p.name).join(", ")} to ${j.title} · ${j.client}` })),
+            warn: !positions.length,
+            ran: keep,
+          });
+        else {
+          const done: Person[] = [];
+          const refused: string[] = [];
+          for (const p of who) {
+            const r = await candidateCall({ do: "shortlistMatch", candidateId: p.id, openingId: job.id });
+            if (r.ok) done.push(p);
+            else refused.push(`${p.name}: ${r.message}`);
+          }
+          const names = done.map((p) => p.name).join(", ");
+          put({ text: [done.length ? `${names} ${done.length === 1 ? "is" : "are"} now in ${job.title}, and yours to work.` : "", ...refused].filter(Boolean).join(" "), warn: !done.length, people: done, ran: keep });
+        }
+      } else if (ask.kind === "names") {
+        const refs: { asked: string; found?: Person }[] = [];
+        for (const name of ask.names.slice(0, 10)) {
+          const a = await searchLive({ q: `"${name}"`, mode: "boolean" });
+          const words = name.toLowerCase().split(/\s+/);
+          const hit = a.ok ? a.rows.find((r) => words.every((w) => r.name.toLowerCase().includes(w))) : undefined;
+          refs.push({ asked: name, found: hit ? personOf(hit, hit.hasCv ? cvUrl({ candidate: hit.id }) : undefined) : undefined });
+        }
+        const n = refs.filter((r) => r.found).length;
+        put({
+          text: n === refs.length ? (n === 1 ? "Yes - we have them." : `We have all ${n}.`) : n ? `We have ${n} of ${refs.length}.` : refs.length === 1 ? "No - not in our database." : "None of them is in our database.",
+          refs,
+          actions: n ? [{ label: n === 1 ? "Add to a job" : `Add the ${n} to a job`, prompt: `Add ${refs.flatMap((r) => (r.found ? [r.found.name] : [])).join(", ")} to a job` }] : undefined,
+        });
+      } else if (ask.kind === "like") {
+        const who = last.find((p) => p.name.toLowerCase().includes(ask.name.toLowerCase()));
+        if (!who) put({ text: `I could not find "${ask.name}" among the people on screen.`, warn: true, ran: keep });
+        else await search(`${who.title}${who.years ? ` with about ${who.years} years` : ""}${who.city ? ` in ${who.city}` : ""}`, "natural", ` like ${who.name}`, who.id);
+      } else await search(ask.q, ask.mode);
+    } finally {
+      setThinking(false);
+    }
   };
 
   // Each new turn: the one switch for the words, pin & settle for the people, and
@@ -389,6 +542,12 @@ export default function DatabaseView() {
                     onOpen={() => {
                       setOpenId(t.id);
                       setShowHistory(false);
+                      // A past search runs again, as the database reads today.
+                      if (t.q && !t.turns.length && !thinking) {
+                        const q = t.q;
+                        setThreads((all) => all.map((x) => (x.id === t.id ? { ...x, turns: [{ id: nid(), from: "me", text: q.split("\n").join(" · ") }] } : x)));
+                        void answerLive(t.id, q, []);
+                      }
                     }}
                     onRename={(title) =>
                       setThreads((all) =>
@@ -481,6 +640,7 @@ export default function DatabaseView() {
       {picked && (
         <PersonPanel
           p={picked}
+          jobs={live ? positions.map((j) => `${j.title} · ${j.client}`) : JOBS}
           busy={thinking}
           onSend={send}
           onClose={() => {
@@ -674,7 +834,7 @@ function Answer({
               >
                 {c.added ? "+ " : ""}
                 {c.label}
-                {latest && (
+                {latest && c.test !== "live" && (
                   <button
                     type="button"
                     disabled={busy}
@@ -847,16 +1007,18 @@ function Results({
  *  sends its words to the chat, so AURA answers (and refuses) as everywhere else. */
 function PersonPanel({
   p,
+  jobs,
   busy,
   onSend,
   onClose,
 }: {
   p: Person;
+  jobs: string[];
   busy: boolean;
   onSend: (text: string) => void;
   onClose: () => void;
 }) {
-  const [job, setJob] = useState(JOBS[0]);
+  const [job, setJob] = useState(jobs[0] ?? "a job");
   const { open: menuOpen, setOpen: setMenu, root: menuRoot, panel: menuPanel, shown: menuShown } = useLiftMenu();
   const el = useRef<HTMLElement>(null);
   const short = (j: string) => j.split(" · ")[0];
@@ -949,7 +1111,7 @@ function PersonPanel({
               <p className="px-3 pb-1 pt-1.5 text-caption font-medium uppercase text-ink-3">
                 Which job
               </p>
-              {JOBS.map((j) => (
+              {jobs.map((j) => (
                 <button
                   key={j}
                   type="button"

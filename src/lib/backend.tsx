@@ -231,6 +231,8 @@ export const door = {
   planClose: makeFunctionReference<"mutation">("ui/plan:close"),
   planTeam: makeFunctionReference<"query">("ui/plan:team"),
   myDay: makeFunctionReference<"query">("ui/myDay:today"),
+  searchRecord: makeFunctionReference<"mutation">("ui/searches:record"),
+  searchRecent: makeFunctionReference<"query">("ui/searches:recent"),
   planSnooze: makeFunctionReference<"mutation">("ui/plan:snooze"),
   planChange: makeFunctionReference<"action">("ui/planTalk:change"),
   scoopUploadUrl: makeFunctionReference<"mutation">("ui/opening:scoopUploadUrl"),
