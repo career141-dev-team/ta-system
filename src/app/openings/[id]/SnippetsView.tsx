@@ -47,7 +47,7 @@ import { useOpeningView } from "./view";
 
 /** Placeholder: the opening's JD is approved (same as LinkedIn Job's). */
 
-type Snip = { level: number; colour: number; font: string; body: number; underline: boolean; bold: boolean; ink: number; version: number; line1: string; line2: string };
+type Snip = { level: number; colour: number; font: string; body: number; underline: boolean; bold: boolean; ink: number; version: number; line1: string; line2: string; sector: string; facts: string[]; bullets: string[] };
 
 const COLOURS = [
   { name: "mint", words: ["mint", "green"], hex: "#01fea3" },
@@ -83,9 +83,6 @@ const VERSIONS: [string, string][] = [
   ["Own the numbers.", "FINANCE EXECUTIVE"],
 ];
 const INKS = ["#000000", "#165b42", "#ffffff"];
-const START_LEVEL = levelOf(VERSIONS[0][0]);
-const START: Snip = { level: START_LEVEL, colour: LEVELS[START_LEVEL].colour, font: "Poppins", body: 24.5, underline: false, bold: false, ink: 0, version: 0, line1: VERSIONS[0][0], line2: VERSIONS[0][1] };
-
 const ROLE = {
   sector: "Apparel",
   facts: [
@@ -99,6 +96,23 @@ const ROLE = {
     "Minimum 10–12 years of progressive experience in finance, with at least 5 years in a senior leadership role.",
     "Proven experience managing procurement, accounts receivable, and finance operations.",
   ],
+};
+
+const START_LEVEL = levelOf(VERSIONS[0][0]);
+const START: Snip = {
+  level: START_LEVEL,
+  colour: LEVELS[START_LEVEL].colour,
+  font: "Poppins",
+  body: 24.5,
+  underline: false,
+  bold: false,
+  ink: 0,
+  version: 0,
+  line1: VERSIONS[0][0],
+  line2: VERSIONS[0][1],
+  sector: ROLE.sector,
+  facts: ROLE.facts.map(([, v]) => v),
+  bullets: ROLE.bullets,
 };
 
 type Contact = { ta: string; email: string; phone: string };
@@ -188,7 +202,7 @@ function drawCard(ctx: CanvasRenderingContext2D, s: Snip, logo: HTMLImageElement
   ctx.fillRect(0, 133, 660, 62);
   ctx.fillStyle = "#fff";
   ctx.font = f(500, 24);
-  ctx.fillText(ROLE.sector, 55, 171);
+  ctx.fillText(s.sector, 55, 171);
 
   // Heading: the light line, then the bold one. Sized to the design's widths (its own
   // face is narrower than Poppins), baselines as measured.
@@ -205,7 +219,7 @@ function drawCard(ctx: CanvasRenderingContext2D, s: Snip, logo: HTMLImageElement
   }
 
   // The four facts, white pills.
-  ROLE.facts.forEach(([label, value], i) => {
+  ROLE.facts.forEach(([label], i) => {
     const x = i % 2 ? 316 : 57;
     const y = i < 2 ? 337 : 381;
     const at = i % 2 ? 83 : 76;
@@ -217,8 +231,12 @@ function drawCard(ctx: CanvasRenderingContext2D, s: Snip, logo: HTMLImageElement
     ctx.font = f(400, 11);
     ctx.fillText(label, x + 15, y + 20.5);
     ctx.fillText(":", x + at - 11, y + 20.5);
-    ctx.font = f(700, 11);
-    ctx.fillText(value, x + at, y + 20.5);
+    // A longer value shrinks to stay inside its pill.
+    const room = 249 - at - 14;
+    let fs = 11;
+    ctx.font = f(700, fs);
+    while (fs > 7 && ctx.measureText(s.facts[i]).width > room) ctx.font = f(700, (fs -= 0.25));
+    ctx.fillText(s.facts[i], x + at, y + 20.5);
   });
 
   // The requirements panel: deep at the left, the colour at the right.
@@ -236,7 +254,7 @@ function drawCard(ctx: CanvasRenderingContext2D, s: Snip, logo: HTMLImageElement
   let lines: string[][] = [];
   for (; size > 8; size -= 0.25) {
     ctx.font = f(400, size);
-    lines = ROLE.bullets.map((b) => wrap(ctx, b, 500));
+    lines = s.bullets.map((b) => wrap(ctx, b, 500));
     if (465 + (lines.flat().length - 1) * 25.7 * (size / (15 * 0.82)) <= 600) break;
   }
   ctx.font = f(400, size);
@@ -270,11 +288,26 @@ function drawCard(ctx: CanvasRenderingContext2D, s: Snip, logo: HTMLImageElement
   ctx.restore();
 }
 
-// ---- The chat. A small stand-in for AURA: it understands a few kinds of request and
-// says what it did. shortcut: no model behind it yet; with the backend the message goes
-// to AURA, which returns the same kind of patch.
-type Msg = { who: "you" | "aura"; text: string };
-const HELP = "I can change the level, the colour, the font, the text size, underline the title, or reword it. Try “make it senior”, “make it orange”, “use Montserrat”, “bigger text” or “title to Senior Finance Manager”.";
+// ---- The parts of the card. Click one and it becomes a tag in the chat (/title, /salary...);
+// what you ask next is about those parts only, and the tag's x lets go of it (owner, 20 Nov
+// 2026). Each part's box is in the card's own 660-wide space, as drawn in drawCard.
+type Part = "level" | "sector" | "title" | "location" | "company" | "salary" | "gender" | "requirements" | "contact";
+const PARTS: { key: Part; name: string; box: [number, number, number, number]; can: string }[] = [
+  { key: "level", name: "the level badge", box: [401, 0, 241, 71], can: "change the level (“make it senior”) and so the card’s colour" },
+  { key: "sector", name: "the sector band", box: [0, 133, 660, 62], can: "reword it (“to Garments”) or change the card’s colour" },
+  { key: "title", name: "the title", box: [48, 214, 600, 108], can: "reword it (“to Senior Finance Manager”), make it bold or underlined, or turn it white, green or black" },
+  { key: "location", name: "the location", box: [57, 337, 249, 35], can: "reword it (“to Colombo”)" },
+  { key: "company", name: "the company", box: [316, 337, 249, 35], can: "reword it (“to ABC Apparel”)" },
+  { key: "salary", name: "the package", box: [57, 381, 249, 35], can: "reword it (“to 120K – 200K”)" },
+  { key: "gender", name: "the gender line", box: [316, 381, 249, 35], can: "reword it (“to Female”)" },
+  { key: "requirements", name: "the requirements", box: [0, 434, 660, 180], can: "“add …”, “remove the last one”, or “to …” (points separated by ;)" },
+  { key: "contact", name: "your contact line", box: [55, 620, 585, 30], can: "nothing here - it is your own name, email and phone from your account" },
+];
+const FACT_AT: Partial<Record<Part, number>> = { location: 0, company: 1, salary: 2, gender: 3 };
+
+type Msg = { who: "you" | "aura"; text: string; tags?: Part[] };
+const HELP = "I can change the level, the colour, the font, the text size, underline the title, or reword it. Try “make it senior”, “make it orange”, “use Montserrat”, “bigger text” or “title to Senior Finance Manager”. You can also click a part of the card to pick it.";
+const FIRST = "Click a part of the card - the title, the package, the requirements - and tell me what to change on it. Or just tell me: colour, font, text size, underline, or reword the title.";
 const SUGGESTIONS = ["Make it orange", "Make it bold", "Bigger text", "Underline the title"];
 
 // "Bigger" and "smaller" have no number of their own: they are a step from where the text is
@@ -282,7 +315,10 @@ const SUGGESTIONS = ["Make it orange", "Make it bold", "Bigger text", "Underline
 const BIGGER = 9999;
 const SMALLER = -9999;
 
-function ask(text: string): { patch: Partial<Snip>; reply: string } {
+// shortcut: no model behind this yet; with the backend the message and the tags go to AURA,
+// which returns the same kind of patch. Until then these plain rules answer, and say so when
+// they cannot.
+function ask(text: string, cur: Snip, parts: Part[]): { patch: Partial<Snip>; reply: string } {
   const t = text.toLowerCase();
   const patch: Partial<Snip> = {};
   const done: string[] = [];
@@ -290,18 +326,23 @@ function ask(text: string): { patch: Partial<Snip>; reply: string } {
     Object.assign(patch, p);
     done.push(what);
   };
+  const on = (...keys: Part[]) => !parts.length || keys.some((k) => parts.includes(k));
   // The new title's own words are not instructions ("title to Orange County Lead").
   const title = text.match(/(?:title|heading|headline)\s+(?:to|as)\s+["“']?(.+?)["”']?\s*$/i);
-  const rest = title ? t.slice(0, title.index) : t;
+  // With parts picked, "to <words>" / "say <words>" is the new text for the first one that has text.
+  const words = parts.length ? text.match(/(?:^|\s)(?:to|as|say|says|reads?)\s+["“']?(.+?)["”']?\s*$/i) : null;
+  const rest = title ? t.slice(0, title.index) : words ? t.slice(0, words.index) : t;
   const lvl = rest.match(/\b(junior|executive|mid|senior|c-?\s?level)\b/);
-  if (lvl) {
+  if (lvl && on("level")) {
     const level = LEVELS.findIndex((l) => l.short.toLowerCase().replace(/\W/g, "") === lvl[1].replace(/\W/g, ""));
     if (level >= 0) did(`the level to ${LEVELS[level].pill}`, { level, colour: LEVELS[level].colour });
   }
-  COLOURS.forEach((c, colour) => {
-    // "green title" is the title's colour, not the card's.
-    if (c.words.some((w) => new RegExp(`\\b${w}\\b(?!\\s+(?:text|title|heading))`).test(rest))) did(`the colour to ${c.name}`, { colour });
-  });
+  if (on("level", "sector")) {
+    COLOURS.forEach((c, colour) => {
+      // "green title" is the title's colour, not the card's.
+      if (c.words.some((w) => new RegExp(`\\b${w}\\b(?!\\s+(?:text|title|heading))`).test(rest))) did(`the colour to ${c.name}`, { colour });
+    });
+  }
   FONTS.forEach((font) => {
     if (t.includes(font.toLowerCase())) did(`the font to ${font}`, { font });
   });
@@ -311,15 +352,44 @@ function ask(text: string): { patch: Partial<Snip>; reply: string } {
     did(`the text size to ${body}`, { body });
   } else if (/\b(bigger|larger|increase|grow)\b/.test(t)) did("the text bigger", { body: BIGGER });
   else if (/\b(smaller|reduce|decrease|shrink)\b/.test(t)) did("the text smaller", { body: SMALLER });
-  if (/(remove|no|without|drop|un) ?bold/.test(t)) did("the bold off", { bold: false });
-  else if (/\bbold(er)?\b/.test(t)) did("the title bold", { bold: true });
-  if (/(remove|no|without|drop) underline/.test(t)) did("the underline off", { underline: false });
-  else if (/underline/.test(t)) did("the title underlined", { underline: true });
-  if (/white (text|title|heading)/.test(t)) did("the title white", { ink: 2 });
-  else if (/(black|dark) (text|title|heading)/.test(t)) did("the title black", { ink: 0 });
-  else if (/green (text|title|heading)/.test(t)) did("the title green", { ink: 1 });
-  if (title) did("the title", { line1: title[1] }); // the bold second line stays, as the old system edits them apart
-  return { patch, reply: done.length ? `Done — ${done.join(", ")}.` : HELP };
+  if (on("title")) {
+    if (/(remove|no|without|drop|un) ?bold/.test(t)) did("the bold off", { bold: false });
+    else if (/\bbold(er)?\b/.test(t)) did("the title bold", { bold: true });
+    if (/(remove|no|without|drop) underline/.test(t)) did("the underline off", { underline: false });
+    else if (/underline/.test(t)) did("the title underlined", { underline: true });
+    if (/white (text|title|heading)/.test(t)) did("the title white", { ink: 2 });
+    else if (/(black|dark) (text|title|heading)/.test(t)) did("the title black", { ink: 0 });
+    else if (/green (text|title|heading)/.test(t)) did("the title green", { ink: 1 });
+    if (title) did("the title", { line1: title[1].slice(0, 60) }); // the bold second line stays, as the old system edits them apart
+  }
+  // New words for a picked part.
+  if (parts.length && words && !title) {
+    const value = words[1].trim();
+    const texty = parts.filter((k) => k === "title" || k === "sector" || k === "requirements" || FACT_AT[k] !== undefined);
+    // New words need one place to go.
+    if (texty.length > 1) return { patch, reply: `Which one should read “${value}”? Let go of all but one of ${texty.map((k) => "/" + k).join(" ")} (the x on a tag) and say it again.` };
+    const first = texty[0];
+    if (first === "title") did("the title", { line1: value.slice(0, 60) });
+    else if (first === "sector") did("the sector", { sector: value.slice(0, 30) });
+    else if (first === "requirements") did("the requirements", { bullets: value.split(/;|\n/).map((b) => b.trim().slice(0, 160)).filter(Boolean) });
+    else if (first && FACT_AT[first] !== undefined) {
+      const facts = [...cur.facts];
+      facts[FACT_AT[first]!] = value.slice(0, 40);
+      did(PARTS.find((p) => p.key === first)!.name, { facts });
+    }
+  }
+  if (parts.includes("requirements")) {
+    const add = text.match(/^\s*add\s*[:\-]?\s+(.+)$/i);
+    if (add) did("a new point", { bullets: [...(patch.bullets ?? cur.bullets), add[1].trim().slice(0, 160)] });
+    else if (/remove\s+(the\s+)?last/.test(t)) did("the last point removed", { bullets: (patch.bullets ?? cur.bullets).slice(0, -1) });
+    else if (/remove\s+(the\s+)?first/.test(t)) did("the first point removed", { bullets: (patch.bullets ?? cur.bullets).slice(1) });
+  }
+  if (done.length) return { patch, reply: `Done — ${done.join(", ")}.` };
+  if (parts.length) {
+    const help = parts.map((k) => PARTS.find((p) => p.key === k)!).map((p) => `For ${p.name} I can ${p.can}.`);
+    return { patch, reply: `I could not do that to ${parts.map((k) => "/" + k).join(" ")}. ${help.join(" ")}` };
+  }
+  return { patch, reply: HELP };
 }
 
 // Sizes are the frame's px / 16 on the app's rem scale (a floor for small windows);
@@ -344,7 +414,10 @@ export default function SnippetsView() {
   // The signed-in person's own contact; placeholder email and phone (sample on a public link).
   const who: Contact = { ta: me.first, email: `${me.first.toLowerCase()}@career141.com`, phone: "+94 77 000 0000" };
   const { go } = useOpeningView();
-  const [msgs, setMsgs] = useState<Msg[]>([{ who: "aura", text: "Tell me what to change on the card — colour, font, text size, underline or the title." }]);
+  const [msgs, setMsgs] = useState<Msg[]>([{ who: "aura", text: FIRST }]);
+  // The parts of the card picked to talk about (tags in the chat).
+  const [sel, setSel] = useState<Part[]>([]);
+  const toggle = (k: Part) => setSel((x) => (x.includes(k) ? x.filter((v) => v !== k) : [...x, k]));
   const [toast, setToast] = useState<{ key: number; bold?: string; rest: string; warn?: boolean } | null>(null);
   const toasts = useRef(0);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -375,7 +448,7 @@ export default function SnippetsView() {
   }, [msgs]);
 
   const say = (rest: string, bold?: string, warn?: boolean) => setToast({ key: ++toasts.current, bold, rest, warn });
-  const caption = `${s.line1} ${s.line2.toLowerCase()} — ${ROLE.sector}, ${ROLE.facts[0][1]}. Package ${ROLE.facts[2][1]}. Apply: ${who.email} · ${who.phone}`;
+  const caption = `${s.line1} ${s.line2.toLowerCase()} — ${s.sector}, ${s.facts[0]}. Package ${s.facts[2]}. Apply: ${who.email} · ${who.phone}`;
 
   // Named after the title, as the old system does, and drawn only once the fonts are in.
   const name = `${[s.line1, s.line2].join(" ").trim().replace(/[^\w-]+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "job"}-snippet.png`;
@@ -401,10 +474,10 @@ export default function SnippetsView() {
   };
 
   const send = (text: string) => {
-    const { patch, reply } = ask(text);
+    const { patch, reply } = ask(text, s, sel);
     if (patch.body === BIGGER || patch.body === SMALLER) patch.body = Math.min(40, Math.max(16, s.body + (patch.body === BIGGER ? 2 : -2)));
     setS((x) => ({ ...x, ...patch }));
-    setMsgs((m) => [...m, { who: "you", text }, { who: "aura", text: reply }]);
+    setMsgs((m) => [...m, { who: "you", text, tags: sel.length ? sel : undefined }, { who: "aura", text: reply }]);
   };
 
   const step = (d: number) => setS((x) => ({ ...x, body: Math.min(40, Math.max(16, x.body + d)) }));
@@ -432,16 +505,35 @@ export default function SnippetsView() {
     });
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col pb-[max(3.5rem,14px)] pl-[max(7.1875rem,14px)] pr-[max(2.3rem,14px)] pt-[max(4.4375rem,52px)] short:pt-[30px] max-md:overflow-y-auto max-md:pt-11">
+    // The notch hangs into this box, so the top padding is the notch plus a gap and the foot
+    // gets about the same gap; the card takes the height that is left (owner, 20 Nov 2026: it
+    // touched the notch and left all the space below).
+    <div className="relative flex min-h-0 flex-1 flex-col justify-center pb-[max(2.4rem,26px)] pt-[max(4.4375rem,52px)] short:pt-[max(3.6rem,52px)] pl-[max(7.1875rem,14px)] pr-[max(2.3rem,14px)] max-md:justify-start max-md:overflow-y-auto max-md:pt-11">
       <div className="absolute left-[max(1.5rem,14px)] top-[max(1.4rem,14px)] max-md:static max-md:mb-4">
         <BackButton />
       </div>
 
       {/* The row is as tall as the card (41.25rem), so the chat fills what is left under the
           controls and scrolls inside itself instead of growing with the messages. */}
-      <div className="flex items-start gap-[max(3.75rem,14px)] md:h-[41.25rem] max-md:flex-col max-md:gap-6">
-        <div className="aspect-square w-full overflow-hidden rounded-lg bg-surface md:flex-[0_1_41.25rem]">
-          <canvas ref={canvas} width={1080} height={1080} role="img" aria-label={`Social card: ${s.line1} ${s.line2}, ${ROLE.sector}`} className="size-full" />
+      <div className="flex items-start gap-[max(3.75rem,14px)] md:h-full md:max-h-[41.25rem] max-md:flex-col max-md:gap-6">
+        <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-surface md:h-full md:w-auto md:flex-none">
+          <canvas ref={canvas} width={1080} height={1080} role="img" aria-label={`Social card: ${s.line1} ${s.line2}, ${s.sector}`} className="size-full" />
+          {/* Click a part to talk about it: it shows as a tag in the chat. Not in the PNG. */}
+          {PARTS.map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              aria-pressed={sel.includes(p.key)}
+              aria-label={`${sel.includes(p.key) ? "Let go of" : "Pick"} ${p.name} to change it`}
+              title={`/${p.key} - click to change ${p.name} with AURA`}
+              onClick={() => toggle(p.key)}
+              style={{ left: `${(p.box[0] / 660) * 100}%`, top: `${(p.box[1] / 660) * 100}%`, width: `${(p.box[2] / 660) * 100}%`, height: `${(p.box[3] / 660) * 100}%` }}
+              className={
+                "absolute rounded-md outline-2 -outline-offset-2 transition-[outline-color,background-color] hover:bg-brand/10 hover:outline hover:outline-brand/50 focus-visible:outline focus-visible:outline-brand " +
+                (sel.includes(p.key) ? "bg-brand/10 outline outline-brand" : "")
+              }
+            />
+          ))}
         </div>
 
         <div className="flex min-w-0 flex-col gap-6 self-stretch md:max-w-[52.375rem] md:flex-1">
@@ -557,6 +649,11 @@ export default function SnippetsView() {
               {msgs.map((m, i) =>
                 m.who === "you" ? (
                   <p key={i} className="max-w-[85%] self-end rounded-md bg-surface px-4 py-2.5 text-small text-ink">
+                    {m.tags?.map((k) => (
+                      <span key={k} className="mr-1.5 rounded-full bg-brand-soft px-2 py-0.5 text-caption font-medium text-brand-strong">
+                        /{k}
+                      </span>
+                    ))}
                     {m.text}
                   </p>
                 ) : (
@@ -575,6 +672,26 @@ export default function SnippetsView() {
                 </div>
               )}
             </div>
+            {sel.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5" aria-label="Parts of the card you are changing">
+                <span className="text-caption text-ink-3">Changing</span>
+                {sel.map((k) => (
+                  <span key={k} className="flex items-center gap-1 rounded-full bg-brand-soft py-0.5 pl-2.5 pr-1 text-caption font-medium text-brand-strong">
+                    /{k}
+                    <button type="button" aria-label={`Let go of /${k}`} onClick={() => toggle(k)} className="flex size-4 items-center justify-center rounded-full hover:bg-brand/15">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" className="size-2.5" aria-hidden="true">
+                        <path d="M6 6l12 12M18 6 6 18" />
+                      </svg>
+                    </button>
+                  </span>
+                ))}
+                {sel.length > 1 && (
+                  <button type="button" onClick={() => setSel([])} className="text-caption text-ink-3 hover:text-ink">
+                    Clear
+                  </button>
+                )}
+              </div>
+            )}
             <form
               className="flex items-center gap-2.5 rounded-full bg-surface py-1.5 pl-4 pr-1.5 focus-within:ring-2 focus-within:ring-brand/30"
               onSubmit={(e) => {
@@ -584,7 +701,7 @@ export default function SnippetsView() {
                 e.currentTarget.reset();
               }}
             >
-              <input name="ask" aria-label="Ask for a change" placeholder="Ask for a change…" className="min-w-0 flex-1 bg-transparent text-small text-ink outline-none placeholder:text-ink-3" />
+              <input name="ask" aria-label="Ask for a change" placeholder={sel.length ? `Change ${sel.map((k) => "/" + k).join(" ")} - for example “to …”` : "Ask for a change…"} className="min-w-0 flex-1 bg-transparent text-small text-ink outline-none placeholder:text-ink-3" />
               <button type="submit" aria-label="Send" className="flex size-[max(2.125rem,28px)] shrink-0 items-center justify-center rounded-full bg-brand text-white transition-colors hover:bg-brand-strong">
                 <Icon d="M12 19V5M5 12l7-7 7 7" className="size-[max(0.9375rem,13px)]" />
               </button>
