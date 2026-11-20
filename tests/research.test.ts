@@ -1,6 +1,6 @@
 import { parseResearch } from "@/lib/headhunt";
 import { webEngine } from "@/lib/ai";
-import { clientHints, clientQueries, namedHit, groundedCompetitors, parseJsonObject, pickLinkedInCompany, pickOfficialSite, researchViaSearch, type ResearchDeps } from "@/lib/researchSearch";
+import { clientHints, clientQueries, industryWord, namedHit, groundedCompetitors, parseJsonObject, pickLinkedInCompany, pickOfficialSite, researchViaSearch, type ResearchDeps } from "@/lib/researchSearch";
 
 let passed = 0;
 let failed = 0;
@@ -46,6 +46,7 @@ const jk = [
 eq("John Lewis, the Bible and Wikipedia's John are not John Keells", jk.filter((h) => namedHit(h, "John Keells Holdings PLC")).map((h) => h.url), ["https://www.keells.com/"]);
 eq("the website is not johnlewis.com", pickOfficialSite(jk, "John Keells"), "https://www.keells.com");
 eq("a name with no long word is matched whole", [namedHit({ url: "https://sq.lk", title: "SQ Solutions", snippet: "" }, "SQ"), namedHit({ url: "https://x.com", title: "Other", snippet: "" }, "SQ")], [true, false]);
+eq("'Other' is not an industry to search for", [industryWord("N/A"), clientQueries("John Keells", "Other", "Sri Lanka", "Accountant")[0], clientQueries("John Keells", "other", "Sri Lanka", "Accountant")[4]], ["", '"John Keells" Sri Lanka', "top companies in Sri Lanka"]);
 eq("the client searches carry the place", clientQueries("John Keells", "", "Sri Lanka", "Accountant")[0], '"John Keells" Sri Lanka');
 
 console.log("\ncompetitors must be in what the search returned");
