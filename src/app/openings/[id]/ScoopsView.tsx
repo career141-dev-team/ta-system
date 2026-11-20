@@ -518,7 +518,7 @@ export default function ScoopsView() {
                       setSelecting(null);
                       setPicked([]);
                     }}
-                    className="h-[max(2.6rem,34px)] rounded-full px-[max(1rem,12px)] text-[max(0.9rem,12.5px)] text-ink-2 hover:bg-surface-2 hover:text-ink"
+                    className="h-[max(2.6rem,34px)] rounded-full px-[max(1rem,12px)] text-[max(0.9625rem,13.5px)] text-ink-2 hover:bg-surface-2 hover:text-ink"
                   >
                     Cancel
                   </button>
@@ -528,7 +528,7 @@ export default function ScoopsView() {
                   disabled={!count && !done}
                   onClick={finish}
                   className={
-                    "flex h-[max(2.6rem,34px)] items-center gap-2 rounded-full px-[max(1.3rem,14px)] text-[max(0.9rem,12.5px)] font-medium text-white transition-colors disabled:pointer-events-none disabled:opacity-50 " +
+                    "flex h-[max(2.6rem,34px)] items-center gap-2 rounded-full px-[max(1.3rem,14px)] text-[max(0.9625rem,13.5px)] font-medium text-white transition-colors disabled:pointer-events-none disabled:opacity-50 " +
                     (done ? "bg-success" : selecting === "delete" ? "bg-danger hover:opacity-90" : "bg-brand hover:bg-brand-strong")
                   }
                 >
@@ -584,7 +584,7 @@ export default function ScoopsView() {
               </button>
               <div className="min-w-0">
                 <p className="text-[max(1.15rem,14px)] font-medium text-ink">{dragging ? "Drop to upload" : "Drop scoop CVs here"}</p>
-                <p className="text-[max(0.9rem,11.5px)] text-ink-2">PDF or Word · up to 10 at once · 10 MB each</p>
+                <p className="text-[max(0.9625rem,12.5px)] text-ink-2">PDF or Word · up to 10 at once · 10 MB each</p>
               </div>
               <div className="ml-auto flex flex-wrap items-center gap-[max(1.5rem,10px)]">
                 <PillMenu
@@ -598,7 +598,7 @@ export default function ScoopsView() {
                 <button
                   type="button"
                   onClick={pick}
-                  className="flex h-[max(2.6rem,34px)] items-center gap-2 rounded-full bg-brand px-[max(1.4rem,14px)] text-[max(0.9rem,12.5px)] font-medium text-white transition-colors hover:bg-brand-strong"
+                  className="flex h-[max(2.6rem,34px)] items-center gap-2 rounded-full bg-brand px-[max(1.4rem,14px)] text-[max(0.9625rem,13.5px)] font-medium text-white transition-colors hover:bg-brand-strong"
                 >
                   <UploadIcon className="size-[1.15em]" />
                   Choose CVs
@@ -611,7 +611,7 @@ export default function ScoopsView() {
             <div data-scoop-top className="mt-[max(1rem,8px)] rounded-md bg-surface-2 px-[max(1.4rem,12px)] py-[max(0.75rem,8px)]">
               <div className="flex items-center gap-[max(1rem,9px)]">
                 <span className={"size-[max(0.6rem,7px)] shrink-0 rounded-full bg-success " + (readingNow ? "animate-pulse" : "")} />
-                <p className="whitespace-nowrap text-[max(0.9rem,12px)] font-medium text-ink">
+                <p className="whitespace-nowrap text-[max(0.9625rem,13px)] font-medium text-ink">
                   {readingNow
                     ? `Reading ${readingNow} CV${readingNow === 1 ? "" : "s"} — about ${mins} minute${mins === 1 ? "" : "s"}`
                     : `Read ${finished - failed.length} CV${finished - failed.length === 1 ? "" : "s"}`}
@@ -623,14 +623,14 @@ export default function ScoopsView() {
                   type="button"
                   disabled={!!readingNow}
                   onClick={() => setUploads((u) => u.filter((x) => x.state === "reading"))}
-                  className="ml-auto whitespace-nowrap text-[max(0.9rem,12px)] text-ink-2 transition-colors hover:text-ink disabled:opacity-50"
+                  className="ml-auto whitespace-nowrap text-[max(0.9625rem,13px)] text-ink-2 transition-colors hover:text-ink disabled:opacity-50"
                 >
                   Clear finished
                 </button>
               </div>
               {/* A CV that would not read stays named, with Try again and Remove (4.3). */}
               {failed.map((u) => (
-                <div key={u.id} role="alert" className="mt-2 flex items-center gap-[max(0.8rem,8px)] text-[max(0.85rem,11.5px)]">
+                <div key={u.id} role="alert" className="mt-2 flex items-center gap-[max(0.8rem,8px)] text-[max(0.9125rem,12.5px)]">
                   <span className="min-w-0 truncate font-medium text-ink">{u.file}</span>
                   <span className="text-danger">Could not be read</span>
                   <button type="button" onClick={() => retry(u)} className={SMALL + " ml-auto"}>
@@ -662,11 +662,11 @@ export default function ScoopsView() {
             <PillMenu options={EXPERIENCE} initial={applied.exp} onChange={(exp) => setFilters({ exp })} mark="tick" pillClass={FIELD_PILL + " text-ink-2"} />
             <PillMenu options={WHO} initial={applied.who} onChange={(who) => setFilters({ who })} mark="tick" pillClass={FIELD_PILL + " text-ink-2"} />
             {nFilters > 0 && (
-              <button type="button" onClick={resetFilters} className="h-[max(2.6rem,34px)] rounded-full px-3 text-[max(0.9rem,12.5px)] font-medium text-brand-strong hover:bg-surface-2">
+              <button type="button" onClick={resetFilters} className="h-[max(2.6rem,34px)] rounded-full px-3 text-[max(0.9625rem,13.5px)] font-medium text-brand-strong hover:bg-surface-2">
                 Reset{nFilters > 1 ? ` (${nFilters})` : ""}
               </button>
             )}
-            <span className="text-[max(0.9rem,12px)] text-ink-2">{shown.length} in scoops</span>
+            <span className="text-[max(0.9625rem,13px)] text-ink-2">{shown.length} in scoops</span>
           </div>
 
           {shown.length === 0 && <NoResults noun="scoops" filtered={nFilters > 0} onReset={resetFilters} />}
@@ -692,7 +692,7 @@ export default function ScoopsView() {
                 <button type="button" onClick={() => openRow(s.id)} className="flex min-w-0 flex-1 items-center gap-x-[max(1.1rem,10px)] text-left" aria-label={`Read ${s.name}'s CV`}>
                   <span className="w-[max(17rem,130px)] min-w-0 shrink-0 max-md:flex-1">
                     <span className="block truncate text-[max(1.2rem,14px)] font-medium text-ink">{s.name}</span>
-                    <span className="block truncate text-[max(0.9rem,11.5px)] text-ink-2">{s.title}</span>
+                    <span className="block truncate text-[max(0.9625rem,12.5px)] text-ink-2">{s.title}</span>
                     {s.skills && (
                       <span className="mt-1 flex flex-wrap gap-1">
                         {s.skills.slice(0, 3).map((k) => (
@@ -703,7 +703,7 @@ export default function ScoopsView() {
                       </span>
                     )}
                   </span>
-                  <span className="min-w-0 space-y-0.5 text-[max(0.9rem,11.5px)] text-ink-2 max-md:hidden">
+                  <span className="min-w-0 space-y-0.5 text-[max(0.9625rem,12.5px)] text-ink-2 max-md:hidden">
                     <span className="block truncate">L : {s.location}</span>
                     <span className="block truncate">C : {s.company}</span>
                     {s.years > 0 && <span className="block truncate">E : {s.years} years</span>}
@@ -715,9 +715,9 @@ export default function ScoopsView() {
                 </div>
               </li>
             ))}
-            {list.length === 0 && <li className="pt-8 text-center text-[max(0.9rem,12px)] text-ink-2">No scoops on this job yet.</li>}
+            {list.length === 0 && <li className="pt-8 text-center text-[max(0.9625rem,13px)] text-ink-2">No scoops on this job yet.</li>}
             {list.length > 0 && shown.length === 0 && (
-              <li className="pt-8 text-center text-[max(0.9rem,12px)] text-ink-2">No scoop matches these filters.</li>
+              <li className="pt-8 text-center text-[max(0.9625rem,13px)] text-ink-2">No scoop matches these filters.</li>
             )}
           </ul>
         </>
@@ -746,7 +746,7 @@ export default function ScoopsView() {
                   >
                     <span
                       className={
-                        "flex size-[max(2.5rem,30px)] shrink-0 items-center justify-center rounded-full text-[max(0.85rem,11px)] font-medium " +
+                        "flex size-[max(2.5rem,30px)] shrink-0 items-center justify-center rounded-full text-[max(0.9125rem,12px)] font-medium " +
                         (on ? "bg-brand-soft text-brand" : "bg-info-soft text-info")
                       }
                     >
@@ -759,9 +759,9 @@ export default function ScoopsView() {
                           <ShortlistedChip s={s} />
                         </span>
                       </span>
-                      <span className="block truncate text-[max(0.85rem,11.5px)] text-ink-2">{about}</span>
+                      <span className="block truncate text-[max(0.9125rem,12.5px)] text-ink-2">{about}</span>
                       {s.years > 0 && (
-                        <span className="block truncate text-[max(0.85rem,11.5px)] text-ink-3">
+                        <span className="block truncate text-[max(0.9125rem,12.5px)] text-ink-3">
                           {s.years} years{s.skills ? " · " + s.skills.slice(0, 3).join(", ") : ""}
                         </span>
                       )}
@@ -770,7 +770,7 @@ export default function ScoopsView() {
                 </li>
               );
             })}
-            {shown.length === 0 && <li className="pt-8 text-center text-[max(0.9rem,12px)] text-ink-2">No scoop matches these filters.</li>}
+            {shown.length === 0 && <li className="pt-8 text-center text-[max(0.9625rem,13px)] text-ink-2">No scoop matches these filters.</li>}
           </ul>
 
           <section aria-label="CV" className="flex min-h-0 flex-col overflow-hidden rounded-md border border-border bg-surface-2">
@@ -790,7 +790,7 @@ export default function ScoopsView() {
                   <button
                     type="button"
                     onClick={(e) => openBig(current, e.currentTarget.closest("section")?.querySelector("[data-scoop-cv]") ?? null)}
-                    className="flex h-[max(2.4rem,32px)] shrink-0 items-center gap-2 rounded-full border border-border bg-surface px-[max(1rem,11px)] text-[max(0.85rem,12px)] text-ink transition-colors hover:bg-surface-2"
+                    className="flex h-[max(2.4rem,32px)] shrink-0 items-center gap-2 rounded-full border border-border bg-surface px-[max(1rem,11px)] text-[max(0.9125rem,13px)] text-ink transition-colors hover:bg-surface-2"
                   >
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-[1.1em]" aria-hidden="true">
                       <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
@@ -801,7 +801,7 @@ export default function ScoopsView() {
                     <div className="ml-auto flex min-w-0 items-center gap-[max(1rem,10px)]">
                       {/* Another TA got there first: the TA System's collision lock (4.2). */}
                       {current.lockedBy && (
-                        <p className="min-w-0 truncate text-[max(0.8rem,11.5px)] text-ink-2" title={`Shortlisted by ${current.lockedBy}. You cannot contact.`}>
+                        <p className="min-w-0 truncate text-[max(0.8625rem,12.5px)] text-ink-2" title={`Shortlisted by ${current.lockedBy}. You cannot contact.`}>
                           Shortlisted by <b className="font-semibold text-ink">{current.lockedBy}</b>. You cannot contact.
                         </p>
                       )}
@@ -812,7 +812,7 @@ export default function ScoopsView() {
                           type="button"
                           disabled={!!current.lockedBy}
                           onClick={shortlistCurrent}
-                          className="h-[max(2.6rem,34px)] shrink-0 rounded-full bg-brand px-[max(3rem,24px)] text-[max(0.85rem,12.5px)] font-medium text-white transition-colors hover:bg-brand-strong disabled:opacity-40"
+                          className="h-[max(2.6rem,34px)] shrink-0 rounded-full bg-brand px-[max(3rem,24px)] text-[max(0.9125rem,13.5px)] font-medium text-white transition-colors hover:bg-brand-strong disabled:opacity-40"
                         >
                           Shortlist
                         </button>
@@ -822,14 +822,14 @@ export default function ScoopsView() {
                 </div>
               </>
             ) : (
-              <p className="m-auto text-[max(0.9rem,12px)] text-ink-2">No CV to show.</p>
+              <p className="m-auto text-[max(0.9625rem,13px)] text-ink-2">No CV to show.</p>
             )}
           </section>
         </div>
       )}
 
       {removed && (
-        <div role="status" className="fixed bottom-[max(4rem,48px)] left-1/2 z-[90] flex max-w-[calc(100vw-24px)] -translate-x-1/2 items-center gap-3 rounded-full bg-ink px-[max(1.3rem,14px)] py-[max(0.7rem,8px)] text-[max(0.85rem,12.5px)] text-white shadow-float">
+        <div role="status" className="fixed bottom-[max(4rem,48px)] left-1/2 z-[90] flex max-w-[calc(100vw-24px)] -translate-x-1/2 items-center gap-3 rounded-full bg-ink px-[max(1.3rem,14px)] py-[max(0.7rem,8px)] text-[max(0.9125rem,13.5px)] text-white shadow-float">
           <span className="min-w-0 truncate">
             <b className="font-semibold">{removed.length === 1 ? removed[0].s.name : `${removed.length} scoops`}</b> deleted from this job&rsquo;s scoops
           </span>
@@ -852,7 +852,7 @@ function RowAction({ s, onShortlist }: { s: Scoop; onShortlist: () => void }) {
     <button
       type="button"
       onClick={onShortlist}
-      className="h-[max(2.6rem,34px)] rounded-full bg-brand px-[max(1.3rem,14px)] text-[max(0.9rem,12.5px)] font-medium text-white transition-colors hover:bg-brand-strong"
+      className="h-[max(2.6rem,34px)] rounded-full bg-brand px-[max(1.3rem,14px)] text-[max(0.9625rem,13.5px)] font-medium text-white transition-colors hover:bg-brand-strong"
     >
       Shortlist
     </button>
@@ -937,7 +937,7 @@ function Bin() {
 
 function Count({ n, label }: { n: number; label: string }) {
   return (
-    <p className="flex items-baseline gap-2 text-[max(0.9rem,12px)] text-ink-2">
+    <p className="flex items-baseline gap-2 text-[max(0.9625rem,13px)] text-ink-2">
       <b className="text-[max(1.6rem,18px)] font-normal leading-none text-ink">{n}</b>
       {label}
     </p>
@@ -945,9 +945,9 @@ function Count({ n, label }: { n: number; label: string }) {
 }
 
 const FIELD_PILL =
-  "flex h-[max(2.6rem,34px)] items-center gap-2 whitespace-nowrap rounded-full border border-border bg-white px-[max(1.1rem,12px)] text-[max(0.9rem,12px)]";
-const CHIP = "whitespace-nowrap rounded-full px-[max(0.75rem,8px)] py-[max(0.25rem,3px)] text-[max(0.8rem,11px)] font-medium";
-const SMALL = "rounded-full border border-border bg-white px-[max(0.8rem,9px)] py-[max(0.2rem,2px)] text-[max(0.75rem,11px)] text-ink hover:bg-surface-2";
+  "flex h-[max(2.6rem,34px)] items-center gap-2 whitespace-nowrap rounded-full border border-border bg-white px-[max(1.1rem,12px)] text-[max(0.9625rem,13px)]";
+const CHIP = "whitespace-nowrap rounded-full px-[max(0.75rem,8px)] py-[max(0.25rem,3px)] text-[max(0.8625rem,12px)] font-medium";
+const SMALL = "rounded-full border border-border bg-white px-[max(0.8rem,9px)] py-[max(0.2rem,2px)] text-[max(0.8125rem,12px)] text-ink hover:bg-surface-2";
 
 /** A Word CV cannot be drawn in the browser; it shows once the CV has been read. */
 function WordWaiting({ name }: { name: string }) {
@@ -955,7 +955,7 @@ function WordWaiting({ name }: { name: string }) {
     <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
       <span className="flex size-[max(3rem,36px)] items-center justify-center rounded-xl bg-[#2b579a] text-[max(1.1rem,14px)] font-bold text-white">W</span>
       <p className="text-[max(1rem,13px)] font-semibold text-ink">{name}&rsquo;s CV is a Word file</p>
-      <p className="max-w-[22rem] text-[max(0.85rem,11.5px)] text-ink-2">It shows here as pages once the CV has been read.</p>
+      <p className="max-w-[22rem] text-[max(0.9125rem,12.5px)] text-ink-2">It shows here as pages once the CV has been read.</p>
     </div>
   );
 }

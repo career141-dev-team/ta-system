@@ -122,12 +122,12 @@ html {
   --text-h3--letter-spacing: -0.006em;
   --text-body: max(1rem, 13.5px);
   --text-body--line-height: 1.625;
-  --text-small: max(0.875rem, 12px);
+  --text-small: max(0.9375rem, 13px);
   --text-small--line-height: 1.5;
-  --text-caption: max(0.75rem, 11px);
+  --text-caption: max(0.8125rem, 12px);
   --text-caption--line-height: 1.33;
   --text-caption--letter-spacing: 0.025em;
-  --text-mono: max(0.8125rem, 11.5px);
+  --text-mono: max(0.875rem, 12.5px);
   --text-mono--line-height: 1.38;
   --text-hand-l: max(2.125rem, 24px);
   --text-hand-l--line-height: 1.12;
@@ -159,9 +159,9 @@ html {
      is small... make the cards so they can see them clearly"). */
   --text-col: max(0.95rem, 14px);
   --text-card-name: max(1rem, 15px);
-  --text-card-sub: max(0.8rem, 12.5px);
-  --text-card-line: max(0.85rem, 13px);
-  --text-chip: max(0.7rem, 11.5px);
+  --text-card-sub: max(0.85rem, 13px);
+  --text-card-line: max(0.9rem, 13.5px);
+  --text-chip: max(0.75rem, 12px);
   --text-tool: max(0.8rem, 12.5px);
 }
 

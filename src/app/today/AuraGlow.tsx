@@ -65,7 +65,9 @@ export default function AuraGlow({ hover, pulse }: { hover: boolean; pulse: numb
 
   return (
     // Centred by layout, never by a CSS translate: GSAP owns the transform of what it moves.
-    <div aria-hidden="true" className="pointer-events-none absolute inset-0 flex items-center justify-center">
+    // overflow-hidden: the clouds drift past this box, and that overflow made the whole Today
+    // card scroll a few pixels (owner, 20 Nov 2026: "this tab is scrolling inside").
+    <div aria-hidden="true" className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden">
       <div data-glow className="relative top-[14%] h-[78%] w-[62%]">
         <div ref={field} className="absolute inset-0">
           {CLOUDS.map((c, i) => (

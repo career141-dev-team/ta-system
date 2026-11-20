@@ -48,7 +48,7 @@ export default function AddCandidate({ onClose, onAdd }: { onClose: () => void; 
         <h2 id="add-title" className="text-[max(1.05rem,15px)] font-semibold text-ink">
           Add candidate
         </h2>
-        <p className="mt-1 text-[max(0.8rem,11.5px)] text-ink-2">Upload their CV (PDF or Word, under {MAX_MB} MB).</p>
+        <p className="mt-1 text-[max(0.8625rem,12.5px)] text-ink-2">Upload their CV (PDF or Word, under {MAX_MB} MB).</p>
 
         <label
           onDragOver={(e) => {
@@ -62,7 +62,7 @@ export default function AddCandidate({ onClose, onAdd }: { onClose: () => void; 
             setFile(e.dataTransfer.files?.[0] ?? null);
           }}
           className={
-            "mt-[max(1.2rem,14px)] flex cursor-pointer flex-col items-center gap-1 rounded-md border-[1.5px] border-dashed px-4 py-[max(1.6rem,18px)] text-center text-[max(0.85rem,12.5px)] text-ink-2 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand/30 " +
+            "mt-[max(1.2rem,14px)] flex cursor-pointer flex-col items-center gap-1 rounded-md border-[1.5px] border-dashed px-4 py-[max(1.6rem,18px)] text-center text-[max(0.9125rem,13.5px)] text-ink-2 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand/30 " +
             (over ? "border-brand bg-brand-tint" : "border-border-strong hover:bg-surface-2")
           }
         >
@@ -70,20 +70,20 @@ export default function AddCandidate({ onClose, onAdd }: { onClose: () => void; 
           {file && <span>{(file.size / 1048576).toFixed(1)} MB</span>}
           <input type="file" accept=".pdf,.doc,.docx" autoFocus className="sr-only" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
         </label>
-        {error && <p role="alert" className="mt-2 text-[max(0.8rem,11.5px)] text-danger">{error}</p>}
+        {error && <p role="alert" className="mt-2 text-[max(0.8625rem,12.5px)] text-danger">{error}</p>}
 
         <div className="mt-[max(1.4rem,16px)] flex justify-end gap-[max(0.6rem,8px)]">
           <button
             type="button"
             onClick={onClose}
-            className="h-[max(2.4rem,33px)] rounded-full border border-border px-[max(1.2rem,15px)] text-[max(0.85rem,12.5px)] text-ink hover:bg-surface-2"
+            className="h-[max(2.4rem,33px)] rounded-full border border-border px-[max(1.2rem,15px)] text-[max(0.9125rem,13.5px)] text-ink hover:bg-surface-2"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={!file || !!error}
-            className="h-[max(2.4rem,33px)] rounded-full bg-brand px-[max(1.4rem,17px)] text-[max(0.85rem,12.5px)] font-medium text-white hover:bg-brand-strong disabled:opacity-40"
+            className="h-[max(2.4rem,33px)] rounded-full bg-brand px-[max(1.4rem,17px)] text-[max(0.9125rem,13.5px)] font-medium text-white hover:bg-brand-strong disabled:opacity-40"
           >
             Add candidate
           </button>

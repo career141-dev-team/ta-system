@@ -590,7 +590,7 @@ export default function ExcelTablesView() {
   useTabGlide(tabsRow, interest);
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col px-[max(1.5rem,14px)] pb-[max(1.4rem,12px)] pt-[max(1.4rem,14px)] max-md:pt-11">
+    <div className="relative flex min-h-0 flex-1 flex-col px-[max(1.5rem,14px)] pb-[max(1.4rem,12px)] pt-[max(1.4rem,14px)] max-md:pt-11 md:max-[1400px]:pt-[max(3.4rem,34px)]">
       {/* Sheets, capture, export: one row that never wraps on a laptop; the sheets
           slide sideways inside their track when there are many. */}
       <div className="flex items-center gap-[max(0.75rem,8px)] max-md:flex-wrap">
@@ -1535,10 +1535,10 @@ function DetailsDialog({ x, p, edit, from, onClose }: { x: Row; p: Profile; edit
   // Sizes from the Figma frame (1920 wide; 1rem = 16px there), each with a px floor.
   const t22 = "text-[max(1.375rem,16px)]";
   const t18 = "text-[max(1.125rem,14px)]";
-  const t14 = "text-[max(0.875rem,12px)]";
-  const t13 = "text-[max(0.8125rem,11px)]";
-  const t12 = "text-[max(0.75rem,11px)]";
-  const label = "text-[max(0.6875rem,10px)] font-medium tracking-[0.06em] text-ink-3";
+  const t14 = "text-[max(0.9375rem,13px)]";
+  const t13 = "text-[max(0.875rem,12px)]";
+  const t12 = "text-[max(0.8125rem,12px)]";
+  const label = "text-[max(0.75rem,11px)] font-medium tracking-[0.06em] text-ink-3";
   const tileBox = "flex min-w-0 flex-col gap-[3px] rounded-md bg-canvas px-4 py-3";
   const box = "flex flex-col gap-2 rounded-[1.25rem] bg-canvas px-[1.125rem] py-4 min-h-0 overflow-y-auto max-lg:max-h-80";
   const edu = prof.education[0];
@@ -1694,7 +1694,7 @@ function DetailsDialog({ x, p, edit, from, onClose }: { x: Row; p: Profile; edit
                   <div className="flex min-w-0 flex-1 flex-col gap-0.5 pb-1">
                     <p className={"flex flex-wrap items-center gap-2 font-medium text-ink " + t14}>
                       {e.title || "Role not shown"}
-                      {e.current && <span className={"rounded-[10px] bg-brand/10 px-2 py-0.5 font-medium text-brand " + "text-[max(0.6875rem,10px)]"}>Current</span>}
+                      {e.current && <span className={"rounded-[10px] bg-brand/10 px-2 py-0.5 font-medium text-brand " + "text-[max(0.75rem,11px)]"}>Current</span>}
                     </p>
                     <p className={"text-ink-2 " + t13}>{[e.company, e.kind].filter(Boolean).join(" · ")}</p>
                     <p className={"text-ink-2 " + t13}>{[e.period, e.length].filter(Boolean).join(" · ")}</p>

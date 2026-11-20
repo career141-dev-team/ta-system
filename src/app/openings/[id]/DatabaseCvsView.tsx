@@ -274,13 +274,13 @@ export default function DatabaseCvsView() {
       </svg>
     </span>
   );
-  const pill = "flex h-[2.23rem] shrink-0 items-center justify-center rounded-full px-[1.14rem] text-[max(0.777rem,10.5px)] font-medium";
+  const pill = "flex h-[2.23rem] shrink-0 items-center justify-center rounded-full px-[1.14rem] text-[max(0.8395rem,11.5px)] font-medium";
   const keyHint = "rounded-xs bg-white/15 px-1.5 py-0.5 text-caption font-medium text-white";
 
   // Still reading this opening: a skeleton of the view, never an empty list that looks final (19 Nov).
   if (job && real === undefined) return <ViewSkeleton />;
   return (
-    <div ref={root} className="flex min-h-0 flex-1 flex-col px-[max(1.5rem,14px)] pb-[max(1.25rem,12px)] pt-[max(1.4rem,14px)] max-md:pt-11">
+    <div ref={root} className="flex min-h-0 flex-1 flex-col px-[max(1.5rem,14px)] pb-[max(1.25rem,12px)] pt-[max(1.4rem,14px)] max-md:pt-11 md:max-[1400px]:pt-[max(3.4rem,34px)]">
       <div className="flex flex-wrap items-center gap-x-[max(1.25rem,12px)] gap-y-2">
         <BackButton />
         <p className="flex items-baseline gap-2 text-small text-ink-2">
@@ -471,17 +471,17 @@ export default function DatabaseCvsView() {
             className="absolute inset-y-0 right-0 z-20 flex w-[min(54rem,100%)] flex-col gap-[0.725rem] rounded-[1.45rem] border border-border bg-surface p-[1.036rem] shadow-float max-md:fixed max-md:inset-3 max-md:w-auto"
           >
             <div className="flex shrink-0 items-center gap-[0.62rem]">
-              <span className="flex size-[2.487rem] shrink-0 items-center justify-center rounded-full bg-info-soft text-[max(0.725rem,10px)] font-medium text-info">
+              <span className="flex size-[2.487rem] shrink-0 items-center justify-center rounded-full bg-info-soft text-[max(0.7875rem,11px)] font-medium text-info">
                 {picked.name.split(" ").map((w) => w[0]).join("").slice(0, 2)}
               </span>
               <div className="flex min-w-0 flex-col">
                 <p className="truncate text-[max(1.036rem,13px)] font-medium text-ink">{picked.name}</p>
-                <p className="truncate text-[max(0.725rem,10px)] text-ink-2">
+                <p className="truncate text-[max(0.7875rem,11px)] text-ink-2">
                   {picked.title} · {picked.company} · {picked.years} yrs
                 </p>
               </div>
-              <span className="shrink-0 rounded-[0.52rem] bg-brand-soft px-[0.415rem] py-[0.1rem] text-[max(0.725rem,10px)] text-brand">{picked.score}</span>
-              <span className="ml-auto shrink-0 text-[max(0.674rem,10px)] text-ink-3">
+              <span className="shrink-0 rounded-[0.52rem] bg-brand-soft px-[0.415rem] py-[0.1rem] text-[max(0.7875rem,11px)] text-brand">{picked.score}</span>
+              <span className="ml-auto shrink-0 text-[max(0.7365rem,11px)] text-ink-3">
                 {idx + 1} of {shown.length}
               </span>
               {(
@@ -517,7 +517,7 @@ export default function DatabaseCvsView() {
                 </svg>
               </button>
             </div>
-            <p className="flex shrink-0 items-center gap-[0.62rem] rounded-[0.93rem] bg-brand-tint px-[0.83rem] py-[0.62rem] text-[max(0.725rem,10px)] font-medium text-ink">
+            <p className="flex shrink-0 items-center gap-[0.62rem] rounded-[0.93rem] bg-brand-tint px-[0.83rem] py-[0.62rem] text-[max(0.7875rem,11px)] font-medium text-ink">
               <Image src="/aura-mark.png" alt="" width={24} height={24} className="size-[1.45rem] shrink-0 rounded-full bg-black" />
               {fitOf(picked.score)} fit. {reasonOf(picked)}.
             </p>
@@ -608,7 +608,7 @@ export default function DatabaseCvsView() {
         </p>
       </div>
       {undo && (
-        <div role="status" className="fixed bottom-[max(4rem,48px)] left-1/2 z-[90] flex max-w-[calc(100vw-24px)] -translate-x-1/2 items-center gap-3 rounded-full bg-ink px-[max(1.3rem,14px)] py-[max(0.7rem,8px)] text-[max(0.85rem,12.5px)] text-white shadow-float">
+        <div role="status" className="fixed bottom-[max(4rem,48px)] left-1/2 z-[90] flex max-w-[calc(100vw-24px)] -translate-x-1/2 items-center gap-3 rounded-full bg-ink px-[max(1.3rem,14px)] py-[max(0.7rem,8px)] text-[max(0.9125rem,13.5px)] text-white shadow-float">
           <span>
             <b className="font-semibold">{undo.name}</b> will not be matched to this job again
           </span>
