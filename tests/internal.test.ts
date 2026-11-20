@@ -64,6 +64,8 @@ const ALLOWED_PUBLIC = new Set<string>([
   "ui/aura:askToday",
   // AURA reads a new opening's brief (20 Nov, D11 item 1).
   "ui/brief:read",
+  // AURA on a CV: the green box in the TA's words, and questions (20 Nov, D11 item 4).
+  "ui/cvAgent:ask",
   "ui/lead:desk",
   "ui/homes:director",
   "ui/homes:ops",
