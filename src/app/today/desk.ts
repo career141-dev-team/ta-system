@@ -114,7 +114,8 @@ export type Tone = "brand" | "warn" | "danger" | "muted";
  *  a chip on the right, a strategy that can be accepted, a page to open. */
 export type Line = { n?: number; main: string; meta?: string; tag?: { text: string; tone: Tone }; accept?: Row; href?: string };
 /** AURA's answer: one sentence, then any of a few numbers, chips and rows. */
-export type Answer = { say: string; stats?: [string, string][]; chips?: string[]; warn?: string[]; rows?: Line[] };
+/** `unknown`: the word rules did not know the question - signed in, AURA (Haiku) answers it (D11 item 5). */
+export type Answer = { say: string; stats?: [string, string][]; chips?: string[]; warn?: string[]; rows?: Line[]; unknown?: true };
 
 const STATE_TAG = (r: Row): Line["tag"] =>
   r.state === "waiting" ? { text: "To accept", tone: "warn" } : r.state === "working" ? { text: "Working", tone: "brand" } : r.state === "done" ? { text: "Done", tone: "muted" } : { text: "Not given yet", tone: "muted" };
