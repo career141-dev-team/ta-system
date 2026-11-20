@@ -425,6 +425,9 @@ export default function ExcelTablesView() {
         say("That is not a LinkedIn profile link. It should look like linkedin.com/in/their-name.", undefined, true);
         return false;
       }
+      // The old add also looks for their CV and takes ~9 s live (20 Nov): say it
+      // is working at once, so the cleared box does not read as "nothing happened".
+      say(one ? (p ? "Reading the profile and adding it…" : "Adding the profile…") : `Adding ${lines.length} rows…`);
       void send(one ? { do: p ? "extract" : "add", openingId: job, url: text.trim(), level } : { do: "paste", openingId: job, rows: text, level });
       return true;
     }

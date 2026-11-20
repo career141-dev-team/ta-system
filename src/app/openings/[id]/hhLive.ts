@@ -37,12 +37,30 @@ export function useHh(job: string | null, on: boolean) {
   const reload = useCallback(async () => {
     if (!on || !job) return;
     const url = `${URL_HH}?${new URLSearchParams({ opening: job })}`;
-    const res = await fetch(url, { headers: await cvHeaders(url) }).catch(() => null);
-    const got = (await res?.json().catch(() => null)) as ({ ok?: boolean; message?: string } & Partial<HhData>) | null;
+    // A read that never answered left Research on "Reading the research…" for good
+    // (20 Nov, right after a release restarted the old server, which loads the desk
+    // on its first request). Each try stops at 30 s and a timed-out try gets one
+    // more; after that the screen says so instead of waiting for ever.
+    type Got = ({ ok?: boolean; message?: string } & Partial<HhData>) | null;
+    let got = null as Got;
+    let slow = false;
+    for (let tries = 0; tries < 2; tries++) {
+      slow = false;
+      const res = await fetch(url, { headers: await cvHeaders(url), signal: AbortSignal.timeout(30_000) }).catch((e: Error) => {
+        slow = e?.name === "TimeoutError";
+        return null;
+      });
+      got = (await res?.json().catch(() => null)) as Got;
+      if (!slow) break;
+    }
     if (got?.ok && got.research && got.suggestions && got.overview) {
       setData({ overview: got.overview, research: got.research, suggestions: got.suggestions });
       setError(null);
-    } else setError(got?.message ?? "Could not load Headhunting. Try again.");
+    } else
+      setError(
+        got?.message ??
+          (slow ? "The TA System is slow to answer right now. Reload the page in a minute." : "Could not load Headhunting. Try again."),
+      );
   }, [job, on]);
   useEffect(() => {
     const first = setTimeout(() => void reload(), 0);
