@@ -319,6 +319,7 @@ import type * as ui_planEvidence from "../ui/planEvidence.js";
 import type * as ui_planTalk from "../ui/planTalk.js";
 import type * as ui_posts from "../ui/posts.js";
 import type * as ui_rules from "../ui/rules.js";
+import type * as ui_searches from "../ui/searches.js";
 import type * as users_users from "../users/users.js";
 
 import type {
@@ -639,6 +640,7 @@ declare const fullApi: ApiFromModules<{
   "ui/planTalk": typeof ui_planTalk;
   "ui/posts": typeof ui_posts;
   "ui/rules": typeof ui_rules;
+  "ui/searches": typeof ui_searches;
   "users/users": typeof users_users;
   analytics: typeof analytics;
   "applications/applications": typeof applications_applications;
@@ -893,6 +895,7 @@ declare const fullApi: ApiFromModules<{
   "ui/planTalk": typeof ui_planTalk;
   "ui/posts": typeof ui_posts;
   "ui/rules": typeof ui_rules;
+  "ui/searches": typeof ui_searches;
   "users/users": typeof users_users;
 }>;
 

@@ -39,10 +39,12 @@ export const today = query({
     const yesterday = workdayDate(now - DAY);
     const dayStart = colomboDayStart(now);
 
-    const [workday, plan, assigned] = await Promise.all([
+    const [workday, plan, assigned, searches] = await Promise.all([
       ctx.db.query("taWorkdays").withIndex("by_user_date", (q) => q.eq("userId", me).eq("date", date)).first(),
       ctx.db.query("auraDayPlans").withIndex("by_user_date", (q) => q.eq("userId", me).eq("date", date)).first(),
       ctx.db.query("jobAssignments").withIndex("by_userId_isActive", (q) => q.eq("userId", me).eq("isActive", true)).take(100),
+      // Database chat searches (ui/searches:record, Part 3).
+      ctx.db.query("searchHistory").withIndex("by_user", (q) => q.eq("userId", me).gte("_creationTime", dayStart)).take(CAP),
     ]);
 
     const ids = [...new Set(assigned.map((a) => a.jobId))];
@@ -105,6 +107,7 @@ export const today = query({
         directorToday: sum("directorToday"),
         sentToday: sum("sentToday"),
         sentYesterday: sum("sentYesterday"),
+        searchesToday: searches.length,
       },
       positions,
     };
