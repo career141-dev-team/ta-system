@@ -263,7 +263,7 @@ export default function ExcelTablesView() {
   // Interest tab, eye-marked / add-on ticks, search, who and when are kept per
   // opening for the visit; Reset puts them back (src/lib/filters.ts).
   const { f: kept, set: setKept, reset: resetFilters, active: nFilters } = useFilters(
-    "excel:" + (typeof window === "undefined" ? "" : (jobFromAddress() ?? "demo")),
+    "excel2:" + (typeof window === "undefined" ? "" : (jobFromAddress() ?? "demo")),
     // Every sheet, everyone's rows (that this person may see), any time - old AURA's
     // own start (lib/linkViews: by "", day ""). "me" + "today" hid every row added
     // before today, so jobs with 95 LinkedIn rows showed an empty table (20 Nov).
