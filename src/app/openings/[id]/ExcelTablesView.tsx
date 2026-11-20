@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { DUR, EASE, gsap, useTabGlide } from "@/lib/gsap";
 import { useWorkdayGate } from "@/lib/workday";
@@ -12,7 +12,8 @@ import { sendToPipeline } from "./pipelineInbox";
 import WorkdayBlocked from "./WorkdayBlocked";
 import { FIELD_PILL } from "./filters";
 import { useFilters } from "@/lib/filters";
-import { jobFromAddress } from "@/lib/backend";
+import { jobFromAddress, LIVE, useLive } from "@/lib/backend";
+import { actionFor, addedBucket, sendLink, sheetDate, useLiveLinks, VIA_FROM, type LiveLinks, type LiveRow } from "./excelLive";
 import { useLiftMenu } from "./liftMenu";
 import { useOpeningView } from "./view";
 import type { Profile } from "@/lib/linkedinProfile";
@@ -29,7 +30,7 @@ import { useSignedHeaders } from "@/lib/backend";
 // - Not interested needs a reason; an eye-marked person needs their CV before the
 //   pipeline; the bulk bar never changes eye-marks;
 // - another TA's row is theirs to work.
-// Sample data until the backend.
+// Signed in, the rows and sheets are real (D8a, excelLive.ts); signed out, the sample.
 
 type Interest = "approach" | "yes" | "no";
 const VIA = ["mutual", "reception", "profile", "internal db", "other"] as const;
@@ -51,7 +52,7 @@ type Row = {
   addOn: boolean;
   pipeline?: string;
   addedBy: string;
-  added: "today" | "yesterday" | "week";
+  added: "today" | "yesterday" | "week" | "older";
   location?: string;
   notes: string[];
   matches?: { name: string; detail: string }[];
@@ -194,6 +195,33 @@ const nameFrom = (slug: string) =>
     .filter((w) => w && !/^\d+$/.test(w))
     .map(cap)
     .join(" ") || "Name to check";
+
+/** A row from the TA System, in this screen's shape. */
+function liveRow(l: LiveRow, where: Map<string, string>): Row {
+  const slug = l.url.match(LI)?.[1] ?? "";
+  return {
+    id: l.id,
+    sheet: l.sheet,
+    name: l.name || nameFrom(slug),
+    title: l.title ?? "",
+    company: l.company ?? "",
+    url: l.url,
+    phone: l.phone ?? undefined,
+    via: (VIA_FROM[l.phoneSource ?? ""] as Via | undefined) ?? undefined,
+    interest: l.interest,
+    why: l.why ?? undefined,
+    eye: l.eye,
+    hasCv: l.hasCv,
+    addOn: l.addOn,
+    pipeline: l.pipeline ?? undefined,
+    addedBy: l.mine ? ME : l.addedBy,
+    added: addedBucket(l.createdAt),
+    location: l.workLocationId ? where.get(l.workLocationId) : undefined,
+    notes: l.notes.map((n) => n.note),
+    matches: l.cvMatch ? [{ name: l.cvMatch.name, detail: l.cvMatch.reasons.join(" · ") }] : undefined,
+    shortlistedBy: l.shortlistedBy ?? undefined,
+  };
+}
 const keyOf = (url: string) => (url.match(LI)?.[1] ?? url).toLowerCase();
 const digits = (s: string) => s.replace(/[\s\-().+]/g, "");
 
@@ -222,8 +250,14 @@ const INPUT =
 export default function ExcelTablesView() {
   const signed = useSignedHeaders();
   const gate = useWorkdayGate();
-  const [rows, setRows] = useState(START);
-  const [sheets, setSheets] = useState<Sheet[]>(SHEETS);
+  // Signed in on a real opening: the old table's rows and this person's sheets.
+  const live = useLive();
+  const [job] = useState(jobFromAddress);
+  const signedIn = live && !!job;
+  const [rows, setRows] = useState<Row[]>(() => (LIVE && jobFromAddress() ? [] : START));
+  const [sheets, setSheets] = useState<Sheet[]>(() => (LIVE && jobFromAddress() ? [] : SHEETS));
+  const { data: liveData, error: liveError, reload } = useLiveLinks(job, signedIn);
+  const liveById = useMemo(() => new Map((liveData?.rows ?? []).map((l) => [l.id, l])), [liveData]);
   // "all" shows every sheet at once.
   const [sheet, setSheet] = useState<number | null | "all">(3);
   // Interest tab, eye-marked / add-on ticks, search, who and when are kept per
@@ -253,9 +287,45 @@ export default function ExcelTablesView() {
   const say = (rest: string, bold?: string, warn?: boolean) =>
     setNotice((n) => ({ bold, rest, warn, n: (n?.n ?? 0) + 1 }));
 
+  // Each new read replaces the table (React's pattern for state that follows a value).
+  const [seenLive, setSeenLive] = useState<LiveLinks | null>(null);
+  if (liveData && liveData !== seenLive) {
+    const first = !seenLive;
+    setSeenLive(liveData);
+    const where = new Map(liveData.locations.map((l) => [l.id, l.name]));
+    setRows(liveData.rows.map((l) => liveRow(l, where)));
+    setSheets(liveData.sheets.map((x) => ({ n: x.n, date: sheetDate(x.at), name: x.name ?? undefined })));
+    setUndo(liveData.undo ? { sheet: { n: liveData.undo.n, date: "", name: liveData.undo.name ?? undefined }, ids: [] } : null);
+    if (first) setSheet(liveData.sheets.at(-1)?.n ?? "all");
+  }
+  const [seenError, setSeenError] = useState<string | null>(null);
+  if (liveError !== seenError) {
+    setSeenError(liveError);
+    if (liveError) say(liveError, undefined, true);
+  }
+  // One old-table action; its sentence is said, then the table is read again.
+  const send = async (body: Record<string, unknown>) => {
+    const res = await sendLink(body);
+    say(res.message, undefined, !res.ok);
+    void reload();
+    return res.ok;
+  };
+
   const mine = (x: Row) => x.addedBy === ME;
-  const edit = (id: string, patch: Partial<Row>) =>
+  const edit = (id: string, patch: Partial<Row>) => {
+    const lr = signedIn ? liveById.get(id) : undefined;
+    if (lr && job) {
+      // "Same person" on a match the TA System found: the old CV-match answer.
+      if (patch.hasCv) {
+        if (lr.cvMatch) void send({ do: "cvMatch", openingId: job, entryId: id, decision: "same" });
+        else return say("Finding a CV in the database is not switched on here yet - do it in AURA for now.", undefined, true);
+      } else {
+        const body = actionFor(lr, patch as Record<string, unknown>, job, rows.find((x) => x.id === id)?.notes.length ?? 0, liveData?.locations ?? []);
+        if (body) void send(body);
+      }
+    }
     setRows((all) => all.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+  };
 
   // Every filter but the interest tab, so each tab's count is what pressing it shows.
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
@@ -288,6 +358,7 @@ export default function ExcelTablesView() {
 
   // ---- Sheets ----
   const addSheet = () => {
+    if (signedIn && job) return void send({ do: "addSheet", openingId: job });
     // The lowest number no live sheet uses, as the old system does.
     let n = 1;
     while (sheets.some((s) => s.n === n)) n++;
@@ -297,12 +368,16 @@ export default function ExcelTablesView() {
     say(`L${n} started - new people you add go here`);
   };
   const renameSheet = (n: number, name: string) =>
-    setSheets((all) =>
+    signedIn && job ? void send({ do: "renameSheet", openingId: job, level: String(n), name: name.trim().slice(0, 40) }) : setSheets((all) =>
       all.map((s) =>
         s.n === n ? { ...s, name: name.trim().slice(0, 40) || undefined } : s,
       ),
     );
   const deleteSheet = (s: Sheet) => {
+    if (signedIn && job) {
+      if (sheet === s.n) setSheet("all");
+      return void send({ do: "deleteSheet", openingId: job, level: String(s.n) });
+    }
     const ids = rows.filter((x) => x.sheet === s.n && mine(x)).map((x) => x.id);
     setRows((all) =>
       all.map((x) => (ids.includes(x.id) ? { ...x, sheet: null } : x)),
@@ -313,6 +388,10 @@ export default function ExcelTablesView() {
   };
   const restoreSheet = () => {
     if (!undo) return;
+    if (signedIn && job) {
+      setSheet(undo.sheet.n);
+      return void send({ do: "restoreSheet", openingId: job, level: String(undo.sheet.n) });
+    }
     setSheets((all) => [...all, undo.sheet].sort((a, b) => a.n - b.n));
     setRows((all) =>
       all.map((x) =>
@@ -332,6 +411,23 @@ export default function ExcelTablesView() {
   // ---- Adding people ----
   const addFromPaste = (text: string, p?: Profile) => {
     if (gate) return false;
+    if (signedIn && job) {
+      // The old table's own add: one link (read from LinkedIn when asked), or pasted
+      // Excel rows; it picks the sheet, skips people already there and says so.
+      const lines = text.split(/\r?\n/).filter((l) => l.trim());
+      const level = typeof sheet === "number" ? String(sheet) : "";
+      if (lines.length > PASTE_MAX) {
+        say(`That is ${lines.length} rows. Paste up to ${PASTE_MAX} at a time.`, undefined, true);
+        return false;
+      }
+      const one = lines.length === 1 && !text.includes("\t");
+      if (one && !LI.test(text)) {
+        say("That is not a LinkedIn profile link. It should look like linkedin.com/in/their-name.", undefined, true);
+        return false;
+      }
+      void send(one ? { do: p ? "extract" : "add", openingId: job, url: text.trim(), level } : { do: "paste", openingId: job, rows: text, level });
+      return true;
+    }
     // Not in a sheet or All: the link goes to your latest L-sheet, or starts L1.
     let target = typeof sheet === "number" ? sheet : (sheets.at(-1)?.n ?? 0);
     if (!target) {
@@ -442,6 +538,11 @@ export default function ExcelTablesView() {
           true,
         );
       return false;
+    }
+    if (signedIn && job) {
+      // Interested is the old table's Yes (it shortlists and claims them too).
+      void send(fromYes ? { do: "interest", openingId: job, entryId: x.id, interest: "interested" } : { do: "toPipeline", openingId: job, entryId: x.id });
+      return true;
     }
     edit(x.id, { pipeline: "TA Follow-up", interest: "yes", why: undefined });
     // They show on the Pipeline board, in TA Follow-Up (source: headhunted).
@@ -766,6 +867,7 @@ export default function ExcelTablesView() {
                   );
                 }}
                 onRemove={() => {
+                  if (signedIn && job) void send({ do: "remove", openingId: job, entryId: x.id });
                   setRows((all) => all.filter((y) => y.id !== x.id));
                   setTicked((t) => t.filter((i) => i !== x.id));
                   say(" removed from the table", x.name);
@@ -804,6 +906,12 @@ export default function ExcelTablesView() {
           blocked={!!gate}
           onClear={() => setTicked([])}
           onNote={(note) => {
+            if (signedIn && job) {
+              for (const x of tickedRows.filter(mine)) void sendLink({ do: "note", openingId: job, entryId: x.id, note });
+              say(`Note added to ${tickedRows.filter(mine).length}`);
+              setTimeout(() => void reload(), 1500);
+              return;
+            }
             setRows((all) =>
               all.map((x) =>
                 ticked.includes(x.id) && mine(x)
@@ -814,6 +922,15 @@ export default function ExcelTablesView() {
             say(`Note added to ${ticked.length}`);
           }}
           onOutcome={(to, why) => {
+            if (signedIn && job) {
+              if (to === "approach") return say("Moving people back to To approach is not switched on here yet - do it in AURA for now.", undefined, true);
+              const them = tickedRows.filter((x) => mine(x) && !x.pipeline && !x.shortlistedBy);
+              for (const x of them)
+                void sendLink({ do: "interest", openingId: job, entryId: x.id, interest: to === "yes" ? "interested" : "not_interested", ...(to === "no" ? { reason: why ?? "" } : {}) });
+              say(`${them.length} sent to the TA System - the table shows each answer in a moment`);
+              setTimeout(() => void reload(), 2000);
+              return;
+            }
             if (to === "yes") {
               const go = tickedRows.filter(
                 (x) =>
@@ -851,6 +968,11 @@ export default function ExcelTablesView() {
             );
           }}
           onLocation={(loc) => {
+            if (signedIn && job) {
+              const id = liveData?.locations.find((l) => l.name === loc)?.id;
+              if (!id) return say("That work location is not on this opening.", undefined, true);
+              return void send({ do: "locationMany", openingId: job, targetWorkLocationId: id, entryId: tickedRows.filter(mine).map((x) => x.id) });
+            }
             setRows((all) =>
               all.map((x) =>
                 ticked.includes(x.id) && mine(x) ? { ...x, location: loc } : x,
@@ -859,6 +981,11 @@ export default function ExcelTablesView() {
             say(`${ticked.length} set to ${loc}`);
           }}
           onPipeline={() => {
+            if (signedIn && job) {
+              void send({ do: "toPipelineMany", openingId: job, entryId: eligible.map((x) => x.id) });
+              setTicked([]);
+              return;
+            }
             eligible.forEach((x) => toPipeline(x, true));
             const left = ticked.length - eligible.length;
             say(
