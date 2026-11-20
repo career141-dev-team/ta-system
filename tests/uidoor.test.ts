@@ -449,5 +449,12 @@ const machine = read("convex/pipeline/pipelineStateMachine.ts");
 eq("stage machine: a move into Placed settles the fill", machine.includes('settleFill(ctx, app.jobId, "in")'), true);
 eq("stage machine: a move out of Placed settles the fill", machine.includes('settleFill(ctx, app.jobId, "out")'), true);
 
+// ── Opening access requests in the door (20 Nov) ───────────────────────────
+const acc = read("convex/ui/access.ts");
+eq("access: requests go through the old rules", acc.includes("internal.ta.openingAccess.request") && acc.includes("internal.ta.openingAccess.decide"), true);
+eq("access: the list is read by index, never the whole jobs table", acc.includes('withIndex("by_status"') && !/query\("jobs"\)\.collect\(\)/.test(acc), true);
+eq("access: a lead's pending list comes from the old rule", acc.includes("listPendingForApprover"), true);
+eq("access: only a TA is offered openings to ask for", acc.includes('["ta", "ta_support"].includes(roleOf(me))'), true);
+
 console.log(`\nuidoor: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
