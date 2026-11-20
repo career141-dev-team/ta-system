@@ -117,5 +117,10 @@ export async function POST(req: NextRequest) {
     chips: describe(criteria).map((c) => c.label),
     refining,
     problem,
+    // The backend's own words for a part that did not run (20 Nov), not shown
+    // on screen: "the word search" failed after 10 s, not at the 30 s wait, and
+    // the reason was thrown away. Our sentences around the server's message;
+    // never the request, so never the admin key (convexServer).
+    detail: engine?.incomplete?.length ? engine.incomplete.map((d) => d.slice(0, 300)) : undefined,
   });
 }
