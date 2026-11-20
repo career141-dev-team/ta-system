@@ -264,7 +264,10 @@ export default function ExcelTablesView() {
   // opening for the visit; Reset puts them back (src/lib/filters.ts).
   const { f: kept, set: setKept, reset: resetFilters, active: nFilters } = useFilters(
     "excel:" + (typeof window === "undefined" ? "" : (jobFromAddress() ?? "demo")),
-    { interest: "all" as string, eyeOnly: false as boolean, addOnsOnly: false as boolean, q: "", by: ME as string, added: "today" },
+    // Every sheet, everyone's rows (that this person may see), any time - old AURA's
+    // own start (lib/linkViews: by "", day ""). "me" + "today" hid every row added
+    // before today, so jobs with 95 LinkedIn rows showed an empty table (20 Nov).
+    { interest: "all" as string, eyeOnly: false as boolean, addOnsOnly: false as boolean, q: "", by: "all" as string, added: "any" },
   );
   const { eyeOnly, addOnsOnly, q, by, added } = kept;
   const interest = kept.interest as Interest | "all";
@@ -296,7 +299,7 @@ export default function ExcelTablesView() {
     setRows(liveData.rows.map((l) => liveRow(l, where)));
     setSheets(liveData.sheets.map((x) => ({ n: x.n, date: sheetDate(x.at), name: x.name ?? undefined })));
     setUndo(liveData.undo ? { sheet: { n: liveData.undo.n, date: "", name: liveData.undo.name ?? undefined }, ids: [] } : null);
-    if (first) setSheet(liveData.sheets.at(-1)?.n ?? "all");
+    if (first) setSheet("all");
   }
   const [seenError, setSeenError] = useState<string | null>(null);
   if (liveError !== seenError) {
