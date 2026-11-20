@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import Image from "next/image";
 import { DUR, EASE, gsap, motionOK, swapIn, useGSAP, useSwap } from "@/lib/gsap";
 import { useMe } from "@/lib/role";
+import { door, useDoorAction } from "@/lib/backend";
 import { useLiftMenu } from "./[id]/liftMenu";
 import { CITIES, CLIENTS, EMPTY, TARGET_WORDS, TEAM, readBrief, type Loc, type Opening, type Priority, type Read } from "./data";
 
@@ -57,6 +58,20 @@ export default function NewOpening({
   const brief = useRef<HTMLTextAreaElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
+  // Signed in (the sheet is handed the desk's real lists): Claude Haiku reads the
+  // brief and every correction (ui/brief:read, D11 item 1). It only fills the fields;
+  // Create still runs the old save. Signed out, the word rules in data.ts.
+  const live = clients !== undefined;
+  const ask = useDoorAction(door.briefRead);
+  const [said, setSaid] = useState("");
+  const [talking, setTalking] = useState(false);
+  const askAura = async (extra: { current: BriefFields; said: string } | null) => {
+    const res = (await (ask({ text, clients: CLIENT_LIST, team: TEAM_LIST, ...(extra ?? {}) }) as Promise<BriefReply | undefined>).catch(() => undefined)) ?? {
+      ok: false as const,
+      message: "AURA is not connected here.",
+    };
+    return res;
+  };
 
   useGSAP(
     () => {
@@ -89,7 +104,23 @@ export default function NewOpening({
   const read = () => {
     if (!text.trim() || reading) return;
     setReading(true);
-    // ponytail: a stand-in wait; with the backend this is one model call.
+    if (live) {
+      void askAura(null).then((res) => {
+        setReading(false);
+        if (res.ok) {
+          setR(withMe(fromFields(res.fields, { ...EMPTY, read: [] }, res.read)));
+          setSaid(res.reply);
+        } else {
+          // The model could not answer: the word rules fill what they can, and say so.
+          setR(withMe(readBrief(text, { clients: CLIENT_LIST, team: TEAM_LIST })));
+          setSaid(`${res.message} I filled what I could - check every field.`);
+        }
+        setDone([]);
+        setStep("check");
+      });
+      return;
+    }
+    // Signed out: a stand-in wait, then the word rules.
     timer.current = setTimeout(() => {
       setReading(false);
       const got = readBrief(text, { clients: CLIENT_LIST, team: TEAM_LIST });
@@ -116,6 +147,17 @@ export default function NewOpening({
     }, r, text);
   };
   const set = (p: Partial<Read>) => setR((x) => ({ ...x, ...p }));
+  // A correction in the person's own words, applied by AURA to the fields so far.
+  const tell = (words: string) => {
+    if (!words.trim() || talking) return;
+    setTalking(true);
+    void askAura({ current: toFields(r), said: words.trim() }).then((res) => {
+      setTalking(false);
+      if (!res.ok) return setSaid(res.message);
+      setR((x) => withMe(fromFields(res.fields, x, res.read)));
+      setSaid(res.reply);
+    });
+  };
 
   // What AURA still needs, asked one at a time with one-tap answers or a small box
   // (owner, 14 Nov: "do not restrict the users... AURA can help them with one or two
@@ -433,7 +475,18 @@ export default function NewOpening({
                 </Field>
                 )}
               </div>
-              {asks.length > 0 && <AuraAsks q={asks[0]} more={asks.length - 1} />}
+              {said && (
+                <p role="status" className="mt-3 flex items-start gap-2 text-small text-ink-2">
+                  <span aria-hidden="true" className="text-violet">✦</span>
+                  {talking ? "AURA is reading…" : said}
+                </p>
+              )}
+              {(() => {
+                const q: Ask | undefined = asks[0] ?? (live ? { key: "talk", say: "Anything to change? Tell AURA.", box: { hint: "e.g. the client is Hayleys, make it P2", go: tell } } : undefined);
+                if (!q) return null;
+                const typed = live && q.box && q.key !== "talk" ? { ...q, box: { ...q.box, go: (v: string) => tell(`${q.say} ${v}`) } } : q;
+                return <AuraAsks q={typed} more={Math.max(0, asks.length - 1)} />;
+              })()}
               <div className="mt-3 flex flex-wrap items-center gap-3">
                 <p className="mr-auto text-small text-ink-3">
                   {missing
@@ -622,6 +675,26 @@ function attach(f: File, setFile: (n: string) => void, setText: (fn: (x: string)
   if (f.type === "text/plain" || f.name.endsWith(".txt")) void f.text().then((t) => setText(() => t.slice(0, 8000)));
   else setText((x) => x || `JD attached: ${f.name.replace(/\.[^.]+$/, "")}`);
 }
+
+/** ui/brief:read's fields (convex/ui/briefRules.ts BriefFields). */
+type BriefFields = {
+  role: string; client: string; clientKnown: boolean; locations: Loc[]; priority: number | null;
+  team: string[]; musts: string; hiringFor: "Local" | "Expat"; gender: "Any" | "Female" | "Male";
+};
+type BriefReply = { ok: true; fields: BriefFields; read: string[]; reply: string } | { ok: false; message: string };
+
+const toFields = (x: Read): BriefFields => ({
+  role: x.role, client: x.client, clientKnown: x.clientKnown, locations: x.locations, priority: x.priority, team: x.team, musts: x.musts,
+  hiringFor: x.hiringFor === "Expat" ? "Expat" : "Local", gender: x.gender === "Female" || x.gender === "Male" ? x.gender : "Any",
+});
+/** AURA's fields laid over the sheet's; switches the brief does not hold are kept. */
+const fromFields = (f: BriefFields, x: Read, read: string[]): Read => ({
+  ...x,
+  role: f.role, client: f.client, clientKnown: f.clientKnown, locations: f.locations,
+  priority: f.priority && f.priority >= 1 && f.priority <= 5 ? (f.priority as Priority) : x.priority,
+  team: f.team, musts: f.musts, hiringFor: f.hiringFor, gender: f.gender,
+  read: [...new Set([...x.read, ...read])],
+});
 
 type Ask = {
   key: string;
