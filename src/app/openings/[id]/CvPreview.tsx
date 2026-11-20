@@ -341,10 +341,10 @@ export default function CvPreview({
         aria-modal="true"
         aria-label={`CV of ${name}`}
         className={
-          "absolute flex flex-col bg-ink pr-[2%] shadow-[0_-20px_80px_rgba(0,0,0,0.25)] " +
+          "absolute flex flex-col bg-ink shadow-[0_-20px_80px_rgba(0,0,0,0.25)] " +
           (full
-            ? "inset-[max(1rem,8px)] rounded-lg pl-[3%] pt-[max(3.25rem,24px)]"
-            : "bottom-0 left-[17%] top-[5%] w-[66%] rounded-t-[3.75rem] pl-[4%] pt-[max(3.75rem,26px)] " +
+            ? "inset-[max(1rem,8px)] rounded-lg px-[3%] pt-[max(3.25rem,24px)]"
+            : "bottom-0 left-[17%] top-[5%] w-[66%] rounded-t-[3.75rem] px-[4%] pt-[max(3.75rem,26px)] " +
               // A phone: the sheet takes the whole width.
               "max-md:left-0 max-md:top-[7%] max-md:w-full max-md:rounded-t-lg max-md:px-2 max-md:pt-12")
         }
@@ -361,7 +361,7 @@ export default function CvPreview({
             <CvPages key={src} src={src} fit="width" calm={from ? (EXPAND + OPEN_GROW) * 1000 + 150 : 0} overlay={box && <GreenBox box={box} setBox={setBox} />} />
           </div>
         ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto pr-[3%] [scrollbar-color:#fff_transparent]">
+        <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-color:#fff_transparent]">
           <article
             data-doc
             className="min-h-full rounded-t-[2.6rem] bg-white pb-[max(3rem,24px)] font-[Arial,Helvetica,sans-serif] text-ink"

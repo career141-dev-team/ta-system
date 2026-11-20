@@ -60,7 +60,7 @@ export default function Board({ children }: { children: ReactNode }) {
     const el = tab.current;
     if (!el) return;
     let hidden = false;
-    gsap.set(el, { clearProps: "transform,opacity" }); // a new page always starts with the tab showing
+    gsap.set(el, { clearProps: "transform,opacity,filter" }); // a new page always starts with the tab showing
     // The tab leaves and returns as one calm move (owner, 18 Nov 2026: "not smooth,
     // the premium is missing"): it slides up exactly its own height on a long ease while
     // the fade trails a beat behind, and comes back on a soft ease-out. It never
@@ -76,16 +76,16 @@ export default function Board({ children }: { children: ReactNode }) {
         el.style.willChange = "";
         // Gone means gone: a tab hidden above the board must not sit over the top bar.
         el.style.visibility = on ? "" : "hidden";
-        if (on) gsap.set(el, { clearProps: "transform,opacity" });
+        if (on) gsap.set(el, { clearProps: "transform,opacity,filter" });
       };
       gsap.killTweensOf(el);
       el.style.visibility = "";
       if (on) {
-        gsap.to(el, { y: 0, duration: 0.7, ease: "expo.out", onComplete: done });
-        gsap.to(el, { opacity: 1, duration: 0.35, ease: "power2.out", overwrite: false });
+        // Settles back in: a short drift down while the blur clears.
+        gsap.to(el, { y: 0, opacity: 1, filter: "blur(0px)", duration: 0.6, ease: "power2.out", onComplete: done });
       } else {
-        gsap.to(el, { y: -(height() + 10), duration: 0.55, ease: "power3.inOut", onComplete: done });
-        gsap.to(el, { opacity: 0, duration: 0.3, delay: 0.14, ease: "power1.in", overwrite: false });
+        // Dissolves: a short drift up while it softens out of focus. No bounce, no squeeze.
+        gsap.to(el, { y: -14, opacity: 0, filter: "blur(6px)", duration: 0.6, ease: "power2.inOut", onComplete: done });
       }
     };
     // Only a scroll area that reaches under the tab, with content scrolled, counts as
@@ -96,6 +96,8 @@ export default function Board({ children }: { children: ReactNode }) {
       const cx = b.left + b.width / 2;
       return r.top < b.top + 160 && r.bottom > b.top && r.left < cx + 130 && r.right > cx - 130;
     };
+    // Nothing on these pages scrolls under the tab, so it stays put (owner, 20 Nov 2026).
+    const pinned = /^\/(openings\/?$|strategy|ta-track)/.test(path);
     const HIDE_AFTER = 56; // px scrolled down in one go before the tab leaves
     const SHOW_AFTER = 36; // px scrolled up in one go before it returns
     const last = new WeakMap<object, { top: number; run: number }>();
@@ -110,7 +112,7 @@ export default function Board({ children }: { children: ReactNode }) {
       last.set(t, { top, run });
       if (top < 8) show(true);
       else if (run <= -SHOW_AFTER) show(true);
-      else if (run >= HIDE_AFTER && under(t)) show(false);
+      else if (run >= HIDE_AFTER && !pinned && under(t)) show(false);
     };
     const move = (e: PointerEvent) => {
       if (e.clientY < 64 && Math.abs(e.clientX - innerWidth / 2) < 220) show(true);
@@ -119,7 +121,7 @@ export default function Board({ children }: { children: ReactNode }) {
     document.addEventListener("pointermove", move, { passive: true });
     return () => {
       gsap.killTweensOf(el);
-      gsap.set(el, { clearProps: "transform,opacity" }); // never leave the tab half-faded
+      gsap.set(el, { clearProps: "transform,opacity,filter" }); // never leave the tab half-faded
       el.style.visibility = "";
       el.style.pointerEvents = "";
       document.removeEventListener("scroll", scroll, true);
@@ -202,11 +204,11 @@ export default function Board({ children }: { children: ReactNode }) {
       // tick, or the new page shows, jumps aside and slides back.
       if (label.current) {
         gsap.set(label.current, { x: 28 * dir, opacity: 0 });
-        tl.to(label.current, { x: 0, opacity: 1, duration: DUR.base, clearProps: "transform,opacity" }, 0.05);
+        tl.to(label.current, { x: 0, opacity: 1, duration: DUR.base, clearProps: "transform,opacity,filter" }, 0.05);
       }
       if (body.current) {
         gsap.set(body.current, { x: 72 * dir, opacity: 0 });
-        tl.to(body.current, { x: 0, opacity: 1, duration: DUR.slow, clearProps: "transform,opacity" }, 0.06);
+        tl.to(body.current, { x: 0, opacity: 1, duration: DUR.slow, clearProps: "transform,opacity,filter" }, 0.06);
       }
       if (stage.current) tl.set(stage.current, { clearProps: "overflow" });
       // Gone on a plain timer too: a copy left behind would cover the live page.

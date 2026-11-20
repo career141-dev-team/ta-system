@@ -121,7 +121,8 @@ export default async function OpeningPage({ params }: PageProps<"/openings/[id]"
           20 Nov 2026: the lists card now takes the whole height on screen (it used to stop
           5.75rem short, so the cards under it peeked in cut off) and is a little taller
           (rows a little roomier); the cards below are reached by scrolling. */}
-      <div className="mt-12.5 flex flex-col md:min-h-0 md:flex-1 md:overflow-y-auto md:overscroll-contain">
+      {/* pt-6 + the mask: cards scrolling up fade out under the title row instead of being cut sharp. */}
+      <div className="mt-6.5 flex flex-col md:min-h-0 md:flex-1 md:overflow-y-auto md:overscroll-contain md:pt-6 md:[mask-image:linear-gradient(to_bottom,transparent,black_1.5rem)] md:[scrollbar-width:none] md:[&::-webkit-scrollbar]:hidden">
       <div className="relative grid rounded-lg bg-white max-md:flex-none md:h-full md:max-h-[52rem] md:min-h-[36rem] md:flex-none md:grid-cols-2">
         <Column name="ATS" items={ATS} base={base} first inPlace />
         {CAN_SOURCE && <Column name="Headhunting" items={HEADHUNTING} base={base} inPlace />}

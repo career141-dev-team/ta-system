@@ -228,7 +228,7 @@ export default function CvPages({
   }, [doc, size, fit, src, calm]);
 
   return (
-    <div ref={box} className="h-full w-full overflow-y-auto">
+    <div ref={box} className="h-full w-full overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {failed ? (
         <p className="flex h-full items-center justify-center text-[max(0.9125rem,13px)] text-ink-2">This CV could not be opened.</p>
       ) : !doc ? (
