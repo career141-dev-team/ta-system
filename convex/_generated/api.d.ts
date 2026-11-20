@@ -304,6 +304,8 @@ import type * as ui_brief from "../ui/brief.js";
 import type * as ui_briefRules from "../ui/briefRules.js";
 import type * as ui_cvAgent from "../ui/cvAgent.js";
 import type * as ui_cvAgentRules from "../ui/cvAgentRules.js";
+import type * as ui_homeAsk from "../ui/homeAsk.js";
+import type * as ui_homeAskRules from "../ui/homeAskRules.js";
 import type * as ui_day from "../ui/day.js";
 import type * as ui_desk from "../ui/desk.js";
 import type * as ui_email from "../ui/email.js";
@@ -629,6 +631,8 @@ declare const fullApi: ApiFromModules<{
   "ui/briefRules": typeof ui_briefRules;
   "ui/cvAgent": typeof ui_cvAgent;
   "ui/cvAgentRules": typeof ui_cvAgentRules;
+  "ui/homeAsk": typeof ui_homeAsk;
+  "ui/homeAskRules": typeof ui_homeAskRules;
   "ui/day": typeof ui_day;
   "ui/desk": typeof ui_desk;
   "ui/email": typeof ui_email;
@@ -888,6 +892,8 @@ declare const fullApi: ApiFromModules<{
   "ui/briefRules": typeof ui_briefRules;
   "ui/cvAgent": typeof ui_cvAgent;
   "ui/cvAgentRules": typeof ui_cvAgentRules;
+  "ui/homeAsk": typeof ui_homeAsk;
+  "ui/homeAskRules": typeof ui_homeAskRules;
   "ui/day": typeof ui_day;
   "ui/desk": typeof ui_desk;
   "ui/email": typeof ui_email;
