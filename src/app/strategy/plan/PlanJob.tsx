@@ -8,10 +8,12 @@ import { DUR, EASE, gsap, useSwap } from "@/lib/gsap";
 import { CardsSkeleton } from "../../Skeleton";
 import Toast from "../../openings/[id]/Toast";
 import { BackButton } from "../../openings/[id]/PipelineBoard";
-import { TAS, groupsOf, namesOf, useCatalogue, TODAY, WEEK, WORKED, auraPlan, busy, drafts, job, liveRows, setRows, ta, useRows, whenLabel, type Job, type Row, type TaId } from "../data";
+import { TAS, groupsOf, namesOf, useCatalogue, TODAY, WEEK, WORKED, auraPlan, busy, drafts, job, liveRows, ta, useRows, whenLabel, type Job, type Row, type TaId } from "../data";
 import { AssignPanel, CalendarIcon, Initials, Toggle, type Assign } from "../ui";
 import AuraBarGlow from "../../AuraBarGlow";
 import { readPlan } from "./talk";
+import { putJob, usePlannerLive } from "../strategyLive";
+import { useLive } from "@/lib/backend";
 
 // S3, planning one job (owner's design, 14 Nov 2026): what worked on roles like it,
 // where the job stands, AURA's suggested plan; every strategy with a switch, who and
@@ -26,6 +28,21 @@ const CARD = "flex min-h-0 flex-col overflow-y-auto rounded-lg bg-surface p-[max
 const BTN = "flex h-[max(3.5rem,38px)] items-center whitespace-nowrap rounded-full px-[max(1.5rem,14px)] text-[max(1rem,13px)] font-medium transition-colors";
 
 export default function PlanJob() {
+  // Signed in: the old planner is read first (strategyLive.ts, D10a); the sample otherwise.
+  const on = useLive();
+  const lv = usePlannerLive(on);
+  if (on && !lv.ready)
+    return lv.error ? (
+      <main className="flex flex-1 items-center justify-center px-6 text-center text-small text-ink-2">{lv.error}</main>
+    ) : (
+      <main className="flex min-h-0 flex-1 flex-col px-11 py-10">
+        <CardsSkeleton />
+      </main>
+    );
+  return <PlanFromAddress />;
+}
+
+function PlanFromAddress() {
   // The job comes from the address (?job=); read in the browser only - the static
   // site has no server to read it.
   const id = useSyncExternalStore(noSub, () => new URLSearchParams(location.search).get("job"), () => undefined);
@@ -87,7 +104,7 @@ function Plan({ j, aura }: { j: Job; aura: boolean }) {
 
   const send = () => {
     const next = draft.map((x) => (x.state === "open" && x.ta ? { ...x, state: "waiting" as const, assigned: "today" } : x));
-    setRows((rs) => [...rs.filter((x) => x.job !== j.id), ...next]);
+    void putJob(rows, j.id, next);
     setDraft(next);
     drafts.delete(j.id);
     if (toSend.length) say(`${toSend.length} ${toSend.length === 1 ? "strategy" : "strategies"} sent`, ` to ${people} ${people === 1 ? "TA" : "TAs"} — each gets a bell`);
