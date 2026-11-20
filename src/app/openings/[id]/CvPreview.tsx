@@ -1,6 +1,6 @@
 "use client";
 
-import { OLD_SERVER, cvHeaders, preparedCvUrl, saveLiveFile, useLive } from "@/lib/backend";
+import { OLD_SERVER, cvHeaders, door, preparedCvUrl, saveLiveFile, useDoorAction, useLive } from "@/lib/backend";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
@@ -82,6 +82,47 @@ export default function CvPreview({
   // so the Prepared CV and the End of day email stamp it there. The page's size in
   // points comes from the Prepared CV's own layout (?layout=1).
   const live = useLive();
+  // Signed in (D11 item 4): the box starts from what the candidate's record holds -
+  // the same details the Prepared CV and the End of day email print - and what AURA
+  // or the TA changes in it is saved back there (/api/ui/cv-box, the old save).
+  const [held, setHeld] = useState<BoxContent | null>(null);
+  const [saveNote, setSaveNote] = useState("");
+  const savedText = useRef("");
+  useEffect(() => {
+    if (!live || !appId) return;
+    const url = `${OLD_SERVER}/api/ui/cv-box?app=${encodeURIComponent(appId)}`;
+    void (async () => {
+      const got = (await fetch(url, { headers: await cvHeaders(url) }).then((res) => res.json()).catch(() => null)) as { ok?: boolean; content?: RecordBox } | null;
+      if (!got?.ok || !got.content) return;
+      const c = fromRecord(got.content);
+      savedText.current = JSON.stringify(c);
+      setHeld(c);
+    })();
+  }, [live, appId]);
+  useEffect(() => {
+    if (!live || !appId || !openingId || !held || !box) return;
+    const now = JSON.stringify(box.content);
+    if (now === savedText.current) return;
+    const t = setTimeout(async () => {
+      const c = box.content;
+      const notesChanged = JSON.stringify(c.notes) !== JSON.stringify(JSON.parse(savedText.current).notes ?? []);
+      const url = `${OLD_SERVER}/api/ui/cv-box`;
+      const res = (await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(await cvHeaders(url)) },
+        body: JSON.stringify({
+          appId, openingId,
+          designation: c.designation ?? "", company: c.company ?? "", currentSalary: c.currentSalary ?? "",
+          expectedSalary: c.expectedSalary ?? "", notice: c.notice ?? "",
+          // Notes only when they changed, so the record's own marks are kept.
+          ...(notesChanged ? { notes: c.notes } : {}),
+        }),
+      }).then((r) => r.json()).catch(() => null)) as { ok?: boolean; message?: string } | null;
+      if (res?.ok) savedText.current = now;
+      setSaveNote(res?.message ?? "Could not save the box's details - check your connection.");
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [box, held, live, appId, openingId]);
   const page = useRef<{ width: number; height: number } | null>(null);
   const firstBox = useRef(true);
   useEffect(() => {
@@ -425,7 +466,7 @@ export default function CvPreview({
           </article>
         </div>
         )}
-        <CvAgent open={auraOpen} onClose={() => setAuraOpen(false)} src={src} start={start} box={box} setBox={setBox} sampleText={sampleText(name, title)} />
+        <CvAgent open={auraOpen} onClose={() => setAuraOpen(false)} src={src} start={held ?? start} box={box} setBox={setBox} sampleText={sampleText(name, title)} ai={live && !!appId} note={saveNote} />
         </div>
       </section>
       {live && appId && box && !auraOpen && (
@@ -590,6 +631,8 @@ function CvAgent({
   box,
   setBox,
   sampleText,
+  ai,
+  note,
 }: {
   open: boolean;
   onClose: () => void;
@@ -598,7 +641,12 @@ function CvAgent({
   box: Box | null;
   setBox: (b: Box | null) => void;
   sampleText: string;
+  /** Signed in on a real application: what the word rules cannot read goes to AURA (Haiku). */
+  ai?: boolean;
+  /** The last save of the box's details, as the TA System answered it. */
+  note?: string;
 }) {
+  const ask = useDoorAction(door.cvAsk);
   const [draft, setDraft] = useState("");
   const [talk, setTalk] = useState<{ me: string; aura: string }[]>([]);
   const list = useRef<HTMLDivElement>(null);
@@ -611,8 +659,23 @@ function CvAgent({
     setDraft("");
     const text = src ? await cvText(src).catch(() => "") : sampleText;
     const r = runAgent(t, box, start, text);
-    setBox(r.box);
-    setTalk((x) => [...x, { me: t, aura: r.reply }]);
+    if (!(r.asked && ai)) {
+      setBox(r.box);
+      setTalk((x) => [...x, { me: t, aura: r.reply }]);
+      return;
+    }
+    // Not a command the rules know: AURA reads it - a change to the box in the TA's
+    // own words, or a question answered from the CV's text (ui/cvAgent:ask).
+    const n = talk.length;
+    setTalk((x) => [...x, { me: t, aura: "…" }]);
+    const say = (aura: string) => setTalk((x) => x.map((m, i) => (i === n ? { ...m, aura } : m)));
+    const d = (await (ask({ said: t, box: box ? toText(box.content) : null, cvText: text.slice(0, 12000) }) as Promise<CvReply | undefined>).catch(() => undefined));
+    if (!d) return say(r.reply);
+    if (!d.ok) return say(d.message);
+    if (d.kind === "answer") return say(d.say);
+    const content = fromRecord(d.content);
+    setBox(box ? { ...box, content } : runAgent("add the green box", null, content, "").box);
+    say(d.reply);
   };
   const tries = box
     ? ["Move it to the top left", "Make it wider", "What are their skills?"]
@@ -640,6 +703,7 @@ function CvAgent({
         {!talk.length && (
           <p className="text-body text-ink-2">I can add the green box with their details, move it, size it and change what it says - or answer anything from the CV.</p>
         )}
+        {note && <p role="status" className="text-caption text-ink-3">{note}</p>}
         {talk.map((m, i) => (
           <div key={i} className="flex flex-col gap-[max(0.6rem,6px)]">
             <p className="max-w-[80%] self-end whitespace-pre-line rounded-lg rounded-br-xs bg-surface-2 px-[max(1.1rem,12px)] py-[max(0.6rem,7px)] text-body text-ink">{m.me}</p>
@@ -690,6 +754,22 @@ function CvAgent({
     </div>
   );
 }
+
+/** The box as /api/ui/cv-box and ui/cvAgent:ask send it: every field, empty = none. */
+type RecordBox = { designation: string; company: string; currentSalary: string; expectedSalary: string; notice: string; notes: string[] };
+type CvReply = { ok: true; kind: "answer"; say: string } | { ok: true; kind: "box"; content: RecordBox; reply: string } | { ok: false; message: string };
+const fromRecord = (c: RecordBox): BoxContent => ({
+  ...(c.designation ? { designation: c.designation } : {}),
+  ...(c.company ? { company: c.company } : {}),
+  ...(c.currentSalary ? { currentSalary: c.currentSalary } : {}),
+  ...(c.expectedSalary ? { expectedSalary: c.expectedSalary } : {}),
+  ...(c.notice ? { notice: c.notice } : {}),
+  notes: c.notes,
+});
+const toText = (c: BoxContent): RecordBox => ({
+  designation: c.designation ?? "", company: c.company ?? "", currentSalary: c.currentSalary ?? "",
+  expectedSalary: c.expectedSalary ?? "", notice: c.notice ?? "", notes: c.notes,
+});
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (

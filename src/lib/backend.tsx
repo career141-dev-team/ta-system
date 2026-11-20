@@ -220,6 +220,8 @@ export const door = {
   askToday: makeFunctionReference<"action">("ui/aura:askToday"),
   // AURA reads a new opening's brief and applies corrections (D11 item 1, 20 Nov).
   briefRead: makeFunctionReference<"action">("ui/brief:read"),
+  // AURA on a CV: the green box in the TA's words, and questions (D11 item 4).
+  cvAsk: makeFunctionReference<"action">("ui/cvAgent:ask"),
   // The lead's AURA home (19 Nov): every TA's day, decisions and open roles.
   leadDesk: makeFunctionReference<"query">("ui/lead:desk"),
   // The Director's and Ops's AURA homes (19 Nov).

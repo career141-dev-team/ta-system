@@ -79,7 +79,9 @@ function readDetails(text: string): Partial<BoxContent> {
   return out;
 }
 
-export type AgentResult = { box: Box | null; reply: string };
+/** `asked`: no command was read, so the reply is only a guess off the CV's text -
+ *  signed in, AURA (Haiku) answers instead (D11 item 4). */
+export type AgentResult = { box: Box | null; reply: string; asked?: true };
 
 export function runAgent(input: string, box: Box | null, start: BoxContent, cvText: string): AgentResult {
   const say = input.trim();
@@ -167,7 +169,7 @@ export function runAgent(input: string, box: Box | null, start: BoxContent, cvTe
     }
   }
 
-  return { box, reply: askCv(cvText, say) };
+  return { box, reply: askCv(cvText, say), asked: true };
 }
 
 // "Ask about this CV" (owner, 16 Nov 2026: no separate candidate page - the card
