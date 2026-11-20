@@ -68,11 +68,15 @@ export function clientQueries(name: string, industry: string, where: string, tit
   // `anchor` is the client's own domain when the desk gave it: "SQ" alone
   // finds a dozen companies, "SQ" next to sqsolutions.lk finds the one.
   const a = anchor ? ` ${anchor}` : "";
+  // The place goes on the searches about the client too (20 Nov): the quotes
+  // round the name are ignored by SearXNG, so "John Keells" alone came back as
+  // John Lewis, Bible verses and Wikipedia's "John"; "Sri Lanka" beside it
+  // pulls the real company up.
   return [
-    `"${name}"${a} ${industry}`.trim(),
+    `"${name}"${a} ${industry} ${where}`.replace(/\s+/g, " ").trim(),
     `"${name}"${a} site:linkedin.com/company`,
     `"${name}"${a} about head office ${where}`,
-    `"${name}"${a} competitors`,
+    `"${name}"${a} competitors ${where}`.trim(),
     `top ${industry || "companies"} companies in ${where}`,
     `"${title}" jobs ${where}`,
   ];
@@ -93,6 +97,23 @@ function nameTokens(name: string): string[] {
     .replace(/\b(plc|ltd|limited|pvt|private|company|co|group|holdings|inc|llc|the|and|of|lanka|sri)\b\.?/g, " ")
     .split(/[^a-z0-9]+/)
     .filter((t) => t.length >= 3);
+}
+
+/**
+ * A search result about this company: every word of its name is in the title,
+ * the snippet or the address (20 Nov). SearXNG ignores the quotes round a name,
+ * so a search for "John Keells" also returns anything with "John" in it - and
+ * all of it was read, sorted and listed under Sources, and johnlewis.com was
+ * taken as the client's website because it carries one word of the name. A
+ * name with no usable word (e.g. "SQ") is matched whole.
+ */
+export function namedHit(hit: SearchHit, name: string): boolean {
+  const squash = (t: string) => t.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const tokens = nameTokens(name);
+  const words = tokens.length ? tokens : [squash(name)].filter((t) => t.length >= 2);
+  if (!words.length) return true;
+  const text = squash(`${hit.title} ${hit.snippet} ${hit.url}`);
+  return words.every((w) => text.includes(w));
 }
 
 /**
@@ -147,7 +168,7 @@ export function pickOfficialSite(hits: SearchHit[], name: string): string | null
   const tokens = nameTokens(name);
   const own = hits.filter((h) => {
     const host = hostOf(h.url);
-    return host && !NOT_OWN_SITE.test(host);
+    return host && !NOT_OWN_SITE.test(host) && namedHit(h, name);
   });
   const named = own.find((h) => tokens.some((t) => hostOf(h.url)!.replace(/[^a-z0-9]/g, "").includes(t)));
   const pick = named ?? null;
@@ -280,9 +301,14 @@ export async function researchViaSearch(input: ResearchInput, given: ResearchDep
 
   try {
     // ── 1. The client, and who competes with them — all at once. ─────────────
-    const [siteHits, linkedinHits, aboutHits, compHits, marketHits, titleHits] = await Promise.all(
+    const found = await Promise.all(
       clientQueries(name, industry, where, input.title, hints.website ? (hostOf(hints.website) ?? "") : "").map(run),
     );
+    // Only results that name the client are about the client (see namedHit).
+    // The market and the role searches are not about the client by name.
+    const named = (hits: SearchHit[]) => hits.filter((h) => namedHit(h, name));
+    const [siteHits, linkedinHits, aboutHits, compHits] = found.slice(0, 4).map(named);
+    const [marketHits, titleHits] = found.slice(4);
     const clientHits = [...siteHits, ...aboutHits];
     // A website the desk gave is read whatever the search returned.
     if (clientHits.length + linkedinHits.length === 0 && !hints.website) {

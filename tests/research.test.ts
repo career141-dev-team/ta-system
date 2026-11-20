@@ -1,6 +1,6 @@
 import { parseResearch } from "@/lib/headhunt";
 import { webEngine } from "@/lib/ai";
-import { clientHints, groundedCompetitors, parseJsonObject, pickLinkedInCompany, pickOfficialSite, researchViaSearch, type ResearchDeps } from "@/lib/researchSearch";
+import { clientHints, clientQueries, namedHit, groundedCompetitors, parseJsonObject, pickLinkedInCompany, pickOfficialSite, researchViaSearch, type ResearchDeps } from "@/lib/researchSearch";
 
 let passed = 0;
 let failed = 0;
@@ -36,6 +36,18 @@ eq("no site carrying the name is no site", pickOfficialSite(hits(["https://rando
 eq("linkedin company page, canonical", pickLinkedInCompany(hits(["https://lk.linkedin.com/company/hayleys-plc/jobs"]), "Hayleys PLC"), "https://www.linkedin.com/company/hayleys-plc");
 eq("someone else's company page is not theirs", pickLinkedInCompany(hits(["https://www.linkedin.com/company/john-keells"]), "Hayleys PLC"), null);
 
+console.log("\nresearch by search: only results that name the client (20 Nov, 'John' for John Keells)");
+const jk = [
+  { url: "https://www.johnlewis.com/", title: "John Lewis & Partners", snippet: "Shop homeware, fashion" },
+  { url: "https://www.biblegateway.com/passage/?search=John+3", title: "John 3 - Bible Gateway", snippet: "For God so loved" },
+  { url: "https://en.wikipedia.org/wiki/John", title: "John - Wikipedia", snippet: "John is a common name" },
+  { url: "https://www.keells.com/", title: "John Keells Holdings PLC", snippet: "Sri Lanka's largest listed conglomerate" },
+];
+eq("John Lewis, the Bible and Wikipedia's John are not John Keells", jk.filter((h) => namedHit(h, "John Keells Holdings PLC")).map((h) => h.url), ["https://www.keells.com/"]);
+eq("the website is not johnlewis.com", pickOfficialSite(jk, "John Keells"), "https://www.keells.com");
+eq("a name with no long word is matched whole", [namedHit({ url: "https://sq.lk", title: "SQ Solutions", snippet: "" }, "SQ"), namedHit({ url: "https://x.com", title: "Other", snippet: "" }, "SQ")], [true, false]);
+eq("the client searches carry the place", clientQueries("John Keells", "", "Sri Lanka", "Accountant")[0], '"John Keells" Sri Lanka');
+
 console.log("\ncompetitors must be in what the search returned");
 eq(
   "a name the results never mention is dropped, and so is the client",
@@ -57,7 +69,7 @@ console.log("\nresearch by search: a whole run, with the web faked");
       if (q.includes("competitors") || q.startsWith("top ")) {
         return { hits: [{ url: "https://news.lk/x", title: "Conglomerates", snippet: "John Keells Holdings and Aitken Spence compete with Hayleys." }], credits: 1 };
       }
-      if (q.includes("John Keells")) return { hits: hits(["https://www.keells.com", "https://www.linkedin.com/company/john-keells-holdings"]), credits: 1 };
+      if (q.includes("John Keells")) return { hits: [{ url: "https://www.keells.com", title: "John Keells Holdings PLC", snippet: "" }, ...hits(["https://www.linkedin.com/company/john-keells-holdings"])], credits: 1 };
       if (q.includes("Aitken Spence")) return { hits: hits(["https://www.aitkenspence.com"]), credits: 1 };
       return { hits: [{ url: "https://www.hayleys.com/", title: "Hayleys", snippet: "Diversified conglomerate in Colombo" }], credits: 1 };
     },
