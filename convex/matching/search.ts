@@ -48,28 +48,18 @@ export const searchCandidates = internalQuery({
       }
     };
 
-    let titleResults: Doc<"candidates">[] = [];
-    let skillsResults: Doc<"candidates">[] = [];
-    let summaryResults: Doc<"candidates">[] = [];
-    let resumeResults: Doc<"candidateResumes">[] = [];
-
-    try {
-      titleResults = await searchWithFilters("search_title", "currentJobTitle");
-    } catch (e) {}
-
-    try {
-      skillsResults = await searchWithFilters("search_skills", "skills");
-    } catch (e) {}
-
-    try {
-      summaryResults = await searchWithFilters("search_summary", "summary");
-    } catch (e) {}
-
-    try {
-      resumeResults = await ctx.db.query("candidateResumes").withSearchIndex("search_text", (q: any) => q.search("rawText", args.query)).take(Math.min(limit, RESUME_HITS_MAX));
-    } catch (e) {
-      resumeResults = [];
-    }
+    // The four indexes are read together, not one after another (20 Nov): one
+    // term read them in turn, and with the backend busy a term passed the app's
+    // 30 s wait, so the Database search said "Part of the search could not run"
+    // (new UI and old page alike; answers came back at 30/60/90 s). Same
+    // reads, same results, about the time of the slowest one.
+    const [titleResults, skillsResults, summaryResults, resumeResults] = await Promise.all([
+      searchWithFilters("search_title", "currentJobTitle"),
+      searchWithFilters("search_skills", "skills"),
+      searchWithFilters("search_summary", "summary"),
+      ctx.db.query("candidateResumes").withSearchIndex("search_text", (q: any) => q.search("rawText", args.query)).take(Math.min(limit, RESUME_HITS_MAX))
+        .catch((): Doc<"candidateResumes">[] => []),
+    ]);
 
     // No "recent candidates" stand-in when the indexes find nothing. It used to
     // return the 20 newest CVs weighted as title matches (+100), so a search

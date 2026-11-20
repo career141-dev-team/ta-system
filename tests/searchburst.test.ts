@@ -25,12 +25,19 @@ eq("the caller's limit is clamped", fn.includes("const limit = Math.min(args.lim
 eq("the CV-text index has its own ceiling", fn.includes('withSearchIndex("search_text", (q: any) => q.search("rawText", args.query)).take(Math.min(limit, RESUME_HITS_MAX))'), true);
 const limits = { max: Number(/const SEARCH_LIMIT_MAX = (\d+);/.exec(search)?.[1]), resume: Number(/const RESUME_HITS_MAX = (\d+);/.exec(search)?.[1]) };
 eq("the ceilings are written down and the text one is the smaller", limits.max > 0 && limits.resume > 0 && limits.resume <= limits.max, true);
+// 20 Nov: the four indexes one after another passed the app's 30 s wait when the backend was busy.
+eq("the four indexes are read together", /const \[titleResults, skillsResults, summaryResults, resumeResults\] = await Promise\.all\(\[/.test(fn) && !/titleResults = await searchWithFilters/.test(fn), true);
 eq("missing-file rows are read together", fn.includes("await Promise.all(unread.map((id) => ctx.db.get(id)))") && !fn.includes("?? (await ctx.db.get(f.candidateId))"), true);
 
 const backend = read("src/data/convex/backend.ts");
 const many = backend.slice(backend.indexOf("export async function keywordSearchMany"), backend.indexOf("export async function employerSearch"));
 eq("keyword terms run a few at a time", many.includes("for (let i = 0; i < terms.length; i += KEYWORD_CONCURRENCY)") && /const KEYWORD_CONCURRENCY = [1-3];/.test(backend), true);
 eq("every term is still awaited and a failed one still reported", many.includes("const failed = settled.filter((r) => r.status === \"rejected\");") && !many.includes(".catch(() => [])"), true);
+
+// 20 Nov: the warning names the part that did not run, on the old page and the new UI alike.
+const engineSrc = read("src/lib/engineSearch.ts");
+eq("the warning names the part", /export function incompleteProblem\(/.test(engineSrc) && engineSrc.includes('"the meaning search"') && engineSrc.includes('"the word search"'), true);
+eq("both screens use it", read("src/app/database/results/page.tsx").includes("incompleteProblem(engine.incomplete)") && read("src/app/api/ui/database/route.ts").includes("incompleteProblem(engine.incomplete)"), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

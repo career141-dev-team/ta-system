@@ -347,6 +347,7 @@ Repo hard rules that apply: never touch the live backend from a laptop (no `conv
 - 2026-11-10 contact discovery recall: level from the title's word, else the CV reader's stored level, else years (a bare title was always Mid-level: ~815 senior developers of ~92,000); phrase words in any order; the first email in the field; drop-out counts by reason on every search.
 - 2026-11-12 one keyword search bounded and the burst gone: `searchCandidates` clamps the limit (300) and caps CV-text hits (100 whole resume rows); `keywordSearchMany` runs terms two at a time (a database search ran two six-term passes together, measured 9.2 s live).
 - 2026-11-18 a search for a job (`/database/results?for=<opening>`, natural/meaning, first arrival only - not once the URL carries edited criteria) adds up to 4 of the opening's Research "Similar designation" titles to `criteria.titles` after the job's own title (`similarTitles`/`joinTitles`, src/lib/similarTitles.ts). Titles score as any-of (match.ts `titleScore`, engine `alternativeTitles` = titles.slice(1)), so it widens and never narrows; they show as removable chips.
+- 2026-11-20 `sanjeev200009/search-parallel`: "Part of the search could not run" seen on fresh searches, old page and new UI alike, answers at 30/60/90 s = the app's 30 s backend wait. `matching/search:searchCandidates` now reads its four indexes together (`Promise.all`, same reads, same results), and the warning names the part that failed (`incompleteProblem` in lib/engineSearch: the word / meaning / company search).
 
 ## Model provider (5 Nov 2026)
 
