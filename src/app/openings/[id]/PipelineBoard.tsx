@@ -1307,76 +1307,106 @@ function ListView({
           </button>
         ))}
       </nav>
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-[max(0.6rem,7px)] overflow-y-auto pl-[max(1.5rem,14px)] [scrollbar-width:thin] max-md:pl-0">
-        {rows.length === 0 && <p className="py-6 text-center text-ink-2">No candidates in {stage}.</p>}
-        {rows.map((p) => {
-          const chip = (label: string) => (
-            <span className={pill + (p.missing.includes(label) ? "bg-warn-soft text-warn" : "bg-surface-2 text-ink")}>{label}</span>
-          );
-          // One line per candidate at every width (owner, 17 Nov 2026: rows ran past the
-          // edge, the email and ⋮ cut off). Long words shorten with "…"; on a narrower
-          // window the phone, then the email, step out of the line and stay in the
-          // row's hover text.
-          const all = [p.name, p.title, `${p.years} experience`, p.company, p.location, p.phone, p.email].join(" · ");
-          return (
-            <article
-              key={p.id}
-              title={all}
-              className={
-                "flex min-w-0 items-center justify-between gap-[max(0.875rem,8px)] whitespace-nowrap rounded-sm border border-border bg-surface pl-[max(0.75rem,8px)] pr-[max(1.5rem,12px)] text-[max(0.8125rem,11px)] text-ink-2 transition-colors hover:border-border-strong " +
-                (rows.length <= 3
-                  ? "h-[max(3.875rem,50px)] shrink-0"
-                  : "flex-1 min-h-[max(3.25rem,42px)] max-h-[max(5.75rem,88px)]")
-              }
-            >
-              <span className="flex size-[max(2.5rem,32px)] shrink-0 items-center justify-center rounded-full bg-info-soft text-[max(0.9375rem,12px)] font-semibold text-info">
-                {initials(p.name)}
-              </span>
-              <button
-                type="button"
-                onClick={() => onOpenCv(p)}
-                onPointerEnter={() => warmPdf()}
-                aria-label={`Open the CV of ${p.name}`}
-                className="max-w-[16rem] shrink-0 truncate text-left text-[max(1.0625rem,13.5px)] font-semibold text-ink hover:text-brand"
+      {/* A real table (owner, 20 Nov 2026: "the list view needs to look like a table,
+          aligned"): one column plan shared by the header and every row, so each detail sits
+          under its heading. A narrower window drops Phone, then Email, from both at once;
+          a phone slides the table sideways. */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto pl-[max(1.5rem,14px)] [scrollbar-width:thin] max-md:pl-0">
+        <div className="min-w-[56rem]">
+          <div role="row" className={LIST_COLS + " sticky top-0 z-10 border-b border-border bg-surface py-[max(0.6rem,7px)] text-[max(0.75rem,10.5px)] font-medium uppercase tracking-wide text-ink-3"}>
+            <span role="columnheader">Candidate</span>
+            <span role="columnheader">Title</span>
+            <span role="columnheader">Experience</span>
+            <span role="columnheader">Company</span>
+            <span role="columnheader">Location</span>
+            <span role="columnheader" className="max-[1500px]:hidden">Phone</span>
+            <span role="columnheader" className="max-[1400px]:hidden">Email</span>
+            <span role="columnheader">Details</span>
+            <span role="columnheader" className="sr-only">Actions</span>
+          </div>
+          {rows.length === 0 && <p className="py-6 text-center text-ink-2">No candidates in {stage}.</p>}
+          {rows.map((p) => {
+            const chip = (label: string) => (
+              <span className={pill + (p.missing.includes(label) ? "bg-warn-soft text-warn" : "bg-surface-2 text-ink")}>{label === "Notice Period" ? "Notice" : label}</span>
+            );
+            return (
+              <article
+                key={p.id}
+                role="row"
+                className={LIST_COLS + " h-[max(3.5rem,46px)] border-b border-border text-[max(0.8125rem,11px)] text-ink-2 transition-colors hover:bg-surface-2/60"}
               >
-                {p.name}
-              </button>
-              <LinkedInIcon />
-              <span className="min-w-[3rem] shrink-[2] truncate">{p.title}</span>
-              <span className="shrink-0">E : {p.years}</span>
-              <span className="min-w-[3rem] shrink-[2] truncate">C : {p.company}</span>
-              <span className="max-w-[10rem] shrink-0 truncate">L : {p.location}</span>
-              <span className="shrink-0 max-[1500px]:hidden">P : {p.phone}</span>
-              <button
-                type="button"
-                onClick={() => onOpenCv(p)}
-                aria-label={p.noCv ? `${p.name} has no CV yet` : `Open the CV of ${p.name}`}
-                className={pill + (p.noCv ? "bg-warn-soft text-warn" : "bg-surface-2 text-ink hover:bg-brand hover:text-white")}
-              >
-                CV
-              </button>
-              {chip("Salary")}
-              {chip("Notice Period")}
-              <span className="min-w-[4rem] shrink-[3] truncate max-[1400px]:hidden">M : {p.email}</span>
-              <span aria-hidden="true" className="h-[1.1em] w-px shrink-0 bg-ink-2" />
-              <button
-                type="button"
-                aria-label={`Move or mark ${p.name}`}
-                aria-haspopup="menu"
-                onClick={(e) => onMenu(p, stage, e.currentTarget)}
-                className="shrink-0 rounded p-0.5 text-ink hover:bg-surface-2"
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor" className="size-[max(0.9rem,12px)]" aria-hidden="true">
-                  <circle cx="12" cy="5" r="1.8" />
-                  <circle cx="12" cy="12" r="1.8" />
-                  <circle cx="12" cy="19" r="1.8" />
-                </svg>
-              </button>
-            </article>
-          );
-        })}
+                <span className="flex min-w-0 items-center gap-[max(0.6rem,7px)]">
+                  <span className="flex size-[max(2.25rem,30px)] shrink-0 items-center justify-center rounded-full bg-info-soft text-[max(0.8125rem,11px)] font-semibold text-info">
+                    {initials(p.name)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onOpenCv(p)}
+                    onPointerEnter={() => warmPdf()}
+                    aria-label={`Open the CV of ${p.name}`}
+                    title={p.name}
+                    className="min-w-0 truncate text-left text-[max(0.9375rem,12.5px)] font-semibold text-ink hover:text-brand"
+                  >
+                    {p.name}
+                  </button>
+                  <LinkedInIcon className="size-[max(1.05rem,14px)]" />
+                </span>
+                <Cell v={p.title} />
+                <Cell v={p.years} />
+                <Cell v={p.company} />
+                <Cell v={p.location} />
+                <Cell v={p.phone} className="max-[1500px]:hidden" />
+                <Cell v={p.email} className="max-[1400px]:hidden" />
+                <span className="flex items-center gap-[max(0.3rem,4px)]">
+                  <button
+                    type="button"
+                    onClick={() => onOpenCv(p)}
+                    aria-label={p.noCv ? `${p.name} has no CV yet` : `Open the CV of ${p.name}`}
+                    className={pill + (p.noCv ? "bg-warn-soft text-warn" : "bg-surface-2 text-ink hover:bg-brand hover:text-white")}
+                  >
+                    CV
+                  </button>
+                  {chip("Salary")}
+                  {chip("Notice Period")}
+                </span>
+                <button
+                  type="button"
+                  aria-label={`Move or mark ${p.name}`}
+                  aria-haspopup="menu"
+                  onClick={(e) => onMenu(p, stage, e.currentTarget)}
+                  className="justify-self-end rounded p-1 text-ink hover:bg-surface-2"
+                >
+                  <svg viewBox="0 0 24 24" fill="currentColor" className="size-[max(0.9rem,12px)]" aria-hidden="true">
+                    <circle cx="12" cy="5" r="1.8" />
+                    <circle cx="12" cy="12" r="1.8" />
+                    <circle cx="12" cy="19" r="1.8" />
+                  </svg>
+                </button>
+              </article>
+            );
+          })}
+        </div>
       </div>
     </div>
+  );
+}
+
+/** The List view's columns: Candidate, Title, Experience, Company, Location, Phone, Email,
+ *  Details, menu. Phone steps out under 1500px wide and Email under 1400px, header and rows
+ *  together, so nothing is cut and every column stays under its heading. */
+const LIST_COLS =
+  "grid items-center gap-x-[max(1rem,10px)] px-[max(0.75rem,8px)] " +
+  "grid-cols-[minmax(14rem,1.9fr)_minmax(8rem,1.4fr)_minmax(5.5rem,0.6fr)_minmax(8rem,1.3fr)_minmax(7rem,1fr)_minmax(8.5rem,0.9fr)_minmax(10rem,1.3fr)_12.5rem_2rem] " +
+  "max-[1500px]:grid-cols-[minmax(14rem,1.9fr)_minmax(8rem,1.4fr)_minmax(5.5rem,0.6fr)_minmax(8rem,1.3fr)_minmax(7rem,1fr)_minmax(10rem,1.3fr)_12.5rem_2rem] " +
+  "max-[1400px]:grid-cols-[minmax(14rem,1.9fr)_minmax(8rem,1.4fr)_minmax(5.5rem,0.6fr)_minmax(8rem,1.3fr)_minmax(7rem,1fr)_12.5rem_2rem]";
+
+/** One table cell: shortened with "…" (the whole value on hover); nothing on record = a quiet dash. */
+function Cell({ v, className = "" }: { v: string; className?: string }) {
+  const none = !v || v === "Not on record";
+  return (
+    <span title={none ? "Not on record" : v} className={"min-w-0 truncate " + (none ? "text-ink-3 " : "") + className}>
+      {none ? "—" : v}
+    </span>
   );
 }
 
