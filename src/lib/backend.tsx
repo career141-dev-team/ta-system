@@ -257,7 +257,7 @@ export type DoorCard = {
   id: string; stage: string; name: string; title: string | null; company: string | null;
   location: string | null; years: number | null; noticeDays: number | null; phone: string | null;
   email: string | null; channel: string | null; setNumber: number | null; addOn: boolean;
-  backup: boolean; owned: boolean; mine: boolean; lockedBy: string | null; missing: string[];
+  backup: boolean; linkedinUrl?: string | null; owned: boolean; mine: boolean; lockedBy: string | null; missing: string[];
 };
 export type DoorBoard = Answer<{ opening: { id: string; title: string }; columns: { stage: string; label: string; count: number; capped: boolean; cards: DoorCard[] }[] }>;
 /** One card on the Openings page, as ui/openings:list sends it. */
