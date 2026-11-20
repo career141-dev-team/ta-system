@@ -186,7 +186,7 @@ function JdScreen({ live }: { live?: LiveJdData }) {
             (owner's Figma comment, 17 Nov 2026: "this section fully design change"): a
             header with the state, the title and a quiet meta line, then every section
             under the same quiet heading, at a readable line length. */}
-        <article className="flex min-w-0 flex-col rounded-lg border border-border bg-surface px-[max(3rem,18px)] py-[max(2.25rem,18px)] shadow-card max-md:w-full md:mt-[max(1.03rem,0px)] md:flex-1 md:self-stretch md:overflow-y-auto">
+        <article className="flex min-w-0 flex-col rounded-lg border border-border bg-surface px-[max(3rem,18px)] py-[max(2.25rem,18px)] shadow-card max-md:w-full md:mt-[max(1.03rem,0px)] md:flex-1 md:self-stretch md:overflow-y-auto md:[&::-webkit-scrollbar]:w-2 md:[&::-webkit-scrollbar-track]:my-6 md:[&::-webkit-scrollbar-track]:bg-transparent md:[&::-webkit-scrollbar-thumb]:rounded-full md:[&::-webkit-scrollbar-thumb]:bg-border-strong">
           <header className="flex flex-col gap-[max(0.75rem,8px)] border-b border-border pb-[max(1.5rem,14px)]">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
               <span className={CHIP + (approved ? " bg-success-soft text-success" : " bg-warn-soft text-warn")}>
