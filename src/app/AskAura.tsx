@@ -94,22 +94,24 @@ export function AskReply({ answer, onLeave }: { answer: Asked; onLeave?: () => v
         <>
           <p>{answer.say}</p>
           {!!answer.rows?.length && (
-            <ul className="mt-2 flex max-h-56 flex-col gap-1 overflow-y-auto">
+            <ul className="mt-2 flex max-h-56 flex-col gap-1 overflow-x-hidden overflow-y-auto">
               {answer.rows.slice(0, 8).map((r, i) => {
                 const body = (
                   <>
-                    <span className="min-w-0 flex-1 truncate">{r.main}</span>
-                    {r.meta && <span className="shrink-0 text-caption text-ink-3">{r.meta}</span>}
+                    {/* AURA's lines wrap, the detail under them (20 Nov: a long detail beside
+                        the line cut the line to "…" and pushed the box sideways). */}
+                    <span className="min-w-0 break-words">{r.main}</span>
+                    {r.meta && <span className="min-w-0 break-words text-caption text-ink-3">{r.meta}</span>}
                   </>
                 );
                 return (
                   <li key={i}>
                     {r.href ? (
-                      <Link href={r.href} onClick={onLeave} className="flex items-baseline gap-2 rounded-sm px-1.5 py-1 hover:bg-surface">
+                      <Link href={r.href} onClick={onLeave} className="flex flex-col rounded-sm px-1.5 py-1 hover:bg-surface">
                         {body}
                       </Link>
                     ) : (
-                      <span className="flex items-baseline gap-2 px-1.5 py-1">{body}</span>
+                      <span className="flex flex-col px-1.5 py-1">{body}</span>
                     )}
                   </li>
                 );
