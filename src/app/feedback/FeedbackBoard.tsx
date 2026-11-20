@@ -103,6 +103,24 @@ export default function FeedbackBoard() {
       tell(x, "Not doing it: " + x.title, words.trim());
     }
   };
+  // Dragging a card to a column. Done needs the lead's words (fixed in which version, the
+  // answer, or why not), so the card opens with that form instead of moving blind.
+  const drop = (x: Item, to: Item["status"]) => {
+    if (x.status === to) return;
+    // Nothing goes back to New: it is for what nobody has looked at yet.
+    if (to === "new" || (to === "review" && x.status !== "new")) {
+      return setToast({ key: ++seq.current, bold: x.title, rest: ` — can't go back to ${to === "new" ? "New" : "Lead review"}` });
+    }
+    if (to === "builders") return pass(x);
+    if (to === "done") {
+      setOpen(x.id);
+      const fix = x.status === "builders";
+      setMode(fix ? "fix" : "answer");
+      setWords(fix ? (x.version ?? "") : "");
+      return;
+    }
+    glide(() => update(x.id, { status: to }));
+  };
   const remove = (x: Item) => {
     glide(() => setItems((all) => all.filter((y) => y.id !== x.id)));
     setOpen(null);
@@ -139,7 +157,17 @@ export default function FeedbackBoard() {
       {COLUMNS.map((c) => {
         const list = items.filter((x) => x.status === c.status);
         return (
-          <section key={c.status} aria-label={c.name} className="flex min-h-0 min-w-[max(15rem,250px)] flex-1 basis-0 flex-col rounded-t-md border-[1.8px] border-b-0 border-surface-2 bg-surface">
+          <section
+            key={c.status}
+            aria-label={c.name}
+            onDragOver={(e) => lead && e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              const x = lead && all.find((y) => y.id === e.dataTransfer.getData("text/plain"));
+              if (x) drop(x, c.status);
+            }}
+            className="flex min-h-0 min-w-[max(15rem,250px)] flex-1 basis-0 flex-col rounded-t-md border-[1.8px] border-b-0 border-surface-2 bg-surface"
+          >
             <header className="flex items-center gap-2 px-[max(1rem,11px)] pb-[max(0.8rem,9px)] pt-[max(1rem,11px)]">
               <span aria-hidden="true" className={"size-2 shrink-0 rounded-full " + c.dot} />
               <h2 className="min-w-0 flex-1 truncate text-col font-semibold text-ink">{c.name}</h2>
@@ -217,7 +245,12 @@ function Card(p: {
     <li
       data-fb
       data-flip-id={x.id}
-      className={"shrink-0 rounded-md border bg-surface p-[max(1rem,12px)] transition-colors " + (open ? "border-brand/40" : "border-border hover:border-border-strong")}
+      draggable={p.canAct && !open}
+      onDragStart={(e) => {
+        e.dataTransfer.setData("text/plain", x.id);
+        e.dataTransfer.effectAllowed = "move";
+      }}
+      className={"shrink-0 rounded-md border bg-surface p-[max(1rem,12px)] transition-colors " + (p.canAct && !open ? "cursor-grab active:cursor-grabbing " : "") + (open ? "border-brand/40" : "border-border hover:border-border-strong")}
     >
       <button type="button" aria-expanded={open} onClick={p.onToggle} className="block w-full text-left">
         <span className="flex flex-wrap gap-[max(0.35rem,4px)]">

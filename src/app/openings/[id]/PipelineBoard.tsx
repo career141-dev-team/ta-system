@@ -80,6 +80,8 @@ type Card = Person & {
   missing: string[];
   addOn?: boolean;
   backup?: boolean;
+  /** The candidate's LinkedIn profile address, when the backend has it. */
+  linkedin?: string;
   /** Years of experience and notice period in days, for the two filters. */
   yearsN: number;
   noticeDays: number;
@@ -138,6 +140,7 @@ const fromDoor = (c: DoorCard): Card => ({
   missing: c.missing.map((m) => MISSING[m] ?? m),
   addOn: c.addOn,
   backup: c.backup,
+  linkedin: c.linkedinUrl ?? undefined,
   // Not known stays not known (NaN): a "30 days or less" filter must not let an
   // unknown notice through as 0 (19 Nov audit).
   yearsN: c.years ?? Number.NaN,
@@ -1216,7 +1219,7 @@ const CandidateCard = memo(function CandidateCard({
         </div>
         {p.addOn && <span className="shrink-0 rounded-md bg-info-soft px-1.5 py-0.5 text-chip font-medium text-info">Add-on</span>}
         {p.backup && <span className="shrink-0 rounded-md bg-violet-soft px-1.5 py-0.5 text-chip font-medium text-violet">Backup</span>}
-        <LinkedInIcon />
+        <LinkedInLink url={p.linkedin} name={p.name} />
       </div>
 
       <div className="mt-[max(0.8rem,9px)] space-y-[max(0.4rem,4px)] text-card-line text-ink-2">
@@ -1351,7 +1354,7 @@ function ListView({
                   >
                     {p.name}
                   </button>
-                  <LinkedInIcon className="size-[max(1.05rem,14px)]" />
+                  <LinkedInLink url={p.linkedin} name={p.name} className="size-[max(1.05rem,14px)]" />
                 </span>
                 <Cell v={p.title} />
                 <Cell v={p.years} />
@@ -1422,6 +1425,24 @@ const stroke = {
   strokeLinejoin: "round" as const,
   "aria-hidden": true,
 };
+
+/** The LinkedIn mark as a link to the candidate's own profile (new tab). shortcut: until the backend sends a profile address, it opens linkedin.com. */
+function LinkedInLink({ url, name, className }: { url?: string; name: string; className?: string }) {
+  return (
+    <a
+      href={url?.startsWith("https://") ? url : "https://www.linkedin.com"}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={`Open ${name} on LinkedIn`}
+      aria-label={`Open ${name} on LinkedIn`}
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      className="shrink-0 rounded-xs hover:opacity-80"
+    >
+      <LinkedInIcon className={className} />
+    </a>
+  );
+}
 
 export function LinkedInIcon({ className = "size-[max(1.25rem,16px)]" }: { className?: string } = {}) {
   return (
