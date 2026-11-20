@@ -28,7 +28,12 @@ ok("CV file runs the old CV route as a PDF", () => {
 });
 ok("the CV route asks who is signed in before loading anything", () => {
   const s = read("src/app/api/ui/cv/route.ts");
-  assert.ok(s.indexOf("currentUser()") > 0 && s.indexOf("currentUser()") < s.indexOf("primeStore("));
+  assert.ok(s.indexOf("currentUser()") > 0 && s.indexOf("currentUser()") < s.indexOf("primeApplication("));
+});
+ok("the CV routes load one opening, not every application on the desk", () => {
+  for (const f of ["src/app/api/ui/cv/route.ts", "src/app/api/ui/cv-box/route.ts"]) assert.ok(!read(f).includes("allApplications"), f);
+  const p = read("src/lib/primeApplication.ts");
+  assert.ok(p.includes("{ openingId: row.openingId }"));
 });
 
 ok("Prepared CV runs the old prepared-cv route", () => {

@@ -7,7 +7,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { GET as cvFile } from "@/app/api/cv/[candidateId]/route";
-import { primeStore } from "@/data/prime";
+import { primeApplication } from "@/lib/primeApplication";
 import { repo } from "@/data/store";
 import { currentUser } from "@/lib/session";
 import { uiCors, withCors } from "@/lib/uiCors";
@@ -22,9 +22,10 @@ export async function GET(req: NextRequest) {
   let candidateId = req.nextUrl.searchParams.get("candidate");
   // Who is asking comes first (19 Nov): a signed-out call must not make the
   // server load every application just to be refused.
-  if (!(await currentUser())) return withCors(new NextResponse("Sign in to open a CV.", { status: 401 }), origin);
+  const user = await currentUser();
+  if (!user) return withCors(new NextResponse("Sign in to open a CV.", { status: 401 }), origin);
   if (appId) {
-    if (!repo.application(appId)) await primeStore({ allApplications: true });
+    await primeApplication(appId, user.id);
     candidateId = repo.application(appId)?.candidateId ?? null;
   }
   if (!candidateId) return withCors(new NextResponse("Not found.", { status: 404 }), origin);
