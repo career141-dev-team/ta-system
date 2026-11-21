@@ -20,9 +20,9 @@ type Refused = { ok: false; message: string };
 type Done = Refused | { ok: true; message: string };
 const refused = (message: string): Refused => ({ ok: false, message });
 
-export async function who(ctx: QueryCtx | MutationCtx): Promise<Refused | { ok: true; user: Doc<"users"> }> {
+export async function who(ctx: QueryCtx | MutationCtx, viewAs?: string): Promise<Refused | { ok: true; user: Doc<"users"> }> {
   try {
-    return { ok: true, user: await uiUser(ctx) };
+    return { ok: true, user: await uiUser(ctx, viewAs) };
   } catch (error) {
     return refused(error instanceof NotSignedIn ? error.message : "Could not check who you are.");
   }
@@ -48,9 +48,9 @@ export function dayAnswer(op: string, result: { ok?: boolean; blockers?: string[
  * positions were computed live; `refreshChecks` asks for one stored recompute.
  */
 export const today = query({
-  args: { jobId: v.optional(v.string()), allHistory: v.optional(v.boolean()) },
+  args: { jobId: v.optional(v.string()), allHistory: v.optional(v.boolean()), as: v.optional(v.string()) },
   handler: async (ctx, args): Promise<Refused | { ok: true; view: unknown }> => {
-    const w = await who(ctx);
+    const w = await who(ctx, args.as);
     if (!w.ok) return w;
     try {
       const view: unknown = await ctx.runQuery(internal.ta.workdays.dashboard, {
@@ -179,9 +179,9 @@ export const setWorkingStage = mutation({
 // ── The bell ────────────────────────────────────────────────────────────────
 
 export const bell = query({
-  args: { unreadOnly: v.optional(v.boolean()), limit: v.optional(v.number()) },
+  args: { unreadOnly: v.optional(v.boolean()), limit: v.optional(v.number()), as: v.optional(v.string()) },
   handler: async (ctx, a): Promise<Refused | { ok: true; rows: unknown }> => {
-    const w = await who(ctx);
+    const w = await who(ctx, a.as);
     if (!w.ok) return w;
     const rows: unknown = await ctx.runQuery(internal.ta.notifications.listForUser, { userId: w.user._id, unreadOnly: a.unreadOnly, limit: Math.min(a.limit ?? 30, 100) });
     return { ok: true as const, rows };

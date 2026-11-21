@@ -9,6 +9,7 @@
 // Who sees what, as mayReadOpening: desk-wide roles every opening; anyone else
 // the openings they are assigned to.
 
+import { v } from "convex/values";
 import { query, type QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { isGone } from "../../src/lib/bin";
@@ -45,11 +46,11 @@ async function myRows(ctx: QueryCtx, userId: Id<"users">) {
 }
 
 export const list = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { as: v.optional(v.string()) },
+  handler: async (ctx, args) => {
     let user: Doc<"users">;
     try {
-      user = await uiUser(ctx);
+      user = await uiUser(ctx, args.as);
     } catch (error) {
       return { ok: false as const, message: error instanceof NotSignedIn ? error.message : "Could not check who you are." };
     }
