@@ -16,18 +16,19 @@ import { liveRows, ta, useRows, type State } from "../../strategy/data";
 /** The opening the page shows (the planner's job id for PGP Glass). */
 const JOB = "j1";
 
-type RingData = { label: string; done: number; target: number; stroke: string };
+/** target null = none set (old AURA: "no target set"); the ring shows the count only. */
+type RingData = { label: string; done: number; target: number | null; stroke: string; none?: string };
 const RINGS: RingData[] = [
   { label: "CVs Today", done: 4, target: 5, stroke: "stroke-brand-strong" },
   { label: "Position CVs", done: 14, target: 20, stroke: "stroke-warn" },
   { label: "LinkedIn Target", done: 11, target: 15, stroke: "stroke-info" },
 ];
-const pct = (r: RingData) => Math.min(100, Math.round((r.done / r.target) * 100));
+const pct = (r: RingData) => (r.target ? Math.min(100, Math.round((r.done / r.target) * 100)) : 0);
 
 /** One ring: a thick arc on a faint track, done / target in the middle, the label and
  *  how many are left beside it. */
 function Ring({ r }: { r: RingData }) {
-  const left = Math.max(0, r.target - r.done);
+  const left = r.target === null ? 0 : Math.max(0, r.target - r.done);
   return (
     <div className="flex min-w-0 items-center gap-[max(2rem,14px)]">
       <span className="relative grid size-[max(13.8rem,104px)] shrink-0 place-items-center">
@@ -52,17 +53,23 @@ function Ring({ r }: { r: RingData }) {
           <span data-count={r.done} className="text-[max(3.4rem,26px)] font-semibold leading-none text-ink">
             {r.done}
           </span>
-          <span className="text-[max(1.35rem,13px)] font-medium text-ink-3">/ {r.target}</span>
+          {r.target !== null && <span className="text-[max(1.35rem,13px)] font-medium text-ink-3">/ {r.target}</span>}
         </span>
       </span>
       <div className="min-w-0">
         <p className="truncate text-h3 font-semibold text-ink">{r.label}</p>
-        <p className="mt-1 truncate text-small text-ink-2">
-          {r.done} of {r.target} done
-        </p>
-        <p className={"truncate text-small " + (left ? "text-ink-3" : "font-medium text-brand-strong")}>
-          {left ? `${left} to go` : "Target reached"}
-        </p>
+        {r.target === null ? (
+          <p className="mt-1 truncate text-small text-ink-3">{r.none ?? "No target set"}</p>
+        ) : (
+          <>
+            <p className="mt-1 truncate text-small text-ink-2">
+              {r.done} of {r.target} done
+            </p>
+            <p className={"truncate text-small " + (left ? "text-ink-3" : "font-medium text-brand-strong")}>
+              {left ? `${left} to go` : "Target reached"}
+            </p>
+          </>
+        )}
       </div>
     </div>
   );
@@ -82,6 +89,7 @@ type Card = { key: string; name: string; when: string; state: Status; who: strin
 
 type DoorStrategy = { id: string; name: string; assignedTo: string[]; doneAt: number | null; submittedAt: number | null };
 type Summary = Answer<{ opening: { team: { id: string; name: string }[] } }>;
+type TargetRow = { cvsPerDay: number | null; linksPerDay: number | null; cvsToday: number; linksToday: number };
 const dayOf = (ms: number) => new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 
 export default function OpeningCards() {
@@ -90,7 +98,21 @@ export default function OpeningCards() {
   const job = live ? jobFromAddress() : null;
   const sum = useDoorQuery(door.summary, job ? { openingId: job } : "skip") as Summary | undefined;
   const real = useDoorQuery(door.strategies, job ? { openingId: job } : "skip") as Answer<{ rows: DoorStrategy[] }> | undefined;
+  const goals = useDoorQuery(door.openingTargets, job ? { openingId: job } : "skip") as Answer<{ rows: TargetRow[] }> | undefined;
   const sample = liveRows(useRows(), JOB);
+  // Signed in (R5, 21 Nov): the old Overview's targets - today's shortlisted CVs and added
+  // LinkedIn links against the daily targets of the TAs this person may see (a TA: own) -
+  // Position CVs has no old read or target, so it is not shown signed in.
+  const sumOf = (xs: (number | null)[]) => (xs.some((x) => x !== null) ? xs.reduce<number>((n, x) => n + (x ?? 0), 0) : null);
+  const tRows = goals?.ok ? goals.rows : [];
+  const rings: RingData[] | null = !live
+    ? RINGS
+    : goals?.ok && sum?.ok
+      ? [
+          { label: "CVs Today", done: tRows.reduce((n, r) => n + r.cvsToday, 0), target: sumOf(tRows.map((r) => r.cvsPerDay)), stroke: "stroke-brand-strong" },
+          { label: "LinkedIn Target", done: tRows.reduce((n, r) => n + r.linksToday, 0), target: sumOf(tRows.map((r) => r.linksPerDay)), stroke: "stroke-info" },
+        ]
+      : null;
   const team = new Map((sum?.ok ? sum.opening.team : []).map((t) => [t.id, t.name.split(" ")[0]]));
   const rows: Card[] = live
     ? (real?.ok ? real.rows : []).map((r) => ({
@@ -109,7 +131,7 @@ export default function OpeningCards() {
       }));
   const submitted = rows.filter((x) => x.state === "done").length;
   // The cards can arrive after the first draw (the live read): set up again when they change.
-  const sig = rows.map((r) => r.key + r.state).join("|");
+  const sig = rows.map((r) => r.key + r.state).join("|") + "|" + (rings ?? []).map((r) => `${r.done}/${r.target}`).join(",");
 
   // Draw in when the cards come into view, once: arcs from nothing, numbers counting
   // up, strategy cards rising one after another. Start states set first, then tweened
@@ -141,10 +163,9 @@ export default function OpeningCards() {
 
   return (
     <div ref={ref} className="mt-[max(1rem,10px)] flex shrink-0 flex-col gap-[max(1rem,10px)]">
-      {/* Signed in the rings are hidden: their numbers are samples until a backend
-          read for CVs today / position CVs / LinkedIn target exists. */}
-      {!live && <section aria-label="Targets" className="grid grid-cols-1 gap-6 rounded-lg bg-white px-[max(4rem,20px)] py-[max(5rem,22px)] sm:grid-cols-3">
-        {RINGS.map((r) => (
+      {/* Signed in the rings wait for the real read (ui/opening:targets + the summary). */}
+      {rings && <section aria-label="Targets" className={"grid grid-cols-1 gap-6 rounded-lg bg-white px-[max(4rem,20px)] py-[max(5rem,22px)] " + (rings.length === 2 ? "sm:grid-cols-2" : "sm:grid-cols-3")}>
+        {rings.map((r) => (
           <Ring key={r.label} r={r} />
         ))}
       </section>}
