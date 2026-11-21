@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactN
 import Image from "next/image";
 import { DUR, EASE, MOTION, gsap, useSwap } from "@/lib/gsap";
 import { personOf, useRole, useSignedInPerson } from "@/lib/role";
+import { door, queryOnce, useLive } from "@/lib/backend";
 import Count from "../Count";
 import { CardsSkeleton } from "../Skeleton";
 import { useLiftMenu } from "../openings/[id]/liftMenu";
@@ -60,16 +61,46 @@ export default function TaTrackView() {
   return <Track key={role} viewAll={role === "Lead" || role === "Admin" || role === "Director"} me={personOf(role).name.split(" ")[0]} />;
 }
 
+/** Signed in (R3, 21 Nov 2026): ui/track:report for the dates on screen plus this week,
+ *  read once and again every 2 minutes while the tab is shown - never a live
+ *  subscription, which would re-read every row on each tracker upload. Same shape as
+ *  the sample; what the backend does not count yet (shortlists, placements) reads 0. */
+function useTrackLive(live: boolean, from: string, to: string) {
+  const [got, setGot] = useState<{ key: string; tas?: Ta[]; message?: string }>();
+  const key = `${from}|${to}`;
+  useEffect(() => {
+    if (!live) return;
+    let gone = false;
+    const read = async () => {
+      const r = (await queryOnce(door.track, { from, to }).catch(() => undefined)) as { ok: true; people: Ta[] } | { ok: false; message: string } | undefined;
+      if (gone) return;
+      if (!r) return setGot((g) => ({ key, tas: g?.tas, message: "Could not reach the TA System. Reload the page in a minute." }));
+      if (!r.ok) return setGot({ key, message: r.message });
+      setGot({ key, tas: r.people.map((p) => ({ ...p, days: p.days.map((d) => ({ ...d, shortlists: 0, placements: 0 })) })) });
+    };
+    void read();
+    const timer = setInterval(() => document.visibilityState === "visible" && void read(), 120_000);
+    return () => {
+      gone = true;
+      clearInterval(timer);
+    };
+  }, [live, from, to, key]);
+  return got;
+}
+
 function Track({ viewAll, me }: { viewAll: boolean; me: string }) {
-  const tas = team();
+  const live = useLive();
   // The clock read once, for "last upload N min ago" and the 30-day limit.
   const [now] = useState(() => Date.now());
   const [range, setRange] = useState<Range>("week");
   const [custom, setCustom] = useState<[string, string]>(() => [colomboDay(Date.now() - 6 * 86400000), colomboDay()]);
   const [scope, setScope] = useState<Scope>(viewAll ? "all" : "one");
-  const [personId, setPersonId] = useState(() => (tas.find((t) => t.name === me) ?? tas[0]).id);
   const dates = useMemo(() => datesOf(range, custom), [range, custom]);
-  const person = tas.find((t) => t.id === personId) ?? tas[0];
+  const week = datesOf("week", ["", ""]);
+  const got = useTrackLive(live, dates[0] < week[0] ? dates[0] : week[0], dates.at(-1)! > week.at(-1)! ? dates.at(-1)! : week.at(-1)!);
+  const tas = live ? (got?.tas ?? []) : team();
+  const [personId, setPersonId] = useState(() => (tas.find((t) => t.name === me) ?? tas[0])?.id ?? "");
+  const person = tas.find((t) => t.id === personId) ?? tas.find((t) => t.name.split(" ")[0] === me) ?? tas[0];
   const body = useRef<HTMLDivElement>(null);
   useSwap(body, `${scope}-${personId}-${range}-${custom.join()}`);
 
@@ -78,6 +109,7 @@ function Track({ viewAll, me }: { viewAll: boolean; me: string }) {
     setScope("one");
   };
   const download = () => {
+    if (!person) return;
     const url = URL.createObjectURL(new Blob([csv(scope === "all" ? tas : [person], dates)], { type: "text/csv;charset=utf-8" }));
     const a = Object.assign(document.createElement("a"), { href: url, download: `ta-track-${scope === "one" ? person.name.toLowerCase() + "-" : ""}${dates[0]}-to-${dates.at(-1)}.csv` });
     a.click();
@@ -87,7 +119,7 @@ function Track({ viewAll, me }: { viewAll: boolean; me: string }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col px-[max(1rem,10px)] pb-[max(1rem,10px)] pt-[max(1rem,12px)] max-md:pt-6">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3 px-[max(0.25rem,4px)]">
-        {scope === "all" ? (
+        {scope === "all" || !person ? (
           <h1 className="text-h1 font-light text-ink">TA Track</h1>
         ) : (
           <PersonPicker tas={tas} person={person} onPick={setPersonId} locked={!viewAll} />
@@ -125,7 +157,16 @@ function Track({ viewAll, me }: { viewAll: boolean; me: string }) {
       </div>
 
       <div ref={body} className="mt-[max(1rem,10px)] min-h-0 flex-1 overflow-y-auto px-[max(0.25rem,4px)] pb-2">
-        {scope === "all" ? <TeamView tas={tas} dates={dates} range={range} onOpen={open} /> : <OneView ta={person} dates={dates} range={range} now={now} />}
+        {live && !got?.tas ? (
+          got?.message ? <p role="alert" className="rounded-lg bg-surface p-6 text-body text-ink-2 shadow-card">{got.message}</p> : <CardsSkeleton />
+        ) : !person ? (
+          <p className="rounded-lg bg-surface p-6 text-body text-ink-2 shadow-card">No TAs on the desk yet.</p>
+        ) : scope === "all" ? (
+          <TeamView tas={tas} dates={dates} range={range} onOpen={open} live={live} />
+        ) : (
+          <OneView ta={person} dates={dates} range={range} now={now} live={live} />
+        )}
+        {live && got?.tas && got.message && <p className="mt-3 text-small text-warn">{got.message}</p>}
       </div>
     </div>
   );
@@ -133,7 +174,7 @@ function Track({ viewAll, me }: { viewAll: boolean; me: string }) {
 
 /* ------------------------------------------------------------------ the team */
 
-function TeamView({ tas, dates, range, onOpen }: { tas: Ta[]; dates: string[]; range: Range; onOpen: (id: string) => void }) {
+function TeamView({ tas, dates, range, onOpen, live }: { tas: Ta[]; dates: string[]; range: Range; onOpen: (id: string) => void; live: boolean }) {
   const days = Math.max(1, workdays(dates));
   const goalH = GOAL.activeHoursPerDay * days;
   const goalCv = GOAL.cvsPerDay * days;
@@ -193,7 +234,8 @@ function TeamView({ tas, dates, range, onOpen }: { tas: Ta[]; dates: string[]; r
             })}
           </ul>
         </Card>
-        <Card
+        {/* Signed in: shortlists and placements are not counted per TA yet (R3) - no sample numbers. */}
+        {!live && <Card
           title="Placements & shortlists"
           sub="Last 8 weeks"
           aside={
@@ -210,7 +252,7 @@ function TeamView({ tas, dates, range, onOpen }: { tas: Ta[]; dates: string[]; r
           }
         >
           <Trend tas={tas} />
-        </Card>
+        </Card>}
         <StandsOut tas={tas} rows={rows} word={word} onOpen={onOpen} />
       </div>
     </div>
@@ -414,7 +456,7 @@ const shift = (date: string, n: number) => colomboDay(Date.parse(`${date}T12:00:
 
 /* ------------------------------------------------------------------ one TA */
 
-function OneView({ ta, dates, range, now }: { ta: Ta; dates: string[]; range: Range; now: number }) {
+function OneView({ ta, dates, range, now, live }: { ta: Ta; dates: string[]; range: Range; now: number; live: boolean }) {
   const t = totals(ta, dates);
   const days = Math.max(1, workdays(dates));
   const today = colomboDay();
@@ -445,7 +487,7 @@ function OneView({ ta, dates, range, now }: { ta: Ta; dates: string[]; range: Ra
                   [46, inSet / GOAL.setSize, "stroke-brand-leaf"],
                   [36, excel / GOAL.excelProfilesPerDay, "stroke-info"],
                 ] as const
-              ).map(([r, share, cls]) => (
+              ).filter(([r]) => !live || r !== 36).map(([r, share, cls]) => (
                 <g key={r}>
                   <circle cx="60" cy="60" r={r} fill="none" strokeWidth="7" className="stroke-surface-2" />
                   <circle data-draw="arc" data-to={Math.min(1, share) * 100} cx="60" cy="60" r={r} fill="none" strokeWidth="7" strokeLinecap="round" pathLength={100} strokeDasharray={`${Math.min(1, share) * 100} 100`} className={cls} />
@@ -456,13 +498,14 @@ function OneView({ ta, dates, range, now }: { ta: Ta; dates: string[]; range: Ra
           <ul className="flex flex-col gap-5">
             <Stat dot="bg-brand" big={hm(t.activeMs)} small={`active of ${goalH}h`} />
             <Stat dot="bg-brand-leaf" big={`${inSet} / ${GOAL.setSize}`} small="CVs in today’s set" />
-            <Stat dot="bg-info" big={`${excel} / ${GOAL.excelProfilesPerDay}`} small="Excel profiles today" />
+            {!live && <Stat dot="bg-info" big={`${excel} / ${GOAL.excelProfilesPerDay}`} small="Excel profiles today" />}
           </ul>
         </div>
         {streak >= 2 && <p className="mt-5 self-start rounded-full bg-warn-soft px-3 py-1.5 text-small font-medium text-warn">🔥 {streak} days of full sets in a row</p>}
       </Card>
 
-      {range === "today" ? <DayTimeline /> : <DaysChart ta={ta} dates={dates} word={word} />}
+      {/* The hour timeline is sample data (the tracker keeps day totals) - signed in, the days chart. */}
+      {range === "today" && !live ? <DayTimeline /> : <DaysChart ta={ta} dates={dates} word={word} />}
 
       <div className="col-span-full grid grid-cols-[1.3fr_1.05fr_1fr] gap-[max(1.5rem,12px)] max-lg:grid-cols-2 max-md:grid-cols-1">
         <Card title={`Websites ${word}`} sub="Time on site · the bar is the active share · click one for detail">
