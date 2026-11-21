@@ -17,7 +17,7 @@ import { ClerkProvider, SignedIn, SignedOut, useAuth, useClerk, useSignIn } from
 import { isClerkAPIResponseError } from "@clerk/clerk-react/errors";
 import { ConvexReactClient, useAction, useMutation, useQuery } from "convex/react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
-import { makeFunctionReference } from "convex/server";
+import { makeFunctionReference, type FunctionReference } from "convex/server";
 import { createContext, useContext, useEffect, type ReactNode } from "react";
 import { setSignedIn, type Role } from "@/lib/role";
 import { useBusy } from "@/lib/busy";
@@ -57,6 +57,8 @@ const safeQuery = ((query: Parameters<typeof useQuery>[0], args: Parameters<type
   return answer;
 }) as typeof useQuery;
 export const useDoorQuery = (LIVE ? safeQuery : () => undefined) as typeof useQuery;
+/** One read, no subscription: for a big read that should not re-run on every write (TA Track, 21 Nov). */
+export const queryOnce = (ref: FunctionReference<"query">, args: Record<string, unknown>): Promise<unknown> => (client ? client.query(ref, args) : Promise.resolve(undefined));
 export const useDoorMutation = (LIVE ? useMutation : () => noMutation) as typeof useMutation;
 export const useDoorAction = (LIVE ? useAction : () => noMutation) as typeof useAction;
 /** Headers that prove who is asking, for our own money-spending routes (src/lib/signedIn.ts). */
@@ -199,6 +201,7 @@ export const door = {
   setTeamStage: makeFunctionReference<"mutation">("ui/team:setStage"),
   placements: makeFunctionReference<"query">("ui/placements:status"),
   setTarget: makeFunctionReference<"mutation">("ui/placements:setTarget"),
+  track: makeFunctionReference<"query">("ui/track:report"),
   accessAvailable: makeFunctionReference<"query">("ui/access:available"),
   accessRequest: makeFunctionReference<"mutation">("ui/access:request"),
   accessPending: makeFunctionReference<"query">("ui/access:pending"),
