@@ -428,8 +428,10 @@ function StandsOut({ tas, rows, word, onOpen }: { tas: Ta[]; rows: { ta: Ta; t: 
   const li = (dates: string[]) => tas.reduce((n, ta) => n + totals(ta, dates).sites.filter((s) => s.domain.includes("linkedin")).reduce((m, s) => m + s.activeMs, 0), 0) / Math.max(1, workdays(dates));
   const thisWeek = datesOf("week", ["", ""]);
   const lastWeek = datesOf("custom", [shift(thisWeek[0], -7), shift(thisWeek[0], -1)]);
-  const change = Math.round((li(thisWeek) / Math.max(1, li(lastWeek)) - 1) * 100);
-  if (Math.abs(change) >= 5) notes.push({ text: `LinkedIn time is ${change > 0 ? "up" : "down"} ${Math.abs(change)}% a day on last week.`, tone: "bg-info-soft text-ink" });
+  // Only when both weeks have LinkedIn time: no tracker data read "down 100%" (21 Nov).
+  const [now, before] = [li(thisWeek), li(lastWeek)];
+  const change = Math.round((now / Math.max(1, before) - 1) * 100);
+  if (now > 0 && before > 0 && Math.abs(change) >= 5) notes.push({ text: `LinkedIn time is ${change > 0 ? "up" : "down"} ${Math.abs(change)}% a day on last week.`, tone: "bg-info-soft text-ink" });
   return (
     <Card
       title="What stands out"
