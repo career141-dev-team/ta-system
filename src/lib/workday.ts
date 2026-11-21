@@ -1,7 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { useRole, worksADay } from "./role";
+import { useRole, useSignedInPerson, worksADay } from "./role";
 
 // Today's started workday, shared by Today (which starts it) and by every screen
 // the TA System gates on it: a TA cannot upload a CV, shortlist or move a candidate
@@ -106,9 +106,17 @@ export function endWorkday(at = Date.now()) {
  *  ponytail: "started today" only; whether THIS opening is on today's workday
  *  ("X is not on today's workday... Add another position") needs the day's
  *  positions from the backend. */
+// The live build (R7, 21 Nov 2026): until the signed-in person is known the role is only
+// a guess ("TA", or an old View-as pick), which told a TA lead "Your workday has not
+// started" on Excel Tables. No gate until the real role arrives - the backend still
+// judges every write.
+const LIVE_BUILD = Boolean(process.env.NEXT_PUBLIC_CONVEX_URL && process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+
 export function useWorkdayGate(): string {
   const day = useWorkday();
   const role = useRole();
+  const signed = useSignedInPerson();
+  if (LIVE_BUILD && !signed) return "";
   if (!worksADay(role)) return "";
   return day === "none" ? "Your workday has not started today." : "";
 }
