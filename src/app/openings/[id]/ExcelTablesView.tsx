@@ -13,7 +13,7 @@ import WorkdayBlocked from "./WorkdayBlocked";
 import { FIELD_PILL } from "./filters";
 import { useFilters } from "@/lib/filters";
 import { jobFromAddress, LIVE, useLive } from "@/lib/backend";
-import { actionFor, addedBucket, sendLink, sheetDate, useLiveLinks, VIA_FROM, type LiveLinks, type LiveRow } from "./excelLive";
+import { actionFor, addedBucket, sendLink, sheetDate, sheetsOf, useLiveLinks, VIA_FROM, type LiveLinks, type LiveRow } from "./excelLive";
 import { useLiftMenu } from "./liftMenu";
 import { useOpeningView } from "./view";
 import type { Profile } from "@/lib/linkedinProfile";
@@ -61,7 +61,8 @@ type Row = {
   /** Another TA shortlisted this person first: nothing to send to the pipeline. */
   shortlistedBy?: string;
 };
-type Sheet = { n: number; date: string; name?: string };
+// own: false = a sheet only another TA's rows sit on (live) - not this person's to rename or delete.
+type Sheet = { n: number; date: string; name?: string; own?: boolean };
 
 const ME = "me";
 const LOCATIONS = ["Colombo office", "Horana plant"];
@@ -297,7 +298,7 @@ export default function ExcelTablesView() {
     setSeenLive(liveData);
     const where = new Map(liveData.locations.map((l) => [l.id, l.name]));
     setRows(liveData.rows.map((l) => liveRow(l, where)));
-    setSheets(liveData.sheets.map((x) => ({ n: x.n, date: sheetDate(x.at), name: x.name ?? undefined })));
+    setSheets(sheetsOf(liveData.sheets, liveData.rows).map((x) => ({ n: x.n, date: sheetDate(x.at), name: x.name ?? undefined, own: x.own })));
     setUndo(liveData.undo ? { sheet: { n: liveData.undo.n, date: "", name: liveData.undo.name ?? undefined }, ids: [] } : null);
     if (first) setSheet("all");
   }
@@ -355,8 +356,11 @@ export default function ExcelTablesView() {
       (sheet === "all" || x.sheet === sheet) &&
       (by === "all" || x.addedBy === by),
   ).length;
+  // What pressing the chip shows (sheet + who added it). It counted only this
+  // person's own rows, so a lead's chips read 0 over a TA's 51 rows (20 Nov).
+  const byWho = (x: Row) => by === "all" || x.addedBy === by;
   const sheetCount = (n: number | null) =>
-    rows.filter((x) => x.sheet === n && mine(x)).length;
+    rows.filter((x) => x.sheet === n && byWho(x)).length;
   const loose = sheetCount(null);
 
   // ---- Sheets ----
@@ -618,8 +622,8 @@ export default function ExcelTablesView() {
                 // A sheet is already a day: an older one shows all of its rows.
                 setAdded(s.date === "Today" ? "today" : "any");
               }}
-              onRename={(name) => renameSheet(s.n, name)}
-              onDelete={() => deleteSheet(s)}
+              onRename={s.own === false ? undefined : (name) => renameSheet(s.n, name)}
+              onDelete={s.own === false ? undefined : () => deleteSheet(s)}
             />
           ))}
           <button
@@ -634,7 +638,7 @@ export default function ExcelTablesView() {
             className={TAB + " " + tabTone(sheet === "all")}
           >
             All sheets
-            <span className="text-ink-3">{rows.filter(mine).length}</span>
+            <span className="text-ink-3">{rows.filter(byWho).length}</span>
           </button>
           {loose > 0 && (
             <button
@@ -1033,12 +1037,13 @@ function SheetChip({
   count: number;
   on: boolean;
   onPick: () => void;
-  onRename: (name: string) => void;
-  onDelete: () => void;
+  onRename?: (name: string) => void;
+  onDelete?: () => void;
 }) {
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState("");
   const rename = () => {
+    if (!onRename) return;
     setDraft(s.name ?? "");
     setRenaming(true);
   };
@@ -1049,7 +1054,7 @@ function SheetChip({
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={() => {
-          onRename(draft);
+          onRename?.(draft);
           setRenaming(false);
         }}
         onKeyDown={(e) => {
@@ -1077,7 +1082,7 @@ function SheetChip({
         onClick={onPick}
         onDoubleClick={rename}
         onKeyDown={(e) => e.key === "F2" && rename()}
-        title={`L${s.n} · ${label} - double-click to rename`}
+        title={`L${s.n} · ${label}${onRename ? " - double-click to rename" : ""}`}
         className={
           TAB + (on ? " pr-1.5 text-ink" : " text-ink-2 hover:text-ink")
         }
@@ -1086,7 +1091,7 @@ function SheetChip({
         <span className="max-w-[max(9rem,90px)] truncate">{label}</span>
         <span className="text-ink-3">{count}</span>
       </button>
-      {on && (
+      {on && onDelete && (
         <button
           type="button"
           onClick={onDelete}

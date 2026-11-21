@@ -230,6 +230,15 @@ export default function ResearchView() {
   };
   const empty = (Object.keys(LABEL) as Key[]).filter((k) => !fields[k].trim());
   const busy = run === "running";
+  // A run that found almost nothing looked finished (20 Nov audit: all eight "Not
+  // found", junk sources, "Researched 18 Nov from 9 sources"). Say so, keep the data.
+  const failedRun = signedIn && run === "done" && empty.length >= 6;
+  // The old action saves on the client and runs Research and Suggestions after.
+  const correctClient = (notes: string) => {
+    if (signedIn) return void send({ do: "correctClient", researchNotes: notes });
+    say(`Saved on ${CLIENT} - Research runs again with it`);
+    runResearch();
+  };
 
   const runResearch = () => {
     if (busy) return;
@@ -340,12 +349,7 @@ export default function ResearchView() {
             start={R?.client?.notes ?? ""}
             first={run === "none"}
             busy={busy}
-            onSaved={(notes) => {
-              // The old action saves on the client and runs Research and Suggestions after.
-              if (signedIn) return void send({ do: "correctClient", researchNotes: notes });
-              say(`Saved on ${CLIENT} - Research runs again with it`);
-              runResearch();
-            }}
+            onSaved={correctClient}
           />
           {run !== "none" && me.lead && (
             <span className="text-small text-ink-3">
@@ -385,6 +389,22 @@ export default function ResearchView() {
       )}
 
       {busy && <RunSteps steps={RESEARCH_STEPS} every={12000} />}
+      {failedRun && !busy && (
+        <div
+          role="alert"
+          className="mt-[max(1.2rem,12px)] flex flex-wrap items-center gap-x-4 gap-y-3 rounded-lg border border-warn/40 bg-warn-soft px-[max(1.2rem,12px)] py-[max(1rem,10px)]"
+        >
+          <p className="min-w-0 flex-1 text-small text-ink">
+            <b className="font-semibold">This research found almost nothing about {CLIENT}.</b>{" "}
+            Run it again, or correct the company name.
+          </p>
+          <button type="button" onClick={runResearch} className={PRIMARY + " rounded-full"}>
+            <RunIcon />
+            Run again
+          </button>
+          <CorrectCompany client={CLIENT} start={R?.client?.notes ?? ""} first={false} busy={busy} onSaved={correctClient} />
+        </div>
+      )}
       {signedIn && !data ? null : run !== "done" && people.length === 0 ? (
         // Not researched yet: what Research does, and the one button.
         <div className="m-auto flex max-w-[34rem] flex-col items-center gap-[max(0.9rem,10px)] py-10 text-center">

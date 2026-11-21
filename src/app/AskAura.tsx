@@ -20,8 +20,16 @@ type DayRead = ({ ok: true } & MyDay) | { ok: false; message: string } | undefin
 
 const WAIT_MS = 22_000;
 
+type HomeReply = { ok: true; reply: { say: string; rows: { main: string; meta?: string }[] } } | { ok: false; message: string };
+// A desk-wide person asks about the whole desk (20 Nov audit: a lead's "how many
+// openings are active" was answered from her own empty TA desk).
+const DESK_ROLE: Partial<Record<string, "Lead" | "Director" | "Ops">> = { Lead: "Lead", Admin: "Lead", Director: "Director", Ops: "Ops" };
+
 export function useAsk(onLeave?: () => void) {
-  const signed = useSignedInPerson() !== null;
+  const person = useSignedInPerson();
+  const signed = person !== null;
+  const deskRole = person ? DESK_ROLE[person.role] : undefined;
+  const askHome = useDoorAction(door.homeAsk);
   const read = useDoorQuery(door.myDay, signed ? {} : "skip") as DayRead;
   const day: MyDay | null = !signed ? SAMPLE_DAY : read && read.ok ? read : null;
   const ask = useDoorAction(door.askToday);
@@ -58,6 +66,14 @@ export function useAsk(onLeave?: () => void) {
     petSay("working", "Thinking…");
     const late = new Promise<undefined>((r) => setTimeout(() => r(undefined), WAIT_MS));
     try {
+      if (deskRole) {
+        const h = (await Promise.race([askHome({ role: deskRole, text: t }), late])) as HomeReply | undefined;
+        if (!h) throw new Error("late");
+        const out = h.ok ? { say: h.reply.say, rows: h.reply.rows.map((x) => ({ main: x.main, meta: x.meta })) } : { say: h.message };
+        setAnswer({ asked: t, ...out });
+        petSay(h.ok ? "done" : "failed", out.say);
+        return;
+      }
       const d = (await Promise.race([ask({ text: t, history: [], today: [] }), late])) as { ok: true; reply: AuraReply } | { ok: false; message: string } | undefined;
       if (!d) throw new Error("late");
       if (!d.ok) {

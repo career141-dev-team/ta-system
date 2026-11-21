@@ -180,7 +180,7 @@ function Chat({ role, desk, failed, signed, onBoard }: { role: HomeRole; desk: D
             <input
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              placeholder={role === "Lead" ? "Ask about the team — “How is Dilini doing?”" : "Ask AURA"}
+              placeholder={role !== "Lead" ? "Ask AURA" : desk?.team[0] ? `Ask about the team — “How is ${desk.team[0].name.split(" ")[0]} doing?”` : "Ask about a TA, a role or today's numbers"}
               aria-label="Talk to AURA"
               className="min-w-0 flex-1 bg-transparent text-[max(1rem,13.5px)] text-ink outline-none placeholder:text-ink-3"
             />

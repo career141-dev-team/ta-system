@@ -449,7 +449,7 @@ export default function Workday({ startedAt }: { startedAt: number | null }) {
           <ChecksList
             key={active}
             checks={checksOf(active)}
-            lead={PERSON.Lead.name.split(" ")[0]}
+            lead={liveDay ? "your TA Lead" : PERSON.Lead.name.split(" ")[0]}
             onExcuse={(key, reason) =>
               desk && liveDay
                 ? answered(excuse({ workdayId: liveDay.id, jobId: active, key: checksOf(active).find((c) => c.key === key)?.full ?? key, reason: reason ?? "", withdraw: !reason }))
