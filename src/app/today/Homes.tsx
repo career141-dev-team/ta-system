@@ -5,7 +5,8 @@ import Link from "next/link";
 import { EASE, MOTION, gsap, motionOK } from "@/lib/gsap";
 import Count from "../Count";
 import { useMe, useSignedInPerson } from "@/lib/role";
-import { ALERTS_MAX, CHASE, CLIENTS, CVS_GOAL, DECIDE, INTERVIEWS, ROLES, STAGES, TEAM, WAITING, WITH_CLIENT, type TaToday } from "./homeAnswers";
+import { ALERTS_MAX, CVS_GOAL, SAMPLE_DESK, type Desk, type TaToday } from "./homeAnswers";
+import { door, useDoorQuery } from "@/lib/backend";
 
 // Homes for the TA Lead, the Director and Ops (owner 14 Nov 2026: "based on the UI,
 // make the home view for the lead, director, ops"). Each keeps what its old dashboard
@@ -25,6 +26,12 @@ const PERSON: Record<"Lead" | "Director" | "Ops", { first: string; line: string 
   Director: { first: "Nadeesha", line: "Across the agency" },
   Ops: { first: "Kavindi", line: "Chasing and coordination" },
 };
+
+type Read = ({ ok: true } & Partial<Desk>) | { ok: false; message: string } | undefined;
+const EMPTY: Desk = { team: [], decide: [], roles: [], waiting: [], stages: [], clients: [], withClient: [], interviews: [], chase: [] };
+/** Where a row opens: the sample opening signed out, the Openings list signed in (the
+ *  desk rows carry no opening id yet). */
+const openOf = (d: Desk) => (d === SAMPLE_DESK ? "/openings/demo" : "/openings");
 
 const greeting = () => {
   const h = new Date().getHours();
@@ -52,7 +59,16 @@ export default function Home({ role }: { role: "Lead" | "Director" | "Ops" }) {
   const signed = useSignedInPerson();
   const { first } = useMe();
   const [hello] = useState(greeting);
-  const flags = role === "Lead" ? leadFlags() : role === "Director" ? directorFlags() : opsFlags();
+  // Signed in, the board reads the same real desk as the AURA chat (owner 21 Nov: the
+  // admin's Today showed the sample team); signed out it keeps the sample.
+  const live = signed !== null;
+  const lead = useDoorQuery(door.leadDesk, live && role === "Lead" ? {} : "skip") as Read;
+  const director = useDoorQuery(door.directorDesk, live && role === "Director" ? {} : "skip") as Read;
+  const ops = useDoorQuery(door.opsDesk, live && role === "Ops" ? {} : "skip") as Read;
+  const read = role === "Lead" ? lead : role === "Director" ? director : ops;
+  const d: Desk | null = !live ? SAMPLE_DESK : read?.ok ? { ...EMPTY, ...read } : null;
+  const failed = read && !read.ok ? read.message : null;
+  const flags = !d ? [] : role === "Lead" ? leadFlags(d) : role === "Director" ? directorFlags(d) : opsFlags(d);
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-[max(1.75rem,14px)] overflow-y-auto px-[max(3.5rem,14px)] py-[max(2.25rem,16px)] [scrollbar-width:thin] max-md:pt-12">
       <header className="flex flex-wrap items-end gap-x-8 gap-y-3">
@@ -71,7 +87,15 @@ export default function Home({ role }: { role: "Lead" | "Director" | "Ops" }) {
           ))}
         </ul>
       </header>
-      {role === "Lead" ? <LeadHome /> : role === "Director" ? <DirectorHome /> : <OpsHome />}
+      {!d ? (
+        <Empty>{failed ?? "Reading the team…"}</Empty>
+      ) : role === "Lead" ? (
+        <LeadHome d={d} />
+      ) : role === "Director" ? (
+        <DirectorHome d={d} />
+      ) : (
+        <OpsHome d={d} />
+      )}
     </div>
   );
 }
@@ -186,10 +210,10 @@ const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? o
 const firstName = (t: TaToday) => t.name.split(" ")[0];
 const who = (ts: TaToday[]) => (ts.length === 1 ? firstName(ts[0]) : plural(ts.length, "TA"));
 
-function leadFlags(): Flag[] {
-  const idle = TEAM.filter((t) => !t.day.started);
-  const low = TEAM.filter((t) => t.cvs < CVS_GOAL);
-  const busy = TEAM.filter((t) => t.alerts > ALERTS_MAX);
+function leadFlags(d: Desk): Flag[] {
+  const idle = d.team.filter((t) => !t.day.started);
+  const low = d.team.filter((t) => t.cvs < CVS_GOAL);
+  const busy = d.team.filter((t) => t.alerts > ALERTS_MAX);
   const f: Flag[] = [];
   if (idle.length) f.push({ tone: "warn", text: `${who(idle)} ${idle.length === 1 ? "has" : "have"} not started` });
   if (low.length) f.push({ tone: "danger", text: `${who(low)} under ${CVS_GOAL} CVs today` });
@@ -197,15 +221,15 @@ function leadFlags(): Flag[] {
   return f.length ? f : [{ tone: "success", text: "The team is on track" }];
 }
 
-function LeadHome() {
+function LeadHome({ d }: { d: Desk }) {
   const [offLi, setOffLi] = useState(false);
-  const notOn = ROLES.filter((r) => !r.on).length;
-  const roles = offLi ? ROLES.filter((r) => !r.on) : ROLES;
+  const notOn = d.roles.filter((r) => !r.on).length;
+  const roles = offLi ? d.roles.filter((r) => !r.on) : d.roles;
   return (
     <div className={"grid gap-[max(1.75rem,14px)] lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] " + COLUMNS}>
       <Section title="The team today" fill aside={<span className="text-caption text-ink-3 max-sm:hidden">Each TA&apos;s checks for today, as in Today&apos;s Checks</span>}>
         <List scroll>
-          {TEAM.map((t) => (
+          {d.team.map((t) => (
             <li key={t.ini}>
               <TaCard t={t} />
             </li>
@@ -215,13 +239,13 @@ function LeadHome() {
 
       <div className={"flex min-w-0 flex-col gap-[max(1.75rem,14px)] " + FILL}>
         <Section title="Needs a decision">
-          {DECIDE.length ? (
+          {d.decide.length ? (
             <List>
-              {DECIDE.map((d) => (
-                <li key={d.title}>
-                  <Link data-lift href="/openings/demo" className={OPENS + " " + ROW}>
-                    <Mark tone={d.red ? "danger" : "warn"} />
-                    <Lines main={d.title} sub={`${d.client} · ${d.why}`} subClass={d.red ? "text-danger" : "text-ink-2"} />
+              {d.decide.map((x) => (
+                <li key={x.title}>
+                  <Link data-lift href={openOf(d)} className={OPENS + " " + ROW}>
+                    <Mark tone={x.red ? "danger" : "warn"} />
+                    <Lines main={x.title} sub={`${x.client} · ${x.why}`} subClass={x.red ? "text-danger" : "text-ink-2"} />
                     <Arrow />
                   </Link>
                 </li>
@@ -250,7 +274,7 @@ function LeadHome() {
           <List scroll>
             {roles.map((r) => (
               <li key={r.title}>
-                <Link data-lift href="/openings/demo" className={OPENS + " " + ROW}>
+                <Link data-lift href={openOf(d)} className={OPENS + " " + ROW}>
                   <Lines main={r.title} sub={`${r.client} · ${r.tas} · day ${r.days}`} />
                   <span className={"shrink-0 rounded-sm px-2 py-0.5 text-caption font-medium " + (r.on ? TONE.info : TONE.warn)}>{r.on ? "LinkedIn" : "No post"}</span>
                   <span className="flex min-w-[max(3.75rem,48px)] shrink-0 flex-col items-end" title="Candidates in follow-up">
@@ -328,30 +352,30 @@ function TaCard({ t }: { t: TaToday }) {
 // ----- Director -----
 
 
-function directorFlags(): Flag[] {
-  return WAITING.length
-    ? [{ tone: "warn", text: `${plural(WAITING.length, "set")} ${WAITING.length === 1 ? "waits" : "wait"} on your review` }]
+function directorFlags(d: Desk): Flag[] {
+  return d.waiting.length
+    ? [{ tone: "warn", text: `${plural(d.waiting.length, "set")} ${d.waiting.length === 1 ? "waits" : "wait"} on your review` }]
     : [{ tone: "success", text: "Nothing waits on your review" }];
 }
 
-function DirectorHome() {
-  const widest = Math.max(...STAGES.map(([, n]) => n));
-  const richest = Math.max(...CLIENTS.map((c) => c.value), 1);
+function DirectorHome({ d }: { d: Desk }) {
+  const widest = Math.max(...d.stages.map(([, n]) => n), 1);
+  const richest = Math.max(...d.clients.map((c) => c.value ?? 0), 1);
   return (
     <>
       <div className="grid grid-cols-4 gap-[max(1rem,8px)] max-lg:grid-cols-2">
         <Stat n={11} label="Open roles" />
-        <Stat n={WAITING.length} label="Waiting on you" warn />
+        <Stat n={d.waiting.length} label="Waiting on you" warn />
         <Stat n={6930} prefix="LKR " suffix="k" label="In progress" />
         <Stat n={4200} prefix="LKR " suffix="k" label="Placed" />
       </div>
       <div className={"grid gap-[max(1.75rem,14px)] lg:grid-cols-2 xl:grid-cols-3 " + COLUMNS}>
         <Section title="Sets waiting on your review" fill>
-          {WAITING.length ? (
+          {d.waiting.length ? (
             <List scroll>
-              {WAITING.map((w) => (
+              {d.waiting.map((w) => (
                 <li key={w.who}>
-                  <Link data-lift href="/openings/demo" className={OPENS + " " + ROW}>
+                  <Link data-lift href={openOf(d)} className={OPENS + " " + ROW}>
                     <Initials s={initials(w.who)} />
                     <Lines main={w.who} sub={`${w.client} · ${w.title} · set ${w.set}`} />
                     <span className="shrink-0 rounded-sm bg-surface-2 px-2 py-0.5 text-caption text-ink-2" title="TA on the set">
@@ -368,7 +392,7 @@ function DirectorHome() {
         </Section>
         <Section title="Where everyone is" fill>
           <ul className={"flex flex-col gap-[max(0.7rem,8px)] p-[max(1rem,12px)] [scrollbar-width:thin] " + CARD + " " + SCROLL}>
-            {STAGES.map(([s, n]) => {
+            {d.stages.map(([s, n]) => {
               const you = s === "Director Review";
               return (
                 <li key={s} className="grid grid-cols-[max(8.5rem,118px)_1fr_max(2.5rem,30px)] items-center gap-3 text-small">
@@ -384,13 +408,13 @@ function DirectorHome() {
         </Section>
         <Section title="By client" fill>
           <List scroll>
-            {CLIENTS.map((c) => (
+            {d.clients.map((c) => (
               <li key={c.name} className={CARD + " flex flex-col gap-2 px-[max(1rem,12px)] py-[max(0.75rem,9px)]"}>
                 <span className="flex items-center gap-3">
                   <Lines main={c.name} sub={`${c.open} open · ${plural(c.sets, "set")}`} />
                   <span className={"shrink-0 text-small tabular-nums " + (c.value ? "font-medium text-ink" : "text-ink-3")}>{c.value ? `LKR ${c.value}k` : "Nothing in progress"}</span>
                 </span>
-                {c.value > 0 && <Bar pct={(c.value / richest) * 100} label={`LKR ${c.value}k in progress`} />}
+                {(c.value ?? 0) > 0 && <Bar pct={((c.value ?? 0) / richest) * 100} label={`LKR ${c.value}k in progress`} />}
               </li>
             ))}
           </List>
@@ -403,33 +427,33 @@ function DirectorHome() {
 // ----- Ops -----
 
 
-function opsFlags(): Flag[] {
-  const cold = INTERVIEWS.filter((i) => !i.confirmed).length;
+function opsFlags(d: Desk): Flag[] {
+  const cold = d.interviews.filter((i) => !i.confirmed).length;
   const f: Flag[] = [];
-  if (CHASE.length) f.push({ tone: "warn", text: `${plural(CHASE.length, "thing")} to chase` });
+  if (d.chase.length) f.push({ tone: "warn", text: `${plural(d.chase.length, "thing")} to chase` });
   if (cold) f.push({ tone: "danger", text: `${plural(cold, "interview")} not contacted` });
   return f.length ? f : [{ tone: "success", text: "Nothing to chase" }];
 }
 
-function OpsHome() {
+function OpsHome({ d }: { d: Desk }) {
   return (
     <>
       <div className="grid grid-cols-3 gap-[max(1rem,8px)] max-sm:grid-cols-1">
-        <Stat n={WITH_CLIENT.length} label="Sitting with clients" />
-        <Stat n={CHASE.length} label="To chase" warn />
-        <Stat n={INTERVIEWS.length} label="Interviews scheduled" />
+        <Stat n={d.withClient.length} label="Sitting with clients" />
+        <Stat n={d.chase.length} label="To chase" warn />
+        <Stat n={d.interviews.length} label="Interviews scheduled" />
       </div>
       <div className={"grid gap-[max(1.75rem,14px)] lg:grid-cols-2 xl:grid-cols-3 " + COLUMNS}>
         {/* What to do next comes first. */}
         <Section title="Assigned to you" fill>
-          {CHASE.length ? (
+          {d.chase.length ? (
             <List scroll>
-              {CHASE.map((c) => (
+              {d.chase.map((c) => (
                 <li key={c.what} className={CARD + " flex items-start gap-3 px-[max(1rem,12px)] py-[max(0.875rem,10px)]"}>
                   <Mark tone="warn" />
                   <span className="flex min-w-0 flex-1 flex-col items-start gap-2.5">
                     <span className="text-small text-ink">{c.what}</span>
-                    <Link href="/openings/demo" className="rounded-full bg-ink px-4 py-1.5 text-small font-medium text-white transition-colors hover:bg-ink-2">
+                    <Link href={openOf(d)} className="rounded-full bg-ink px-4 py-1.5 text-small font-medium text-white transition-colors hover:bg-ink-2">
                       {c.action}
                     </Link>
                   </span>
@@ -441,11 +465,11 @@ function OpsHome() {
           )}
         </Section>
         <Section title="Waiting on client feedback" fill>
-          {WITH_CLIENT.length ? (
+          {d.withClient.length ? (
             <List scroll>
-              {WITH_CLIENT.map((w) => (
+              {d.withClient.map((w) => (
                 <li key={w.who}>
-                  <Link data-lift href="/openings/demo" className={OPENS + " " + ROW}>
+                  <Link data-lift href={openOf(d)} className={OPENS + " " + ROW}>
                     <Initials s={initials(w.who)} />
                     <Lines main={w.who} sub={`${w.client} · ${w.title}`} />
                     <span className={"shrink-0 rounded-sm px-2 py-0.5 text-caption font-medium " + (w.days >= 1 ? TONE.warn : "bg-surface-2 text-ink-3")}>
@@ -460,9 +484,9 @@ function OpsHome() {
           )}
         </Section>
         <Section title="Interviews to coordinate" fill>
-          {INTERVIEWS.length ? (
+          {d.interviews.length ? (
             <List scroll>
-              {INTERVIEWS.map((i) => (
+              {d.interviews.map((i) => (
                 <li key={i.who} className={CARD + " " + ROW}>
                   <Initials s={initials(i.who)} />
                   <Lines main={i.who} sub={i.title} />
