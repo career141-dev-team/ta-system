@@ -15,12 +15,13 @@
 
 import { ClerkProvider, SignedIn, SignedOut, useAuth, useClerk, useSignIn } from "@clerk/clerk-react";
 import { isClerkAPIResponseError } from "@clerk/clerk-react/errors";
-import { ConvexReactClient, useAction, useMutation, useQuery } from "convex/react";
+import { ConvexReactClient, useAction, useConvex, useMutation, useQuery } from "convex/react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
-import { makeFunctionReference, type FunctionReference } from "convex/server";
+import { getFunctionName, makeFunctionReference, type FunctionReference } from "convex/server";
 import { createContext, useContext, useEffect, type ReactNode } from "react";
 import { setSignedIn, type Role } from "@/lib/role";
 import { useBusy } from "@/lib/busy";
+import { getViewed, READS_AS, useViewed, viewingNote } from "@/lib/viewAs";
 import { goLive, setLiveDay } from "@/lib/workday";
 import { setLiveAlerts, type Alert } from "@/app/alerts/data";
 import LoginScreen from "@/app/signin/LoginScreen";
@@ -47,8 +48,9 @@ const noMutation = async () => undefined;
 const READ_FAILED = { ok: false as const, message: "Could not read this just now. Reload the page to try again." };
 const safeQuery = ((query: Parameters<typeof useQuery>[0], args: Parameters<typeof useQuery>[1]) => {
   let answer: unknown;
+  const viewed = useViewed();
   try {
-    answer = useQuery(query, args);
+    answer = useQuery(query, args !== "skip" && viewed && READS_AS.has(getFunctionName(query as never)) ? { ...(args as object), as: viewed.id } : args);
   } catch (error) {
     console.warn("[door] a read failed:", error instanceof Error ? error.message.split("\n")[0] : error);
     answer = READ_FAILED;
@@ -59,8 +61,15 @@ const safeQuery = ((query: Parameters<typeof useQuery>[0], args: Parameters<type
 export const useDoorQuery = (LIVE ? safeQuery : () => undefined) as typeof useQuery;
 /** One read, no subscription: for a big read that should not re-run on every write (TA Track, 21 Nov). */
 export const queryOnce = (ref: FunctionReference<"query">, args: Record<string, unknown>): Promise<unknown> => (client ? client.query(ref, args) : Promise.resolve(undefined));
-export const useDoorMutation = (LIVE ? useMutation : () => noMutation) as typeof useMutation;
-export const useDoorAction = (LIVE ? useAction : () => noMutation) as typeof useAction;
+// While an admin views as someone, nothing is written: a press answers in words (viewing note).
+const readOnlyWhileViewing = <F extends (...a: never[]) => unknown>(run: F) =>
+  ((...a: Parameters<F>) => (getViewed() ? Promise.resolve({ ok: false, message: viewingNote() }) : run(...a))) as unknown as F;
+const mutationHook = ((fn: Parameters<typeof useMutation>[0]) => readOnlyWhileViewing(useMutation(fn))) as typeof useMutation;
+const actionHook = ((fn: Parameters<typeof useAction>[0]) => readOnlyWhileViewing(useAction(fn))) as typeof useAction;
+export const useDoorMutation = (LIVE ? mutationHook : () => noMutation) as typeof useMutation;
+/** The client itself, for one-off reads from an event (the admin asks about a person). Null in sample mode. */
+export const useDoorClient = (LIVE ? useConvex : () => null) as () => ReturnType<typeof useConvex> | null;
+export const useDoorAction = (LIVE ? actionHook : () => noMutation) as typeof useAction;
 /** Headers that prove who is asking, for our own money-spending routes (src/lib/signedIn.ts). */
 export const useSignedHeaders = (LIVE
   ? () => {
@@ -189,6 +198,7 @@ export function Backend({ children }: { children: ReactNode }) {
 
 // The door's functions, named by path: the TA repo owns their types.
 export const door = {
+  report: makeFunctionReference<"query">("ui/adminView:report"),
   whoAmI: makeFunctionReference<"query">("ui/me:whoAmI"),
   board: makeFunctionReference<"query">("ui/pipeline:board"),
   move: makeFunctionReference<"mutation">("ui/pipeline:move"),
@@ -320,7 +330,7 @@ export function useSignedIn(): Me | undefined | null {
 }
 
 /** The backend's role words in the UI's roles. Admin works as a lead does (desk-wide). */
-const ROLE_OF: Record<string, Role> = { ta: "TA", ta_support: "TA Support", ta_lead: "Lead", admin: "Admin", director: "Director", ops: "Ops" };
+export const ROLE_OF: Record<string, Role> = { ta: "TA", ta_support: "TA Support", ta_lead: "Lead", admin: "Admin", director: "Director", ops: "Ops" };
 const TITLE_OF: Record<Role, string> = { TA: "Talent Acquisition", "TA Support": "TA Support", Lead: "TA Lead", Admin: "Admin", Director: "Director", Ops: "Ops" };
 
 /** "Keep me signed in" off: Clerk keeps a session for days, so when the box was left unticked
@@ -362,7 +372,8 @@ const colomboToday = () => new Date().toLocaleDateString("en-CA", { timeZone: "A
 /** Today's real workday into src/lib/workday.ts, so every screen's gate and Today follow it. */
 function LiveWorkday() {
   goLive();
-  const got = useQuery(door.today, {}) as DoorDay | undefined;
+  const viewed = useViewed();
+  const got = useQuery(door.today, viewed ? { as: viewed.id } : {}) as DoorDay | undefined;
   const refresh = useMutation(door.refreshChecks);
   useEffect(() => {
     if (!got?.ok) return void (got && setLiveDay("none", null));
@@ -371,7 +382,7 @@ function LiveWorkday() {
     const day = v.active ?? v.history.find((d) => d.date === colomboToday()) ?? null;
     setLiveDay(day ? { id: day.id, startedAt: day.startedAt, finishedAt: day.finishedAt } : "none", v);
     // Positions computed live: ask for one stored recompute (the old route's step).
-    if (v.active?.staleChecklists?.length) void refresh({ workdayId: v.active.id, jobIds: v.active.staleChecklists }).catch(() => {});
+    if (v.active?.staleChecklists?.length && !getViewed()) void refresh({ workdayId: v.active.id, jobIds: v.active.staleChecklists }).catch(() => {});
   }, [got, refresh]);
   return null;
 }
@@ -383,7 +394,8 @@ const ICON: Record<string, Alert["icon"]> = { strategy_assigned: "task", workday
 
 /** The person's real notifications into the bell (src/app/alerts/data.ts). */
 function LiveBell() {
-  const got = useQuery(door.bell, { limit: 30 }) as DoorBell | undefined;
+  const viewed = useViewed();
+  const got = useQuery(door.bell, viewed ? { limit: 30, as: viewed.id } : { limit: 30 }) as DoorBell | undefined;
   const one = useMutation(door.markRead);
   const all = useMutation(door.markAllRead);
   useEffect(() => {

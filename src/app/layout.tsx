@@ -16,6 +16,7 @@ import Motion from "./Motion";
 import Board from "./Board";
 import Overview from "./Overview";
 import AuraPet from "./AuraPet";
+import ViewingBanner from "./ViewingBanner";
 import PlanReminders from "./PlanReminders";
 import { THEME_BOOT } from "@/lib/theme";
 import { Backend } from "@/lib/backend";
@@ -49,6 +50,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           {/* Inside the backend: its Ask box calls AURA (useAction), which needs the
               Convex client; outside it a click crashed the page (20 Nov). */}
           <AuraPet />
+          <ViewingBanner />
         </Backend>
         <Overview />
       </body>
