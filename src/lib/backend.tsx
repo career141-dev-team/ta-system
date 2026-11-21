@@ -65,7 +65,11 @@ export const queryOnce = (ref: FunctionReference<"query">, args: Record<string, 
 const readOnlyWhileViewing = <F extends (...a: never[]) => unknown>(run: F) =>
   ((...a: Parameters<F>) => (getViewed() ? Promise.resolve({ ok: false, message: viewingNote() }) : run(...a))) as unknown as F;
 const mutationHook = ((fn: Parameters<typeof useMutation>[0]) => readOnlyWhileViewing(useMutation(fn))) as typeof useMutation;
-const actionHook = ((fn: Parameters<typeof useAction>[0]) => readOnlyWhileViewing(useAction(fn))) as typeof useAction;
+// The admin assistant only reads and answers, so it may ask while viewing someone.
+const actionHook = ((fn: Parameters<typeof useAction>[0]) => {
+  const run = useAction(fn);
+  return getFunctionName(fn as never) === "ui/adminAsk:ask" ? run : readOnlyWhileViewing(run);
+}) as typeof useAction;
 export const useDoorMutation = (LIVE ? mutationHook : () => noMutation) as typeof useMutation;
 /** The client itself, for one-off reads from an event (the admin asks about a person). Null in sample mode. */
 export const useDoorClient = (LIVE ? useConvex : () => null) as () => ReturnType<typeof useConvex> | null;
@@ -199,6 +203,7 @@ export function Backend({ children }: { children: ReactNode }) {
 // The door's functions, named by path: the TA repo owns their types.
 export const door = {
   report: makeFunctionReference<"query">("ui/adminView:report"),
+  adminAsk: makeFunctionReference<"action">("ui/adminAsk:ask"),
   whoAmI: makeFunctionReference<"query">("ui/me:whoAmI"),
   board: makeFunctionReference<"query">("ui/pipeline:board"),
   move: makeFunctionReference<"mutation">("ui/pipeline:move"),
