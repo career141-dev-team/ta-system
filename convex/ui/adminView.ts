@@ -27,7 +27,7 @@ export function peopleNamed(users: Doc<"users">[], asked: string): Doc<"users">[
 }
 
 export const report = query({
-  args: { name: v.string() },
+  args: { name: v.optional(v.string()), id: v.optional(v.string()) },
   handler: async (ctx, args) => {
     try {
       const me = await uiUser(ctx);
@@ -35,9 +35,12 @@ export const report = query({
     } catch (error) {
       return { ok: false, message: error instanceof NotSignedIn ? error.message : "Could not check who you are." } as Refused;
     }
-    const found = peopleNamed(await ctx.db.query("users").take(MAX_PEOPLE), args.name);
-    if (!found.length) return { ok: false, message: `I could not find anyone called "${args.name.trim()}" on the desk.` } as Refused;
-    if (found.length > 1 && found[0].fullName?.toLowerCase() !== args.name.trim().toLowerCase()) {
+    const asked = (args.name ?? "").trim();
+    const byId = args.id ? ctx.db.normalizeId("users", args.id) : null;
+    const one = byId ? await ctx.db.get(byId) : null;
+    const found = one ? [one] : peopleNamed(await ctx.db.query("users").take(MAX_PEOPLE), asked);
+    if (!found.length) return { ok: false, message: `I could not find anyone called "${asked}" on the desk.` } as Refused;
+    if (found.length > 1 && found[0].fullName?.toLowerCase() !== asked.toLowerCase()) {
       return { ok: true as const, several: found.slice(0, 6).map((u) => ({ id: u._id as string, name: u.fullName ?? u.email ?? "?" })) };
     }
     const person = found[0];
@@ -45,6 +48,11 @@ export const report = query({
 
     const day = await ctx.db.query("taWorkdays").withIndex("by_user", (q) => q.eq("userId", person._id)).order("desc").first();
     const unticked: { position: string; label: string }[] = [];
+    const positions: { jobId: string; title: string; workType: string }[] = [];
+    for (const j of day ? day.jobs.slice(0, 10) : []) {
+      const job = await ctx.db.get(j.jobId);
+      positions.push({ jobId: j.jobId as string, title: job?.title ?? "A position", workType: j.workType });
+    }
     if (day && !day.finishedAt) {
       for (const j of day.jobs.slice(0, 10)) {
         const job = await ctx.db.get(j.jobId);
@@ -62,8 +70,34 @@ export const report = query({
       workday: day
         ? { date: day.date, startedAt: day.startedAt, finishedAt: day.finishedAt ?? null, positions: day.jobs.length, closure: day.closureReason ?? null }
         : null,
+      positions,
       unticked: unticked.slice(0, 12),
       actions: actions.map((a) => ({ at: a.occurredAt, action: a.action, what: `${a.entityType} ${a.entityId}`.slice(0, 80) })),
     };
   },
 });
+
+/** Everyone active on the desk, for the admin's assistant to find a name in a sentence. Admin only. */
+export const people = query({
+  args: {},
+  handler: async (ctx) => {
+    try {
+      const me = await uiUser(ctx);
+      if (me.role !== "admin") return { ok: false, message: "Only an admin can look into another person's work." } as Refused;
+    } catch (error) {
+      return { ok: false, message: error instanceof NotSignedIn ? error.message : "Could not check who you are." } as Refused;
+    }
+    const users = await ctx.db.query("users").take(MAX_PEOPLE);
+    return { ok: true as const, people: users.filter((u) => u.isActive).map((u) => ({ id: u._id as string, name: u.fullName ?? u.email ?? "?" })) };
+  },
+});
+
+/** The one person a sentence names: a whole name, or a first name only one person has. Pure so a test can hold it. */
+export function personIn(text: string, people: { id: string; name: string }[]): { id: string; name: string } | "many" | null {
+  const said = new Set(text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
+  const words = (n: string) => n.toLowerCase().split(/[^a-z0-9]+/).filter((x) => x.length > 2);
+  const full = people.filter((p) => words(p.name).length > 1 && words(p.name).every((x) => said.has(x)));
+  if (full.length === 1) return full[0];
+  const hits = full.length ? full : people.filter((p) => words(p.name).length > 0 && said.has(words(p.name)[0]));
+  return hits.length === 1 ? hits[0] : hits.length > 1 ? "many" : null;
+}
