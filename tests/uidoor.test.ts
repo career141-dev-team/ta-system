@@ -9,6 +9,7 @@ import path from "node:path";
 import { cardLimit, inWords, scoopFileRefusal, normalizeQuestions, strategyRowsToSubmit, matchableEmail, moveRefusal, toCard, openingCard, withEdits, BOARD_STAGES, BACKEND_STAGES, daysOpen, columnCount } from "../convex/ui/rules";
 import { fillDecision, targetOf } from "../convex/lib/placementCount";
 import { isEodCandidateEligible } from "../src/lib/eodEligibility";
+import { datesBetween, peopleOf } from "../convex/ui/trackRules";
 
 let pass = 0, fail = 0;
 const eq = (l: string, got: unknown, want: unknown) => {
@@ -457,6 +458,23 @@ eq("access: requests go through the old rules", acc.includes("internal.ta.openin
 eq("access: the list is read by index, never the whole jobs table", acc.includes('withIndex("by_status"') && !/query\("jobs"\)\.collect\(\)/.test(acc), true);
 eq("access: a lead's pending list comes from the old rule", acc.includes("listPendingForApprover"), true);
 eq("access: only a TA is offered openings to ask for", acc.includes('["ta", "ta_support"].includes(roleOf(me))'), true);
+
+// ── TA Track (21 Nov, R3) ───────────────────────────────────────────────────
+{
+  const now = Date.parse("2026-11-21T10:00:00+05:30");
+  eq("track: a week is seven dates, oldest first", datesBetween("2026-11-15", "2026-11-21", now), ["2026-11-15", "2026-11-16", "2026-11-17", "2026-11-18", "2026-11-19", "2026-11-20", "2026-11-21"]);
+  eq("track: a backwards range is refused", datesBetween("2026-11-21", "2026-11-20", now), "The first date must come before the last.");
+  eq("track: a date past 30 days is refused", datesBetween("2026-10-01", "2026-11-21", now), "Choose dates within the last 30 days.");
+  eq("track: a future date is refused", datesBetween("2026-11-21", "2026-11-22", now), "Choose dates within the last 30 days.");
+  const row = { userId: "u1", date: "2026-11-21", domain: "linkedin.com", activeMs: 1000, idleMs: 500, clicks: 2, scrolls: 3, movementSeconds: 4, lastSeen: now };
+  const [p] = peopleOf([row, { ...row, activeMs: 2000 }, { ...row, domain: "chatgpt.com", activeMs: 10 }], [{ id: "u1", name: "Asha" }], [{ userId: "u1", lastSyncAt: now, enabled: true }], [{ userId: "u1", date: "2026-11-20", count: 3 }], now);
+  eq("track: two browsers' rows add up, busiest website first", p.days.find((d) => d.date === "2026-11-21")?.sites.map((s) => [s.domain, s.activeMs]), [["linkedin.com", 3000], ["chatgpt.com", 10]]);
+  eq("track: CVs to the Director sit on their own day", p.days.map((d) => [d.date, d.cvsToDirector]), [["2026-11-20", 3], ["2026-11-21", 0]]);
+  eq("track: a row older than 30 days is left out", peopleOf([{ ...row, lastSeen: now - 31 * 86400000 }], [{ id: "u1", name: "Asha" }], [], [], now)[0].days, []);
+  const src = read("convex/ui/track.ts");
+  eq("track: only admins and TA leads, the old rule", src.includes("canViewTaTracking(mapUser(me).role)"), true);
+  eq("track: rows read by date index, never the whole table", src.includes('withIndex("by_date"') && !src.includes('query("taTrackingRows").collect()'), true);
+}
 
 console.log(`\nuidoor: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
