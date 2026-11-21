@@ -18,7 +18,7 @@ export type MyDay = {
 
 export type Topic = "overview" | "shortlisted" | "director" | "cvs" | "checks" | "plan" | "searches";
 export type Route = { kind: "day"; topic: Topic } | { kind: "open"; path: string; label: string } | { kind: "search"; q: string } | { kind: "chat" };
-export type Row = { main: string; meta?: string; href?: string };
+export type Row = { main: string; meta?: string; href?: string; go?: () => void };
 export type Said = { say: string; rows: Row[] };
 
 const SCREENS: [RegExp, string, string][] = [

@@ -11,7 +11,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { door, ROLE_OF, useDoorAction, useDoorClient, useDoorQuery, type AuraReply } from "@/lib/backend";
-import { setViewed } from "@/lib/viewAs";
+import { setViewed, useViewed } from "@/lib/viewAs";
 import { useSignedInPerson } from "@/lib/role";
 import { petSay } from "@/lib/pet";
 import { dayAnswer, readAdminAsk, readAsk, SAMPLE_DAY, type MyDay, type Row } from "@/lib/askAura";
@@ -32,14 +32,19 @@ type Report =
   | {
       ok: true;
       person: { id: string; name: string; role: string; active: boolean };
+      positions?: { jobId: string; title: string; workType: string }[];
       workday: { date: string; startedAt: number; finishedAt: number | null; positions: number; closure: string | null } | null;
       unticked: { position: string; label: string }[];
       actions: { at: string; action: string; what: string }[];
     };
+type Who = { id: string; name: string; role: string };
+type AdminReply = { ok: true; say: string; rows: { main: string; meta?: string }[]; person: Who & { positions: { jobId: string; title: string }[] } } | { ok: false; message: string; code?: "no_person" };
 const clock = (ms: number) => new Date(ms).toLocaleTimeString("en-GB", { timeZone: "Asia/Colombo", hour: "2-digit", minute: "2-digit" });
 
 export function useAsk(onLeave?: () => void) {
   const client = useDoorClient();
+  const viewing = useViewed();
+  const askAdmin = useDoorAction(door.adminAsk);
   const person = useSignedInPerson();
   const signed = person !== null;
   const deskRole = person ? DESK_ROLE[person.role] : undefined;
@@ -49,6 +54,17 @@ export function useAsk(onLeave?: () => void) {
   const ask = useDoorAction(door.askToday);
   const router = useRouter();
   const [answer, setAnswer] = useState<Asked | null>(null);
+
+  // Open a person's screens read only: Today, or the pipeline of one of their positions.
+  const goAs = (p: Who, path: string) => {
+    setViewed({ id: p.id, name: p.name, role: ROLE_OF[p.role] ?? "TA" });
+    onLeave?.();
+    router.push(path);
+  };
+  const openRows = (p: Who, positions: { jobId: string; title: string }[] = []): Row[] => [
+    { main: `Open ${p.name}'s Today`, meta: "Read only", go: () => goAs(p, "/today") },
+    ...positions.slice(0, 4).map((x) => ({ main: `Open pipeline: ${x.title}`, meta: "Read only", go: () => goAs(p, `/openings/demo?job=${x.jobId}&view=pipeline`) })),
+  ];
 
   const run = async (text: string) => {
     const t = text.trim();
@@ -81,6 +97,7 @@ export function useAsk(onLeave?: () => void) {
             asked: t,
             say: `${say} Say "log in as ${r.person.name}" to see their screens.`,
             rows: [
+              ...openRows(r.person, r.positions),
               ...r.unticked.map((u) => ({ main: `Not done: ${u.label}`, meta: u.position })),
               ...r.actions.map((a) => ({ main: `${a.action} - ${a.what}`, meta: a.at.slice(0, 16).replace("T", " ") })),
             ],
@@ -118,6 +135,21 @@ export function useAsk(onLeave?: () => void) {
     petSay("working", "Thinking…");
     const late = new Promise<undefined>((r) => setTimeout(() => r(undefined), WAIT_MS));
     try {
+      if (person?.role === "Admin") {
+        // The admin's free questions about a TA (21 Nov): answered from that person's facts only.
+        const a = (await Promise.race([askAdmin({ text: t, ...(viewing ? { personId: viewing.id } : {}) }), late])) as AdminReply | undefined;
+        if (a?.ok) {
+          setAnswer({ asked: t, say: a.say, rows: [...openRows(a.person, a.person.positions), ...a.rows] });
+          petSay("done", a.say);
+          return;
+        }
+        if (a && a.code !== "no_person") {
+          setAnswer({ asked: t, say: a.message });
+          petSay("failed", a.message);
+          return;
+        }
+        // No TA named: it is a question about the whole desk, answered below.
+      }
       if (deskRole) {
         const h = (await Promise.race([askHome({ role: deskRole, text: t }), late])) as HomeReply | undefined;
         if (!h) throw new Error("late");
@@ -172,7 +204,11 @@ export function AskReply({ answer, onLeave }: { answer: Asked; onLeave?: () => v
                 );
                 return (
                   <li key={i}>
-                    {r.href ? (
+                    {r.go ? (
+                      <button type="button" onClick={r.go} className="flex w-full flex-col rounded-sm px-1.5 py-1 text-left hover:bg-surface">
+                        {body}
+                      </button>
+                    ) : r.href ? (
                       <Link href={r.href} onClick={onLeave} className="flex flex-col rounded-sm px-1.5 py-1 hover:bg-surface">
                         {body}
                       </Link>
