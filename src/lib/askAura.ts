@@ -161,3 +161,16 @@ export const SAMPLE_DAY: MyDay = {
     { id: "demo", title: "Finance Manager", client: "Hayleys", cvsToday: 4, shortlistedToday: 1, directorToday: 0, sentToday: 0, sentYesterday: 3 },
   ],
 };
+
+/** What an admin asks about a person (21 Nov 2026): look into their work, view their screens, or step back. */
+export type AdminAsk = { kind: "stop" } | { kind: "view" | "report"; name: string };
+const clean = (n: string) => n.replace(/['’]s\b.*$/i, "").replace(/\b(today|now|please|exactly|account|screen|view|ui)\b/gi, "").replace(/[?.!]/g, "").trim();
+export function readAdminAsk(text: string): AdminAsk | null {
+  const t = text.trim();
+  if (/^(back to me|stop viewing|exit (the )?view|view as me|go back to (my|me))/i.test(t)) return { kind: "stop" };
+  const view = t.match(/\b(?:log ?in|login|access|view|see|show me|open)\b.*?\b(?:as|like)\s+(.+)$/i) ?? t.match(/\bshow me\s+(.+?)['’]?s\s+(?:view|screen|ui|pipeline|day|work)/i) ?? t.match(/^(.+?)['’]s\s+(?:view|screen|ui)\b/i);
+  if (view && clean(view[1]).length > 1) return { kind: "view", name: clean(view[1]) };
+  const rep = t.match(/\bwhat\s+(?:did|has|is|does)\s+(.+?)\s+(?:do|done|doing|did)\b/i) ?? t.match(/\b(?:check|status of|how is|how's|diagnose|look into|what about)\s+(.+)$/i) ?? t.match(/^(.+?)['’]s\s+(?:work|day|activity|workday|last)/i);
+  if (rep && clean(rep[1]).length > 1) return { kind: "report", name: clean(rep[1]) };
+  return null;
+}

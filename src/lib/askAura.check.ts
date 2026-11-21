@@ -1,5 +1,5 @@
 // Run: node src/lib/askAura.check.ts
-import { dayAnswer, readAsk, SAMPLE_DAY } from "./askAura.ts";
+import { readAdminAsk, dayAnswer, readAsk, SAMPLE_DAY } from "./askAura.ts";
 const eq = (l: string, a: unknown, b: unknown) => {
   if (JSON.stringify(a) !== JSON.stringify(b)) {
     console.error("FAIL", l, JSON.stringify(a), JSON.stringify(b));
@@ -26,4 +26,12 @@ eq("shortlisted answer", dayAnswer(SAMPLE_DAY, "shortlisted").say, "You shortlis
 eq("overview without a workday", dayAnswer(SAMPLE_DAY, "overview").say, "Your workday has not started yet.");
 eq("searches answer is honest", dayAnswer(SAMPLE_DAY, "searches").say.startsWith("I do not count"), true);
 eq("searches counted", dayAnswer({ ...SAMPLE_DAY, totals: { ...SAMPLE_DAY.totals, searchesToday: 4 } }, "searches").say, "You ran 4 database searches today.");
+const j = (x: unknown) => JSON.stringify(x);
+eq("admin: log in as", j(readAdminAsk("Please log in as Samira")), j({ kind: "view", name: "Samira" }));
+eq("admin: access as", j(readAdminAsk("access as Samira Perera?")), j({ kind: "view", name: "Samira Perera" }));
+eq("admin: her view", j(readAdminAsk("show me Samira's view")), j({ kind: "view", name: "Samira" }));
+eq("admin: what did she do", j(readAdminAsk("What did Samira do today?")), j({ kind: "report", name: "Samira" }));
+eq("admin: check", j(readAdminAsk("check Nimal's day")), j({ kind: "report", name: "Nimal" }));
+eq("admin: back", j(readAdminAsk("back to me")), j({ kind: "stop" }));
+eq("admin: a normal question is not read", readAdminAsk("how many shortlisted today"), null);
 console.log("askAura: all checks pass");

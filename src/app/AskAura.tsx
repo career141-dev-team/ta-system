@@ -10,10 +10,11 @@ import { SearchSteps, useSteps } from "./SearchSteps";
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { door, useDoorAction, useDoorQuery, type AuraReply } from "@/lib/backend";
+import { door, ROLE_OF, useDoorAction, useDoorClient, useDoorQuery, type AuraReply } from "@/lib/backend";
+import { setViewed } from "@/lib/viewAs";
 import { useSignedInPerson } from "@/lib/role";
 import { petSay } from "@/lib/pet";
-import { dayAnswer, readAsk, SAMPLE_DAY, type MyDay, type Row } from "@/lib/askAura";
+import { dayAnswer, readAdminAsk, readAsk, SAMPLE_DAY, type MyDay, type Row } from "@/lib/askAura";
 
 export type Asked = { asked: string; busy?: boolean; say?: string; rows?: Row[] };
 type DayRead = ({ ok: true } & MyDay) | { ok: false; message: string } | undefined;
@@ -25,7 +26,20 @@ type HomeReply = { ok: true; reply: { say: string; rows: { main: string; meta?: 
 // openings are active" was answered from her own empty TA desk).
 const DESK_ROLE: Partial<Record<string, "Lead" | "Director" | "Ops">> = { Lead: "Lead", Admin: "Lead", Director: "Director", Ops: "Ops" };
 
+type Report =
+  | { ok: false; message: string }
+  | { ok: true; several: { id: string; name: string }[] }
+  | {
+      ok: true;
+      person: { id: string; name: string; role: string; active: boolean };
+      workday: { date: string; startedAt: number; finishedAt: number | null; positions: number; closure: string | null } | null;
+      unticked: { position: string; label: string }[];
+      actions: { at: string; action: string; what: string }[];
+    };
+const clock = (ms: number) => new Date(ms).toLocaleTimeString("en-GB", { timeZone: "Asia/Colombo", hour: "2-digit", minute: "2-digit" });
+
 export function useAsk(onLeave?: () => void) {
+  const client = useDoorClient();
   const person = useSignedInPerson();
   const signed = person !== null;
   const deskRole = person ? DESK_ROLE[person.role] : undefined;
@@ -39,6 +53,44 @@ export function useAsk(onLeave?: () => void) {
   const run = async (text: string) => {
     const t = text.trim();
     if (!t) return;
+    // An admin's own questions about a person (21 Nov): what they did, or open their screens read only.
+    const adm = person?.role === "Admin" ? readAdminAsk(t) : null;
+    if (adm) {
+      if (adm.kind === "stop") {
+        setViewed(null);
+        setAnswer({ asked: t, say: "Back on your own view." });
+        return;
+      }
+      setAnswer({ asked: t, busy: true });
+      try {
+        const r = (await client?.query(door.report, { name: adm.name })) as Report | undefined;
+        if (!r) throw new Error("no answer");
+        if (!r.ok) setAnswer({ asked: t, say: r.message });
+        else if ("several" in r) setAnswer({ asked: t, say: "Which one do you mean?", rows: r.several.map((p) => ({ main: p.name, meta: `Say "${adm.kind === "view" ? "log in as" : "check"} ${p.name}"` })) });
+        else if (adm.kind === "view") {
+          setViewed({ id: r.person.id, name: r.person.name, role: ROLE_OF[r.person.role] ?? "TA" });
+          setAnswer({ asked: t, say: `Now viewing as ${r.person.name}. It is read only - say "back to me" to leave.` });
+          onLeave?.();
+          router.push("/today");
+        } else {
+          const w = r.workday;
+          const say = !w
+            ? `${r.person.name} has no workday on record.`
+            : `${r.person.name}: workday ${w.date} ${w.finishedAt ? `finished ${clock(w.finishedAt)}${w.closure === "expired" ? " (expired, not ended by them)" : ""}` : `started ${clock(w.startedAt)}, not finished`}, ${w.positions} position${w.positions === 1 ? "" : "s"}.${r.person.active ? "" : " This account is deactivated."}`;
+          setAnswer({
+            asked: t,
+            say: `${say} Say "log in as ${r.person.name}" to see their screens.`,
+            rows: [
+              ...r.unticked.map((u) => ({ main: `Not done: ${u.label}`, meta: u.position })),
+              ...r.actions.map((a) => ({ main: `${a.action} - ${a.what}`, meta: a.at.slice(0, 16).replace("T", " ") })),
+            ],
+          });
+        }
+      } catch {
+        setAnswer({ asked: t, say: "I could not read that just now. Try again." });
+      }
+      return;
+    }
     const route = readAsk(t, day?.positions ?? []);
     if (route.kind === "open" || route.kind === "search") {
       const href = route.kind === "open" ? route.path : `/database?q=${encodeURIComponent(route.q)}`;
