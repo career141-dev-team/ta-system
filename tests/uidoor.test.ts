@@ -476,5 +476,33 @@ eq("access: only a TA is offered openings to ask for", acc.includes('["ta", "ta_
   eq("track: rows read by date index, never the whole table", src.includes('withIndex("by_date"') && !src.includes('query("taTrackingRows").collect()'), true);
 }
 
+
+// ── View as (21 Nov): an admin reads as another person, never writes as them ──
+{
+  // Every function that takes `as` must be a query; a mutation or action taking it would let an admin write as a TA.
+  let viewAsOnWrites = 0;
+  for (const f of files) {
+    const src = read(`${dir}/${f}`);
+    for (const block of src.split(/export const \w+ = (?=query|mutation|action)/).slice(1)) {
+      if (/^(mutation|action)\(/.test(block) && /as: v\.optional\(v\.string\(\)\)/.test(block.split("handler")[0])) viewAsOnWrites++;
+    }
+  }
+  eq("view as: no mutation or action accepts `as`", viewAsOnWrites, 0);
+  eq("view as: only an admin may use it", read("convex/ui/me.ts").includes('real.role !== "admin"'), true);
+  const { peopleNamed, personIn } = await import("../convex/ui/adminView");
+  const u = (name: string, isActive = true) => ({ fullName: name, email: `${name.split(" ")[0].toLowerCase()}@c.com`, isActive }) as never;
+  eq("peopleNamed: every word must match", (peopleNamed([u("Samira Perera"), u("Samira Khan")], "samira perera") as { fullName: string }[]).map((p) => p.fullName), ["Samira Perera"]);
+  eq("peopleNamed: active first", (peopleNamed([u("Sam Old", false), u("Sam New")], "sam") as { fullName: string }[]).map((p) => p.fullName), ["Sam New", "Sam Old"]);
+  eq("peopleNamed: nothing for a blank ask", peopleNamed([u("Sam")], " "), []);
+  const ppl = [{ id: "1", name: "Samira Perera" }, { id: "2", name: "Nimal Silva" }, { id: "3", name: "Samira Khan" }];
+  eq("personIn: a full name", personIn("why is samira perera stuck", ppl), ppl[0]);
+  eq("personIn: a first name two people share is not guessed", personIn("what did samira do", ppl), "many");
+  eq("personIn: a first name only one has", personIn("what did Nimal do", ppl), ppl[1]);
+  eq("personIn: nobody named", personIn("what is stuck", ppl), null);
+  const ask = read("convex/ui/adminAsk.ts");
+  eq("adminAsk: admin only, before any AI call", ask.indexOf('me.role !== "admin"') > 0 && ask.indexOf('me.role !== "admin"') < ask.indexOf("getAnthropicClient(TIMEOUT_MS)"), true);
+  eq("adminAsk: writes only its own ledger row", (ask.match(/runMutation\(/g) ?? []).length === 1 && ask.includes("internal.ui.auraLedger.record"), true);
+}
+
 console.log(`\nuidoor: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
