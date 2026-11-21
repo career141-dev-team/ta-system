@@ -32,6 +32,8 @@ import { useJdApproved } from "./jdState";
 import { BackButton } from "./PipelineBoard";
 import Toast from "./Toast";
 import { useOpeningView } from "./view";
+import { jobFromAddress, useLive } from "@/lib/backend";
+import { refineSnippet, useSnippet, type SnipFields } from "./snippetLive";
 
 // The Snippets view (Figma 713:1721): the role as a 1080 x 1080 social card - made
 // here, live, so the colour, font, size and underline change it - with the buttons to
@@ -116,6 +118,17 @@ const START: Snip = {
 };
 
 type Contact = { ta: string; email: string; phone: string };
+
+/** A real opening's card fields (R6) as the drawn card's parts. */
+function snipOf(f: Omit<SnipFields, "email" | "mobile" | "jobTitle">, cur: Snip): Partial<Snip> {
+  return {
+    line1: (f.titleLead ?? "").slice(0, 60),
+    line2: (f.titleMain ?? "").toUpperCase().slice(0, 40),
+    sector: (f.industry || f.company || "").slice(0, 30),
+    facts: [f.location, f.company || f.industry, f.package, f.gender || "Open"].map((x, i) => (x || cur.facts[i] || "").slice(0, 40)),
+    bullets: f.bullets.length ? f.bullets.slice(0, 4) : cur.bullets,
+  };
+}
 
 // ---- Drawing. One function paints the card, on screen and for the PNG, so what is
 // seen is what is downloaded. Laid out in the design's 660-wide space (the preview's
@@ -415,8 +428,22 @@ const Icon = ({ d, className }: { d: string; className: string }) => (
 /** The Snippets view: the card, its controls, and the chat that changes it. */
 export default function SnippetsView() {
   // The card is made from the approved JD: the opening's one flag (jdState).
-  const JD_APPROVED = useJdApproved();
+  const sampleApproved = useJdApproved();
   const [s, setS] = useState(START);
+  // Signed in (R6, 21 Nov): the opening's own card from the TA System; the refine is real.
+  const live = useLive();
+  const job = live ? jobFromAddress() : null;
+  const real = useSnippet(live, job);
+  const [busy, setBusy] = useState(false);
+  const [filled, setFilled] = useState<string | null>(null);
+  if (live && real?.ok && real.fields && filled !== job) {
+    const f = real.fields;
+    const level = levelOf(f.jobTitle);
+    setFilled(job);
+    setS((x) => ({ ...x, ...snipOf(f, x), level, colour: LEVELS[level].colour, email: f.email || undefined, phone: f.mobile || undefined }));
+  }
+  const JD_APPROVED = live ? !!(real?.ok && real.approved) : sampleApproved;
+  const canSource = live ? !(real && !real.ok) : CAN_SOURCE;
   const me = useMe();
   // The signed-in person's own contact; placeholder email and phone (sample on a public link).
   const who: Contact = { ta: me.first, email: s.email ?? `${me.first.toLowerCase()}@career141.com`, phone: s.phone ?? "+94 77 000 0000" };
@@ -486,7 +513,27 @@ export default function SnippetsView() {
     }
   };
 
+  /** The real refine: every label polished, requirements made short (old /api/snippet/refine). */
+  const polish = async (said?: string) => {
+    if (busy) return;
+    setBusy(true);
+    if (said) setMsgs((m) => [...m, { who: "you", text: said, tags: sel.length ? sel : undefined }]);
+    const r = await refineSnippet({
+      titleLead: s.line1, titleMain: s.line2, industry: s.sector, location: s.facts[0], company: s.facts[1], package: s.facts[2],
+      gender: s.facts[3], bullets: s.bullets, level: LEVELS[s.level].short,
+    });
+    setBusy(false);
+    if (!r.ok) {
+      setMsgs((m) => [...m, { who: "aura", text: r.message }]);
+      return;
+    }
+    setS((x) => ({ ...x, ...snipOf(r.data, x) }));
+    setMsgs((m) => [...m, { who: "aura", text: "Polished the wording - title, facts and requirements. Say what to change if any of it is not right." }]);
+  };
+
   const send = (text: string) => {
+    // Rewording in general goes to the real refine; colour, font, size and picked-part edits stay instant.
+    if (live && /\b(polish|refine|punch(y|ier)?|improve|reword|rewrite|better wording|fix (the )?(spelling|wording|typos?))\b/i.test(text)) return void polish(text);
     const { patch, reply } = ask(text, s, sel);
     if (patch.body === BIGGER || patch.body === SMALLER) patch.body = Math.min(40, Math.max(16, s.body + (patch.body === BIGGER ? 2 : -2)));
     setS((x) => ({ ...x, ...patch }));
@@ -494,15 +541,22 @@ export default function SnippetsView() {
   };
 
   const step = (d: number) => setS((x) => ({ ...x, body: Math.min(40, Math.max(16, x.body + d)) }));
-  if (!CAN_SOURCE || !JD_APPROVED)
+  if (live && !real)
+    return (
+      <div className="flex flex-1 flex-col px-[max(1.5rem,14px)] pt-[max(1.4rem,14px)] max-md:pt-11">
+        <BackButton />
+        <p className="m-auto text-body text-ink-3">Reading the opening…</p>
+      </div>
+    );
+  if (!canSource || !JD_APPROVED)
     return (
       <div className="flex flex-1 flex-col px-[max(1.5rem,14px)] pt-[max(1.4rem,14px)] max-md:pt-11">
         <BackButton />
         <div className="m-auto flex flex-col items-center gap-3 text-center">
           <p className="text-body text-ink-2">
-            {!CAN_SOURCE ? "Snippets are made by the TAs who source for this job." : "The JD has not been approved yet. The card is made from it."}
+            {!canSource ? (real && !real.ok ? real.message : "Snippets are made by the TAs who source for this job.") : "The JD has not been approved yet. The card is made from it."}
           </p>
-          {CAN_SOURCE && (
+          {canSource && (
             <button type="button" onClick={() => go("jd")} className="text-small font-medium text-brand hover:underline">
               Write the JD
             </button>
@@ -568,11 +622,11 @@ export default function SnippetsView() {
         </div>
 
         <div className="flex min-w-0 flex-col gap-6 self-stretch md:max-w-[52.375rem] md:flex-1">
-          <button type="button" onClick={nextVersion} className="flex items-center gap-2.5 rounded-md bg-violet-soft px-4 py-3 text-left transition-colors hover:bg-surface-3">
+          <button type="button" onClick={() => (live ? void polish() : nextVersion())} disabled={busy} className="flex items-center gap-2.5 rounded-md bg-violet-soft px-4 py-3 text-left transition-colors hover:bg-surface-3">
             <svg viewBox="0 0 24 24" fill="currentColor" className="size-[max(1rem,14px)] shrink-0 text-violet" aria-hidden="true">
               <path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16z" />
             </svg>
-            <span className="text-small font-medium text-violet">Make it punchier with AURA</span>
+            <span className="text-small font-medium text-violet">{busy ? "AURA is polishing…" : "Make it punchier with AURA"}</span>
             <span className={CAPTION + " ml-auto"}>{s.version ? `Version ${s.version + 1} of ${VERSIONS.length}` : `${VERSIONS.length} versions`}</span>
           </button>
 
