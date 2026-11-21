@@ -6,6 +6,7 @@
 // Review waiting, JD approved, a live LinkedIn post, and this person's strategies.
 // Bounded: at most 30 positions, every count capped, no CV text or embeddings.
 
+import { v } from "convex/values";
 import { query } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { isGone } from "../../src/lib/bin";
@@ -27,11 +28,11 @@ const money = (j: Doc<"jobs">) => {
 };
 
 export const desk = query({
-  args: {},
-  handler: async (ctx): Promise<{ ok: false; message: string } | { ok: true; positions: DeskPosition[] }> => {
+  args: { as: v.optional(v.string()) },
+  handler: async (ctx, args): Promise<{ ok: false; message: string } | { ok: true; positions: DeskPosition[] }> => {
     let user: Doc<"users">;
     try {
-      user = await uiUser(ctx);
+      user = await uiUser(ctx, args.as);
     } catch (error) {
       return { ok: false, message: error instanceof NotSignedIn ? error.message : "Could not check who you are." };
     }

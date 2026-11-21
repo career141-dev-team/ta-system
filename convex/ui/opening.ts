@@ -26,10 +26,10 @@ const refused = (message: string) => ({ ok: false as const, message });
 type Refused = { ok: false; message: string };
 
 /** The person and the opening, or the sentence that stops the screen. */
-async function openFor(ctx: QueryCtx, openingId: string): Promise<Refused | { ok: true; user: Doc<"users">; job: Doc<"jobs">; jobId: Id<"jobs"> }> {
+async function openFor(ctx: QueryCtx, openingId: string, viewAs?: string): Promise<Refused | { ok: true; user: Doc<"users">; job: Doc<"jobs">; jobId: Id<"jobs"> }> {
   let user: Doc<"users">;
   try {
-    user = await uiUser(ctx);
+    user = await uiUser(ctx, viewAs);
   } catch (error) {
     return refused(error instanceof NotSignedIn ? error.message : "Could not check who you are.");
   }
@@ -59,9 +59,9 @@ type OpeningRow = Record<string, unknown> & {
 
 /** The opening page, the JD screen and the Automations panel: one read. */
 export const summary = query({
-  args: { openingId: v.string() },
+  args: { openingId: v.string(), as: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const o = await openFor(ctx, args.openingId);
+    const o = await openFor(ctx, args.openingId, args.as);
     if (!o.ok) return o;
     const row = (await ctx.runQuery(internal.ta.openings.get, { actorId: o.user._id, openingId: o.jobId })) as OpeningRow | null;
     if (!row) return refused("That opening no longer exists.");
@@ -113,9 +113,9 @@ const card = (a: Doc<"applications">, c: Doc<"candidates"> | null) => ({
 
 /** Scoop CVs on this opening, newest first. */
 export const scoops = query({
-  args: { openingId: v.string(), limit: v.optional(v.number()) },
+  args: { openingId: v.string(), limit: v.optional(v.number()), as: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const o = await openFor(ctx, args.openingId);
+    const o = await openFor(ctx, args.openingId, args.as);
     if (!o.ok) return o;
     // ponytail: the newest 400 rows of the opening, scoops picked from them.
     // An opening with more than 400 applications since its oldest scoop
@@ -131,9 +131,9 @@ export const scoops = query({
 
 /** One LinkedIn post's applicants, newest first. */
 export const postApplicants = query({
-  args: { openingId: v.string(), postId: v.string(), limit: v.optional(v.number()) },
+  args: { openingId: v.string(), postId: v.string(), limit: v.optional(v.number()), as: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const o = await openFor(ctx, args.openingId);
+    const o = await openFor(ctx, args.openingId, args.as);
     if (!o.ok) return o;
     const postId = ctx.db.normalizeId("jobPosts", args.postId);
     const post = postId ? await ctx.db.get(postId) : null;
@@ -147,9 +147,9 @@ export const postApplicants = query({
 
 /** Database CVs: what matching last found for this opening. */
 export const matches = query({
-  args: { openingId: v.string() },
+  args: { openingId: v.string(), as: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const o = await openFor(ctx, args.openingId);
+    const o = await openFor(ctx, args.openingId, args.as);
     if (!o.ok) return o;
     const found = (await ctx.runQuery(internal.ta.matching.reverseMatchResults, { actorId: o.user._id, openingId: o.jobId })) as
       | { status: string | null; matchedAt: string | null; results: { cvId: string; overallScore: number; reason: string }[] }
@@ -182,9 +182,9 @@ export const matches = query({
 
 /** Strategies on this opening: all for a lead, a director or admin; your own for a TA. */
 export const strategies = query({
-  args: { openingId: v.string() },
+  args: { openingId: v.string(), as: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const o = await openFor(ctx, args.openingId);
+    const o = await openFor(ctx, args.openingId, args.as);
     if (!o.ok) return o;
     const me = o.user._id as string;
     const all = isDeskWideUser(o.user);

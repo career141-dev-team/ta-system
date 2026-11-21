@@ -32,6 +32,7 @@ const ALLOWED_PUBLIC = new Set<string>([
   // The new UI's door (18 Nov). No actorId: the person is the verified Clerk
   // identity (convex/ui/me.ts uiUser), and every write calls the internal
   // rule with that person's id. tests/uidoor.test.ts holds both.
+  "ui/adminView:report",
   "ui/me:whoAmI",
   "ui/pipeline:board",
   "ui/pipeline:move",

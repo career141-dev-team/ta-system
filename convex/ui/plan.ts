@@ -19,9 +19,9 @@ import { arm, closePlan } from "./planRemind";
 type Refused = { ok: false; message: string };
 const refused = (message: string): Refused => ({ ok: false, message });
 
-async function who(ctx: QueryCtx | MutationCtx): Promise<Refused | { ok: true; user: Doc<"users"> }> {
+async function who(ctx: QueryCtx | MutationCtx, viewAs?: string): Promise<Refused | { ok: true; user: Doc<"users"> }> {
   try {
-    return { ok: true, user: await uiUser(ctx) };
+    return { ok: true, user: await uiUser(ctx, viewAs) };
   } catch (error) {
     return refused(error instanceof NotSignedIn ? error.message : "Could not check who you are.");
   }
@@ -75,9 +75,9 @@ async function carriedFrom(ctx: QueryCtx | MutationCtx, userId: Id<"users">, dat
 
 /** Today's plan, or null when there is none yet. */
 export const today = query({
-  args: {},
-  handler: async (ctx) => {
-    const w = await who(ctx);
+  args: { as: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const w = await who(ctx, args.as);
     if (!w.ok) return w;
     const date = workdayDate(Date.now());
     const plan = await planOf(ctx, w.user._id, date);

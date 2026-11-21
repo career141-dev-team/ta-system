@@ -51,11 +51,12 @@ export const board = query({
     stages: v.optional(v.array(v.string())),
     /** Cards per column; 25 when left out, 200 at most. */
     limit: v.optional(v.number()),
+    as: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     let user: Doc<"users">;
     try {
-      user = await uiUser(ctx);
+      user = await uiUser(ctx, args.as);
     } catch (error) {
       return refused(error instanceof NotSignedIn ? error.message : "Could not check who you are.");
     }

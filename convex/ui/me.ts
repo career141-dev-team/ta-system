@@ -28,7 +28,20 @@ import { matchableEmail } from "./rules";
 export class NotSignedIn extends Error {}
 
 /** The signed-in person on the desk, or a sentence saying why not. */
-export async function uiUser(ctx: QueryCtx | MutationCtx): Promise<Doc<"users">> {
+export async function uiUser(ctx: QueryCtx | MutationCtx, viewAs?: string): Promise<Doc<"users">> {
+  const real = await signedIn(ctx);
+  if (!viewAs || viewAs === (real._id as string)) return real;
+  // View as (21 Nov): an admin reads the screens as another person. Only READ queries pass
+  // `viewAs` (no mutation takes it), so nothing is ever written as someone else. Anyone but
+  // an admin asking is refused, never silently shown their own data.
+  if (real.role !== "admin") throw new NotSignedIn("Only an admin can view as another person.");
+  const id = ctx.db.normalizeId("users", viewAs);
+  const target = id ? await ctx.db.get(id) : null;
+  if (!target) throw new NotSignedIn("That person is not on the desk.");
+  return target;
+}
+
+async function signedIn(ctx: QueryCtx | MutationCtx): Promise<Doc<"users">> {
   const identity = await ctx.auth.getUserIdentity();
   if (!identity) throw new NotSignedIn("Sign in to continue.");
 

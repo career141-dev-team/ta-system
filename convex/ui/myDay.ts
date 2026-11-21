@@ -8,6 +8,7 @@
 // today and the CVs their accepted emails sent the Director today and yesterday.
 // Read only, own data only, bounded (30 positions, 100 rows per count).
 
+import { v } from "convex/values";
 import { query } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { isGone } from "../../src/lib/bin";
@@ -25,11 +26,11 @@ const DAY = 86_400_000;
 const sentOn = (rows: Doc<"dailyEmails">[]) => rows.filter((e) => e.status === "accepted" && !e.parentId).reduce((n, e) => n + e.applicationIds.length, 0);
 
 export const today = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { as: v.optional(v.string()) },
+  handler: async (ctx, args) => {
     let user: Doc<"users">;
     try {
-      user = await uiUser(ctx);
+      user = await uiUser(ctx, args.as);
     } catch (error) {
       return { ok: false as const, message: error instanceof NotSignedIn ? error.message : "Could not check who you are." };
     }

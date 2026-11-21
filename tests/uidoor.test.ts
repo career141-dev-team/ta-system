@@ -415,7 +415,7 @@ eq("send: the ChatGPT rule is kept", sendSrc.includes("checkResearchSubmission")
 
   // "How is my work today?" (20 Nov): the pet's Ask box answers from the person's own day.
   const myDaySrc = read("convex/ui/myDay.ts");
-  eq("myDay: asks who you are first", myDaySrc.indexOf("uiUser(ctx)") > 0 && myDaySrc.indexOf("uiUser(ctx)") < myDaySrc.indexOf("ctx.db"), true);
+  eq("myDay: asks who you are first", myDaySrc.indexOf("uiUser(ctx, args.as)") > 0 && myDaySrc.indexOf("uiUser(ctx, args.as)") < myDaySrc.indexOf("ctx.db"), true);
   eq("myDay: read only", /ctx\.db\.(patch|insert|delete|replace)/.test(myDaySrc), false);
   eq("myDay: bounded reads, no collect", /\.collect\(\)/.test(myDaySrc), false);
   eq("myDay: only the person's own shortlists, Director moves and emails", myDaySrc.includes('eq("ownerTaId", me)') && myDaySrc.includes("a.ownerTaId === me") && (myDaySrc.match(/eq\("userId", me\)/g) ?? []).length >= 4, true);
