@@ -10,6 +10,8 @@ import { useMe, worksADay } from "@/lib/role";
 import Toast from "../openings/[id]/Toast";
 import { Veil } from "../TopMenus";
 import { KIND, setItems, titleOf, useItems, whereIs, type Kind } from "./data";
+import { useLive } from "@/lib/backend";
+import { sendFeedback, uploadFeedbackFile, useFeedbackLive, useRights } from "./feedbackLive";
 
 // F1 "Tell us" (owner's design, 14 Nov 2026), opened from the person's menu on any
 // page: something broke, an idea, or a question, in your own words (or a voice note);
@@ -52,6 +54,13 @@ export default function TellUs({ onClose }: { onClose: () => void }) {
   const me = useMe();
   const first = me.first;
   const ta = worksADay(me.role);
+  // Live (R2, 20 Nov): sent through the old desk's own submit; "Your recent" is your own rows.
+  const live = useLive();
+  useFeedbackLive(live);
+  const rights = useRights();
+  const [busy, setBusy] = useState(false);
+  const shotFile = useRef<File | null>(null);
+  const voiceBlob = useRef<Blob | null>(null);
   const [kind, setKind] = useState<Kind>("broke");
   const [text, setText] = useState("");
   const [shot, setShot] = useState<string | null>(null);
@@ -90,6 +99,7 @@ export default function TellUs({ onClose }: { onClose: () => void }) {
     if (!f.type.startsWith("image/")) return setErr("A screenshot must be a picture (PNG, JPG, WebP or GIF).");
     if (f.size > SHOT_MAX) return setErr("That screenshot is over 3 MB. Choose a smaller one.");
     setErr("");
+    shotFile.current = f;
     setShot((old) => {
       if (old) URL.revokeObjectURL(old);
       return URL.createObjectURL(f);
@@ -112,6 +122,7 @@ export default function TellUs({ onClose }: { onClose: () => void }) {
         stream.getTracks().forEach((t) => t.stop());
         const blob = new Blob(parts, { type: m.mimeType || "audio/webm" });
         if (blob.size > VOICE_MAX_B) return setErr("That voice note is over 10 MB. Record a shorter one.");
+        voiceBlob.current = blob;
         setVoice(URL.createObjectURL(blob));
       };
       m.start();
@@ -125,8 +136,35 @@ export default function TellUs({ onClose }: { onClose: () => void }) {
   };
 
   const ready = !!text.trim() || !!voice;
+  const sendLive = async () => {
+    setBusy(true);
+    setErr("");
+    let screenshot: string | undefined;
+    let voiceNote: string | undefined;
+    if (shot && shotFile.current) {
+      const r = await uploadFeedbackFile("shot", shotFile.current);
+      if (!r.ok) return setBusy(false), setErr(r.message);
+      screenshot = r.id;
+    }
+    if (voice && voiceBlob.current) {
+      const r = await uploadFeedbackFile("voice", voiceBlob.current);
+      if (!r.ok) return setBusy(false), setErr(r.message);
+      voiceNote = r.id;
+    }
+    const r = await sendFeedback({ do: "send", kind, text: text.trim(), blocks, page: withPage && path !== "/feedback" ? pageName(path) : "", screenshot, voiceNote });
+    setBusy(false);
+    if (!r.ok) return setErr(r.message ?? "It could not be sent. Try again.");
+    setText("");
+    setShot(null);
+    setVoice(null);
+    shotFile.current = null;
+    voiceBlob.current = null;
+    setBlocks(false);
+    setToast({ key: Date.now(), bold: "Sent", rest: ta ? " — your lead sees it first" : " — it is with the builders" });
+  };
   const send = () => {
-    if (!ready || recording) return;
+    if (!ready || recording || busy) return;
+    if (live) return void sendLive();
     const title = titleOf(text, !!voice);
     setItems((all) => [
       {
@@ -153,7 +191,7 @@ export default function TellUs({ onClose }: { onClose: () => void }) {
     setToast({ key: Date.now(), bold: "Sent", rest: ta ? " — your lead sees it first" : " — it is with the builders" });
   };
 
-  const mine = items.filter((x) => x.by === first).slice(0, 3);
+  const mine = items.filter((x) => (live ? !!rights && x.byId === rights.me : x.by === first)).slice(0, 3);
   const waiting = items.filter((x) => x.status === "new").length;
   const mmss = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
@@ -281,11 +319,11 @@ export default function TellUs({ onClose }: { onClose: () => void }) {
           <button
             type="button"
             onClick={send}
-            disabled={!ready || recording}
+            disabled={!ready || recording || busy}
             title={ready ? "Send (Ctrl+Enter)" : "Write what happened, or record a voice note"}
             className="ml-auto rounded-full bg-ink px-[max(1.75rem,18px)] py-[max(0.875rem,9px)] text-body font-medium text-white hover:bg-black disabled:opacity-40"
           >
-            Send
+            {busy ? "Sending…" : "Send"}
           </button>
         </div>
 

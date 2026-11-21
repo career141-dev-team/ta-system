@@ -29,6 +29,8 @@ export type Item = {
   outcome?: Outcome;
   version?: string;
   answer?: string;
+  /** Live: the sender's id (a TA's own list), from the TA System. */
+  byId?: string;
 };
 
 export const KIND: Record<Kind, { label: string; chip: string; ask: string }> = {

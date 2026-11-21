@@ -10,6 +10,8 @@ import PillMenu from "../openings/[id]/PillMenu";
 import { useFilters, matchesAll } from "@/lib/filters";
 import { SearchField } from "../FilterBits";
 import { COLUMNS, KIND, meta, setItems, update, useItems, type Item } from "./data";
+import { useLive } from "@/lib/backend";
+import { sendFeedback, useFeedbackError, useFeedbackLive, useMedia, useRights } from "./feedbackLive";
 
 // F2, the Feedback & support board (owner's design, 14 Nov 2026) for a TA Lead,
 // Director or Admin (old system's FeedbackDesk). New → Lead review → With the
@@ -37,10 +39,19 @@ export default function FeedbackBoard() {
   // a lead, Director or Ops person sees everyone's and moves them on.
   const role = useRole();
   useSignedInPerson(); // the signed-in name, when it arrives
-  const lead = role === "Lead" || role === "Admin" || role === "Director";
+  // Live (R2, 20 Nov): the old /feedback desk decides what is shown and who may do what -
+  // a lead or Director reviews, an admin or Director works what the builders hold.
+  const live = useLive();
+  useFeedbackLive(live);
+  const rights = useRights();
+  const failed = useFeedbackError();
+  const lead = live ? !!rights && (rights.canLead || rights.canBuild || rights.canDelete) : role === "Lead" || role === "Admin" || role === "Director";
+  const canDecide = live ? !!rights?.canLead : lead;
+  const canFix = live ? !!rights?.canBuild : lead;
+  const canDelete = live ? !!rights?.canDelete : lead;
   const me = personOf(role).name.split(" ")[0];
   const all = useItems();
-  const mine = lead ? all : all.filter((x) => x.by === me);
+  const mine = live ? all : lead ? all : all.filter((x) => x.by === me);
   // Search, kind, who sent it and "blocks my work" are kept for the visit; Reset clears them.
   const { f, set, reset, active } = useFilters("feedback", { q: "", kind: "", by: "", blocking: false as boolean });
   const senders = [...new Set(mine.map((x) => x.by))].sort();
@@ -73,9 +84,17 @@ export default function FeedbackBoard() {
   const tell = (x: Item, title: string, body: string) => {
     if (x.by === me) pushAlert({ icon: "chat", title, body, href: "/today", needs: false });
   };
+  // Live: one old action, its answer said, the desk read again (and the cards glide).
+  const run = (x: Item, body: Record<string, unknown>, say: string) => {
+    setOpen(null);
+    setMode(null);
+    setWords("");
+    void sendFeedback(body).then((r) => setToast({ key: ++seq.current, bold: x.title, rest: r.ok ? ` — ${say}` : ` — ${r.message ?? "could not be saved"}` }));
+  };
   const close = (x?: Item) => {
-    // Opened and left undecided: it is being looked at.
-    if (lead && x?.status === "new") glide(() => update(x.id, { status: "review" }));
+    // Opened and left undecided: it is being looked at (live: marked read for you).
+    if (live && x?.status === "new") void sendFeedback({ do: "read", ids: [x.id] });
+    else if (lead && x?.status === "new") glide(() => update(x.id, { status: "review" }));
     setOpen(null);
     setMode(null);
     setWords("");
@@ -88,10 +107,20 @@ export default function FeedbackBoard() {
     setToast({ key: ++seq.current, bold: x.title, rest: ` — ${say}` });
   };
   const pass = (x: Item) => {
+    if (live) return run(x, { do: "lead", id: x.id, decision: "builders" }, "passed to the builders");
     act(x, { status: "builders" }, "passed to the builders");
     tell(x, "Your feedback is with the builders", x.title);
   };
   const finish = (x: Item) => {
+    if (live) {
+      const notes = words.trim();
+      if (mode === "fix") return run(x, { do: "admin", id: x.id, status: "fixed", notes: notes ? `Fixed in ${notes}` : "" }, "marked fixed");
+      if (mode === "answer") return run(x, { do: "lead", id: x.id, decision: "answered", notes }, "answered");
+      // Not doing it: the lead's word while it waits for review, the builders' once they hold it.
+      return x.status === "builders"
+        ? run(x, { do: "admin", id: x.id, status: "declined", notes }, "closed — not doing it")
+        : run(x, { do: "lead", id: x.id, decision: "declined", notes }, "closed — not doing it");
+    }
     if (mode === "fix") {
       act(x, { status: "done", outcome: "fixed", version: words.trim() || x.version }, "marked fixed");
       tell(x, "Fixed: " + x.title, words.trim() ? `In ${words.trim()}` : "It is fixed");
@@ -119,9 +148,12 @@ export default function FeedbackBoard() {
       setWords(fix ? (x.version ?? "") : "");
       return;
     }
+    // Live, Lead review is "opened by you": the old desk keeps who has read what.
+    if (live) return void sendFeedback({ do: "read", ids: [x.id] });
     glide(() => update(x.id, { status: to }));
   };
   const remove = (x: Item) => {
+    if (live) return run(x, { do: "delete", ids: [x.id] }, "deleted");
     glide(() => setItems((all) => all.filter((y) => y.id !== x.id)));
     setOpen(null);
     setToast({ key: ++seq.current, bold: x.title, rest: " — deleted" });
@@ -147,6 +179,7 @@ export default function FeedbackBoard() {
         <button type="button" aria-pressed={f.blocking} onClick={() => set({ blocking: !f.blocking })} className={"h-[max(2.4rem,33px)] rounded-full border px-[max(1rem,13px)] text-small transition-colors " + (f.blocking ? "border-ink bg-ink text-white" : "border-border bg-surface text-ink-2 hover:text-ink")}>
           Blocks work
         </button>
+        {live && failed && <span className="text-small text-danger">{failed}</span>}
         {active > 0 && (
           <button type="button" onClick={reset} className="rounded-full px-3 py-1.5 text-small font-medium text-brand-strong hover:bg-surface-2">
             Reset filters{active > 1 ? ` (${active})` : ""} · {items.length} of {mine.length}
@@ -192,6 +225,9 @@ export default function FeedbackBoard() {
                   onFinish={() => finish(x)}
                   onDelete={() => remove(x)}
                   canAct={lead}
+                  canDecide={canDecide}
+                  canFix={canFix}
+                  canDelete={canDelete}
                 />
               ))}
               {!list.length && (
@@ -229,8 +265,14 @@ function Card(p: {
   onFinish: () => void;
   onDelete: () => void;
   canAct: boolean;
+  canDecide: boolean;
+  canFix: boolean;
+  canDelete: boolean;
 }) {
   const { x, open, mode } = p;
+  // Live, the files stay on the TA System until the card opens.
+  const shot = useMedia(open ? x.screenshot : undefined, "screenshot");
+  const voice = useMedia(open ? x.voice : undefined, "voice");
   const body = useRef<HTMLDivElement>(null);
   const [sure, setSure] = useState(false);
   // The detail unfolds under the title.
@@ -268,13 +310,13 @@ function Card(p: {
       {open && (
         <div ref={body} className="overflow-hidden">
           <p className="mt-3 whitespace-pre-line break-words rounded-sm bg-surface-2 px-3 py-2.5 text-small text-ink">{x.text || "Only a voice note."}</p>
-          {x.screenshot && (
-            <a href={x.screenshot} target="_blank" rel="noreferrer" className="mt-2.5 block" title="Open the screenshot full size">
+          {shot && (
+            <a href={shot} target="_blank" rel="noreferrer" className="mt-2.5 block" title="Open the screenshot full size">
               {/* eslint-disable-next-line @next/next/no-img-element -- the picture the sender attached */}
-              <img src={x.screenshot} alt="Screenshot sent with it" className="max-h-40 w-full rounded-sm border border-border object-cover" />
+              <img src={shot} alt="Screenshot sent with it" className="max-h-40 w-full rounded-sm border border-border object-cover" />
             </a>
           )}
-          {x.voice && <audio controls preload="none" src={x.voice} className="mt-2.5 h-9 w-full" />}
+          {voice && <audio controls preload="none" src={voice} className="mt-2.5 h-9 w-full" />}
           {x.page && (
             <p className="mt-2.5 truncate text-caption text-ink-3" title={x.page}>
               Sent from{" "}
@@ -332,7 +374,7 @@ function Card(p: {
 
       {showActions && !mode && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          {deciding && (
+          {deciding && p.canDecide && (
             <>
               <button type="button" onClick={p.onPass} className={MAIN}>
                 Pass to builders
@@ -342,17 +384,17 @@ function Card(p: {
               </button>
             </>
           )}
-          {x.status === "builders" && (
+          {x.status === "builders" && p.canFix && (
             <button type="button" onClick={() => p.onMode("fix")} className={MAIN}>
               Mark fixed
             </button>
           )}
-          {open && x.status !== "done" && (
+          {open && ((deciding && p.canDecide) || (x.status === "builders" && p.canFix)) && (
             <button type="button" onClick={() => p.onMode("decline")} className={QUIET}>
               Not doing it
             </button>
           )}
-          {open && (
+          {open && p.canDelete && (
             <button type="button" onClick={() => (sure ? p.onDelete() : setSure(true))} onBlur={() => setSure(false)} className={BTN + " ml-auto " + (sure ? "bg-danger-soft text-danger" : "text-ink-2 hover:text-danger")}>
               {sure ? "Press again to delete" : "Delete"}
             </button>
