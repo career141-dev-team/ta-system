@@ -155,15 +155,20 @@ export const desk = query({
       }),
     );
 
-    // Decisions: the roles this person leads, or the whole desk when they lead none.
-    const theirs = jobs.filter((j) => (j.taLeadId as string | undefined) === (user._id as string));
-    const decide = (theirs.length ? theirs : jobs)
+    // Decisions: the roles this person leads, or the whole desk when they lead none -
+    // and a role with no TA lead at all, which no lead's list would carry (22 Nov).
+    // "On it" is the same count the roles list draws: active TAs only, so a role whose
+    // only seat is someone who left reads "Nobody assigned" here as it reads
+    // "Unassigned" there (the lead saw 2 Unassigned roles and nothing to decide).
+    const onIt = (id: string) => (tasOf.get(id) ?? []).filter((t) => nameOf.has(t as string)).length;
+    const theirs = jobs.filter((j) => (j.taLeadId as string | undefined) === (user._id as string) || !j.taLeadId);
+    const decide = (theirs.some((j) => j.taLeadId) ? theirs : jobs)
       .map((j) => {
         const tier = (j.priorityTier ?? "") as keyof typeof PRIORITY_TARGET;
         return decisionOf({
           title: j.title,
           client: j.clientName,
-          tas: (tasOf.get(j._id as string) ?? []).length,
+          tas: onIt(j._id as string),
           jdPending: j.jdStatus === "pending_ta_approval",
           day: daysOpen(j, now),
           target: PRIORITY_TARGET[tier]?.days ?? null,
