@@ -43,8 +43,12 @@ export default async function ReportsPage({
   }>;
 }) {
   const sp = await searchParams;
-  await primeStore({ allApplications: true, alwaysFresh: true });
+  // 23 Nov: sign-in first (users only), then the warm applications. alwaysFresh
+  // reloaded every table and all ~10k applications on every sort click; a save
+  // of the viewer's own is still re-read first (staleOpening / stale marks).
+  await primeStore();
   const user = await pageUser("report.read");
+  await primeStore({ allApplications: true });
   const saved = repo.savedReports(user.id);
   const taChoiceResult = sp.askErr === "ambiguous_ta" ? resolveTaPerformanceQuestion(sp.q ?? "", repo.users()) : null;
   const taChoices = taChoiceResult?.kind === "ambiguous" ? taChoiceResult.users : [];

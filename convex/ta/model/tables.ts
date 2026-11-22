@@ -696,21 +696,7 @@ export const TABLES: Record<string, TableModel> = {
     toDoc: async (r) => ({ openingId: r.openingId, candidateId: r.candidateId, at: r.at }),
   },
 
-  aiCalls: (() => {
-    const base = identity("taScreeningCalls", ["consent", "consentAt", "consentText", "transcript", "durationSeconds", "endedAt", "failureReason"]);
-    return {
-      ...base,
-      // 23 Nov: the call transcript is the biggest field in a whole-table reload and nothing in
-      // the app reads it back (the candidate page's call results come from ta/voice:callsFor).
-      // It stays in the table and finishCall still writes it (a changed field is a patch); the
-      // in-memory copy just holds null. The commit conflict check uses this same fromDoc.
-      fromDoc: (doc) => {
-        const row = base.fromDoc(doc);
-        row.transcript = null;
-        return row;
-      },
-    };
-  })(),
+  aiCalls: identity("taScreeningCalls", ["consent", "consentAt", "consentText", "transcript", "durationSeconds", "endedAt", "failureReason"]),
   outreach: identity("taOutreach", ["to", "subject", "sentAt", "byUserId", "callOutcome", "promisedAt"]),
   alerts: identity("taAlerts", ["resolvedAt"]),
   briefs: (() => {

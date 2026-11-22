@@ -22,17 +22,22 @@ Almost every page waits on the app's in-memory copy of the desk
 | Stage | What | Status |
 |---|---|---|
 | 0 | Baseline | Build only: 4.4 MB client chunks; livekit (542 KB) was an initial chunk of `/`, `/alerts`, `/openings/[id]`. Page timings not taken (no local backend up). |
-| 1 | Quick wins | **Done** `baab2fd`: root `loading.tsx`; assistant/feedback lazy; livekit loads on call start (now an async chunk, no page loads it up front); bell 30 s and silent when hidden; 3–4 s loops → 10 s, visible-only, capped; parallel awaits (database page, opening layout, CV names); Qdrant/embed timeouts; `ui/people` primes users only; Convex reads by index (commit `locate`, director rounds, `openingAccess`, SLA check). |
+| 1 | Quick wins | **Done** `baab2fd`: root `loading.tsx`; assistant/feedback lazy; livekit loads on call start (now an async chunk, no page loads it up front); bell 30 s visible / 60 s hidden (hidden tabs still chime); 3–4 s loops → 10 s, visible-only, capped; parallel awaits (database page, opening layout, CV names); Qdrant/embed timeouts; `ui/people` primes users only; Convex reads by index (commit `locate`, director rounds, `openingAccess`, SLA check). |
 | 2 | Layout stops blocking | **Done** `baab2fd` + `72a015e`: the badge counts stream to `TopNav` as a promise; only the badges suspend. |
 | 3 | Saves stop wiping the cache | **Done** `3f3e371`: `staleOpening(openingId, candidateIds?)` for stage moves, follow-ups, CV upload, claim/add/shortlist, EOD sends and other single-opening writes; pages holding every application re-read only dirty openings. JD writes, opening create/delete/restore and Bin keep `resetStore()`. |
 | – | Workday poll | **Done** `8d28fca`: one poll per tab; sent EODs and lead filter choices load when opened. |
-| 4 | Load less into the cache | **Partly done** `0959134`: call transcripts out of the in-memory copy; `ta/openings:list` stops at its limit; vocabulary from a 45-min cron row; database chat skips applications unless filtering by availability. |
+| 4 | Load less into the cache | **Partly done** `0959134` + follow-up: `/reports` and its CSV no longer force a full reload (sign-in checked first); `ta/openings:list` stops at its limit; vocabulary from a 45-min cron row; database chat skips applications unless filtering by availability. |
 | 5 | Remaining Convex reads | Partly folded into 1. |
 | 6 | Owner decisions | Not started. |
 
 ## Still open
 
 Stage 4/5 (need a reader rework first, found 23 Nov):
+- Call transcripts stay in the in-memory copy: dropping them (tried 23 Nov,
+  reverted) would stop a consent refusal from clearing the stored transcript
+  (`store.ts` recordConsent writes `transcript = null`).
+- `cacheMs` (`convexServer.ts`) is still unused on the hot routes; the
+  `dailyEmails.ts` whole-history reads (`:33/206/381`) are unchanged.
 - `intake.rawText` is read from memory by the CV-text index (`store.ts:182`);
   `parsed`/`match` by `/intake`. Loading only non-terminal intake rows needs
   that index changed first.
@@ -65,7 +70,10 @@ Stage 6 (owner decisions, separate PRs):
 - Notifications can arrive up to 30 s late (was 10 s), none while the tab is hidden.
 - The workday filter section is closed by default; sent EOD emails load when
   their section is opened.
-- Auto-refreshing panels stop after ~5 min and say so.
+- Auto-refreshing panels stop after ~5 min (AutoRefresh says so; the JD
+  extraction panel stops silently - reload to look again).
+- `/reports` shows other people's changes up to 30 s late (your own saves
+  show at once).
 
 ## Not checked
 

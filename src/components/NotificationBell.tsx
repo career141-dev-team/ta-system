@@ -224,9 +224,10 @@ export function NotificationBell() {
   }, []);
 
   useEffect(() => {
-    // Calm polling (23 Nov): every 30 s while the tab is visible, none while it
-    // is hidden (one poll when it comes back), one request at a time, and the
-    // wait doubles up to 5 min while polls fail. Same shape as useWorkday.
+    // Calmer polling (23 Nov): every 30 s while the tab is visible and 60 s
+    // while it is hidden - hidden tabs still poll, because a new item chimes
+    // from the background (the shared AudioContext above) - one request at a
+    // time, and the wait doubles up to 5 min while polls fail.
     let live = true;
     let busy = false;
     let delay = 30_000;
@@ -236,10 +237,10 @@ export function NotificationBell() {
       if (live) timer = setTimeout(run, delay);
     };
     const run = async () => {
-      if (document.hidden || busy) return schedule();
+      if (busy) return schedule();
       busy = true;
       try {
-        delay = (await poll()) ? 30_000 : Math.min(delay * 2, 300_000);
+        delay = (await poll()) ? (document.hidden ? 60_000 : 30_000) : Math.min(delay * 2, 300_000);
       } finally {
         busy = false;
       }
