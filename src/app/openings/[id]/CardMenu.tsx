@@ -39,6 +39,7 @@ export default function CardMenu({
   onToggle,
   onShortlist,
   onAddToJob,
+  onFollowUp,
   onClose,
 }: {
   ref: RefObject<HTMLDivElement | null>;
@@ -55,6 +56,8 @@ export default function CardMenu({
    *  the TA System's row (it claims them and puts them in TA Follow-Up). */
   onShortlist?: () => void;
   onAddToJob: () => void;
+  /** Signed in, a candidate in follow-up: open the assistant's conversation (22 Nov). */
+  onFollowUp?: () => void;
   onClose: () => void;
 }) {
   // Placed before the first paint, so it never flashes in the wrong corner.
@@ -145,6 +148,11 @@ export default function CardMenu({
         </button>
       ))}
       <div className="mx-2 my-1.5 h-px bg-border" />
+      {onFollowUp && (
+        <button type="button" role="menuitem" onClick={onFollowUp} className={ITEM + " hover:bg-surface-2"}>
+          <span className="min-w-0 flex-1 text-nav text-ink">Follow-up chat</span>
+        </button>
+      )}
       <button type="button" role="menuitem" onClick={onAddToJob} className={ITEM + " hover:bg-surface-2"}>
         <span className="min-w-0 flex-1 text-nav text-ink">Add to another job…</span>
       </button>

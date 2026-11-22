@@ -14,6 +14,7 @@ import CardMenu from "./CardMenu";
 import MoveForm from "./MoveForm";
 import AddCandidate from "./AddCandidate";
 import Toast from "./Toast";
+import FollowUpChat from "./FollowUpChat";
 import { STAGES, checkMove, movesFrom, type Needs } from "./pipelineRules";
 import WorkdayBlocked from "./WorkdayBlocked";
 import { arrivals, onArrival, type Arrival } from "./pipelineInbox";
@@ -445,6 +446,7 @@ export default function PipelineBoard() {
   }, []);
 
   // The card whose ⋮ menu is open (2.8).
+  const [chatWith, setChatWith] = useState<{ id: string; name: string } | null>(null);
   const [menu, setMenu] = useState<{ card: Card; stage: string; at: DOMRect } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuBox = useRef<HTMLDivElement>(null);
@@ -1001,9 +1003,12 @@ export default function PipelineBoard() {
           onToggle={toggleMark}
           onShortlist={menu.card.owned ? undefined : shortlistCard}
           onAddToJob={addToJob}
+          onFollowUp={live && /Follow-Up$/.test(menu.stage) ? () => { setChatWith({ id: menu.card.id, name: menu.card.name }); closeMenu(); } : undefined}
           onClose={closeMenu}
         />
       )}
+
+      {chatWith && <FollowUpChat appId={chatWith.id} name={chatWith.name} onClose={() => setChatWith(null)} />}
 
       {askShown && ask && (
         <MoveForm

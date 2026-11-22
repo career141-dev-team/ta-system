@@ -218,6 +218,8 @@ export const door = {
   placements: makeFunctionReference<"query">("ui/placements:status"),
   setTarget: makeFunctionReference<"mutation">("ui/placements:setTarget"),
   track: makeFunctionReference<"query">("ui/track:report"),
+  followUpChat: makeFunctionReference<"query">("ui/followUp:chat"),
+  followUpAct: makeFunctionReference<"mutation">("ui/followUp:act"),
   accessAvailable: makeFunctionReference<"query">("ui/access:available"),
   accessRequest: makeFunctionReference<"mutation">("ui/access:request"),
   accessPending: makeFunctionReference<"query">("ui/access:pending"),
