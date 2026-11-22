@@ -936,11 +936,13 @@ try {
   // Saving an opening writes an assignment row for each TA (ta/openings.ts); the lead's choices are read from those rows (28 Oct).
   put("jobAssignments", { _id: "notStartedAssignment", jobId: "notStartedJob", userId: "notStartedTa", assignmentRole: "primary_recruiter", isActive: true });
   user("unassignedTa", "ta");
-  const selectorView = await run("dashboard", { actorId: "lead", detail: true, date: workdayDate(clock), taId: "notStartedTa" });
+  const plainView = await run("dashboard", { actorId: "lead", detail: true, date: workdayDate(clock), taId: "notStartedTa" });
+  assert.deepEqual([plainView.teamAssignments, plainView.teamMembers], [[], []], "The filter choices are read only when asked for (23 Nov)");
+  const selectorView = await run("dashboard", { actorId: "lead", detail: true, withFilters: true, date: workdayDate(clock), taId: "notStartedTa" });
   assert.ok(selectorView.teamAssignments.some((a: Row) => a.userId === "notStartedTa" && a.jobId === "notStartedJob"));
   assert.ok(selectorView.teamMembers.some((member: Row) => member.userId === "unassignedTa"), "All active TAs appear even without assigned positions");
   assert.equal(selectorView.team.length, 0, "An assignment must not invent workday activity");
-  const otherSelectorView = await run("dashboard", { actorId: "otherLead", detail: true, date: workdayDate(clock), taId: "notStartedTa" });
+  const otherSelectorView = await run("dashboard", { actorId: "otherLead", detail: true, withFilters: true, date: workdayDate(clock), taId: "notStartedTa" });
   assert.ok(otherSelectorView.teamAssignments.some((a: Row) => a.jobId === "notStartedJob"), "TA leads see positions across teams");
   assert.equal(otherSelectorView.team.length, 0, "A TA with no recorded work has no activity");
   const datedView = await run("dashboard", { actorId: "lead", detail: true, date: finishedException!.date, taId: "exceptionTa" });
