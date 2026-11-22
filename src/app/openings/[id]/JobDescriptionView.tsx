@@ -10,6 +10,7 @@ import Toast from "./Toast";
 import { useLiftMenu } from "./liftMenu";
 import { useMe } from "@/lib/role";
 import { candidateCall, door, jobFromAddress, useDoorMutation, useDoorQuery, useLive, type Answer } from "@/lib/backend";
+import { jdCall, useJdChat } from "./jdChatLive";
 import { matchChips, parseJd, type Requirements } from "./jdLive";
 import { ViewSkeleton } from "@/app/Skeleton";
 
@@ -32,7 +33,8 @@ const VERSIONS = [
   { n: 1, when: "12 Nov 09:05", what: "First draft from the brief" },
 ];
 
-type Turn = { me: string; aura: string; failed?: boolean };
+/** restore: the id of an answer whose JD can be put back (signed in). */
+type Turn = { me: string; aura: string; failed?: boolean; restore?: string };
 
 const CHIP = "rounded-full px-3 py-1 text-caption font-medium";
 /** A field that looks like the text it edits, with a quiet outline. */
@@ -115,6 +117,22 @@ function JdScreen({ live }: { live?: LiveJdData }) {
       aura: "Done — version 3 says “hybrid, 3 days a week at the Colombo office” and the intro is two lines shorter. Version 2 is in history if you want it back.",
     },
   ]);
+  // Signed in (22 Nov): the real JD chat - the old writer and reviser on the old server.
+  const jdChat = useJdChat(!!live, live?.job ?? null);
+  const liveRows = jdChat.got?.ok ? jdChat.got.chat : [];
+  const lastJd = [...liveRows].reverse().find((r) => r.jd)?.id;
+  const liveTurns: Turn[] = [];
+  for (const r of liveRows) {
+    if (r.role === "user") liveTurns.push({ me: r.body, aura: "" });
+    else {
+      const t: Turn = { me: "", aura: r.body, failed: r.failed, restore: r.jd && r.id !== lastJd ? r.id : undefined };
+      const open = liveTurns.at(-1);
+      if (open && !open.aura) Object.assign(open, { aura: t.aura, failed: t.failed, restore: t.restore });
+      else liveTurns.push(t);
+    }
+  }
+  const shown = live ? liveTurns : turns;
+  const canWrite = live ? !!(jdChat.got?.ok && jdChat.got.canWrite) : CAN_WRITE;
   const [ask, setAsk] = useState("");
   const [reading, setReading] = useState(false);
   const [readAt, setReadAt] = useState("");
@@ -147,10 +165,22 @@ function JdScreen({ live }: { live?: LiveJdData }) {
       n: Date.now(),
     });
   };
-  const send = () => {
+  const send = async () => {
     const t = ask.trim();
     if (!t) return;
     setAsk("");
+    if (live) {
+      if (busy) return;
+      setBusy(true);
+      // No JD yet: the words are notes and the old writer drafts the JD from them.
+      const r = live.markdown?.trim()
+        ? await jdCall({ do: "revise", openingId: live.job, request: t, currentJd: live.markdown })
+        : await jdCall({ do: "generate", openingId: live.job, notes: t });
+      setBusy(false);
+      await jdChat.reload();
+      setToast(r.ok ? { bold: live.markdown?.trim() ? "JD changed" : "JD written", rest: " - " + r.message, n: Date.now() } : { rest: r.message, n: Date.now() });
+      return;
+    }
     // ponytail: no model yet - the turn is kept and AURA says so; a real failed turn
     // also leaves the JD as it was.
     setTurns((all) => [...all, { me: t, aura: "I could not change it - this screen is not connected yet. The JD is as it was.", failed: true }]);
@@ -363,19 +393,36 @@ function JdScreen({ live }: { live?: LiveJdData }) {
             </div>
             <div ref={talk} className="flex max-h-[max(16rem,180px)] flex-col gap-3 overflow-y-auto">
               {!turns.length && <p className="text-small text-ink-3">Tell AURA what to change - for example “Mention it’s hybrid, 3 days in the office.”</p>}
-              {turns.map((t, i) => (
+              {shown.map((t, i) => (
                 <div key={i} className="flex flex-col gap-2">
-                  <p className="self-end rounded-md bg-surface px-4 py-2.5 text-small text-ink">{t.me}</p>
-                  <p className={"max-w-[37.5rem] text-small " + (t.failed ? "text-warn" : "text-ink-2")}>{t.aura}</p>
+                  {t.me && <p className="self-end rounded-md bg-surface px-4 py-2.5 text-small text-ink">{t.me}</p>}
+                  {t.aura && <p className={"max-w-[37.5rem] text-small " + (t.failed ? "text-warn" : "text-ink-2")}>{t.aura}</p>}
+                  {live && t.restore && canWrite && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={async () => {
+                        setBusy(true);
+                        const r = await jdCall({ do: "restore", openingId: live.job, messageId: t.restore! });
+                        setBusy(false);
+                        await jdChat.reload();
+                        setToast({ rest: r.message, n: Date.now() });
+                      }}
+                      className="self-start text-caption font-medium text-brand-strong hover:underline disabled:opacity-50"
+                    >
+                      Put this version back
+                    </button>
+                  )}
                 </div>
               ))}
+              {live && busy && <p className="text-small text-ink-3">AURA is writing…</p>}
             </div>
-            {CAN_WRITE ? (
+            {canWrite ? (
               <form
                 className="flex items-center gap-2.5 rounded-full bg-surface py-1.5 pl-4 pr-1.5 focus-within:ring-2 focus-within:ring-brand/30"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  send();
+                  void send();
                 }}
               >
                 <input
