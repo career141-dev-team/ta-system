@@ -55,10 +55,17 @@ export function JobDetailsPanel({
   const reextract = useInline(reextractJobDetailsInline);
   const working = save.pending || reextract.pending;
 
-  // While the model reads the JD, look again every few seconds.
+  // While the model reads the JD, look again every 10 s, only while the tab is
+  // visible, and give up after 30 looks (~5 min) so a status stuck on
+  // "extracting" cannot refresh for ever (23 Nov).
   useEffect(() => {
     if (r.status !== "extracting") return;
-    const t = setInterval(() => router.refresh(), 3000);
+    let looks = 0;
+    const t = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      router.refresh();
+      if (++looks >= 30) clearInterval(t);
+    }, 10_000);
     return () => clearInterval(t);
   }, [r.status, router]);
 

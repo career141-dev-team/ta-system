@@ -1,18 +1,26 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 /** Re-reads the page every few seconds while it is visible, so progress shows without reloading. */
 export function AutoRefresh({ seconds }: { seconds: number }) {
   const router = useRouter();
   const [at, setAt] = useState(() => Date.now());
+  const [pending, startTransition] = useTransition();
+  // Read inside the interval so it is not re-created on every refresh.
+  const busy = useRef(false);
+  busy.current = pending;
 
   useEffect(() => {
+    // Skip a tick while the last refresh is still running, and stop after 100
+    // refreshes (23 Nov): a status that never settles used to refresh for ever.
+    let count = 0;
     const t = setInterval(() => {
-      if (document.visibilityState !== "visible") return;
-      router.refresh();
+      if (document.visibilityState !== "visible" || busy.current) return;
+      startTransition(() => router.refresh());
       setAt(Date.now());
+      if (++count >= 100) clearInterval(t);
     }, seconds * 1000);
     return () => clearInterval(t);
   }, [router, seconds]);

@@ -536,14 +536,13 @@ export async function candidatesByIds(
     .filter((d) => !d.cvFileName && (!opts.cvNamesFor || opts.cvNamesFor.has(d._id)))
     .map((d) => d._id);
   const cvNameMap = new Map<string, string>();
-  for (let i = 0; i < missingCvIds.length; i += 50) {
-    try {
-      const names = await convexQuery<Record<string, string>>("candidates/candidates:cvFileNames", {
-        ids: missingCvIds.slice(i, i + 50),
-      });
-      for (const [id, fileName] of Object.entries(names)) cvNameMap.set(id, fileName);
-    } catch {}
-  }
+  // Batches run together, not one after another (23 Nov); merged in batch order.
+  const batches: string[][] = [];
+  for (let i = 0; i < missingCvIds.length; i += 50) batches.push(missingCvIds.slice(i, i + 50));
+  const found = await Promise.all(batches.map((ids) =>
+    convexQuery<Record<string, string>>("candidates/candidates:cvFileNames", { ids }).catch(() => ({} as Record<string, string>)),
+  ));
+  for (const names of found) for (const [id, fileName] of Object.entries(names)) cvNameMap.set(id, fileName);
 
   for (const d of docs) {
     const cand = mapCandidateDoc(d);

@@ -47,8 +47,10 @@ export const listAvailable = internalQuery({
     const user = await requireActor(ctx, args.actorId);
     requireRequester(user);
 
-    const [jobs, assignments, requests, users] = await Promise.all([
-      ctx.db.query("jobs").collect(),
+    // 23 Nov: requestable() needs status "active", so read only those, and fetch
+    // just the leads and TAs those openings name rather than every user.
+    const [jobs, assignments, requests] = await Promise.all([
+      ctx.db.query("jobs").withIndex("by_status", (q) => q.eq("status", "active")).collect(),
       ctx.db
         .query("jobAssignments")
         .withIndex("by_userId_isActive", (q) => q.eq("userId", user._id).eq("isActive", true))
@@ -57,8 +59,13 @@ export const listAvailable = internalQuery({
         .query("openingAccessRequests")
         .withIndex("by_requester_job", (q) => q.eq("requesterId", user._id))
         .collect(),
-      ctx.db.query("users").collect(),
     ]);
+    const wanted = new Set<Id<"users">>();
+    for (const job of jobs) {
+      if (job.taLeadId) wanted.add(job.taLeadId);
+      for (const id of job.assignedTaIds ?? []) wanted.add(id);
+    }
+    const users = (await Promise.all([...wanted].map((id) => ctx.db.get(id)))).filter((row): row is Doc<"users"> => !!row);
     const assigned = new Set(assignments.map((row) => row.jobId as string));
     const usersById = new Map(users.map((row) => [row._id as string, row]));
     const names = new Map(users.map((row) => [row._id as string, row.fullName]));

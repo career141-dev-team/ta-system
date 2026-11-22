@@ -1,14 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import {
-  Room,
-  RoomEvent,
-  Track,
-  type Participant,
-  type RemoteTrack,
-  type TranscriptionSegment,
-} from "livekit-client";
+import type { Room, Participant, RemoteTrack, TranscriptionSegment } from "livekit-client";
 import { inputClass } from "@/components/form";
 import { startVoiceTest } from "@/app/voiceTestActions";
 import { safeErrorMessage } from "@/lib/userError";
@@ -101,6 +94,8 @@ export function VoiceTestPanel({ openings }: { openings: OpeningOption[] }) {
       return;
     }
 
+    // 23 Nov: livekit-client (~440 KB) loads only when a call starts, not with every page that renders this component.
+    const { Room, RoomEvent, Track } = await import("livekit-client");
     const lk = new Room({ adaptiveStream: true, dynacast: true });
     room.current = lk;
     lk.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {

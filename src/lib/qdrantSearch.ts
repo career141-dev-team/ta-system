@@ -92,6 +92,7 @@ export async function searchVectors(
       headers: headers(),
       body: JSON.stringify({ vector: v, limit, with_payload: true, filter: buildFilter(filters) }),
       cache: "no-store",
+      signal: AbortSignal.timeout(10_000), // a hung index must fail into QdrantUnavailable, not hold the page (23 Nov)
     });
   } catch (e) {
     throw new QdrantUnavailable(`Could not reach the vector index (${(e as Error).message}).`);

@@ -302,9 +302,9 @@ Short hashes from `git log`; dates are commit dates.
 - 2026-11-19 - the new UI sends a Midday WITHOUT CV attachments through `convex/ui/emailSend.ts` `sendMidday`: `prepareMidday` builds the email on the server (compose + the TA's table-1 cell edits via `withEdits`, `recipients` = eodRecipients with the TA's removed/added addresses, `checkResearchSubmission` with scoopsOnly from the records, `eodEmailHtml`), `middayDraft` reuses today's open draft or creates one, then the same `begin` and `eodMail:send` as the old app. The browser never gives HTML, sender, To/Cc lists or rows. Not yet: a Midday with CVs, the EOD, saving cell edits back to the candidate.
 
 <!-- skill-meta
-verified-commit: ea82758
-verified-hash: 4bce21996ea89927cc6709a7df6d111126cb5568
-verified-date: 2026-11-20
+verified-commit: 85237c2
+verified-hash: 2ceb2a240c57c831dc1015ec6da723ca74a1dfbc
+verified-date: 2026-11-22
 sources:
   src/app/openings/[id]/eod/page.tsx
   src/app/openings/[id]/midday/page.tsx
