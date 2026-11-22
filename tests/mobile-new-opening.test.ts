@@ -32,6 +32,7 @@ function fakeDeps() {
       convexMutation: async <T,>(name: string, args: Record<string, unknown>) => (notified.push({ name, ...args }), undefined as T),
       markTablesStale: () => undefined,
       resetStore: () => undefined,
+      staleOpening: () => undefined,
       after: (work: () => Promise<void>) => void later.push(work),
     },
   };

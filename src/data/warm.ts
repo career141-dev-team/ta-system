@@ -99,3 +99,15 @@ export function mustWait(at: number | undefined, ttlMs: number, now: number): "w
   if (!at) return "wait";
   return now - at > ttlMs ? "refresh" : "fresh";
 }
+
+/**
+ * Forget the dirty openings a fetch begun at `fetchStart` has covered (23 Nov).
+ * An opening marked at or before the fetch began was written before it, so the
+ * fetch holds the write; one marked after it stays dirty for the next read.
+ */
+export function settleOpenings(dirty: Map<string, number>, fetchStart: number, ids: Iterable<string> = [...dirty.keys()]): void {
+  for (const id of ids) {
+    const at = dirty.get(id);
+    if (at !== undefined && at <= fetchStart) dirty.delete(id);
+  }
+}

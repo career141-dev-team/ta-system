@@ -107,6 +107,7 @@ test("the shared move keeps website permissions, reasons and bulk results", asyn
     convexQuery: async <T,>() => undefined as T,
     convexMutation: async <T,>() => undefined as T,
     resetStore: () => undefined,
+    staleOpening: () => undefined,
     revalidatePath: () => undefined,
     primeApplications: async () => {
       reprimes++;
