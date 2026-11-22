@@ -892,6 +892,14 @@ crons.daily(
 // "update-dashboard-stats-cache" (every 19 min) was removed on 11 Nov: its
 // handler is `return;` (stats/stats.ts) and it still took a turn on the backend.
 
+// 23 Nov: the search box's vocabulary (1,500 full candidate rows) is computed here
+// into one taSettings row instead of on every app poll (ta/candidates.ts).
+crons.interval(
+  "refresh-ta-vocabulary",
+  { minutes: 45 },
+  internal.ta.candidates.refreshVocabulary
+);
+
 crons.interval(
   "recover-stuck-uploads",
   { minutes: 29 },

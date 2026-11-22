@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 export function AutoRefresh({ seconds }: { seconds: number }) {
   const router = useRouter();
   const [at, setAt] = useState(() => Date.now());
+  const [stopped, setStopped] = useState(false);
   const [pending, startTransition] = useTransition();
   // Read inside the interval so it is not re-created on every refresh.
   const busy = useRef(false);
@@ -20,14 +21,17 @@ export function AutoRefresh({ seconds }: { seconds: number }) {
       if (document.visibilityState !== "visible" || busy.current) return;
       startTransition(() => router.refresh());
       setAt(Date.now());
-      if (++count >= 100) clearInterval(t);
+      if (++count >= 100) {
+        clearInterval(t);
+        setStopped(true);
+      }
     }, seconds * 1000);
     return () => clearInterval(t);
   }, [router, seconds]);
 
   return (
     <span className="text-[11.5px] text-ink-faint" suppressHydrationWarning>
-      Updates every {seconds}s · last {new Date(at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+      {stopped ? "Stopped updating - reload to see more" : `Updates every ${seconds}s`} · last {new Date(at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
     </span>
   );
 }

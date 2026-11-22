@@ -39,16 +39,6 @@ export const list = internalQuery({
   handler: async (ctx, args) => {
     const user = await optionalActor(ctx, args.actorId);
 
-    const jobs = (
-      args.status
-        ? await ctx.db
-            .query("jobs")
-            .withIndex("by_status", (q) => q.eq("status", args.status as Doc<"jobs">["status"]))
-            .collect()
-        : await ctx.db.query("jobs").collect()
-    // An opening in the Bin (ta/bin.ts) or being deleted has left the desk.
-    ).filter((j) => !isGone(j));
-
     // "Only mine" is a question about a person, so it cannot be answered
     // without one. Refusing beats returning everything, which would look like
     // an answer and quietly widen what the caller sees.
@@ -56,18 +46,40 @@ export const list = internalQuery({
       throw new Error("mineOnly needs an actorId — there is nobody to scope the list to.");
     }
 
-    let scoped = jobs;
+    let mineIds: Set<string> | null = null;
     if (args.mineOnly && user && !["admin", "ta_manager"].includes(user.role)) {
       const mine = await ctx.db
         .query("jobAssignments")
         .withIndex("by_userId_isActive", (q) => q.eq("userId", user._id).eq("isActive", true))
         .collect();
-      const ids = new Set(mine.map((a) => a.jobId as string));
-      scoped = jobs.filter((j) => ids.has(j._id as string));
+      mineIds = new Set(mine.map((a) => a.jobId as string));
     }
+    // An opening in the Bin (ta/bin.ts) or being deleted has left the desk.
+    const wanted = (j: Doc<"jobs">) => !isGone(j) && (!mineIds || mineIds.has(j._id as string));
+
+    // 23 Nov: job rows carry an embedding and reverse-match results, so
+    // collecting the whole table was the heaviest read in the app's reload. With
+    // no status asked for, walk newest-first and stop at the limit — the same
+    // rows the sort-then-slice returned. A status filter keeps its index.
+    const limit = args.limit ?? 200;
+    if (!args.status) {
+      const out: Doc<"jobs">[] = [];
+      for await (const j of ctx.db.query("jobs").withIndex("by_createdAt").order("desc")) {
+        if (!wanted(j)) continue;
+        out.push(j);
+        if (out.length >= limit) break;
+      }
+      return out.map(projectOpening);
+    }
+    const scoped = (
+      await ctx.db
+        .query("jobs")
+        .withIndex("by_status", (q) => q.eq("status", args.status as Doc<"jobs">["status"]))
+        .collect()
+    ).filter(wanted);
 
     scoped.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-    return scoped.slice(0, args.limit ?? 200).map(projectOpening);
+    return scoped.slice(0, limit).map(projectOpening);
   },
 });
 
