@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import type { User } from "@/data/types";
 import "./globals.css";
-import { TopNav } from "@/components/TopNav";
+import { TopNav, type NavBadges } from "@/components/TopNav";
 import { Flash } from "@/components/Flash";
 import { Suspense } from "react";
 import Script from "next/script";
@@ -42,6 +42,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // Null on the sign-in screen, which is the one page that renders without a
   // session — and therefore without the top bar.
   const user = await currentUser();
+  // Not awaited: the top bar's badges stream in when counted (navBadges below).
+  const badges = user ? navBadges(user) : undefined;
   /*
    * Microsoft Clarity — heatmaps, session replays, rage clicks (28 Sep). Off
    * unless CLARITY_PROJECT_ID is set on the server; read per request, so the
@@ -80,7 +82,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {uiOnly() ? (
           // Laptop screen work without a sign-in service (lib/uiOnly.ts).
           <>
-            {user ? <Suspense fallback={<TopNav user={user} />}><TopNavWithBadges user={user} /></Suspense> : null}
+            {user ? <TopNav user={user} badges={badges} /> : null}
             <Suspense fallback={null}>
               <NavigationProgress />
             </Suspense>
@@ -93,7 +95,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           </>
         ) : (
         <ClerkProvider signInUrl="/signin" signUpUrl="/signup" afterSignOutUrl="/signin">
-          {user ? <Suspense fallback={<TopNav user={user} />}><TopNavWithBadges user={user} /></Suspense> : null}
+          {user ? <TopNav user={user} badges={badges} /> : null}
           <Suspense fallback={null}>
             <NavigationProgress />
           </Suspense>
@@ -111,20 +113,29 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 }
 
 /**
- * The top bar with its alert and feedback badges. Counting alerts needs every
+ * The top bar's alert and feedback counts. Counting alerts needs every
  * application and the people being chased, which can take seconds when the
  * store is cold or a save has just marked it stale. Until 23 Nov the root
- * layout awaited that before sending any page; now the bar streams in
- * behind a badge-less copy and the page renders alongside it.
+ * layout awaited that before sending any page; now it is a promise the bar's
+ * badges read when it settles, and the page renders alongside it. A failed
+ * count shows no badge rather than an error page.
  */
-async function TopNavWithBadges({ user }: { user: User }) {
+function navBadges(user: User): Promise<NavBadges> {
   // Follow-ups too: the alert badge counts them, and a follow-up whose
   // candidate is not held is dropped from that count rather than miscounted.
-  await primeStore({ allApplications: true, followUps: true });
-  // The badge counts the same alerts the Alerts page lists. It used to read a
-  // stored count, which drifted: the 13 Sep audit found accounts showing one
-  // where six were waiting.
-  const readAlertIds = repo.readAlertIds(user.id);
-  const alertCount = alertsFor(user.id).filter((a) => !readAlertIds.has(a.id)).length;
-  return <TopNav user={user} alertCount={alertCount} feedbackBadgeCount={repo.unseenFeedbackCount(user)} />;
+  return primeStore({ allApplications: true, followUps: true })
+    .then(() => {
+      // The badge counts the same alerts the Alerts page lists. It used to read a
+      // stored count, which drifted: the 13 Sep audit found accounts showing one
+      // where six were waiting.
+      const readAlertIds = repo.readAlertIds(user.id);
+      return {
+        alerts: alertsFor(user.id).filter((a) => !readAlertIds.has(a.id)).length,
+        feedback: repo.unseenFeedbackCount(user),
+      };
+    })
+    .catch((e) => {
+      console.warn("[layout] badge counts failed:", e instanceof Error ? e.message : e);
+      return { alerts: 0, feedback: 0 };
+    });
 }
