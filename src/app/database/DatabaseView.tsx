@@ -947,82 +947,62 @@ function Results({
   onAll: () => void;
   onPick: (p: Person) => void;
 }) {
+  // The Scoops reading view's compact rows (owner, 25 Nov 2026): avatar, name, "title · company ·
+  // place", "years · skills", the fit score at the right; the chosen one outlined in green.
+  // The first four, "See all" for the rest.
   const shown = open ? people : people.slice(0, 4);
   return (
-    <div
-      className={
-        open
-          ? "grid grid-cols-[repeat(auto-fill,minmax(max(12.3rem,160px),1fr))] gap-3"
-          : "flex gap-3 overflow-x-auto pb-1 [scrollbar-width:none]"
-      }
-    >
-      {shown.map((p, i) => (
-        <button
-          key={p.id}
-          type="button"
-          data-card
-          onClick={() => onPick(p)}
-          title={p.cv ? "Open the CV" : "No CV file on record"}
-          className={
-            "flex shrink-0 flex-col gap-[max(0.5rem,5px)] rounded-lg border-[1.5px] p-[max(1rem,12px)] text-left transition-colors " +
-            (open ? "w-auto " : "w-[max(12.3rem,160px)] ") +
-            (picked === p.id
-              ? "border-ink bg-surface"
-              : "border-transparent bg-canvas hover:border-border-strong")
-          }
-        >
-          <span className="flex items-center justify-between">
-            <span
+    <div className="flex flex-col gap-[max(0.6rem,6px)]">
+      <ul className="flex flex-col gap-[max(0.6rem,6px)]" aria-label="People found">
+        {shown.map((p, i) => (
+          <li key={p.id}>
+            <button
+              type="button"
+              data-card
+              onClick={() => onPick(p)}
+              aria-current={picked === p.id || undefined}
+              title={p.cv ? "Open the CV" : "No CV file on record"}
               className={
-                "flex size-[max(2.5rem,32px)] items-center justify-center rounded-full text-small font-medium " +
-                AVATAR[i % 4]
+                "flex w-full items-center gap-[max(0.9rem,9px)] rounded-md border px-[max(1rem,10px)] py-[max(0.75rem,8px)] text-left transition-colors " +
+                (picked === p.id ? "border-brand bg-brand-tint" : "border-border bg-surface hover:border-border-strong hover:bg-surface-2")
               }
             >
-              {initials(p.name)}
-            </span>
-            <span
-              title={fitOf(p.score)}
-              className={
-                "rounded-sm px-2 py-0.5 text-small " +
-                (p.score >= 80
-                  ? "bg-brand-soft text-brand"
-                  : "bg-surface text-ink-2")
-              }
-            >
-              {p.score}
-            </span>
-          </span>
-          <span className="truncate text-body font-medium text-ink">
-            {p.name}
-          </span>
-          <span className="line-clamp-2 text-small text-ink-3">
-            {p.title} · {p.company}
-          </span>
-          <span className="line-clamp-2 border-t border-border pt-[max(0.45rem,5px)] text-caption text-ink-2">
-            <b className="font-medium">{fitOf(p.score)}</b> · {reasonOf(p)}
-          </span>
-        </button>
-      ))}
+              <span
+                className={
+                  "flex size-[max(2.5rem,30px)] shrink-0 items-center justify-center rounded-full text-[max(0.9125rem,12px)] font-medium " +
+                  (picked === p.id ? "bg-brand-soft text-brand" : AVATAR[i % 4])
+                }
+              >
+                {initials(p.name)}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-2">
+                  <span className="min-w-0 truncate text-[max(1.05rem,13.5px)] font-medium text-ink">{p.name}</span>
+                  <span
+                    title={fitOf(p.score)}
+                    className={"ml-auto shrink-0 rounded-full px-2.5 py-0.5 text-caption font-medium " + (p.score >= 80 ? "bg-brand-soft text-brand" : "bg-surface-2 text-ink-2")}
+                  >
+                    {p.score}
+                  </span>
+                </span>
+                <span className="block truncate text-[max(0.9125rem,12.5px)] text-ink-2">{[p.title, p.company, p.city].filter(Boolean).join(" · ")}</span>
+                <span className="block truncate text-[max(0.9125rem,12.5px)] text-ink-3" title={reasonOf(p)}>
+                  {p.years > 0 ? `${p.years} years · ` : ""}
+                  {p.tags.length ? p.tags.slice(0, 3).join(", ") : reasonOf(p)}
+                </span>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
       {people.length > 4 && (
         <button
           type="button"
           onClick={onAll}
           aria-expanded={open}
-          className={
-            "flex shrink-0 flex-col items-center justify-center gap-1 rounded-lg border border-border px-6 py-4 text-ink hover:bg-surface-2 " +
-            (open ? "" : "w-[max(6.9rem,90px)]")
-          }
+          className="self-start rounded-full px-3 py-1.5 text-small font-medium text-brand-strong hover:bg-surface-2"
         >
-          {open ? (
-            <span className="text-small text-ink-2">Show fewer</span>
-          ) : (
-            <>
-              <span className="text-h3 font-medium">{people.length}</span>
-              <span className="text-caption font-medium text-ink-3">
-                see all
-              </span>
-            </>
-          )}
+          {open ? "Show fewer" : `See all ${people.length}`}
         </button>
       )}
     </div>
@@ -1265,28 +1245,25 @@ function Composer({
   return (
     <div className="relative isolate px-[max(1.5rem,12px)] pb-[max(2.4rem,14px)]">
       <AuraBarGlow className="bottom-[max(1.2rem,8px)]" />
-      {hasPeople && (
-        <FilterBar
-          panel={panel}
-          busy={busy}
-          className={(centred ? "mx-auto" : "ml-[7.7rem] mr-auto") + " mb-3 max-w-[62.5rem] max-lg:ml-0"}
-          onApply={onPanel}
-        />
-      )}
-      {/* AURA's suggested next steps sit right above the typing bar. */}
-      {suggestions && suggestions.length > 0 && (
-        <div className={(centred ? "mx-auto" : "ml-[7.7rem] mr-auto") + " mb-3 flex max-w-[62.5rem] max-lg:ml-0 flex-wrap gap-2"}>
-          {suggestions.map((a) => (
-            <button
-              key={a.label}
-              type="button"
-              disabled={busy}
-              onClick={() => onSuggest(a.prompt)}
-              className="rounded-full border border-border bg-surface px-3.5 py-1.5 text-small text-ink-2 transition-colors hover:border-brand hover:text-brand disabled:opacity-40"
-            >
-              {a.label}
-            </button>
-          ))}
+      {/* One row above the typing bar: the filters at the left, AURA's next steps at the right. */}
+      {(hasPeople || (suggestions && suggestions.length > 0)) && (
+        <div className={(centred ? "mx-auto" : "ml-[7.7rem] mr-auto") + " mb-3 flex max-w-[62.5rem] max-lg:ml-0 flex-wrap items-center justify-between gap-x-4 gap-y-3"}>
+          {hasPeople ? <FilterBar panel={panel} busy={busy} className="" onApply={onPanel} /> : <span />}
+          {suggestions && suggestions.length > 0 && (
+            <div className="flex flex-wrap justify-end gap-2">
+              {suggestions.map((a) => (
+                <button
+                  key={a.label}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => onSuggest(a.prompt)}
+                  className="rounded-full border border-border bg-surface px-3.5 py-1.5 text-small text-ink-2 transition-colors hover:border-brand hover:text-brand disabled:opacity-40"
+                >
+                  {a.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
       <div className={(centred ? "mx-auto" : "ml-[7.7rem] mr-auto") + " flex max-w-[62.5rem] max-lg:ml-0 items-end gap-[max(0.9rem,8px)] rounded-xl bg-surface p-2.5 shadow-float ring-1 ring-border/60 transition-shadow focus-within:ring-2 focus-within:ring-brand/30"}>
@@ -1329,7 +1306,7 @@ function Composer({
               : "Title or company — “HR Managers at Dialog”"
           }
           aria-label="Ask AURA"
-          className="max-h-32 min-w-0 flex-1 resize-none self-center bg-transparent py-2 text-body text-ink outline-none placeholder:text-ink-3 [field-sizing:content]"
+          className="max-h-32 min-w-0 flex-1 resize-none self-center bg-transparent py-2 pl-[max(0.75rem,8px)] text-body text-ink outline-none placeholder:text-ink-3 [field-sizing:content]"
         />
         <button
           type="button"

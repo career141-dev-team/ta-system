@@ -301,7 +301,7 @@ export default function ResearchView() {
   );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[max(1.5rem,14px)] pb-[max(2rem,16px)] pt-[max(1.4rem,14px)] max-md:pt-11">
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[max(1.5rem,14px)] pb-[max(2rem,16px)] pt-[max(1.4rem,14px)] max-md:pt-11 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border-strong [&::-webkit-scrollbar-track]:my-8 [&::-webkit-scrollbar-track]:bg-transparent">
       {/* Header: back, when and from what it was researched, the two actions */}
       {/* Top-aligned so Back stays in the Pipeline's corner when the actions wrap. */}
       <div className="flex flex-wrap items-start gap-x-[max(1.3rem,10px)] gap-y-3">

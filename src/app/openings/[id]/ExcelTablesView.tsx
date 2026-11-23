@@ -821,7 +821,7 @@ export default function ExcelTablesView() {
       {/* The table: a quiet sticky header, scrolls inside itself. */}
       <div
         className={
-          "mt-[max(0.9rem,10px)] min-h-0 flex-1 overflow-auto rounded-md border border-border bg-surface " +
+          "mt-[max(0.9rem,10px)] min-h-0 flex-1 overflow-auto rounded-md border border-border bg-surface [&::-webkit-scrollbar]:size-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border-strong [&::-webkit-scrollbar-track]:my-4 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-corner]:bg-transparent " +
           (ticked.length ? "pb-20" : "")
         }
       >
