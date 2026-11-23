@@ -2,7 +2,8 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { DUR, EASE, gsap, useTabGlide } from "@/lib/gsap";
+import dynamic from "next/dynamic";
+import { DUR, EASE, gsap, useExit, useTabGlide } from "@/lib/gsap";
 import { useWorkdayGate } from "@/lib/workday";
 import { BackButton, LinkedInIcon } from "./PipelineBoard";
 import FindCvButton from "./FindCvButton";
@@ -16,6 +17,9 @@ import { jobFromAddress, LIVE, useLive } from "@/lib/backend";
 import { actionFor, addedBucket, sendLink, sheetDate, sheetsOf, useLiveLinks, VIA_FROM, type LiveLinks, type LiveRow } from "./excelLive";
 import { useLiftMenu } from "./liftMenu";
 import { useOpeningView } from "./view";
+
+const CvPreview = dynamic(() => import("./CvPreview"), { ssr: false });
+const FADE = { opacity: 0 };
 import type { Profile } from "@/lib/linkedinProfile";
 import { useSignedHeaders } from "@/lib/backend";
 
@@ -1236,6 +1240,11 @@ function TableRow({
 }) {
   const can = mine && !blocked;
   const { go } = useOpeningView();
+  // The linked CV, read in a window over the table (the name opens it). The backend row
+  // carries no candidate id yet, so until it does the viewer shows the sample layout.
+  const [cvOpen, setCvOpen] = useState(false);
+  const cvBox = useRef<HTMLDivElement>(null);
+  const cvShown = useExit(cvOpen, cvBox, FADE);
   const sub = [x.title || "Title to check", x.company, x.location]
     .filter(Boolean)
     .join(" · ");
@@ -1247,6 +1256,7 @@ function TableRow({
       ? ""
       : " opacity-0 group-hover:opacity-100 focus-within:opacity-100 has-[[aria-expanded=true]]:opacity-100 pointer-coarse:opacity-100";
   return (
+    <>
     <tr
       className={
         "group text-small transition-colors " +
@@ -1276,9 +1286,20 @@ function TableRow({
           </a>
           <div className="min-w-0">
             <div className="flex min-w-0 items-center gap-1.5">
-              <span className="truncate font-medium text-ink" title={x.name}>
-                {x.name}
-              </span>
+              {x.hasCv ? (
+                <button
+                  type="button"
+                  onClick={() => setCvOpen(true)}
+                  title={`Read ${x.name}'s CV`}
+                  className="truncate rounded-xs text-left font-medium text-brand hover:underline"
+                >
+                  {x.name}
+                </button>
+              ) : (
+                <span className="truncate font-medium text-ink" title={x.name}>
+                  {x.name}
+                </span>
+              )}
               {x.addOn && (
                 <span className="shrink-0 rounded-full bg-violet-soft px-2 text-caption font-medium text-violet">
                   Add-on
@@ -1435,13 +1456,18 @@ function TableRow({
           {mine && (
             <div className={"flex shrink-0 items-center gap-1.5 transition-opacity" + quiet}>
               {x.hasCv ? (
-                <span className="whitespace-nowrap text-caption text-brand">
-                  CV linked
-                </span>
+                <button
+                  type="button"
+                  onClick={() => setCvOpen(true)}
+                  className="whitespace-nowrap text-caption font-medium text-brand hover:underline"
+                >
+                  View CV
+                </button>
               ) : (
                 <FindCvButton
                   name={x.name}
                   matches={x.matches}
+                  onView={() => setCvOpen(true)}
                   up={up}
                   className="whitespace-nowrap"
                   onLinked={() => {
@@ -1463,6 +1489,8 @@ function TableRow({
         </div>
       </td>
     </tr>
+    {cvShown && <CvPreview ref={cvBox} name={x.name} title={x.title} onClose={() => setCvOpen(false)} />}
+    </>
   );
 }
 

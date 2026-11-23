@@ -38,6 +38,12 @@ const COLS = [
   { label: "Contact number", max: 100, width: "w-[16%]" },
   { label: "Feedback", max: 2000, width: "" },
 ] as const;
+const RESULT_PILL =
+  "flex h-[max(2.1rem,28px)] items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-surface px-[max(0.8rem,10px)] text-small";
+const RESULT_OPTIONS: MenuOption[] = [
+  { value: "positive", label: "Successful", dot: "var(--color-success)" },
+  { value: "negative", label: "Not successful", dot: "var(--color-ink-3)" },
+];
 const MAX_ROWS = 300;
 const MIN_ROWS = 11;
 
@@ -134,7 +140,7 @@ function classify(feedback: string): Result {
 }
 const resultOf = (x: Call): Result => x.result ?? classify(x.cells[3]);
 const RESULT_LABEL: Record<Result, string> = {
-  positive: "Positive",
+  positive: "Successful",
   negative: "Not successful",
 };
 
@@ -159,7 +165,7 @@ export default function RefereeCallsView() {
   const today = data ? day === data.today : day === "today";
   // Only a TA writes, only their own rows, only today - and after Start workday.
   // Signed in, the TA System says whether this sheet may be changed (old page rule).
-  const canEdit = (data ? data.canEdit : today && !me.lead) && !gate;
+  const canEdit = (data ? data.canEdit : today) && !gate;
 
   // When the last change was kept (shown as "Saved h:mm").
   const [savedAt, setSavedAt] = useState<Date | null>(null);
@@ -193,16 +199,19 @@ export default function RefereeCallsView() {
   }, [signedIn]);
   // A moment after typing stops, today's changes go in one old Save.
   const saving = useRef(false);
+  const [busy, setBusy] = useState(false);
   const save = async () => {
     if (!job || saving.current) return;
     const ch = changesOf(saved.current, gridsNow.current[key] ?? []);
     if (!ch.any) return;
     saving.current = true;
+    setBusy(true);
     const res = await sendReferees({
       do: "save", openingId: job, workLocationId: loc, day,
       changes: JSON.stringify({ add: ch.add, update: ch.update, remove: ch.remove }),
     });
     saving.current = false;
+    setBusy(false);
     if (!res.ok || !res.calls) return setFault(res.message);
     const before = new Set(saved.current.keys());
     saved.current = new Map(res.calls.map((x) => [x.id, cellsOf(x)]));
@@ -285,11 +294,10 @@ export default function RefereeCallsView() {
     setRemoved(null);
   };
   // A person's own sort of the call, over the one read off the feedback.
-  const flip = (r: number) => {
+  const setResult = (r: number, value: Result) => {
     const x = rows[r];
     if (signedIn && x) {
       if (!x.id || !job) return setFault("This call is still saving - try again in a moment.");
-      const value = resultOf(x) === "positive" ? "negative" : "positive";
       void sendReferees({ do: "result", openingId: job, callId: x.id, field: "result", value }).then((res) => {
         if (!res.ok) return setFault(res.message);
         setFault(null);
@@ -297,16 +305,7 @@ export default function RefereeCallsView() {
       });
       return;
     }
-    setRows((all) =>
-      all.map((x, i) =>
-        i === r
-          ? {
-              ...x,
-              result: resultOf(x) === "positive" ? "negative" : "positive",
-            }
-          : x,
-      ),
-    );
+    setRows((all) => all.map((x, i) => (i === r ? { ...x, result: value } : x)));
   };
   // The Undo is offered for a short while, as a toast would be.
   useEffect(() => {
@@ -451,12 +450,14 @@ export default function RefereeCallsView() {
         <p className="ml-auto text-small text-ink-3 max-md:ml-0">
           {!today
             ? "A past day - read only"
-            : SEES_WHOLE_JOB
+            : data && !data.canEdit
+              ? "Read only - the TA System does not let you change this sheet"
+              : SEES_WHOLE_JOB
               ? "Every TA's calls - each TA writes their own"
               : "Type anywhere or paste a block from Excel · Shift+Enter for a new line in Feedback"}
         </p>
       </div>
-      {gate && today && !SEES_WHOLE_JOB && (
+      {gate && today && (
         <WorkdayBlocked what="log referee calls" className="mt-3" />
       )}
 
@@ -469,7 +470,7 @@ export default function RefereeCallsView() {
         onKeyDown={onGridKey}
         className="mt-[max(1.4rem,12px)] min-h-0 flex-1 overflow-auto rounded-lg border border-border bg-surface outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
       >
-        <table className="w-full min-w-[52rem] table-fixed border-collapse text-left text-small">
+        <table className="w-full min-w-[58rem] table-fixed border-collapse text-left text-small">
           <thead className="sticky top-0 z-10 bg-canvas text-small font-medium text-ink-2">
             <tr>
               <th className="w-[max(3.75rem,40px)] border-b border-r border-border" />
@@ -484,6 +485,9 @@ export default function RefereeCallsView() {
                   {col.label}
                 </th>
               ))}
+              <th className="w-[13%] border-b border-r border-border px-[max(0.9rem,10px)] font-medium">
+                Result
+              </th>
               <th className="w-[10.5%] border-b border-border px-[max(0.9rem,10px)] font-medium">
                 TA
               </th>
@@ -493,7 +497,7 @@ export default function RefereeCallsView() {
             {!today && !rows.some(isCall) && (
               <tr>
                 <td
-                  colSpan={COLS.length + 2}
+                  colSpan={COLS.length + 3}
                   className="px-4 py-10 text-center text-small text-ink-3"
                 >
                   No referee calls were logged for this day
@@ -564,7 +568,10 @@ export default function RefereeCallsView() {
                           <textarea
                             ref={input}
                             value={typed ?? cell(r, ci)}
-                            onChange={(e) => setTyped(e.target.value)}
+                            onChange={(e) => {
+                              setTyped(e.target.value);
+                              write([{ r, c: ci, v: e.target.value }]);
+                            }}
                             onKeyDown={onCellKey}
                             onPaste={onPaste}
                             onBlur={commit}
@@ -583,7 +590,10 @@ export default function RefereeCallsView() {
                           <input
                             ref={input}
                             value={typed ?? cell(r, ci)}
-                            onChange={(e) => setTyped(e.target.value)}
+                            onChange={(e) => {
+                              setTyped(e.target.value);
+                              write([{ r, c: ci, v: e.target.value }]);
+                            }}
                             onKeyDown={onCellKey}
                             onPaste={onPaste}
                             onBlur={commit}
@@ -599,36 +609,29 @@ export default function RefereeCallsView() {
                             >
                               {cell(r, ci)}
                             </span>
-                            {/* Feedback: how the call went, as the EOD email sorts it. */}
-                            {ci === 3 && rows[r] && isCall(rows[r]) && (
-                              <button
-                                type="button"
-                                disabled={!canEdit}
-                                onMouseDown={(e) => e.stopPropagation()}
-                                onClick={() => flip(r)}
-                                title={
-                                  canEdit
-                                    ? `${rows[r].result ? "Set by you" : "Read from the feedback"} - click to change`
-                                    : undefined
-                                }
-                                className={
-                                  "shrink-0 rounded-full px-2 py-0.5 text-caption font-medium transition-colors " +
-                                  (resultOf(rows[r]) === "positive"
-                                    ? "bg-success-soft text-success"
-                                    : "bg-surface-2 text-ink-2") +
-                                  (canEdit
-                                    ? " hover:ring-1 hover:ring-border-strong"
-                                    : "")
-                                }
-                              >
-                                {RESULT_LABEL[resultOf(rows[r])]}
-                              </button>
-                            )}
                           </span>
                         )}
                       </td>
                     );
                   })}
+                  <td className="border-b border-r border-border px-[max(0.6rem,8px)]">
+                    {/* How the call went: a choice, as the EOD email sorts it. */}
+                    {rows[r] && isCall(rows[r]) && (
+                      canEdit && rows[r].mine !== false ? (
+                      <PillMenu
+                        key={rows[r].id ?? `${r}-${resultOf(rows[r])}`}
+                        options={RESULT_OPTIONS}
+                        initial={resultOf(rows[r])}
+                        onChange={(v) => setResult(r, v as Result)}
+                        pillClass={RESULT_PILL + (resultOf(rows[r]) === "positive" ? " text-success" : " text-ink-2")}
+                      />
+                      ) : (
+                        <span className={RESULT_PILL + (resultOf(rows[r]) === "positive" ? " text-success" : " text-ink-2")}>
+                          {RESULT_LABEL[resultOf(rows[r])]}
+                        </span>
+                      )
+                    )}
+                  </td>
                   <td className="border-b border-border px-[max(0.9rem,10px)] text-ink-3">
                     {/* Filled when a lead sees every TA's calls. */}
                     {SEES_WHOLE_JOB && rows[r] && isCall(rows[r])
@@ -672,17 +675,20 @@ export default function RefereeCallsView() {
             </button>
           </span>
         ) : (
-          canEdit &&
-          savedAt && (
+          canEdit && (
             <span
               role="status"
-              className="ml-auto text-small text-ink-3 max-md:ml-0"
+              className="ml-auto flex items-center gap-1.5 text-small text-ink-3 max-md:ml-0"
             >
-              Saved{" "}
-              {savedAt.toLocaleTimeString([], {
-                hour: "numeric",
-                minute: "2-digit",
-              })}
+              <span
+                aria-hidden="true"
+                className={"size-2 rounded-full " + (busy ? "animate-pulse bg-warn" : "bg-success")}
+              />
+              {busy
+                ? "Saving…"
+                : savedAt
+                  ? `Saved ${savedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} · saves automatically`
+                  : "Saves automatically as you type"}
             </span>
           )
         )}

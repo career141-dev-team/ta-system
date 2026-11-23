@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { useSpeech } from "@/lib/useSpeech";
+import ListenPulse from "../../../ListenPulse";
 import Link from "next/link";
 import LiveName from "../LiveName";
 import { BackButton } from "../PipelineBoard";
@@ -284,7 +286,7 @@ function LinkedInSearchWorkspace({ item, cb }: { item: StrategyItem; cb: Workspa
   const [prompt, setPrompt] = useState("");
   const [searches, setSearches] = useState(INITIAL_LI_SEARCHES);
   const [openSearchId, setOpenSearchId] = useState<string | null>(null);
-  const [listening, setListening] = useState(false);
+  const mic = useSpeech((t) => setPrompt((x) => (x ? x + " " : "") + t));
 
   const runSearch = (queryText?: string) => {
     const q = (queryText ?? prompt).trim();
@@ -368,16 +370,17 @@ function LinkedInSearchWorkspace({ item, cb }: { item: StrategyItem; cb: Workspa
             <div className="ml-auto flex items-center gap-3">
               <button
                 type="button"
-                onClick={() => {
-                  setListening((l) => !l);
-                  cb.onNotify(listening ? "Voice off" : "Listening", listening ? "" : " — say who you are looking for");
-                }}
+                disabled={!mic.ok}
+                onClick={mic.toggle}
+                aria-pressed={mic.on}
+                title={mic.ok ? (mic.on ? "Stop listening" : "Speak") : "Speaking is not available in this browser"}
                 aria-label="Voice input"
                 className={
-                  "flex size-9 items-center justify-center rounded-full transition-colors " +
-                  (listening ? "bg-brand-soft text-brand" : "text-ink-2 hover:bg-surface-2 hover:text-ink")
+                  "relative flex size-9 items-center justify-center rounded-full transition-colors disabled:opacity-40 " +
+                  (mic.on ? "bg-brand-soft text-brand" : "text-ink-2 hover:bg-surface-2 hover:text-ink")
                 }
               >
+                {mic.on && <ListenPulse />}
                 <MicSvg className="size-5" />
               </button>
               <button

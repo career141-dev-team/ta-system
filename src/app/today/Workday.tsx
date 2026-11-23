@@ -8,6 +8,8 @@ import Link from "next/link";
 import { DUR, EASE, gsap, useGSAP } from "@/lib/gsap";
 import { PERSON, useMe } from "@/lib/role";
 import { useDayEnd, useLiveDesk } from "@/lib/workday";
+import { useSpeech } from "@/lib/useSpeech";
+import ListenPulse from "../ListenPulse";
 import { door, useDoorAction, useDoorMutation, useDoorQuery, type AuraReply, type DayPayload, type DoorDeskPosition, type DoorDone } from "@/lib/backend";
 import ChecksList from "./ChecksList";
 import { checksFor, KNOWN, progress, type Check, type CheckKey } from "./checks";
@@ -218,6 +220,7 @@ export default function Workday({ startedAt }: { startedAt: number | null }) {
     return () => list.forEach(clearTimeout);
   }, []);
   const [draft, setDraft] = useState("");
+  const mic = useSpeech((t) => setDraft((x) => (x ? x + " " : "") + t));
   const seq = useRef(0);
   const scroller = useRef<HTMLDivElement>(null);
 
@@ -608,7 +611,8 @@ export default function Workday({ startedAt }: { startedAt: number | null }) {
               aria-label="Talk to AURA"
               className="min-w-0 flex-1 bg-transparent text-[max(1rem,13.5px)] text-ink outline-none placeholder:text-ink-2"
             />
-            <button type="button" aria-label="Speak to AURA (not connected yet)" className="hidden shrink-0 text-ink-2 hover:text-ink sm:block">
+            <button type="button" disabled={!mic.ok} onClick={mic.toggle} aria-pressed={mic.on} title={mic.ok ? (mic.on ? "Stop listening" : "Speak") : "Speaking is not available in this browser"} aria-label={mic.on ? "Stop listening" : "Speak to AURA"} className={"relative hidden shrink-0 disabled:opacity-40 sm:block " + (mic.on ? "text-danger" : "text-ink-2 hover:text-ink")}>
+              {mic.on && <ListenPulse />}
               <MicIcon />
             </button>
             <button type="submit" aria-label="Send" className="flex size-[max(2.75rem,34px)] shrink-0 items-center justify-center rounded-full bg-brand text-white transition-colors hover:bg-brand">

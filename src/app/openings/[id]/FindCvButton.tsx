@@ -9,6 +9,7 @@ export default function FindCvButton({
   name,
   matches,
   onLinked,
+  onView,
   live,
   up = false,
   className = "",
@@ -17,6 +18,8 @@ export default function FindCvButton({
   /** People in our database who may be this person; sample until the backend. */
   matches?: { name: string; detail: string }[];
   onLinked: () => void;
+  /** Open this match's CV to read it before deciding. */
+  onView?: (id: string, name: string) => void;
   /** Live (D8b): ask the TA System who this may be, and link the one picked. */
   live?: {
     find: () => Promise<{ ok: true; hits: { id: string; name: string; detail: string }[] } | { ok: false; message: string }>;
@@ -74,7 +77,7 @@ export default function FindCvButton({
           aria-label={`CVs for ${name}`}
           className={
             (up ? "bottom-full mb-2" : "top-full mt-2") +
-            " absolute right-0 z-30 w-[min(20rem,calc(100vw-32px))] rounded-md border border-border bg-surface p-[max(0.9rem,10px)] shadow-float"
+            " absolute right-0 z-30 w-[min(20rem,calc(100vw-32px))] whitespace-normal rounded-md border border-border bg-surface p-[max(0.9rem,10px)] shadow-float"
           }
         >
           {fault ? (
@@ -101,6 +104,18 @@ export default function FindCvButton({
                         {h.detail}
                       </p>
                     </div>
+                    {onView && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpen(false);
+                          onView(h.id, h.name);
+                        }}
+                        className="shrink-0 text-caption font-medium text-brand hover:underline"
+                      >
+                        View CV
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => {

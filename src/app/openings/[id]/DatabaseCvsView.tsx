@@ -6,6 +6,8 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } f
 import Image from "next/image";
 import Link from "next/link";
 import { useWorkdayGate } from "@/lib/workday";
+import { useSpeech } from "@/lib/useSpeech";
+import ListenPulse from "../../ListenPulse";
 import { DUR, EASE, gsap, popPanel, useSwap } from "@/lib/gsap";
 import { CLAIMED, POOL, fitOf, reasonOf, type Person } from "../../database/aura";
 import AuraBarGlow from "@/app/AuraBarGlow";
@@ -114,6 +116,7 @@ export default function DatabaseCvsView() {
   const panelEl = useRef<HTMLElement>(null);
   // The AURA bar: what is typed, and the words the list is narrowed by.
   const [ask, setAsk] = useState("");
+  const mic = useSpeech((t) => setAsk((x) => (x ? x + " " : "") + t));
   const [asked, setAsked] = useState("");
   const [ranAgo, setRanAgo] = useState("4 min ago");
   const [toast, setToast] = useState<{ bold?: string; rest: string; warn?: boolean; n: number } | null>(null);
@@ -588,7 +591,8 @@ export default function DatabaseCvsView() {
               <path d="M2.5 3.5h11v7.5H7l-3 2.5V11H2.5z" />
             </svg>
           </button>
-          <button type="button" disabled title="Speaking to AURA is not switched on yet" aria-label="Speak" className="flex size-5 shrink-0 items-center justify-center text-ink-2 opacity-60">
+          <button type="button" disabled={!mic.ok} onClick={mic.toggle} aria-pressed={mic.on} title={mic.ok ? (mic.on ? "Stop listening" : "Speak") : "Speaking is not available in this browser"} aria-label={mic.on ? "Stop listening" : "Speak"} className={"relative flex size-5 shrink-0 items-center justify-center disabled:opacity-40 " + (mic.on ? "text-danger" : "text-ink-2 hover:text-ink")}>
+            {mic.on && <ListenPulse />}
             <svg viewBox="0 0 20 20" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
               <rect x="7.5" y="2.5" width="5" height="10" rx="2.5" />
               <path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5" />
