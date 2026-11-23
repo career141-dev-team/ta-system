@@ -42,7 +42,7 @@ export function OPTIONS(req: Request) {
 export async function GET(req: Request) {
   const user = await currentUser();
   if (!user || !user.isActive) return answer(req, { ok: false, message: "Sign in to continue." }, 401);
-  if (!allows(user, "tables.readAll")) return answer(req, { ok: false, message: "Only TA Support, TA leads and admins can read every position's tables." }, 403);
+  if (!allows(user, "tables.readAll")) return answer(req, { ok: false, message: "Only TA Support can read every position's tables here, as on the old Position review page." }, 403);
   const sp = new URL(req.url).searchParams;
   const positionId = sp.get("position") ?? "";
   await primeStore({});

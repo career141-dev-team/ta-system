@@ -162,7 +162,10 @@ export const desk = query({
     // "Unassigned" there (the lead saw 2 Unassigned roles and nothing to decide).
     const onIt = (id: string) => (tasOf.get(id) ?? []).filter((t) => nameOf.has(t as string)).length;
     const theirs = jobs.filter((j) => (j.taLeadId as string | undefined) === (user._id as string) || !j.taLeadId);
-    const decide = (theirs.some((j) => j.taLeadId) ? theirs : jobs)
+    // An admin answers for the whole desk, even on the roles they also lead: their
+    // board hid a role nobody worked because another lead held it (23 Nov, checked live).
+    const admin = mapUser(user as never).role === "admin";
+    const decide = (!admin && theirs.some((j) => j.taLeadId) ? theirs : jobs)
       .map((j) => {
         const tier = (j.priorityTier ?? "") as keyof typeof PRIORITY_TARGET;
         return decisionOf({
