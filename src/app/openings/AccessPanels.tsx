@@ -178,7 +178,7 @@ export function RequestOpening({ rows, tell }: { rows: Opening[]; tell: (rest: s
       : rows
           .filter((o) => o.status === "active" && !o.team.includes(me.first))
           .map((o) => ({ id: o.id, title: o.title, clientName: o.client, leadName: "", status: asked.includes(o.id) ? ("pending" as const) : null }));
-  const words = q.toLowerCase().split(/s+/).filter(Boolean);
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
   const hits = list.filter((o) => words.every((w) => `${o.title} ${o.clientName}`.toLowerCase().includes(w)));
   const send = async (o: Joinable) => {
     setBusy(o.id);

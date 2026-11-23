@@ -1243,6 +1243,9 @@ function TableRow({
   // The linked CV, read in a window over the table (the name opens it). The backend row
   // carries no candidate id yet, so until it does the viewer shows the sample layout.
   const [cvOpen, setCvOpen] = useState(false);
+  // Signed in the row has no CV file to show yet, so "View CV" would open the SAMPLE CV under
+  // a real person's name: only on the sample until the backend row carries the candidate.
+  const viewCv = !useLive();
   const cvBox = useRef<HTMLDivElement>(null);
   const cvShown = useExit(cvOpen, cvBox, FADE);
   const sub = [x.title || "Title to check", x.company, x.location]
@@ -1286,7 +1289,7 @@ function TableRow({
           </a>
           <div className="min-w-0">
             <div className="flex min-w-0 items-center gap-1.5">
-              {x.hasCv ? (
+              {x.hasCv && viewCv ? (
                 <button
                   type="button"
                   onClick={() => setCvOpen(true)}
@@ -1456,18 +1459,22 @@ function TableRow({
           {mine && (
             <div className={"flex shrink-0 items-center gap-1.5 transition-opacity" + quiet}>
               {x.hasCv ? (
-                <button
-                  type="button"
-                  onClick={() => setCvOpen(true)}
-                  className="whitespace-nowrap text-caption font-medium text-brand hover:underline"
-                >
-                  View CV
-                </button>
+                viewCv ? (
+                  <button
+                    type="button"
+                    onClick={() => setCvOpen(true)}
+                    className="whitespace-nowrap text-caption font-medium text-brand hover:underline"
+                  >
+                    View CV
+                  </button>
+                ) : (
+                  <span className="whitespace-nowrap text-caption text-brand">CV linked</span>
+                )
               ) : (
                 <FindCvButton
                   name={x.name}
                   matches={x.matches}
-                  onView={() => setCvOpen(true)}
+                  onView={viewCv ? () => setCvOpen(true) : undefined}
                   up={up}
                   className="whitespace-nowrap"
                   onLinked={() => {
