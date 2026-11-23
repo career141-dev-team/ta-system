@@ -477,6 +477,15 @@ eq("access: only a TA is offered openings to ask for", acc.includes('["ta", "ta_
 }
 
 
+// ── Follow-up chat (22 Nov): the old candidate page's reads and buttons ──
+{
+  const src = read("convex/ui/followUp.ts");
+  for (const f of ["ta.outreach.followUpState", "ta.outreach.messagesFor", "ta.followUp.gateStatus", "ta.followUp.send", "ta.followUp.takeOver", "ta.followUp.handBack", "ta.followUp.stop"]) eq(`followUp: uses ${f}`, src.includes(`internal.${f}`), true);
+  eq("followUp: the read checks the opening first", src.indexOf("mayReadOpening") < src.indexOf("internal.ta.outreach.followUpState"), true);
+  eq("followUp: the buttons act as the signed-in person, never `as`", /act = mutation\(\{[\s\S]*?uiUser\(ctx\)/.test(src), true);
+}
+
+
 // ── View as (21 Nov): an admin reads as another person, never writes as them ──
 {
   // Every function that takes `as` must be a query; a mutation or action taking it would let an admin write as a TA.
