@@ -241,9 +241,12 @@ export default function CvPreview({
     () => {
       const card = shownCard();
       if (!card) {
-        gsap.from("[data-veil]", { opacity: 0, duration: DUR.fast });
-        gsap.from("[data-frame]", { yPercent: 18, opacity: 0, duration: DUR.base });
-        gsap.from("[data-doc] > *", { y: 14, opacity: 0, duration: DUR.base, stagger: 0.05, delay: 0.15 });
+        // No card to grow from (the pipeline's list view): the veil settles in and the CV
+        // rises out of a soft blur, easing in like a camera pushing forward, then its pages follow.
+        if (!motionOK()) return void gsap.from("[data-frame]", { opacity: 0, duration: DUR.fast });
+        gsap.from("[data-veil]", { opacity: 0, duration: 0.45, ease: "power2.out" });
+        gsap.from("[data-frame]", { opacity: 0, scale: 0.9, yPercent: 8, filter: "blur(14px)", transformOrigin: "50% 40%", duration: 0.6, ease: "expo.out", clearProps: "filter" });
+        gsap.from("[data-doc] > *", { y: 22, opacity: 0, duration: 0.5, stagger: 0.07, delay: 0.25, ease: "power3.out" });
         return;
       }
       const frame = root.current!.querySelector<HTMLElement>("[data-frame]")!;

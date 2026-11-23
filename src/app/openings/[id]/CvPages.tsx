@@ -107,6 +107,8 @@ export default function CvPages({
   const box = useRef<HTMLDivElement>(null);
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [failed, setFailed] = useState(false);
+  // Page 1 is on screen: until then the CV-shaped skeleton stands in for it.
+  const [ready, setReady] = useState(false);
   const [size, setSize] = useState({ w: 0, h: 0 });
 
   useEffect(() => {
@@ -182,6 +184,7 @@ export default function CvPages({
       canvas.getContext("2d")?.drawImage(back, 0, 0);
       if (n === 1 && !shown.current) {
         shown.current = true;
+        setReady(true);
         gsap.fromTo(root.querySelectorAll("canvas"), { opacity: 0 }, { opacity: 1, duration: DUR.fast });
       }
     };
@@ -214,6 +217,7 @@ export default function CvPages({
           c1.getContext("2d")?.drawImage(pre, 0, 0);
           if (!shown.current) {
             shown.current = true;
+            setReady(true);
             gsap.set(root.querySelectorAll("canvas"), { opacity: 1 });
           }
         }
@@ -232,12 +236,12 @@ export default function CvPages({
       {failed ? (
         <p className="flex h-full items-center justify-center text-[max(0.9125rem,13px)] text-ink-2">This CV could not be opened.</p>
       ) : !doc ? (
-        // Until the file is read: a blank page of the right shape, so nothing jumps.
-        <div className="flex h-full items-start justify-center p-3">
-          <div className="aspect-[1/1.414] h-full max-w-full animate-pulse rounded-md bg-surface-3" />
-        </div>
+        // Until the file is read: a page of the right shape, drawn as a CV with a shimmer.
+        <CvSkeleton />
       ) : (
-        <div className="flex flex-col items-center gap-3">
+        <div className="relative flex flex-col items-center gap-3">
+          {/* The file is read but page 1 is still being drawn: the same skeleton on top. */}
+          {!ready && <CvSkeleton overlay />}
           {Array.from({ length: doc.numPages }, (_, i) => {
             const page = (
               <canvas
@@ -262,6 +266,33 @@ export default function CvPages({
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+/** A CV-shaped placeholder: name, title, contact line, then sections of lines, shimmering. */
+function CvSkeleton({ overlay = false }: { overlay?: boolean }) {
+  const bone = (cls: string) => <span aria-hidden="true" className={"shimmer block rounded-sm " + cls} />;
+  const section = (lines: string[]) => (
+    <div className="flex flex-col gap-2.5">
+      {bone("h-4 w-1/4")}
+      {lines.map((w, i) => (
+        <span key={i} className="contents">
+          {bone("h-3 " + w)}
+        </span>
+      ))}
+    </div>
+  );
+  return (
+    <div role="status" aria-label="Loading the CV" className={(overlay ? "absolute inset-x-0 top-0 z-10 " : "mx-auto ") + "flex w-full flex-col gap-6 rounded-sm bg-white p-[8%] shadow-float"} style={{ aspectRatio: "1 / 1.414" }}>
+      <div className="flex flex-col gap-3">
+        {bone("h-8 w-3/5")}
+        {bone("h-4 w-2/5")}
+        {bone("h-3 w-4/5")}
+      </div>
+      {section(["w-full", "w-[94%]", "w-[88%]"])}
+      {section(["w-full", "w-[92%]", "w-full", "w-[70%]"])}
+      {section(["w-full", "w-[86%]", "w-[60%]"])}
     </div>
   );
 }

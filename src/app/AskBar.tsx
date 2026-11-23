@@ -17,20 +17,41 @@ function SearchIcon({ className }: { className: string }) {
   );
 }
 
+const KEEP = "aura.askHistory";
+const readHistory = (): string[] => {
+  try {
+    const v = JSON.parse(localStorage.getItem(KEEP) ?? "[]");
+    return Array.isArray(v) ? v.filter((x) => typeof x === "string").slice(0, 8) : [];
+  } catch {
+    return [];
+  }
+};
+/** Newest first, no repeats, eight kept (on this computer only, until the backend holds it). */
+const remember = (q: string) => {
+  try {
+    localStorage.setItem(KEEP, JSON.stringify([q, ...readHistory().filter((x) => x !== q)].slice(0, 8)));
+  } catch {
+    // storage blocked: no history, search still works
+  }
+};
+
 export default function AskBar({ circle }: { circle: string }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false); // the round button's box, under 1520
+  // The ⌘K badge opens the searches made before; null = closed.
+  const [hist, setHist] = useState<string[] | null>(null);
   const root = useRef<HTMLDivElement>(null);
   // Leaving for another screen closes the box; useAsk already drops its answer.
   const { run, answer, clear } = useAsk(() => setOpen(false));
   const close = () => {
     setOpen(false);
+    setHist(null);
     clear();
   };
 
   // Outside press or Escape puts the answer away.
   useEffect(() => {
-    if (!answer && !open) return;
+    if (!answer && !open && !hist) return;
     const away = (e: PointerEvent) => !root.current?.contains(e.target as Node) && close();
     const esc = (e: KeyboardEvent) => e.key === "Escape" && close();
     addEventListener("pointerdown", away);
@@ -47,6 +68,8 @@ export default function AskBar({ circle }: { circle: string }) {
       onSubmit={(e) => {
         e.preventDefault();
         if (!q.trim()) return;
+        remember(q.trim());
+        setHist(null);
         void run(q);
         setQ("");
       }}
@@ -67,7 +90,18 @@ export default function AskBar({ circle }: { circle: string }) {
         aria-label="Search or ask AURA"
         className="min-w-0 flex-1 text-ellipsis bg-transparent text-nav text-ink outline-none placeholder:text-ink-2"
       />
-      {wide && <kbd className="shrink-0 rounded-md bg-white px-[max(0.375rem,4px)] py-px font-sans text-[max(0.6875rem,10px)] text-ink-2">⌘K</kbd>}
+      {wide && (
+        <button
+          type="button"
+          onClick={() => setHist((h) => (h ? null : readHistory()))}
+          aria-expanded={!!hist}
+          aria-label="Search history"
+          title="Search history"
+          className="shrink-0 rounded-md bg-white px-[max(0.375rem,4px)] py-px font-sans text-[max(0.6875rem,10px)] text-ink-2 transition-colors hover:text-ink"
+        >
+          ⌘K
+        </button>
+      )}
     </form>
   );
 
@@ -77,6 +111,49 @@ export default function AskBar({ circle }: { circle: string }) {
       <button type="button" onClick={() => setOpen((v) => !v)} aria-label="Search or ask AURA" aria-expanded={open} className={circle + " bg-surface-2 text-ink min-[1520px]:hidden"}>
         <SearchIcon className="size-[45%]" />
       </button>
+      {hist && (
+        <div className="absolute right-0 top-full z-40 mt-2 w-[max(21.25rem,260px)] rounded-md bg-surface p-3 shadow-float">
+          <div className="flex items-center justify-between px-1 pb-1">
+            <p className="text-caption font-medium text-ink-2">Recent searches</p>
+            {hist.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    localStorage.removeItem(KEEP);
+                  } catch {}
+                  setHist([]);
+                }}
+                className="text-caption text-ink-3 hover:text-ink"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          {hist.length === 0 ? (
+            <p className="px-1 py-2 text-small text-ink-3">Nothing yet - what you search for will be kept here.</p>
+          ) : (
+            <ul>
+              {hist.map((h) => (
+                <li key={h}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      remember(h);
+                      setHist(null);
+                      void run(h);
+                    }}
+                    className="flex w-full items-center gap-2.5 rounded-sm px-2 py-2 text-left text-small text-ink hover:bg-surface-2"
+                  >
+                    <SearchIcon className="size-3.5 shrink-0 text-ink-3" />
+                    <span className="truncate">{h}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       {(open || answer) && (
         <div className="absolute right-0 top-full z-40 mt-2 w-[max(24rem,280px)] rounded-md bg-surface p-3 shadow-float">
           <div className={open ? "" : "min-[1520px]:hidden"}>{(open || !answer) && field(false)}</div>

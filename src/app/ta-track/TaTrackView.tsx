@@ -117,8 +117,8 @@ function Track({ viewAll, me }: { viewAll: boolean; me: string }) {
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col px-[max(1rem,10px)] pb-[max(1rem,10px)] pt-[max(1rem,12px)] max-md:pt-6">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-3 px-[max(0.25rem,4px)]">
+    <div className="flex min-h-0 flex-1 flex-col px-[max(1rem,10px)] pb-[max(1rem,10px)] pt-[max(2.25rem,22px)] max-md:pt-6">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-3 pl-[max(0.25rem,4px)] pr-[calc(max(0.25rem,4px)+15px)]">
         {scope === "all" || !person ? (
           <h1 className="text-h1 font-light text-ink">TA Track</h1>
         ) : (
@@ -277,10 +277,14 @@ function Rings({
 }) {
   const strip = useRef<HTMLUListElement>(null);
   const [more, setMore] = useState(false);
+  const [back, setBack] = useState(false);
   useEffect(() => {
     const el = strip.current;
     if (!el) return;
-    const check = () => setMore(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+    const check = () => {
+      setMore(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+      setBack(el.scrollLeft > 4);
+    };
     check();
     el.addEventListener("scroll", check, { passive: true });
     addEventListener("resize", check);
@@ -305,6 +309,18 @@ function Rings({
           </li>
         ))}
       </ul>
+      {back && (
+        <button
+          type="button"
+          onClick={() => strip.current?.scrollBy({ left: -strip.current.clientWidth * 0.8, behavior: "smooth" })}
+          aria-label="Earlier TAs"
+          className="absolute left-0 top-[max(3.6rem,46px)] flex size-9 items-center justify-center rounded-full bg-surface text-ink shadow-float"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="size-4" aria-hidden="true">
+            <path d="m15 6-6 6 6 6" />
+          </svg>
+        </button>
+      )}
       {more && (
         <button
           type="button"

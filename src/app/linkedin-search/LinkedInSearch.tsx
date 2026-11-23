@@ -3,6 +3,8 @@
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useSpeech } from "@/lib/useSpeech";
+import ListenPulse from "../ListenPulse";
 import { DUR, EASE, gsap, motionOK, popPanel, useSwap } from "@/lib/gsap";
 import type { Found, SearchResult } from "@/lib/linkedinSearch";
 import type { Profile } from "@/lib/linkedinProfile";
@@ -55,6 +57,7 @@ export default function LinkedInSearch() {
   const [prev, setPrev] = useState<View | null>(null);
   const [thread, setThread] = useState<Msg[]>([]);
   const [text, setText] = useState("");
+  const mic = useSpeech((t) => setText((x) => (x ? x + " " : "") + t));
   const [busy, setBusy] = useState<Ask | null>(null);
   const [error, setError] = useState("");
   const [toast, setToast] = useState<Toast | null>(null);
@@ -291,7 +294,8 @@ export default function LinkedInSearch() {
           <path d="M2.5 3.5h11v7.5H7l-3 2.5V11H2.5z" />
         </svg>
       </button>
-      <button type="button" disabled title="Speaking to AURA is not switched on yet" aria-label="Speak" className="flex size-5 shrink-0 items-center justify-center text-ink-2 opacity-60">
+      <button type="button" disabled={!mic.ok} onClick={mic.toggle} aria-pressed={mic.on} title={mic.ok ? (mic.on ? "Stop listening" : "Speak") : "Speaking is not available in this browser"} aria-label={mic.on ? "Stop listening" : "Speak"} className={"relative flex size-5 shrink-0 items-center justify-center disabled:opacity-40 " + (mic.on ? "text-danger" : "text-ink-2 hover:text-ink")}>
+        {mic.on && <ListenPulse />}
         <svg viewBox="0 0 20 20" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
           <rect x="7.5" y="2.5" width="5" height="10" rx="2.5" />
           <path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5" />
@@ -354,7 +358,8 @@ export default function LinkedInSearch() {
                 className="w-full resize-none bg-transparent text-[max(1.125rem,14px)] text-ink outline-none placeholder:text-ink-3"
               />
               <div className="flex items-center justify-end gap-3">
-                <button type="button" disabled title="Speaking to AURA is not switched on yet" aria-label="Speak" className="text-ink-2 opacity-60">
+                <button type="button" disabled={!mic.ok} onClick={mic.toggle} aria-pressed={mic.on} title={mic.ok ? (mic.on ? "Stop listening" : "Speak") : "Speaking is not available in this browser"} aria-label={mic.on ? "Stop listening" : "Speak"} className={"relative disabled:opacity-40 " + (mic.on ? "text-danger" : "text-ink-2 hover:text-ink")}>
+                  {mic.on && <ListenPulse />}
                   <svg viewBox="0 0 20 20" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
                     <rect x="7.5" y="2.5" width="5" height="10" rx="2.5" />
                     <path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5" />

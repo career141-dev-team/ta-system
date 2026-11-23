@@ -300,9 +300,11 @@ function drawCard(ctx: CanvasRenderingContext2D, s: Snip, logo: HTMLImageElement
     ctx.font = f(wt, ft);
     ctx.fillText(t, fx, 641.5);
     const w = ctx.measureText(t).width;
-    // Where the email and the phone really landed, for their edit boxes.
-    if (n === 1) where.email = [fx, w];
-    if (n === 3) where.phone = [fx, w];
+    // Where the email and the phone really landed, for their edit boxes: the value only,
+    // not the "E :" / "M :" in front of it.
+    const lead = ctx.measureText(t.slice(0, 4)).width;
+    if (n === 1) where.email = [fx + lead, w - lead];
+    if (n === 3) where.phone = [fx + lead, w - lead];
     fx += w + gap * (ft / 15);
   });
   ctx.restore();

@@ -68,7 +68,7 @@ function Pop({ pos, onClose, children, label, className }: { pos: Place; onClose
         role="dialog"
         aria-label={label}
         style={{ top: pos.top, right: pos.right, opacity: 0 }}
-        className={"fixed z-[71] max-h-[calc(100dvh-7rem)] max-w-[calc(100vw-24px)] overflow-y-auto rounded-xl bg-surface shadow-float " + className}
+        className={"fixed z-[71] max-h-[calc(100dvh-7rem)] max-w-[calc(100vw-24px)] overflow-y-auto rounded-xl bg-surface shadow-float [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border-strong [&::-webkit-scrollbar-track]:my-4 [&::-webkit-scrollbar-track]:bg-transparent " + className}
       >
         {children}
       </div>
@@ -193,7 +193,7 @@ export function Bell() {
             const shown = all ? list : list.slice(0, SHOWN);
             return (
               <section key={name} className="mb-1">
-                <p className="mb-1.5 mt-3 px-3 text-caption font-medium uppercase text-ink-3">
+                <p className="mb-3 mt-3 px-3 text-caption font-medium uppercase text-ink-3">
                   {name} <span className="font-normal normal-case">· {list.length}</span>
                 </p>
                 <ul className="flex flex-col gap-1.5">{shown.map(row)}</ul>

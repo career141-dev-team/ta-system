@@ -310,6 +310,7 @@ function Plan({ j, aura }: { j: Job; aura: boolean }) {
               return (
                 <div key={g.name} className="mt-[max(0.75rem,6px)]">
                   <p className="mb-1.5 text-caption font-medium uppercase text-ink-3">{g.name}</p>
+                  <div className="flex flex-col gap-[max(0.375rem,4px)]">
                   {shown.map((n) => (
                     <StrategyRow
                       key={n}
@@ -321,6 +322,7 @@ function Plan({ j, aura }: { j: Job; aura: boolean }) {
                       onUnstrike={() => drop(n)}
                     />
                   ))}
+                  </div>
                   {hidden > 0 && (
                     <button type="button" onClick={() => setMore({ ...more, [g.name]: true })} className="ml-10 mt-1 text-small text-ink-3 hover:text-ink">
                       + {hidden} more {g.name} {hidden === 1 ? "strategy" : "strategies"}
