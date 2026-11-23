@@ -15,6 +15,8 @@ export type LiveRow = {
   why: string | null;
   eye: boolean;
   hasCv: boolean;
+  /** The linked candidate (backend 23 Nov); missing from an older backend. */
+  cvId?: string | null;
   cvMatch: { name: string; strength: string; reasons: string[] } | null;
   addOn: boolean;
   pipeline: string | null;

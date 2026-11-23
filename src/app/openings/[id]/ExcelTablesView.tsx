@@ -13,7 +13,7 @@ import { sendToPipeline } from "./pipelineInbox";
 import WorkdayBlocked from "./WorkdayBlocked";
 import { FIELD_PILL } from "./filters";
 import { useFilters } from "@/lib/filters";
-import { jobFromAddress, LIVE, useLive } from "@/lib/backend";
+import { cvUrl, jobFromAddress, LIVE, useLive } from "@/lib/backend";
 import { actionFor, addedBucket, sendLink, sheetDate, sheetsOf, useLiveLinks, VIA_FROM, type LiveLinks, type LiveRow } from "./excelLive";
 import { useLiftMenu } from "./liftMenu";
 import { useOpeningView } from "./view";
@@ -53,6 +53,8 @@ type Row = {
   why?: string;
   eye: boolean;
   hasCv: boolean;
+  /** Signed in: the linked candidate's own CV file. */
+  cv?: string;
   addOn: boolean;
   pipeline?: string;
   addedBy: string;
@@ -217,6 +219,7 @@ function liveRow(l: LiveRow, where: Map<string, string>): Row {
     why: l.why ?? undefined,
     eye: l.eye,
     hasCv: l.hasCv,
+    cv: l.cvId ? cvUrl({ candidate: l.cvId }) : undefined,
     addOn: l.addOn,
     pipeline: l.pipeline ?? undefined,
     addedBy: l.mine ? ME : l.addedBy,
@@ -1243,9 +1246,10 @@ function TableRow({
   // The linked CV, read in a window over the table (the name opens it). The backend row
   // carries no candidate id yet, so until it does the viewer shows the sample layout.
   const [cvOpen, setCvOpen] = useState(false);
-  // Signed in the row has no CV file to show yet, so "View CV" would open the SAMPLE CV under
-  // a real person's name: only on the sample until the backend row carries the candidate.
-  const viewCv = !useLive();
+  // Signed in, "View CV" opens the linked candidate's own CV; a row with no linked
+  // candidate never opens the sample CV under a real person's name (23 Nov 2026).
+  const live = useLive();
+  const viewCv = !live || !!x.cv;
   const cvBox = useRef<HTMLDivElement>(null);
   const cvShown = useExit(cvOpen, cvBox, FADE);
   const sub = [x.title || "Title to check", x.company, x.location]
@@ -1474,7 +1478,7 @@ function TableRow({
                 <FindCvButton
                   name={x.name}
                   matches={x.matches}
-                  onView={viewCv ? () => setCvOpen(true) : undefined}
+                  onView={live ? undefined : () => setCvOpen(true)}
                   up={up}
                   className="whitespace-nowrap"
                   onLinked={() => {
@@ -1496,7 +1500,7 @@ function TableRow({
         </div>
       </td>
     </tr>
-    {cvShown && <CvPreview ref={cvBox} name={x.name} title={x.title} onClose={() => setCvOpen(false)} />}
+    {cvShown && <CvPreview ref={cvBox} name={x.name} title={x.title} src={x.cv} onClose={() => setCvOpen(false)} />}
     </>
   );
 }
