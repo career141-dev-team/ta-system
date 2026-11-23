@@ -1,6 +1,6 @@
 "use client";
 
-import { door, jobFromAddress, OLD_SERVER, useDoorMutation, useDoorQuery, useLive, useSessionHeaders, useSignedIn, type Answer } from "@/lib/backend";
+import { door, jobFromAddress, OLD_SERVER, useDoorAction, useDoorMutation, useDoorQuery, useLive, useSessionHeaders, useSignedIn, type Answer } from "@/lib/backend";
 import { useLiveDesk } from "@/lib/workday";
 import { useEffect, useRef, useState } from "react";
 import { DUR, EASE, gsap, motionOK, useGSAP, useSwap } from "@/lib/gsap";
@@ -868,6 +868,42 @@ export default function DailyEmailView() {
     else setCands((all) => all.map(apply));
     if (mail) patch(mail.id, {});
   };
+  // Draft my EOD (AI-FLOWS 4, 23 Nov 2026): AURA adds one or two NOTES lines per person
+  // from their CV (ui/eodDraft:notes). Nothing is saved until the TA sends; they read,
+  // change or delete the lines first. Lines already there are never added twice.
+  const runDraft = useDoorAction(door.eodDraft);
+  const [drafting, setDrafting] = useState(false);
+  const draftNotes = async () => {
+    if (!job || !mail || readOnly || drafting) return;
+    setDrafting(true);
+    const r = (await runDraft({ jobId: job, ...(mail.forDate ? { forDate: mail.forDate } : {}) }).catch(() => null)) as
+      | { ok: true; notes: Record<string, string[]>; message: string }
+      | { ok: false; message: string }
+      | null;
+    setDrafting(false);
+    if (!r) return say("AURA could not draft just now. Try again.", undefined, true);
+    if (!r.ok) return say(r.message, undefined, true);
+    const add = (c: Cand) => {
+      const have = c.notes.split("\n").map((l) => l.replace(/^>/, "").trim());
+      const fresh = (r.notes[c.id] ?? []).filter((l) => !have.includes(l));
+      return fresh.length ? { ...c, notes: [c.notes, ...fresh].filter(Boolean).join("\n"), edited: c.edited.includes("notes") ? c.edited : [...c.edited, "notes"] } : c;
+    };
+    if (mail.rows) edit({ rows: mail.rows.map(add) });
+    else setCands((all) => all.map(add));
+    patch(mail.id, {});
+    say(` ${r.message}`, "AURA");
+  };
+  // Opened from Today's "Draft my EOD": draft once the people are in.
+  const autoDrafted = useRef(false);
+  useEffect(() => {
+    if (autoDrafted.current || !signedIn || !rows.length || !mail || readOnly) return;
+    if (new URLSearchParams(window.location.search).get("draft") !== "1") return;
+    autoDrafted.current = true;
+    const t = setTimeout(() => void draftNotes(), 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signedIn, rows.length, mail?.id, readOnly]);
+
   // A row typed in by hand (owner, 14 Nov 2026): name, company and designation are
   // needed before the email goes; it has no prepared CV.
   const rowN = useRef(0);
@@ -1068,9 +1104,21 @@ export default function DailyEmailView() {
 
               {rows.length > 0 ? (
                 <>
-                  <h3 className={SECTION}>
-                    Candidates for Director Review · {rows.length}
-                  </h3>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <h3 className={SECTION}>
+                      Candidates for Director Review · {rows.length}
+                    </h3>
+                    {signedIn && !readOnly && (
+                      <button
+                        type="button"
+                        disabled={drafting}
+                        onClick={() => void draftNotes()}
+                        className="shrink-0 rounded-pill border border-border px-3 py-1 text-small text-ink-2 hover:bg-surface-2 disabled:opacity-60"
+                      >
+                        {drafting ? "AURA is reading the CVs…" : "✦ Draft notes with AURA"}
+                      </button>
+                    )}
+                  </div>
                   <CandidateTable
                     rows={rows}
                     cols={mail.cols}

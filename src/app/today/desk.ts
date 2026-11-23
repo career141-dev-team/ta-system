@@ -171,7 +171,8 @@ export function answer(text: string, today: Ranked[], all: Ranked[], rows: Row[]
       if (!today.length) return { say: "Tick a position first." };
       return {
         say: "Your End of day emails are due at 6:00. Check each one, then send:",
-        rows: today.map((r) => ({ main: r.d.title, meta: `${r.d.client} · Midday & EOD email`, href: "/openings/demo" })),
+        // A real opening opens its email and drafts the notes there (23 Nov); the sample keeps the demo.
+        rows: today.map((r) => ({ main: r.d.title, meta: `${r.d.client} · Midday & EOD email`, href: /^[a-z0-9]{20,}$/.test(r.d.id) ? `/openings/demo?job=${r.d.id}&view=midday&draft=1` : "/openings/demo" })),
       };
     }
     return null;

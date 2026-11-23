@@ -253,6 +253,7 @@ export const door = {
   briefRead: makeFunctionReference<"action">("ui/brief:read"),
   // AURA on a CV: the green box in the TA's words, and questions (D11 item 4).
   cvAsk: makeFunctionReference<"action">("ui/cvAgent:ask"),
+  eodDraft: makeFunctionReference<"action">("ui/eodDraft:notes"),
   // The home chats and the Strategy plan chat, where their word rules stop (D11 item 5).
   homeAsk: makeFunctionReference<"action">("ui/homeAsk:home"),
   planAsk: makeFunctionReference<"action">("ui/homeAsk:plan"),
