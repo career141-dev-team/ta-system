@@ -99,6 +99,25 @@ export const summary = query({
   },
 });
 
+/** The opening page's rings (R5, 21 Nov 2026): the old Overview's "Targets" table -
+ *  ta/targets:forJob as the person asking (a TA their own row, a lead or admin every TA
+ *  on the job): CVs shortlisted today and LinkedIn links added today against the TA's
+ *  daily targets (null = not set). Read only. */
+export const targets = query({
+  args: { openingId: v.string(), as: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const o = await openFor(ctx, args.openingId, args.as);
+    if (!o.ok) return o;
+    const rows = (await ctx.runQuery(internal.ta.targets.forJob, { actorId: o.user._id, jobId: o.jobId })) as {
+      userId: string; userName: string; cvsPerDay: number | null; linksPerDay: number | null; cvsToday: number; linksToday: number;
+    }[];
+    return {
+      ok: true as const,
+      rows: rows.map((r) => ({ userId: r.userId, name: r.userName, cvsPerDay: r.cvsPerDay, linksPerDay: r.linksPerDay, cvsToday: r.cvsToday, linksToday: r.linksToday })),
+    };
+  },
+});
+
 const card = (a: Doc<"applications">, c: Doc<"candidates"> | null) => ({
   id: a._id as string,
   name: c?.fullName?.trim() || "Name not on record",

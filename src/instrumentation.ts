@@ -1,6 +1,21 @@
 import type { Instrumentation } from "next";
 
 /**
+ * Warm the desk once when the server starts (21 Nov, R7): after a release the first
+ * person to open a page waited ~20 s while the whole desk loaded. Now it loads in the
+ * background a few seconds after start - never blocking start-up or the health check,
+ * and a failure only logs (the first request then loads it, as before).
+ */
+export async function register() {
+  if (process.env.NEXT_RUNTIME !== "nodejs" || process.env.NODE_ENV !== "production") return;
+  setTimeout(() => {
+    void import("@/data/prime")
+      .then(({ primeStore }) => primeStore({}))
+      .then(() => console.log("[warm] desk loaded at start"), (e) => console.warn("[warm] desk did not load at start:", e instanceof Error ? e.message : e));
+  }, 3000);
+}
+
+/**
  * Every server error as one line a person can search for (28 Sep).
  *
  * Next already prints the stack; what it does not print is the digest the

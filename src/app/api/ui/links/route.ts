@@ -139,6 +139,8 @@ export async function POST(req: Request) {
   if (!read.ok) return answer(req, read, 400);
   const form = new FormData();
   for (const [k, v] of read.fields) form.append(k, v);
+  // The CV check runs after the answer for the new UI (R7, 21 Nov: an add took ~9 s).
+  if (read.action === "add") form.set("matchLater", "1");
   try {
     const r = await inline(() => RUN[read.action](form));
     return answer(req, { ok: r.ok, message: r.message });

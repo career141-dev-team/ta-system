@@ -511,5 +511,13 @@ eq("access: only a TA is offered openings to ask for", acc.includes('["ta", "ta_
   eq("lead: a role with no TA lead is on every lead's list", lead.includes("|| !j.taLeadId"), true);
 }
 
+// ── Opening rings (21 Nov, R5) ──────────────────────────────────────────────
+{
+  const op = read("convex/ui/opening.ts");
+  const t = op.slice(op.indexOf("export const targets"), op.indexOf("const card ="));
+  eq("targets: the opening check first (seat or desk-wide), then the old read", t.indexOf("openFor(") < t.indexOf("internal.ta.targets.forJob"), true);
+  eq("targets: run as the person asking, never a given id", t.includes("actorId: o.user._id"), true);
+}
+
 console.log(`\nuidoor: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
