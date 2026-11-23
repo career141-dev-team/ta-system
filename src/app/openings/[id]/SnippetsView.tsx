@@ -220,17 +220,19 @@ function drawCard(ctx: CanvasRenderingContext2D, s: Snip, logo: HTMLImageElement
 
   // Heading: the light line, then the bold one. Sized to the design's widths (its own
   // face is narrower than Poppins), baselines as measured.
+  // A long title shrinks to stay inside the card (it ran off the edge on a real
+  // "Business Development Manager", 23 Nov).
+  const fit = (t: string, wt: number, sz: number) => {
+    ctx.font = f(wt, sz);
+    while (sz > 20 && ctx.measureText(t).width > 560) ctx.font = f(wt, (sz -= 0.5));
+  };
   ctx.fillStyle = INKS[s.ink];
-  ctx.font = f(s.bold ? 700 : 300, 42);
+  fit(s.line1, s.bold ? 700 : 300, 42);
   ctx.fillText(s.line1, 57, 252);
-  ctx.font = f(700, 52.7);
+  if (s.underline) ctx.fillRect(57, 258, ctx.measureText(s.line1).width, 2.5);
+  fit(s.line2, 700, 52.7);
   ctx.fillText(s.line2, 57, 307);
-  if (s.underline) {
-    ctx.font = f(s.bold ? 700 : 300, 42);
-    ctx.fillRect(57, 258, ctx.measureText(s.line1).width, 2.5);
-    ctx.font = f(700, 52.7);
-    ctx.fillRect(57, 313, ctx.measureText(s.line2).width, 2.5);
-  }
+  if (s.underline) ctx.fillRect(57, 313, ctx.measureText(s.line2).width, 2.5);
 
   // The four facts, white pills.
   ROLE.facts.forEach(([label], i) => {
@@ -285,7 +287,7 @@ function drawCard(ctx: CanvasRenderingContext2D, s: Snip, logo: HTMLImageElement
   // Laid end to end by their widths (the gaps are the design's at the design's size), and
   // shrunk, if need be, to stay inside the card.
   ctx.fillStyle = "#000";
-  const parts: [string, number, number][] = [["TA :", 700, 11], [`E : ${who.email}`, 500, 7], ["|", 500, 14], [`M : ${who.phone}`, 500, 0]];
+  const parts: [string, number, number][] = [["TA :", 700, 11], [`E : ${who.email}`, 500, 7], ...(who.phone ? ([["|", 500, 14], [`M : ${who.phone}`, 500, 0]] as [string, number, number][]) : [])];
   const span = (sz: number) =>
     parts.reduce((w, [t, wt, gap]) => {
       ctx.font = f(wt, sz);
@@ -445,8 +447,9 @@ export default function SnippetsView() {
   const JD_APPROVED = live ? !!(real?.ok && real.approved) : sampleApproved;
   const canSource = live ? !(real && !real.ok) : CAN_SOURCE;
   const me = useMe();
-  // The signed-in person's own contact; placeholder email and phone (sample on a public link).
-  const who: Contact = { ta: me.first, email: s.email ?? `${me.first.toLowerCase()}@career141.com`, phone: s.phone ?? "+94 77 000 0000" };
+  // The signed-in person's own contact; placeholder email and phone only on the sample.
+  // Signed in with no mobile on record, the phone is left off, as the old card does (23 Nov).
+  const who: Contact = { ta: me.first, email: s.email ?? `${me.first.toLowerCase()}@career141.com`, phone: s.phone ?? (live ? "" : "+94 77 000 0000") };
   const { go } = useOpeningView();
   const [msgs, setMsgs] = useState<Msg[]>([{ who: "aura", text: FIRST }]);
   // The parts of the card picked to talk about (tags in the chat).
