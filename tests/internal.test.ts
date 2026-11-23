@@ -84,6 +84,7 @@ const ALLOWED_PUBLIC = new Set<string>([
   "ui/brief:read",
   // AURA on a CV: the green box in the TA's words, and questions (20 Nov, D11 item 4).
   "ui/cvAgent:ask",
+  "ui/eodDraft:notes",
   // The lead/Director/Ops home chat and the Strategy plan chat with Haiku (20 Nov, D11 item 5).
   "ui/homeAsk:home",
   "ui/homeAsk:plan",
