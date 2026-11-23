@@ -513,5 +513,20 @@ eq("access: only a TA is offered openings to ask for", acc.includes('["ta", "ta_
   eq("adminAsk: writes only its own ledger row", (ask.match(/runMutation\(/g) ?? []).length === 1 && ask.includes("internal.ui.auraLedger.record"), true);
 }
 
+// ── Lead decisions (22 Nov) ─────────────────────────────────────────────────
+{
+  const lead = read("convex/ui/lead.ts");
+  eq("lead: 'Nobody assigned' counts active TAs only, as the roles list", lead.includes("tas: onIt(j._id as string)") && lead.includes("nameOf.has(t as string)"), true);
+  eq("lead: a role with no TA lead is on every lead's list", lead.includes("|| !j.taLeadId"), true);
+}
+
+// ── Opening rings (21 Nov, R5) ──────────────────────────────────────────────
+{
+  const op = read("convex/ui/opening.ts");
+  const t = op.slice(op.indexOf("export const targets"), op.indexOf("const card ="));
+  eq("targets: the opening check first (seat or desk-wide), then the old read", t.indexOf("openFor(") < t.indexOf("internal.ta.targets.forJob"), true);
+  eq("targets: run as the person asking, never a given id", t.includes("actorId: o.user._id"), true);
+}
+
 console.log(`\nuidoor: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

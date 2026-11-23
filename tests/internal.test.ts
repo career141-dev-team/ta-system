@@ -63,6 +63,8 @@ const ALLOWED_PUBLIC = new Set<string>([
   "ui/track:report",
   "ui/followUp:chat",
   "ui/followUp:act",
+  // The opening page rings (21 Nov, R5): the old Overview targets, read only.
+  "ui/opening:targets",
   "ui/access:available",
   "ui/access:request",
   "ui/access:pending",

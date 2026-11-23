@@ -583,8 +583,12 @@ export async function addLink(formData: FormData) {
   const id = repo.addLink(openingId, url, user.id, name, "shortlisted", location?.id, Number(formData.get("level")) || undefined);
   if (leadNote) repo.addLeadNote(id, user.id, user.role, leadNote);
   // Is this someone we already hold? (lib/cvMatch, 28 Sep.) Asked now, so
-  // the row says so the moment it appears.
-  const held = await matchLink(id, user.id);
+  // the row says so the moment it appears. The new UI's door asks for it after
+  // the answer instead (21 Nov, R7: the add took ~9 s); its table reads the row
+  // again and shows the match then. This page is unchanged.
+  const later = formData.get("matchLater") === "1";
+  const held = later ? null : await matchLink(id, user.id);
+  if (later) after(() => matchLink(id, user.id).then(() => revalidateLinks(openingId), () => undefined));
   revalidateLinks(openingId);
   await done(
     heldLine(held) +
