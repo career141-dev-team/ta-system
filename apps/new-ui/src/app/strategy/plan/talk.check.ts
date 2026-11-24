@@ -27,4 +27,7 @@ assert.deepEqual(read("AURA, switch off LinkedIn search"), { picks: [{ name: "Li
 assert.deepEqual(read("Put Dilini on Aura").picks, [{ name: "Aura", ta: "DR" }]);
 // Nothing it knows.
 assert.deepEqual(read("make it faster please"), { picks: [], day: undefined, off: false, tas: [] });
+// Said another way: "the headhunting" is Direct headhunt; an everyday word is not a strategy (25 Nov).
+assert.deepEqual(read("Dilini should do the headhunting and the referrals on Thursday").picks, [{ name: "Direct headhunt", ta: "DR" }, { name: "Referral extraction", ta: "DR" }]);
+assert.deepEqual(read("the company wants more people").picks, []);
 console.log("talk ok");
