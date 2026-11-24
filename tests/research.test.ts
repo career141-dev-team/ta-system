@@ -72,6 +72,7 @@ console.log("\nresearch by search: a whole run, with the web faked");
       }
       if (q.includes("John Keells")) return { hits: [{ url: "https://www.keells.com", title: "John Keells Holdings PLC", snippet: "" }, ...hits(["https://www.linkedin.com/company/john-keells-holdings"])], credits: 1 };
       if (q.includes("Aitken Spence")) return { hits: hits(["https://www.aitkenspence.com"]), credits: 1 };
+      if (q.includes("Dialog Axiata")) return { hits: hits(["https://www.dialog.lk", "https://www.linkedin.com/company/dialog-axiata"]), credits: 1 };
       return { hits: [{ url: "https://www.hayleys.com/", title: "Hayleys", snippet: "Diversified conglomerate in Colombo" }], credits: 1 };
     },
     readPage: async (url) => {
@@ -80,14 +81,14 @@ console.log("\nresearch by search: a whole run, with the web faked");
       return url === "https://www.keells.com" ? "John Keells runs hotels and retail." : null;
     },
     model: async (_s, prompt) => {
-      if (prompt.includes('"competitors": ["..."]')) return reply(JSON.stringify({ competitors: ["John Keells Holdings", "Aitken Spence", "Invented Group"] }));
+      if (prompt.includes('"fromResults"')) return reply(JSON.stringify({ fromResults: ["John Keells Holdings", "Aitken Spence", "Invented Group"], known: ["Made Up Holdings", "Dialog Axiata"] }));
       const keells = prompt.match(/\[(S\d+)\] John Keells Holdings — website/)?.[1] ?? "";
       return reply(
         JSON.stringify({
           similarDesignation: { value: "Group CFO", source: "S99" },
           services: { value: ["Plantations", "Leisure"], source: "S1" },
           country: { value: "Sri Lanka", source: "S1" },
-          location: { value: "Colombo", source: "S1" },
+          location: { value: "Colombo", source: "S99" },
           overview: { value: "A diversified conglomerate.", source: "S1, S5, S99" },
           competitors: [
             { name: "John Keells Holdings", whatTheyDo: { value: "Hotels and retail", source: keells }, location: { value: "", source: "" }, summary: { value: "Largest listed group.", source: "" } },
@@ -101,10 +102,11 @@ console.log("\nresearch by search: a whole run, with the web faked");
   if (r.ok) {
     eq("website and LinkedIn are the addresses the search returned", [r.fields.websiteLink, r.fields.socialMedia], ["https://www.hayleys.com", "https://www.linkedin.com/company/hayleys-plc"]);
     eq("the client's own site is read", read.includes("https://www.hayleys.com"), true);
-    eq("a competitor the search never named is dropped", r.fields.competitors, ["John Keells Holdings", "Aitken Spence"]);
+    eq("a named one the results never named is dropped; a known one with its own site is kept; an invented one is not", r.fields.competitors, ["John Keells Holdings", "Aitken Spence", "Dialog Axiata"]);
     eq("each competitor is searched from three angles", queries.filter((q) => /John Keells|Aitken Spence/.test(q)).length, 6);
-    eq("cited fields are kept", [r.fields.country, r.fields.location, r.fields.servicesProvider], ["Sri Lanka", "Colombo", ["Plantations", "Leisure"]]);
-    eq("a field citing evidence that does not exist is empty", r.fields.similarDesignation, "");
+    eq("cited fields are kept", [r.fields.country, r.fields.servicesProvider], ["Sri Lanka", ["Plantations", "Leisure"]]);
+    eq("a field citing evidence that does not exist is empty", r.fields.location, "");
+    eq("similar titles are role knowledge, kept without a source", r.fields.similarDesignation, "Group CFO");
     eq("several sources cited at once still count", r.fields.companyOverview, "A diversified conglomerate.");
     const jk = r.fields.competitorProfiles?.[0];
     eq("competitor site and LinkedIn from the search", [jk?.website, jk?.linkedin], ["https://www.keells.com", "https://www.linkedin.com/company/john-keells-holdings"]);

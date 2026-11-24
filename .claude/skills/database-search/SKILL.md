@@ -318,6 +318,7 @@ Pre-merge checklist:
 Repo hard rules that apply: never touch the live backend from a laptop (no `convex deploy`/`run`/`import`/`env set` against `api.career141.com`, `ta-system-api.career141.com` or the VPS); outbound only through `outreachSafety.ts` and `outboundGuard.ts`; data changes (backfilling `employersText`, reindexing, clearing `currentRoleRank` caches) are migration functions with a `dryRun` argument run by the pipeline; work on a branch and merge by pull request; no secrets in code or docs. Run local with `deploy/local/start-app.sh` only.
 
 ## History
+- 2026-11-25 Reverse match: one person once (`dedupeByPerson`, same name and title) and a TA judge on the engine's best 40 (`convex/lib/taJudge.ts`, called in `matching/agent2.ts`): anonymous lines (title, employer, years, place, skills) to the text model, `n|score|reason` back; its score orders the list, under 50 leaves it, its reason leads the row; no answer = the engine's list stands. Engine scores sat at 93-100 on real openings and a product engineer headed the Garment Technologist list. Test: `tests/tajudge.test.ts`.
 
 - 2026-09-13 (pre-repo, in `dbMatch.ts` header): database matches agreed: nearest 300, hard rules, rules score; model review removed after a blind test of 184 CVs; MEANING_FLOOR 50 and CLOSE_IN_MEANING 0.75 set from a 704-profile blind test.
 - 2026-09-14 `7470f4f` new TA platform with search, matching and P1 safeguards.
@@ -358,9 +359,9 @@ With `ANTHROPIC_API_KEY` set (and `C141_LLM_PROVIDER` not `openrouter`) the Deep
 **Haiku only, and cached (5 Nov 2026, later):** with the key set, `askClaudeFirst`, `askBridge`, the CLI scoring (`claudeMatch`), CLI web search and the CV vision bridge all step aside (`hasToken()` is false, `haikuOnly()` in `src/lib/claudeSub.ts`), so every answer is `claude-haiku-5-5` on the API. `anthropicModelFor` ignores `C141_MODEL_*`; `C141_RESEARCH_PROVIDER` does not apply; the reference-CV parser drops its OpenRouter/OpenAI fallbacks; the jdParser drops NVIDIA. System prompts carry `cache_control` in both runtimes.
 
 <!-- skill-meta
-verified-commit: 3d0d1120
-verified-hash: 44e66df69364c8e87493627e49d31fb90fa8a22f
-verified-date: 2026-11-17
+verified-commit: 0871dcb4
+verified-hash: 99377f946a76b94938c7df763441f5394eb51c4d
+verified-date: 2026-11-24
 sources:
   src/lib/engineSearch.ts
   src/lib/scoring.ts

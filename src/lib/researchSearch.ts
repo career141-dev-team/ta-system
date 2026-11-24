@@ -340,14 +340,30 @@ export async function researchViaSearch(input: ResearchInput, given: ResearchDep
 
     // ── 3. Competitors named in what the search returned. ────────────────────
     const compEvidence = [...compHits, ...marketHits].map((h) => `${h.title} — ${h.snippet}`).join("\n");
+    // Two kinds of competitor (25 Nov): the ones the results name, and the
+    // well-known ones in the market the model knows. The results alone gave
+    // Range Lanka none and CavinKare one, and a fabric mill and a retailer for
+    // a garment maker. A known one is kept only when its own search below
+    // finds its site or LinkedIn page under its name — so no invented company.
     let competitors: string[] = [];
-    if (compEvidence) {
-      const r = await deps.model(
-        SYSTEM,
-        `Search results about ${name}${industry ? ` (${industry})` : ""} and its market in ${where}:\n\n${compEvidence}${deskSays}\n\nList up to ${MAX_COMPETITORS} companies from these results that compete with ${name} in the same business. Company names only, spelled exactly as in the results. Not ${name} itself, not directories, news sites or job boards.\nJSON: {"competitors": ["..."]}`,
-        600,
-      );
-      if (r.ok) competitors = groundedCompetitors(list(parseJsonObject(r.text)?.competitors), compEvidence, name);
+    let knownOnly: string[] = [];
+    const cr = await deps.model(
+      SYSTEM,
+      `Search results about ${name}${industry ? ` (${industry})` : ""} and its market in ${where}:\n\n${compEvidence || "(none)"}${deskSays}\n\nWhich companies compete with ${name} in ${where}? Both lists: only companies operating in ${where}, whose main business is the same as ${name}'s and of the same kind — a garment manufacturer competes with garment manufacturers (not fabric mills or clothing shops), a distributor with distributors, a retailer with retailers; a group or conglomerate only when its own unit in this business is meant (name that unit). They are where a ${input.title} doing this same work would be found.\n"fromResults": up to ${MAX_COMPETITORS} named in the results above, spelled exactly as there.\n"known": up to ${MAX_COMPETITORS} other well-known companies operating in ${where} in that same business, from your own knowledge (this one list may use what you know).\nNot ${name} itself, not directories, news sites or job boards.\nJSON: {"fromResults": ["..."], "known": ["..."]}`,
+      600,
+    );
+    if (cr.ok) {
+      const cj = parseJsonObject(cr.text);
+      competitors = compEvidence ? groundedCompetitors(list(cj?.fromResults ?? cj?.competitors), compEvidence, name) : [];
+      const clientKey = nameTokens(name).join(" ");
+      knownOnly = list(cj?.known)
+        .map((k) => k.replace(/^[-*\d.)\s]+/, "").trim())
+        .filter((k) => k.length >= 2 && k.length <= 80)
+        .filter((k) => {
+          const key = nameTokens(k).join(" ");
+          return Boolean(key) && key !== clientKey && !competitors.some((c) => nameTokens(c).join(" ") === key);
+        })
+        .slice(0, Math.max(0, MAX_COMPETITORS - competitors.length));
     }
 
     // ── 4. Search and read each competitor, in parallel. ─────────────────────
@@ -355,8 +371,8 @@ export async function researchViaSearch(input: ResearchInput, given: ResearchDep
     // and where they are and how big — the last is what made competitor rows
     // read as bare names before. The angles run together and a page two of
     // them found is offered to the model first, as in Benchmark.
-    const compFound = await Promise.all(
-      competitors.map(async (c) => {
+    const compFoundAll = await Promise.all(
+      [...competitors, ...knownOnly].map(async (c) => {
         const matrix = await searchMatrix(
           [`"${c}" ${industry}`.trim(), `"${c}" site:linkedin.com/company`, `"${c}" ${where} headquarters OR "head office" OR employees`],
           deps.search,
@@ -373,6 +389,10 @@ export async function researchViaSearch(input: ResearchInput, given: ResearchDep
         return { name: c, hits: hits.slice(0, 4), site, linkedin: pickLinkedInCompany(hits, c), page, about };
       }),
     );
+    // A competitor from the model's knowledge stays only when its own search
+    // found its site or its LinkedIn page under its name.
+    const compFound = compFoundAll.filter((c) => competitors.includes(c.name) || Boolean(c.site || c.linkedin));
+    competitors = compFound.map((c) => c.name);
 
     // ── 5. Number every piece of evidence, so a field can say where it is from.
     // Kept short: a 30,000-character prompt took the model 56 s in the first
@@ -458,7 +478,7 @@ ${blockOf(clientIds)}
 
 ${CITE}
 {
-  "similarDesignation": {"value": "titles this same role carries at other companies, semicolon separated", "source": ""},
+  "similarDesignation": {"value": "3 to 6 other titles this same job carries at other companies in ${where}, at the same level, semicolon separated — from your own knowledge of the market; this one field needs no source", "source": ""},
   "services": {"value": ["what ${name} actually does, 3-6 short items"], "source": ""},
   "country": {"value": "", "source": ""},
   "location": {"value": "city or area of the head office", "source": ""},
@@ -488,7 +508,11 @@ ${CITE}
     if (!clientAnswer.ok) modelNote = clientAnswer.reason;
     else if (!j) modelNote = "bad_response";
     if (j) {
-      fields.similarDesignation = str(cited(j.similarDesignation, ids).value);
+      // Role knowledge, not a fact about the client: kept without a source (25
+      // Nov) — demanding one left it empty on every opening, and Suggestions
+      // and the database search read it.
+      const sim = j.similarDesignation as { value?: unknown } | string | undefined;
+      fields.similarDesignation = str(typeof sim === "object" && sim ? sim.value : sim).slice(0, 300);
       fields.servicesProvider = list(cited(j.services, ids).value).slice(0, 6);
       fields.country = str(cited(j.country, ids).value);
       fields.location = str(cited(j.location, ids).value);

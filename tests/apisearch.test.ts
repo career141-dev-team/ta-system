@@ -56,6 +56,16 @@ console.log("\nAPI search: operators still apply");
   eq("site: keeps only LinkedIn", r.hits.map((h) => h.url), ["https://www.linkedin.com/in/a-person/"]);
 }
 
+console.log("\nAPI search: the reply's own way of writing an address still lends the snippet");
+{
+  const r = parseApiSearch(
+    answer([{ type: "web_search_result", url: "https://lk.linkedin.com/in/oshani-e-203346196", title: "Oshani E - Senior Brand Manager" }], '[{"url":"https://www.linkedin.com/in/oshani-e-203346196/","snippet":"Senior Brand Manager at Unilever Sri Lanka."}]'),
+    "q",
+    10,
+  );
+  eq("www. and a trailing slash still match", [r.hits[0]?.snippet, r.ungrounded], ["Senior Brand Manager at Unilever Sri Lanka.", 0]);
+}
+
 console.log("\nAPI search: refusals and empties");
 {
   eq("an API error is an error", parseApiSearch({ error: { message: "overloaded" } }, "q", 10).error, "anthropic: overloaded");

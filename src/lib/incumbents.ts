@@ -127,11 +127,14 @@ const quoted = (variants: string[]) => (variants.length > 1 ? `(${variants.map((
  * it gets the leadership-page angle and the one that turns up a predecessor;
  * competitors get three, because each extra angle is another paid search.
  */
-export function benchmarkQueries(c: IncumbentCompany, variants: string[]): string[] {
+export function benchmarkQueries(c: IncumbentCompany, variants: string[], where = ""): string[] {
   const t = quoted(variants);
+  // The market goes on the LinkedIn search (25 Nov): CavinKare's Regional Sales
+  // Manager for a Sri Lanka role came back as one in India.
+  const w = where.trim() ? ` "${where.trim()}"` : "";
   const qs = [
     `"${c.name}" ${t}`,
-    `site:linkedin.com/in "${c.name}" ${t} -inurl:jobs -inurl:dir`,
+    `site:linkedin.com/in "${c.name}" ${t}${w} -inurl:jobs -inurl:dir`,
     `"${c.name}" ${t} appointed OR named OR "has joined"`,
   ];
   if (c.isClient) {
@@ -152,8 +155,9 @@ async function gather(
   variants: string[],
   deps: IncumbentDeps,
   count: (credits: number) => void,
+  where = "",
 ): Promise<{ company: string; items: Omit<Evidence, "id">[]; profiles: SearchHit[]; errors: string[] }> {
-  const queries = benchmarkQueries(c, variants);
+  const queries = benchmarkQueries(c, variants, where);
   const pages = c.website ? PEOPLE_PAGES.map((p) => `${c.website}${p}`) : [];
   const [matrix, read] = await Promise.all([
     // One person is one piece of evidence: LinkedIn serves the same profile
@@ -192,6 +196,22 @@ async function gather(
   };
 }
 
+/**
+ * Evidence that puts a person in another country, for a Sri Lanka role (25 Nov):
+ * CavinKare's Regional Sales Manager came back as one in India, and its
+ * competitors' as Mumbai and Delhi managers. A country LinkedIn host other
+ * than lk., or a neighbouring country named with no word of Sri Lanka.
+ * Other markets are left to the model.
+ */
+export function placedAbroad(url: string, text: string, where: string): boolean {
+  if (where.trim() && !/sri lanka|colombo|\blk\b/i.test(where)) return false;
+  const host = url.toLowerCase().match(/^https?:\/\/([a-z]{2})\.linkedin\.com\//)?.[1];
+  if (host && host !== "lk" && host !== "uk") return true;
+  const t = text.toLowerCase();
+  if (/sri lanka|colombo|kandy|galle|negombo|lanka/.test(t)) return false;
+  return /\b(india|mumbai|delhi|bangalore|bengaluru|chennai|hyderabad|kolkata|pune|pakistan|karachi|lahore|bangladesh|dhaka|dubai|uae|singapore|malaysia|kuala lumpur|vietnam)\b/.test(t);
+}
+
 const SYSTEM = `You find who holds a job at named companies, for a recruitment desk at Career141 in Sri Lanka.
 You are given numbered evidence: search results and text from the companies' own pages.
 Use ONLY that evidence. Never add a name you know from elsewhere. Never write a URL.
@@ -204,7 +224,7 @@ export async function findIncumbents(
 ): Promise<{ rows: IncumbentRow[]; searches: number; modelNote?: string }> {
   const variants = titleVariants(input.title);
   let searches = 0;
-  const found = await Promise.all(input.companies.map((c) => gather(c, variants, deps, (n) => (searches += n))));
+  const found = await Promise.all(input.companies.map((c) => gather(c, variants, deps, (n) => (searches += n), input.where)));
 
   const evidence: Evidence[] = [];
   for (const f of found) for (const it of f.items) evidence.push({ ...it, id: `P${evidence.length + 1}` });
@@ -227,7 +247,9 @@ Client: ${client}. Competitors: ${input.companies.filter((c) => !c.isClient).map
 Evidence:
 ${evidence.map((e) => `[${e.id}] (${e.company}) ${e.title} — ${e.url}\n${e.text}`).join("\n\n")}
 
-For each company: who holds this role now — at most two people, the likeliest first. For ${client || "the client"} only, also anyone the evidence says held it before.
+For each company: who holds this role now — at most two people, the likeliest first.
+A LinkedIn result titled "Name - <this role or a close title> - <company>", or whose text says they are in this role at that company, counts as current.
+Someone the evidence places outside ${input.where || "Sri Lanka"} does not count. For ${client || "the client"} only, also anyone the evidence says held it before.
 Name exactly as written in the evidence. Title as the evidence writes it.
 JSON: {"people": [{"company": "", "name": "", "title": "", "status": "current" or "former", "source": "P<n>", "confidence": "high" or "medium" or "low", "note": "under 15 words: what the evidence says, and how recent"}]}
 An empty list is a fine answer.`,
@@ -254,7 +276,8 @@ An empty list is a fine answer.`,
     const ev = evidence.find((e) => e.id === s("source").replace(/[[\]\s]/g, "").split(",")[0]?.toUpperCase());
     // The name must be in the very piece it is cited from.
     if (!ev || name.length < 3 || !ev.text.toLowerCase().includes(name.toLowerCase())) continue;
-    const company = input.companies.find((c) => c.name.toLowerCase() === (s("company") || ev.company).toLowerCase()) ?? input.companies.find((c) => c.name === ev.company)!;
+    if (placedAbroad(ev.url, ev.text, input.where)) continue;
+    const company =input.companies.find((c) => c.name.toLowerCase() === (s("company") || ev.company).toLowerCase()) ?? input.companies.find((c) => c.name === ev.company)!;
     const former = s("status") === "former";
     if (former && !company.isClient) continue;
     const key = `${company.name}|${former}`;

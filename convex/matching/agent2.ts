@@ -9,6 +9,33 @@ import { classifyJobRoleFamily, classifyCurrentRolesBatch } from "../lib/current
 import { synthesizeJobRequirements } from "../lib/jobSynthesizer";
 import { candidateVectorPayload, upsertCandidateVector, queryCandidateVectors } from "../lib/qdrant";
 import { cvFileMissing } from "../../src/lib/cvMissing";
+import { applyJudge, dedupeByPerson, judgeLine, judgePrompt, readJudge, JUDGE_POOL, type JudgeJob } from "../lib/taJudge";
+
+/** The TA judge's call; the engine's list stands when it does not answer. */
+async function judgeMatches(rows: any[], info: Map<string, any>, job: JudgeJob, tokenLogs: any[]): Promise<any[]> {
+  try {
+    const { getModelForTask, getOpenAI } = await import("../lib/llm");
+    const pool = rows.slice(0, JUDGE_POOL);
+    const lines = pool.map((r, i) => judgeLine(i + 1, info.get(String(r.cvId)) ?? { title: r.candidateRole ?? "", company: "", years: r.candidateExp ?? null, location: "", skills: r.matchedSkills ?? [] }));
+    const { system, user } = judgePrompt(job, lines);
+    const model = getModelForTask("reverse_matching");
+    const res = await getOpenAI("reverse_matching", 60_000).chat.completions.create({
+      model,
+      max_tokens: 1800,
+      messages: [{ role: "system", content: system }, { role: "user", content: user }],
+    });
+    tokenLogs.push({ taskType: "reverse_matching", model, promptTokens: res.usage?.prompt_tokens ?? 0, completionTokens: res.usage?.completion_tokens ?? 0, success: true, provider: "openrouter" });
+    const verdicts = readJudge(res.choices[0]?.message?.content ?? "", pool.length);
+    if (verdicts.size < pool.length / 2) {
+      console.warn(`[reverse-match] TA judge answered for ${verdicts.size} of ${pool.length}; engine order kept`);
+      return rows;
+    }
+    return applyJudge(rows, verdicts);
+  } catch (e) {
+    console.warn("[reverse-match] TA judge failed; engine order kept:", e instanceof Error ? e.message : e);
+    return rows;
+  }
+}
 
 /**
  * Helper to get vector embeddings from NVIDIA API
@@ -685,10 +712,19 @@ Return ONLY valid JSON matching this schema:
         }
       }
 
+      // What the TA judge reads for each person (lib/taJudge): no name or contact.
+      const judgeInfo = new Map<string, { title: string; company: string; years: number | null; location: string; skills: string[] }>();
       const matchResults = enrichedCandidates
         .map((c, index) => {
           const cv = c.candidate;
           const cvIdStr = cv._id.toString();
+          judgeInfo.set(cvIdStr, {
+            title: cv.currentTitle || cv.currentJobTitle || "",
+            company: cv.currentEmployer || "",
+            years: cv.totalExperienceYears ?? cv.yearsOfExperience ?? null,
+            location: cv.location || "",
+            skills: Array.isArray(cv.skills) ? cv.skills : [],
+          });
 
           const classRes = candidateClassificationCache.get(cvIdStr) || {
             rank: null,
@@ -925,6 +961,21 @@ Return ONLY valid JSON matching this schema:
           ...r,
           reason: `[Outside typical domain / Review manually] ${r.reason}`
         }));
+      }
+
+      // One person once, then the TA judge orders the best 40 (lib/taJudge, 25 Nov).
+      validMatches = dedupeByPerson(validMatches);
+      if (validMatches.length && !validMatches[0].reason?.startsWith("[Outside typical domain")) {
+        validMatches = await judgeMatches(validMatches, judgeInfo, {
+          title: synthesized?.primaryRoleTitle || job.title,
+          seniority: job.seniorityLevel,
+          minYears: parsedPreferences.minYearsExperience ?? job.experienceMinYears ?? null,
+          maxYears: parsedPreferences.maxYearsExperience ?? job.experienceMaxYears ?? null,
+          location: job.location,
+          industry: synthesized?.targetDomain || job.clientIndustry,
+          mustHaves: [...(synthesized?.coreDomainSkills ?? []), ...(job.requiredSkills ?? [])].slice(0, 8),
+          summary: job.jobDescription,
+        }, tokenLogs);
       }
 
       // Slice the top 30 ordered highest to lowest
