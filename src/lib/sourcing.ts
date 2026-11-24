@@ -428,6 +428,8 @@ interface Candidate {
   snippets: string[];
   hits: number;
   enriched: string[];
+  /** The quoted phrases of the searches that found this person (25 Nov). */
+  found?: string[];
 }
 
 function relevanceFilter(people: Candidate[], plan: QueryPlan, spec: SourcingSpec, limit: number): Candidate[] {
@@ -436,12 +438,17 @@ function relevanceFilter(people: Candidate[], plan: QueryPlan, spec: SourcingSpe
     ...plan.titleVariants, ...plan.functions,
   ].map((t) => t.toLowerCase());
   const tooSenior = seniorityGuard(plan, spec);
+  // Only the title searches count as evidence: a phrase like "tech pack" finds anyone who ever wrote it.
+  const titles = new Set(plan.titleVariants.map((t) => t.toLowerCase()));
   const scored: { score: number; c: Candidate }[] = [];
 
   const pass = (need: number) => {
     const out: { score: number; c: Candidate }[] = [];
     for (const c of people) {
-      const blob = `${c.title} ${c.snippets.join(" ")}`.toLowerCase();
+      // A LinkedIn result often carries only "Name - Company": the phrase the
+      // search matched on ("Garment Technologist") counts as evidence too, or
+      // 78 of 86 garment profiles read were thrown away unread (25 Nov).
+      const blob = `${c.title} ${c.snippets.join(" ")} ${(c.found ?? []).filter((f) => titles.has(f.toLowerCase())).join(" ")}`.toLowerCase();
       // Guard rail: never surface the client's own staff.
       if (spec.clientCompanyNames.some((n) => n.length > 3 && blob.includes(n.toLowerCase()))) continue;
       if (tooSenior.some((t) => blob.includes(t))) continue;
@@ -488,9 +495,10 @@ ${hard.length ? `\nABSOLUTE REQUIREMENTS:\n${hard.map((h) => `- ${h}`).join("\n"
 CANDIDATES:
 ${rows.join("\n")}
 
-Return ONLY a line per candidate you are REJECTING, in this format:
+Return one line for EVERY candidate, in exactly this format and nothing else:
 
-INDEX | REASON
+INDEX | KEEP | short reason
+INDEX | REJECT | short reason
 
 Reject where the evidence shows they do not fit. Be decisive: a longlist a TA has to re-screen is worse than a short one.
 
@@ -502,15 +510,29 @@ REJECT:
 - a career evidently based in another country when the role is a local hire
 - a match that rests only on a coinciding acronym or company name
 
-Do NOT reject for missing information. "Years not stated" is a question for the call.
-If you would reject nobody, return the single word NONE.`;
+Do NOT reject for missing information. "Years not stated" is a question for the call.`;
 
 /**
- * The rejected rows. The prompt asks for "INDEX | REASON", but the model does not
- * always keep to it — DeepSeek answered "[3] Reject - reason" on one run and the
- * pipe form on the next (16 September), so one run rejected everybody and the
- * next nobody. Any line that starts with an index is read; a line that says the
- * person is kept is not a rejection.
+ * Whether the ranker's name is the profile's own (25 Nov): it shares a word of
+ * three letters or more with the name on the search result, or the model gave
+ * none. "Roy Khanna" on gayan-abeysinghe's profile is not.
+ */
+export function sameName(said: string, own: string): boolean {
+  const words = (s: string) => new Set(s.toLowerCase().split(/[^a-z]+/).filter((w) => w.length >= 3));
+  const a = words(said);
+  if (a.size === 0) return true;
+  const b = words(own);
+  return [...a].some((w) => b.has(w));
+}
+
+/**
+ * The rejected rows. Since 25 Nov the prompt asks for "INDEX | KEEP|REJECT |
+ * reason" on every row: Haiku would not keep to "only the rejected", and wrote
+ * its verdicts every way ("Keep.", "Not rejected; retained.", "a direct fit,
+ * so no rejection") - each run read as rejecting everybody, the best included.
+ * The explicit word decides. Older forms are still read: DeepSeek answered
+ * "[3] Reject - reason" on one run and the bare pipe form on the next (16
+ * September). Without a verdict word, a numbered line is a rejection.
  */
 export function parseExclusions(text: string, max: number): Map<number, string> {
   const out = new Map<number, string>();
@@ -518,8 +540,19 @@ export function parseExclusions(text: string, max: number): Map<number, string> 
     const m = line.match(/^\s*[-*]?\s*\[?(\d{1,3})\]?\s*(?:\||:|-|–|—|\.|\))?\s*(.*)$/);
     if (!m || m[0].trim() === m[1]) continue;
     const idx = Number(m[1]);
+    const token = m[2].match(/^\**\s*(KEEP|REJECT)\b\**\s*(?:[|:–—-]\s*)?(.*)$/i);
+    if (token) {
+      if (token[1].toUpperCase() === "REJECT" && idx >= 0 && idx < max) out.set(idx, token[2].trim() || "rejected");
+      continue;
+    }
     const reason = m[2].replace(/^(reject(ed)?|exclude(d)?)\s*[-–—:|]?\s*/i, "").trim();
     if (/^(keep|kept|include|pass|none)\b/i.test(m[2].trim())) continue;
+    // Free text: the last verdict word decides ("... Strong match. Keep.");
+    // "not rejected", "retained", "no rejection" are keeps.
+    const said = m[2].replace(/\b(?:not|never|no need to|do not|don't)\s+(?:be\s+)?(?:reject(?:ed)?|exclude(?:d)?)\b|\bno (?:reason to )?reject(?:ion)?\b|\bretain(?:ed|s)?\b/gi, "keep");
+    const verdicts = [...said.matchAll(/\b(keep|keeps|keeping|kept|include|included|pass|reject|rejected|rejecting|exclude|excluded)\b/gi)];
+    const last = verdicts.at(-1)?.[1].toLowerCase();
+    if (last && /^(keep|keeps|keeping|kept|include|included|pass)$/.test(last)) continue;
     if (Number.isInteger(idx) && idx >= 0 && idx < max) out.set(idx, reason || "rejected");
   }
   return out;
@@ -709,11 +742,12 @@ export async function runSourcing(spec: SourcingSpec, round: number): Promise<So
   // (16 September), nearly all of it waiting on searches that do not depend on
   // each other. Results are merged in query order, so the outcome is the same.
   const deep = new Set(queries.slice(0, 4));
-  const pages = await inParallel(queries.flatMap((q) => (deep.has(q) ? [[q, 1], [q, 2]] : [[q, 1]])) as [string, number][], 6, ([q, page]) =>
-    search(q, 10, page),
-  );
-  for (const r of pages) {
+  const asked = queries.flatMap((q) => (deep.has(q) ? [[q, 1], [q, 2]] : [[q, 1]])) as [string, number][];
+  const pageQueries = asked.map(([q]) => q);
+  const pages = await inParallel(asked, 6, ([q, page]) => search(q, 10, page));
+  for (const [i, r] of pages.entries()) {
     credits += r.credits;
+    const phrases = [...(pageQueries[i] ?? "").matchAll(/(?<!-)"([^"]+)"/g)].map((m) => m[1]);
     for (const h of r.hits) {
       const key = canonicalProfile(h.url);
       if (!key || known.has(key)) continue;
@@ -722,6 +756,7 @@ export async function runSourcing(spec: SourcingSpec, round: number): Promise<So
       const title = h.title.replace(/\s*\|\s*LinkedIn.*$/i, "").replace(/\|/g, "/").trim();
       const c = byKey.get(key) ?? { key, url: displayUrl(key), title, snippets: [], hits: 0, enriched: [] };
       c.hits += 1;
+      c.found = [...new Set([...(c.found ?? []), ...phrases])];
       if (h.snippet && !c.snippets.includes(h.snippet)) c.snippets.push(h.snippet);
       byKey.set(key, c);
     }
@@ -744,14 +779,11 @@ export async function runSourcing(spec: SourcingSpec, round: number): Promise<So
   // it is fetched outright, which costs nothing and beats any snippet.
   const where = countryOf(spec.locations.join(" ")) ?? "Sri Lanka";
   const discipline = spec.title.split(/[\s/]+/)[0];
-  const credential = plan.qualifications[0] ?? plan.systems[0] ?? "";
   const enrich = (batch: Candidate[]) => inParallel(batch, 6, async (c) => {
     const name = c.title.split(/ - | \| /)[0].trim();
-    const angles = [
-      `"${name}" ${where} ${discipline}`,
-      `"${name}" ${where}`,
-      credential ? `"${name}" "${credential}"` : "",
-    ].filter(Boolean);
+    // One angle, not three (25 Nov): each is a paid search now, and three per
+    // person made a round cost over a dollar for little more than the first.
+    const angles = [`"${name}" ${where} ${discipline}`];
 
     const pages: string[] = [];
     for (const r of await Promise.all(angles.map((a) => search(a, 6)))) {
@@ -826,13 +858,20 @@ export async function runSourcing(spec: SourcingSpec, round: number): Promise<So
     // at 40 has told us not to show them.
     if (f.score !== null && f.score < MIN_SCORE) continue;
     const c = survivors[idx];
+    const own = c.title.split(/ - | \| /)[0].trim();
+    // The model wrote about somebody else: its headline and reasons are that
+    // person's, so the row is not shown at all.
+    if (!sameName(plain(f.name), own)) continue;
     // Priority is earned by the evidence, not by the label alone.
     const tier = f.tier.toLowerCase().startsWith("prior") && (f.score === null || f.score >= PRIORITY_SCORE) ? "priority" : "screen";
     const concern = plain(f.concern);
     const found = profileFacts(c);
     scored.push({ score: f.score ?? (tier === "priority" ? PRIORITY_SCORE : MIN_SCORE), s: {
       openingId: "",
-      name: plain(f.name) || c.title.split(/ - | \| /)[0],
+      // The name is the profile's own, never the model's (25 Nov): what "ALSO
+      // FOUND" turned up about a namesake gave rows like "Roy Khanna" on
+      // gayan-abeysinghe's profile.
+      name: own,
       headline: plain(f.headline) || c.title,
       company: found.company,
       location: found.location,

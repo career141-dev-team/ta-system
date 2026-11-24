@@ -3427,7 +3427,7 @@ export async function runSuggestions(formData: FormData) {
   if (r.found === 0) {
     await note(
       r.note === "nothing_survived_filter"
-        ? `No new profiles this round (${searched}) — everyone found was already suggested or in Excel Tables. Keep or reject a few, or widen the brief, then refine.`
+        ? `No new profiles this round (${searched}) — none of them showed this job's work in what the search could see, and anyone already suggested or in Excel Tables was left out. Widen the brief or tick target employers on Research, then refine.`
         : `No profiles found (${searched}). Widen the brief or tick target employers on Research, then try again.`,
     );
   }

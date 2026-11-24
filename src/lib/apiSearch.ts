@@ -14,7 +14,7 @@
  *
  * On when the key is there, unless C141_API_SEARCH=off. Costs about one cent a
  * search ($10 per 1,000 + Haiku tokens), so a day is capped at
- * C141_API_SEARCH_DAILY searches (default 400, about $4.50); past it SearXNG answers.
+ * C141_API_SEARCH_DAILY searches (default 300, about $3.30 - the $100 a month of API credit); past it SearXNG answers.
  */
 import type { SearchHit, SearchResult } from "./serper";
 import { jsonArrayIn } from "./claudeSub";
@@ -35,7 +35,7 @@ let used = 0;
 const colomboDay = (now = Date.now()) => new Date(now + 5.5 * 3_600_000).toISOString().slice(0, 10);
 export function dailyCap(): number {
   const n = Number(process.env.C141_API_SEARCH_DAILY ?? "");
-  return Number.isFinite(n) && n >= 0 && (process.env.C141_API_SEARCH_DAILY ?? "").trim() !== "" ? n : 400;
+  return Number.isFinite(n) && n >= 0 && (process.env.C141_API_SEARCH_DAILY ?? "").trim() !== "" ? n : 300;
 }
 /** Takes one search from today's allowance; false when the day's cap is reached. */
 export function takeSearch(now = Date.now()): boolean {
@@ -73,13 +73,17 @@ export function parseApiSearch(json: { content?: ApiBlock[]; error?: { message?:
   }
   if (!found.size) return refused ? { hits: [], credits: 1, error: `anthropic: ${refused}`, ungrounded: 0 } : { hits: [], credits: 1, ungrounded: 0 };
 
+  // The reply writes the address its own way (lk. or www., a slash more or
+  // less), so it is matched on the bare address (25 Nov: every LinkedIn row
+  // came back with no snippet, and Benchmark could not tell who holds the role).
+  const bare = (u: string) => u.toLowerCase().replace(/^https?:\/\/(?:[a-z]{2,3}\.)?(?:www\.)?/, "").replace(/[?#].*$/, "").replace(/\/+$/, "");
+  const byBare = new Map([...found.keys()].map((u) => [bare(u), u]));
   const snippets = new Map<string, string>();
   let ungrounded = 0;
   for (const r of jsonArrayIn(text)) {
-    const url = typeof r?.url === "string" ? r.url.trim() : "";
-    if (!url) continue;
-    if (!found.has(url)) {
-      ungrounded++;
+    const url = typeof r?.url === "string" ? byBare.get(bare(r.url.trim())) : undefined;
+    if (!url) {
+      if (typeof r?.url === "string" && r.url.trim()) ungrounded++;
       continue;
     }
     if (typeof r.snippet === "string") snippets.set(url, r.snippet.trim());

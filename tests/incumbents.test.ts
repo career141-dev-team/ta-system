@@ -1,4 +1,4 @@
-import { aroundMentions, benchmarkByDefault, findIncumbents, seniorityOf, titleVariants, type IncumbentDeps } from "@/lib/incumbents";
+import { aroundMentions, benchmarkByDefault, findIncumbents, placedAbroad, seniorityOf, titleVariants, type IncumbentDeps } from "@/lib/incumbents";
 
 let passed = 0;
 let failed = 0;

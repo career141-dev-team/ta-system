@@ -232,6 +232,7 @@ Pre-merge checklist:
 6. Anything changing what users see or what reaches candidates is flagged for the owner; any live change goes only through the release pipeline (never `convex deploy/run/import/env set` from a laptop, never point a local run at a live address). Use /merge-teammate for teammate branches.
 
 ## History
+- 2026-11-25 Research, Benchmark and Suggestions made to fit the opening (measured on four real openings, a server bench). Similar designations are role knowledge, kept without a source (`researchSearch.ts`; demanding one left them empty everywhere). Competitors: the model names those in the results and well-known ones in the market, same kind of business; a known one stays only when its own search finds its site or LinkedIn page. Benchmark searches carry the market, and a person placed abroad (another country's LinkedIn host, or India/Dubai/... with no word of Sri Lanka) is dropped (`placedAbroad`, `incumbents.ts`). API search snippets match on the bare address. Suggestions: the screen asks `INDEX | KEEP|REJECT | reason` for every row (`parseExclusions`: Haiku wrote 'Keep.' / 'Not rejected; retained.' and every row read as a rejection - 0 suggested), a title search's phrase counts as evidence in the free filter, one enrich search per person, the name is the profile's own (`sameName`; a namesake's 'Roy Khanna' was shown on another profile). Daily API search cap 300. Tests: research, incumbents, sourcing, apisearch.
 - 2026-11-25 Every search (Research, Suggestions, Benchmark) asks the Anthropic API's own web search first when `ANTHROPIC_API_KEY` is set (`src/lib/apiSearch.ts`, Haiku + `web_search_20250305`, one search per call, 4 at once; off with `C141_API_SEARCH=off`). On the new server SearXNG's free engines block the IP after a few dozen searches (a Suggestions round read 2 profiles from 28 searches), and Haiku-only mode had switched the subscription search off. Addresses come only from the tool's results; the reply lends snippets. About 1 cent a search; `C141_API_SEARCH_DAILY` caps a Colombo day (default 400), past it SearXNG answers. Test: `tests/apisearch.test.ts`.
 - 2026-11-23 `/api/ui/links` rows carry `cvId` (the row's linked `candidateId`, else null) so the new UI's "View CV" opens that person's real CV through `/api/ui/cv?candidate=`, which checks the reader may open it. A row with only an undecided CV match has no `cvId`. Test: `tests/uilinks.test.ts`.
 - 2026-11-21 (R7) The new UI's Excel Tables add answers before the CV check: `/api/ui/links` sets `matchLater=1` on `add`, and `addLink` then runs `matchLink` in `after()` (the row shows the match when the table reads again; the add took ~9 s). The old page sends no such field, so it still waits and says "already in the database" in its answer. Test: `tests/uismallfixes.test.ts`.
@@ -266,8 +267,8 @@ Pre-merge checklist:
 - 2026-11-18 Similar designation feeds Suggestions: Research's other names for the job are searched first (src/lib/similarTitles.ts, sourcing + claudeSourcing prompts), no extra queries.
 
 <!-- skill-meta
-verified-commit: 0e4bda36
-verified-hash: 3ac48ea7135cd1f71cebe4da64591c109a0fa218
+verified-commit: 0871dcb4
+verified-hash: 836a48903233cf500f1d78861c80a3f2bb722f84
 verified-date: 2026-11-24
 sources:
   src/app/openings/[id]/hh/**
