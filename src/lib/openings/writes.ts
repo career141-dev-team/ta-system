@@ -20,6 +20,8 @@ export interface OpeningWriteDeps {
   convexMutation: <T = unknown>(name: string, args: Record<string, unknown>) => Promise<T>;
   markTablesStale: () => void;
   resetStore: () => void;
+  /** One opening's applications changed (primeState.staleOpening, 23 Nov). */
+  staleOpening: (openingId: string, candidateIds?: string[]) => void;
 }
 
 export type Decision = { ok: true } | { ok: false; status: 403 | 404; message: string };

@@ -58,6 +58,7 @@ function fakeDeps() {
       },
       markTablesStale: () => undefined,
       resetStore: () => undefined,
+      staleOpening: () => undefined,
     },
   };
 }

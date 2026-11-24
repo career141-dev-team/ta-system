@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Room, RoomEvent, Track, type RemoteTrack, type TranscriptionSegment, type Participant } from "livekit-client";
+import type { Room, RemoteTrack, TranscriptionSegment, Participant } from "livekit-client";
 import { endWebCall, startWebCall } from "@/app/voiceActions";
 import { safeErrorMessage } from "@/lib/userError";
 
@@ -57,6 +57,8 @@ export function WebCallPanel({ applicationId, openingId }: { applicationId: stri
     }
     callId.current = r.aiCallId;
 
+    // 23 Nov: livekit-client (~440 KB) loads only when a call starts, not with every page that renders this component.
+    const { Room, RoomEvent, Track } = await import("livekit-client");
     const lk = new Room({ adaptiveStream: true, dynacast: true });
     room.current = lk;
 

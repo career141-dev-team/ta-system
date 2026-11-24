@@ -270,6 +270,7 @@ Repo hard rules that apply here: no `convex deploy/run/import/env set` against l
 
 ## History
 - 23 Nov 2026 (eod-draft PR): Draft my EOD for the new UI - `ui/eodDraft:notes` (Claude Haiku, aiRuns "eod", $5/day desk limit, 25 s) drafts at most 2 NOTES lines per person from their own CV for the email `ta/dailyEmails:compose` would build (first 10 people, read through `ui/eodDraftRead:people` as the signed-in person, so compose's access check applies). Lines about salary, notice or age are dropped (other columns). Saves nothing: the screen adds the lines, the TA edits them, and the existing send saves notes back as before.
+- 23 Nov 2026 (load-reduction): after a send, `sendDailyEmail`/`sendEod` call `afterBackendWrite(openingId)` -> `staleOpening(openingId)` (re-read that opening and the small tables) instead of `resetStore()`; sent emails in the workday drawer load when that section is opened (`/api/workday?sent=only`), not on every poll. Sending itself is unchanged.
 - 19 Nov 2026 (aura-day-evidence PR): `finalizeDailyEmail` also calls `ui/planEvidence.tickFromEmail`, so an accepted Midday / EOD (not a revision) ticks the TA's approved AURA plan task. `ta/eodReminders` 17:30 TA bell and 18:30 lead digest now skip TAs with an approved plan today - their plan reminds them 30 min before their own planned finish and tells the lead 30 min after it (owner, Decision 1); `outstandingToday(ctx, userId?)` and `bell` are exported for that.
 - 19 Nov 2026 (ui-reads-fast PR): `eligibleApplications` (convex/lib/eodCompose.ts) reads only `second_shortlist` through `by_job_stage` - the only stage `isEodCandidateEligible` lets through, so the same rows in the same order - instead of the whole opening's applications (twice per compose, 1.9 s); `effortRow`'s "sets" reads the TA's own candidates through `by_workday_owner`. `ta/dailyEmails:list` takes `recent` (the new UI's ui/email:emails): the last 31 days by `by_job_date`, without the sent HTML and draft fields (it was every email ever, 2.8 s and 81 KB). The old app passes neither, so begin, the send and the old screens are unchanged.
 
@@ -303,9 +304,9 @@ Short hashes from `git log`; dates are commit dates.
 - 2026-11-19 - the new UI sends a Midday WITHOUT CV attachments through `convex/ui/emailSend.ts` `sendMidday`: `prepareMidday` builds the email on the server (compose + the TA's table-1 cell edits via `withEdits`, `recipients` = eodRecipients with the TA's removed/added addresses, `checkResearchSubmission` with scoopsOnly from the records, `eodEmailHtml`), `middayDraft` reuses today's open draft or creates one, then the same `begin` and `eodMail:send` as the old app. The browser never gives HTML, sender, To/Cc lists or rows. Not yet: a Midday with CVs, the EOD, saving cell edits back to the candidate.
 
 <!-- skill-meta
-verified-commit: ea82758
-verified-hash: 4bce21996ea89927cc6709a7df6d111126cb5568
-verified-date: 2026-11-20
+verified-commit: 0959134
+verified-hash: b18d13b40e0562ddc4ecbe86d1cec2722b0b5867
+verified-date: 2026-11-22
 sources:
   src/app/openings/[id]/eod/page.tsx
   src/app/openings/[id]/midday/page.tsx

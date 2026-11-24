@@ -42,7 +42,7 @@ export function OPTIONS(req: Request) {
 export async function GET(req: Request) {
   const user = await currentUser();
   if (!user || !user.isActive) return signIn(req);
-  await primeStore({ allApplications: true });
+  await primeStore(); // only users are read here, so skip the all-applications load (23 Nov)
   // The old page: the same test the server makes on every change (the actions
   // themselves also refuse anyone who is not an admin).
   const canEdit = allows(user, "user.manage") && user.role === "admin";

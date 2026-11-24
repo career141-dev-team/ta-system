@@ -51,7 +51,7 @@ import { linkedinPostUrl } from "@/lib/workdayRequirements";
 import { linkedinJobId } from "../../convex/lib/postRouting";
 import { extractFromText, EMPTY_EXTRACT } from "@/lib/intake";
 import { redirect as nextRedirect, unstable_rethrow } from "next/navigation";
-import { invalidateCandidate, markTablesStale, resetStore, withRealIds } from "@/data/primeState";
+import { invalidateCandidate, markTablesStale, resetStore, staleOpening, withRealIds } from "@/data/primeState";
 import { contextFor } from "@/lib/openings/jdDraft";
 import { saveNewClient as sharedSaveNewClient, saveNewOpening as sharedSaveNewOpening } from "@/lib/openings/create";
 import { answer, inline, isInline, type ActionResult } from "@/lib/inlineResult";
@@ -352,14 +352,21 @@ const OPENING_DEPS: OpeningWriteDeps = {
   markTablesStale,
   // The same function @/data/prime re-exports; taken from primeState so it runs synchronously.
   resetStore,
+  staleOpening,
 };
 
 const JD_DEPS = { convexQuery, markTablesStale, resetStore };
 
-/** The primed copy is behind a backend write; drop it so the next read is fresh. */
-async function afterBackendWrite(openingId: string) {
-  const { resetStore } = await import("@/data/prime");
-  resetStore();
+/**
+ * The primed copy is behind a backend write to this opening; the next read
+ * re-reads it. Only this opening (staleOpening, 23 Nov) - the whole desk was
+ * reloaded after every claim, add or send. The JD writes pass `whole`: they
+ * can also change the heavy text tables (JD chat, match runs) that
+ * staleOpening leaves alone.
+ */
+async function afterBackendWrite(openingId: string, whole = false) {
+  if (whole) resetStore();
+  else staleOpening(openingId);
   revalidatePath(`/openings/${openingId}`, "layout");
 }
 
@@ -485,10 +492,8 @@ export async function confirmShortlist(formData: FormData) {
     const r = repo.shortlist(id, user.id);
     if (r.ok) done++; else skipped++;
   }
-  if (isConvex()) {
-    const { resetStore } = await import("@/data/prime");
-    resetStore();
-  }
+  // Only this opening changed (23 Nov).
+  if (isConvex()) staleOpening(openingId);
   revalidatePath(`/openings/${openingId}`, "layout");
   const message =
     `${done} shortlisted and sent to Follow-up.` +
@@ -1048,7 +1053,7 @@ export async function approveJd(formData: FormData) {
       if (suggestionsBefore === 0) await sourceFor(openingId, owner).catch(() => undefined);
       revalidatePath(`/openings/${openingId}`, "layout");
     });
-    await afterBackendWrite(openingId);
+    await afterBackendWrite(openingId, true);
     if (String(formData.get("thenGo") ?? "") === "opening") {
       redirect(`/openings/${openingId}?msg=${encodeURIComponent("The job description is approved. The job is live.")}&tone=ok`);
     }
@@ -1107,7 +1112,7 @@ export async function amendJd(formData: FormData) {
     markMatching(openingId);
     after(() => rematchWhenRequirementsSettle(openingId, user.id));
   }
-  if (isConvex()) await afterBackendWrite(openingId);
+  if (isConvex()) await afterBackendWrite(openingId, true);
   revalidatePath(`/openings/${openingId}`, "layout");
   redirect(amendedJd(openingId, result.message));
 }
@@ -1131,7 +1136,7 @@ export async function reviseJd(formData: FormData) {
     markMatching(openingId);
     after(() => rematchWhenRequirementsSettle(openingId, user.id));
   }
-  if (isConvex()) await afterBackendWrite(openingId);
+  if (isConvex()) await afterBackendWrite(openingId, true);
   else revalidatePath(`/openings/${openingId}`, "layout");
   await done(result.message);
 }
@@ -1147,7 +1152,7 @@ export async function restoreJdVersion(formData: FormData) {
     markMatching(openingId);
     after(() => rematchWhenRequirementsSettle(openingId, user.id));
   }
-  if (isConvex()) await afterBackendWrite(openingId);
+  if (isConvex()) await afterBackendWrite(openingId, true);
   else revalidatePath(`/openings/${openingId}`, "layout");
   await done(result.message);
 }
@@ -1252,7 +1257,7 @@ export async function reextractJobDetails(formData: FormData) {
   if (!result.ok) await fail(result.message);
   markMatching(openingId);
   after(() => rematchWhenRequirementsSettle(openingId, user.id));
-  await afterBackendWrite(openingId);
+  await afterBackendWrite(openingId, true);
   await done(result.message);
 }
 
@@ -3749,7 +3754,7 @@ export async function generateJdWithModel(formData: FormData) {
   const user = await getCurrentUser();
   const result = await generateJdShared(user, openingId, String(formData.get("notes") ?? ""), JD_DEPS);
   if (!result.ok) await fail(result.message);
-  if (isConvex()) await afterBackendWrite(openingId);
+  if (isConvex()) await afterBackendWrite(openingId, true);
   else revalidatePath(`/openings/${openingId}`, "layout");
   if (result.ok && result.tone === "note") await note(result.message);
   await done(result.message);

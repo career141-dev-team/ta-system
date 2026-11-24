@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { revalidatePath } from "next/cache";
-import { primeStore, resetStore } from "@/data/prime";
+import { primeStore, staleOpening } from "@/data/prime";
 import { isConvex } from "@/data/mode";
 import { repo } from "@/data/store";
 import { currentUser } from "@/lib/session";
@@ -91,7 +91,9 @@ export async function POST(req: NextRequest) {
       console.warn("[cv upload] Referee extraction skipped:", refErr);
     }
 
-    resetStore();
+    // Only this opening and this person changed: re-read them, not the whole
+    // desk - a bulk upload used to reload everything after every file (23 Nov).
+    staleOpening(app.openingId, [app.candidateId]);
     revalidatePath(`/openings/${app.openingId}`, "layout");
     revalidatePath(`/openings/${app.openingId}/candidate/${app.id}`);
     revalidatePath(`/openings/${app.openingId}/reference`);

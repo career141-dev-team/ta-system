@@ -13,10 +13,13 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(req: Request) {
   // Load the store before reading it — this route has no page to do it first.
-  await primeStore({ allApplications: true, alwaysFresh: true });
+  // Sign-in is checked on the users alone; then the warm applications, not a
+  // forced reload of everything for every download (23 Nov).
+  await primeStore();
   const user = await currentUser();
   if (!user) return new Response("Sign in first.", { status: 401 });
   if (!can(user, "report.read").ok) return new Response("Not allowed.", { status: 403 });
+  await primeStore({ allApplications: true });
   const url = new URL(req.url);
   const raw = url.searchParams.get("spec");
   let spec: ReportSpec = DEFAULT_SPEC;

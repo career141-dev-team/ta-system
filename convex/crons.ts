@@ -849,10 +849,13 @@ export const checkSlaBreaches = internalMutation({
       const daysElapsed = msElapsed / (1000 * 60 * 60 * 24);
 
       if (daysElapsed > slaLimit) {
-        // Check for existing notification using index - avoid full-table filter scan
+        // Check for existing notification using index - avoid full-table filter scan.
+        // 23 Nov: by_jobId (one opening's notifications) instead of by_user (all of the
+        // recruiter's, across every opening); userId moves into the filter, same rows.
         const existingNotifs = await ctx.db.query("notifications")
-          .withIndex("by_user", q => q.eq("userId", job.primaryRecruiterId!))
+          .withIndex("by_jobId", q => q.eq("jobId", app.jobId))
           .filter(q => q.and(
+            q.eq(q.field("userId"), job.primaryRecruiterId!),
             q.eq(q.field("type"), "sla_breached"),
             q.eq(q.field("candidateId"), app.candidateId),
             q.eq(q.field("jobId"), app.jobId)
@@ -888,6 +891,14 @@ crons.daily(
 
 // "update-dashboard-stats-cache" (every 19 min) was removed on 11 Nov: its
 // handler is `return;` (stats/stats.ts) and it still took a turn on the backend.
+
+// 23 Nov: the search box's vocabulary (1,500 full candidate rows) is computed here
+// into one taSettings row instead of on every app poll (ta/candidates.ts).
+crons.interval(
+  "refresh-ta-vocabulary",
+  { minutes: 45 },
+  internal.ta.candidates.refreshVocabulary
+);
 
 crons.interval(
   "recover-stuck-uploads",

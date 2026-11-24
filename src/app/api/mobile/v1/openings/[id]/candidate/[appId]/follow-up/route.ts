@@ -1,7 +1,7 @@
 import { revalidatePath } from "next/cache";
 
 import { primeStore } from "@/data/prime";
-import { resetStore } from "@/data/primeState";
+import { staleOpening } from "@/data/primeState";
 import { sendCandidateFollowUp, stopCandidateFollowUp } from "@/lib/candidates/followUpWrites";
 import { convexMutation, convexQuery } from "@/lib/convexServer";
 import { candidateFollowUpBody } from "@/lib/mobile/candidateBodies";
@@ -19,7 +19,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const body = parseBody(candidateFollowUpBody, await req.json().catch(() => null), "Choose a follow-up action and try again.");
   if (!body.ok) return refuse(400, body.message);
 
-  const deps = { convexQuery, convexMutation, resetStore, revalidatePath };
+  const deps = { convexQuery, convexMutation, staleOpening, revalidatePath };
   const result = body.value.action === "send"
     ? await sendCandidateFollowUp(user, id, appId, body.value.channel, deps)
     : await stopCandidateFollowUp(user, id, appId, deps);

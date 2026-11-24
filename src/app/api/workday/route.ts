@@ -45,9 +45,24 @@ export async function GET(request: Request) {
         { headers: { "Cache-Control": "private, no-store" } },
       );
     }
+    // The sent-EOD list and the reviewers' TA / position choices are heavy and
+    // rarely looked at, so they are asked for by the section that shows them
+    // (sent=1 with the payload, sent=only on its own; filters=1), not read on
+    // every 20 s poll (23 Nov).
+    const sent = new URL(request.url).searchParams.get("sent");
+    if (sent === "only") {
+      if (user.role !== "ta" && user.role !== "ta_support")
+        return NextResponse.json({ sentEmails: [] }, { headers: { "Cache-Control": "private, no-store" } });
+      step = "ta/dailyEmails:sent";
+      return NextResponse.json(
+        { sentEmails: await convexQuery("ta/dailyEmails:sent", { actorId: user.id }) },
+        { headers: { "Cache-Control": "private, no-store" } },
+      );
+    }
     const payload = await convexQuery<WorkdayPayload>("ta/workdays:dashboard", {
       actorId: user.id,
       detail: new URL(request.url).searchParams.get("detail") === "1",
+      withFilters: new URL(request.url).searchParams.get("filters") === "1",
       jobId: new URL(request.url).searchParams.get("job") || undefined,
       cursor: new URL(request.url).searchParams.get("cursor") || undefined,
       taId: new URL(request.url).searchParams.get("ta") || undefined,
@@ -55,7 +70,7 @@ export async function GET(request: Request) {
       focusWorkday: new URL(request.url).searchParams.get("checkDay") || undefined,
       allHistory: new URL(request.url).searchParams.get("history") === "all",
     });
-    if (payload.canWork && new URL(request.url).searchParams.get("detail") === "1") {
+    if (payload.canWork && sent === "1") {
       step = "ta/dailyEmails:sent";
       payload.sentEmails = await convexQuery("ta/dailyEmails:sent", { actorId: user.id });
     }

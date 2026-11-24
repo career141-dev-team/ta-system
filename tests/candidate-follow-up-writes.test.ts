@@ -15,6 +15,7 @@ const deps = {
   convexQuery: async <T,>() => undefined as T,
   convexMutation: async <T,>() => { throw new Error("must not reach the backend in the JSON test store"); return undefined as T; },
   resetStore: () => undefined,
+  staleOpening: () => undefined,
   revalidatePath: () => undefined,
 };
 repo.reset();

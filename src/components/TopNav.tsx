@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { Suspense, use, useEffect, useState } from "react";
 import { ROLE_LABEL } from "@/data/types";
 import type { User } from "@/data/types";
 import { SignOut } from "./SignOut";
@@ -50,17 +50,24 @@ const NAV = [
 
 
 
-export function TopNav({
-  user,
-  alertCount = 0,
-  feedbackBadgeCount = 0,
-}: {
-  user: User;
-  /** Unactioned alerts for this person — the reason to look. */
-  alertCount?: number;
-  /** Unreviewed feedback items requiring action/attention. */
-  feedbackBadgeCount?: number;
-}) {
+/** Unactioned alerts and unreviewed feedback for this person - the reasons to look. */
+export type NavBadges = { alerts: number; feedback: number };
+
+/*
+ * The counts arrive as a promise the layout did not wait for (23 Nov):
+ * counting alerts needs every application, which can take seconds on a cold
+ * store. Only the badges suspend, so the bar itself - its search box, its
+ * menu, the bell - renders at once and is not replaced when they land.
+ */
+function Count({ badges, which }: { badges: Promise<NavBadges>; which: keyof NavBadges }) {
+  const n = use(badges)[which];
+  return n > 0 ? <span className="tabular grid h-[18px] min-w-[18px] place-items-center rounded-full bg-danger px-1 text-[10.5px] font-semibold text-white">{n}</span> : null;
+}
+function AlertDot({ badges }: { badges: Promise<NavBadges> }) {
+  return use(badges).alerts > 0 ? <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-danger" /> : null;
+}
+
+export function TopNav({ user, badges }: { user: User; badges?: Promise<NavBadges> }) {
   const path = usePathname();
   const params = useSearchParams();
   const [open, setOpen] = useState(false);
@@ -85,16 +92,8 @@ export function TopNav({
       (n.href !== "/feedback" || !isTa(user)) &&
       (n.href !== "/extras" || user.role === "admin"),
   );
-  const badge = alertCount > 0 && (
-    <span className="tabular grid h-[18px] min-w-[18px] place-items-center rounded-full bg-danger px-1 text-[10.5px] font-semibold text-white">
-      {alertCount}
-    </span>
-  );
-  const feedbackBadge = feedbackBadgeCount > 0 && (
-    <span className="tabular grid h-[18px] min-w-[18px] place-items-center rounded-full bg-danger px-1 text-[10.5px] font-semibold text-white">
-      {feedbackBadgeCount}
-    </span>
-  );
+  const badge = badges && <Suspense fallback={null}><Count badges={badges} which="alerts" /></Suspense>;
+  const feedbackBadge = badges && <Suspense fallback={null}><Count badges={badges} which="feedback" /></Suspense>;
   const searchBox = (where: string, width: string) => (
     <form action={scope.action} method="GET" className={`relative ${where}`}>
       {scope.keep.map((k) => {
@@ -244,7 +243,7 @@ export function TopNav({
           <svg width={20} height={20} viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round">
             {menu ? <path d="M5 5l10 10M15 5L5 15" /> : <path d="M3 5.5h14M3 10h14M3 14.5h14" />}
           </svg>
-          {!menu && alertCount > 0 && <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-danger" />}
+          {!menu && badges && <Suspense fallback={null}><AlertDot badges={badges} /></Suspense>}
         </button>
       </div>
 

@@ -54,13 +54,17 @@ export default async function OpeningLayout({
   const seat = seatFor(user, assignment?.role ?? null, onStrategy);
   // More people like the ones the TAs picked, once there are enough (28 Oct).
   // Cheap when nothing is due; the run itself goes after the response.
-  await learnFromPicks(id);
   // Strategy-only access includes sourcing, but not the recruiter's Midday/EOD
   // workflow. Querying those records for a strategy assignee makes the backend
   // correctly refuse the request and leaves the opening on its loading screen.
   const canUseDailyEmail = seat.canAct;
-  const dailyEmails = canUseDailyEmail && isConvex()
-    ? await convexQuery<DailyEmail[]>("ta/dailyEmails:list", { actorId: user.id, jobId: id }) : [];
+  // The two do not depend on each other, so they run together (23 Nov).
+  const [, dailyEmails] = await Promise.all([
+    learnFromPicks(id),
+    canUseDailyEmail && isConvex()
+      ? convexQuery<DailyEmail[]>("ta/dailyEmails:list", { actorId: user.id, jobId: id })
+      : Promise.resolve([] as DailyEmail[]),
+  ]);
   const todayEmails = dailyEmails.filter(e => e.userId === user.id && e.date === workdayDate(Date.now()));
   const apps = visibleToSeat(repo.applications(id), seat);
   // Two TAs on one opening each work their own posts — see lib/visibility.

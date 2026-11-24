@@ -43,6 +43,7 @@ function fakeDeps() {
       convexMutation: async <T,>(name: string) => (convex.push(name), undefined as T),
       markTablesStale: () => undefined,
       resetStore: () => undefined,
+      staleOpening: () => undefined,
     },
   };
 }
