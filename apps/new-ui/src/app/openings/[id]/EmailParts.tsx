@@ -1,0 +1,1042 @@
+"use client";
+
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
+import { gsap, useGSAP, PIN_IN } from "@/lib/gsap";
+
+// The parts of a Midday / End of day email that hold the TA's work: the candidate
+// table (Table 1), today's effort (Table 2) and the referee calls - each as the TA
+// System sends it (eod-email skill, src/lib/eod-format.ts), drawn on the design
+// guidelines (DESIGN.md). Placeholder data; nothing is saved or sent.
+
+/* ---------- Table 1: the candidates for Director Review ---------- */
+
+export type Cand = {
+  id: string;
+  name: string;
+  age: string;
+  notice: string;
+  notes: string;
+  company: string;
+  designation: string;
+  current: string;
+  expected: string;
+  /** The prepared CV: ready, being made, or not made yet. */
+  cv: "ready" | "making" | "missing";
+  /** Values for columns the TA added. */
+  extra: Record<string, string>;
+  /** Fields the TA changed here; they are saved to the candidate after the email goes. */
+  edited: string[];
+  /** A row the TA typed in by hand (owner, 14 Nov 2026): not from the pipeline, no
+   *  prepared CV to attach, and it can be taken out again. */
+  manual?: boolean;
+};
+
+/** A column the TA added, and the column it sits after (a TA System column or
+ *  another added one) - so a new column can go anywhere, not only at the end. */
+export type ExtraCol = { name: string; after: string };
+
+type Field =
+  | "name"
+  | "age"
+  | "notice"
+  | "notes"
+  | "company"
+  | "designation"
+  | "current"
+  | "expected";
+
+// The TA System's columns, in its order (SHORTLIST_COLUMNS). They always go in the
+// email; the TA may add more after them.
+const COLUMNS: {
+  key: Field;
+  label: string;
+  width: string;
+  required?: boolean;
+  empty?: string;
+}[] = [
+  {
+    key: "name",
+    label: "Name",
+    width: "min-w-[max(11rem,130px)]",
+    required: true,
+  },
+  { key: "age", label: "Age", width: "min-w-[max(3.5rem,44px)]" },
+  {
+    key: "notice",
+    label: "Notice",
+    width: "min-w-[max(6rem,72px)]",
+    empty: "Immediate",
+  },
+  { key: "notes", label: "Notes", width: "min-w-[max(16rem,190px)]" },
+  {
+    key: "company",
+    label: "Current company",
+    width: "min-w-[max(9rem,110px)]",
+    required: true,
+  },
+  {
+    key: "designation",
+    label: "Current designation",
+    width: "min-w-[max(10rem,120px)]",
+    required: true,
+  },
+  {
+    key: "current",
+    label: "Current remuneration",
+    width: "min-w-[max(9rem,110px)]",
+    empty: "Not disclosed",
+  },
+  {
+    key: "expected",
+    label: "Expected remuneration",
+    width: "min-w-[max(9rem,110px)]",
+    empty: "Open to discuss",
+  },
+];
+
+/** What a cell shows: the TA System's words for an empty notice or salary. */
+const shown = (c: Cand, key: Field) =>
+  c[key].trim() || COLUMNS.find((x) => x.key === key)?.empty || "";
+
+/** The columns in the order they are shown: the TA System's own, each followed by
+ *  the added columns anchored to it (and to those, in the order they were added). */
+function orderColumns(extra: ExtraCol[]) {
+  const out: ({ base: (typeof COLUMNS)[number] } | { extra: string })[] = [];
+  const placed = new Set<string>();
+  const after = (anchor: string) => {
+    for (const x of extra)
+      if (x.after === anchor && !placed.has(x.name)) {
+        placed.add(x.name);
+        out.push({ extra: x.name });
+        after(x.name);
+      }
+  };
+  for (const c of COLUMNS) {
+    out.push({ base: c });
+    after(c.key);
+  }
+  // One whose anchor is gone goes at the end.
+  for (const x of extra) if (!placed.has(x.name)) out.push({ extra: x.name });
+  return out;
+}
+const keyOf = (col: { base: (typeof COLUMNS)[number] } | { extra: string }) =>
+  "base" in col ? col.base.key : col.extra;
+
+export function CandidateTable({
+  rows,
+  cols,
+  readOnly,
+  noCvs,
+  onEdit,
+  onAddCol,
+  onDropCol,
+  onAddRow,
+  onDropRow,
+  onMakeCv,
+  onRefused,
+}: {
+  rows: Cand[];
+  cols: ExtraCol[];
+  readOnly: boolean;
+  /** A midday email going without CVs: the Prepared CV column says so. */
+  noCvs: boolean;
+  onEdit: (id: string, key: string, value: string, extra: boolean) => void;
+  onAddCol: (name: string, after: string) => void;
+  onDropCol: (name: string) => void;
+  onAddRow: () => void;
+  onDropRow: (id: string) => void;
+  onMakeCv: (id: string) => void;
+  onRefused: (why: string) => void;
+}) {
+  // Where a new column is being named: after this column, or null.
+  const [addingAfter, setAddingAfter] = useState<string | null>(null);
+  const order = orderColumns(cols);
+  const last = keyOf(order[order.length - 1]);
+  const finish = (name: string, after: string) => {
+    setAddingAfter(null);
+    const n = name.trim();
+    if (!n) return;
+    if (
+      [
+        ...COLUMNS.map((c) => c.label.toLowerCase()),
+        ...cols.map((c) => c.name.toLowerCase()),
+      ].includes(n.toLowerCase())
+    )
+      onRefused(`There is already a "${n}" column.`);
+    else onAddCol(n, after);
+  };
+  // The "+" on a column's right edge: a new column straight after it.
+  const insert = (key: string, label: string) =>
+    !readOnly && (
+      <button
+        type="button"
+        onClick={() => setAddingAfter(key)}
+        aria-label={`Add a column after ${label}`}
+        title={`Add a column after ${label}`}
+        className="absolute -right-[max(0.7rem,9px)] top-1/2 z-20 flex size-[max(1.3rem,18px)] -translate-y-1/2 items-center justify-center rounded-full border border-border-strong bg-surface text-ink-2 opacity-0 shadow-card transition-opacity hover:border-brand hover:text-brand focus-visible:opacity-100 group-hover/h:opacity-100"
+      >
+        <Plus />
+      </button>
+    );
+  const newHead = (after: string) =>
+    addingAfter === after && (
+      <th key={"new-" + after} className="min-w-[max(8rem,100px)]">
+        <NewColumn onDone={(name) => finish(name, after)} />
+      </th>
+    );
+
+  return (
+    <div className="mt-[max(0.7rem,6px)] rounded-md border border-border">
+      <div className="overflow-x-auto rounded-t-md">
+        <table className="w-full border-separate border-spacing-0 text-left text-small">
+          <thead>
+            <tr className="text-caption font-medium uppercase text-ink-3 [&>th]:border-b [&>th]:border-border [&>th]:bg-surface-2 [&>th]:px-[max(0.8rem,8px)] [&>th]:py-[max(0.55rem,6px)] [&>th]:align-bottom [&>th]:font-medium">
+              <th className="sticky left-0 z-10 w-[max(2.5rem,32px)]">No</th>
+              {order.map((col) => {
+                const key = keyOf(col);
+                return (
+                  <Fragment key={key}>
+                    {"base" in col ? (
+                      <th
+                        className={
+                          "group/h relative " +
+                          (col.base.key === "name"
+                            ? "sticky left-[max(2.5rem,32px)] z-10 " +
+                              col.base.width
+                            : col.base.width)
+                        }
+                      >
+                        {col.base.label}
+                        {insert(key, col.base.label)}
+                      </th>
+                    ) : (
+                      <th className="group/h relative min-w-[max(8rem,100px)]">
+                        <span className="flex items-center gap-1">
+                          {col.extra}
+                          {!readOnly && (
+                            <button
+                              type="button"
+                              aria-label={`Take the ${col.extra} column out`}
+                              onClick={() => onDropCol(col.extra)}
+                              className="text-ink-3 opacity-0 transition-opacity hover:text-danger focus-visible:opacity-100 group-hover/h:opacity-100"
+                            >
+                              <Cross />
+                            </button>
+                          )}
+                        </span>
+                        {insert(key, col.extra)}
+                      </th>
+                    )}
+                    {key !== last && newHead(key)}
+                  </Fragment>
+                );
+              })}
+              {!readOnly && (
+                <th className="w-[max(2.5rem,32px)]">
+                  {addingAfter === last ? (
+                    <NewColumn onDone={(name) => finish(name, last)} />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setAddingAfter(last)}
+                      aria-label="Add a column at the end"
+                      title="Add a column at the end"
+                      className="flex size-[max(1.6rem,22px)] items-center justify-center rounded-full text-ink-2 hover:bg-surface-3 hover:text-ink"
+                    >
+                      <Plus />
+                    </button>
+                  )}
+                </th>
+              )}
+              <th className="min-w-[max(7rem,90px)]">Prepared CV</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((c, i) => (
+              <tr
+                key={c.id}
+                className="group/r align-top [&>td]:border-b [&>td]:border-border [&>td]:px-[max(0.8rem,8px)] [&>td]:py-[max(0.7rem,7px)]"
+              >
+                <td className="sticky left-0 z-10 bg-surface text-ink-3">
+                  {c.manual && !readOnly ? (
+                    <>
+                      <span className="group-hover/r:hidden group-focus-within/r:hidden">
+                        {i + 1}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onDropRow(c.id)}
+                        aria-label={`Take row ${i + 1} out`}
+                        title="Take this row out"
+                        className="hidden text-ink-3 hover:text-danger focus-visible:flex group-hover/r:flex group-focus-within/r:flex"
+                      >
+                        <Cross />
+                      </button>
+                    </>
+                  ) : (
+                    i + 1
+                  )}
+                </td>
+                {order.map((col) => {
+                  const key = keyOf(col);
+                  const blank =
+                    addingAfter === key && key !== last ? (
+                      <td key={"new-" + key} />
+                    ) : null;
+                  if ("extra" in col)
+                    return (
+                      <Fragment key={key}>
+                        <td className="text-ink-2">
+                          <Cell
+                            value={c.extra[col.extra] ?? ""}
+                            display={c.extra[col.extra] ?? ""}
+                            readOnly={readOnly}
+                            edited={false}
+                            onSave={(v) => onEdit(c.id, col.extra, v, true)}
+                          />
+                        </td>
+                        {blank}
+                      </Fragment>
+                    );
+                  const b = col.base;
+                  return (
+                    <Fragment key={key}>
+                      <td
+                        className={
+                          b.key === "name"
+                            ? "sticky left-[max(2.5rem,32px)] z-10 bg-surface font-medium text-ink"
+                            : "text-ink-2"
+                        }
+                      >
+                        <Cell
+                          value={c[b.key]}
+                          display={
+                            b.key === "notes" ? (
+                              <Notes text={c.notes} />
+                            ) : c.manual && b.required && !c[b.key].trim() ? (
+                              <span className="text-warn">{b.label} needed</span>
+                            ) : (
+                              shown(c, b.key)
+                            )
+                          }
+                          placeholder={
+                            b.required && c.manual
+                              ? `${b.label} needed`
+                              : b.empty
+                          }
+                          multiline={b.key === "notes"}
+                          edited={c.edited.includes(b.key)}
+                          readOnly={readOnly}
+                          onSave={(v) => {
+                            if (b.required && !v.trim())
+                              return onRefused(
+                                `${b.label} is needed in the email.`,
+                              );
+                            onEdit(c.id, b.key, v, false);
+                          }}
+                        />
+                      </td>
+                      {blank}
+                    </Fragment>
+                  );
+                })}
+                {!readOnly && <td />}
+                <td>
+                  {c.manual ? (
+                    <span className="text-ink-3">No CV - typed in</span>
+                  ) : (
+                    <CvState
+                      cv={c.cv}
+                      noCvs={noCvs}
+                      readOnly={readOnly}
+                      onMake={() => onMakeCv(c.id)}
+                    />
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {!readOnly && (
+        <button
+          type="button"
+          onClick={onAddRow}
+          className="flex w-full items-center gap-2 rounded-b-md px-[max(0.8rem,8px)] py-[max(0.6rem,6px)] text-left text-small font-medium text-brand hover:bg-brand-tint"
+        >
+          <Plus />
+          Add a row
+        </button>
+      )}
+    </div>
+  );
+}
+
+function CvState({
+  cv,
+  noCvs,
+  readOnly,
+  onMake,
+}: {
+  cv: Cand["cv"];
+  noCvs: boolean;
+  readOnly: boolean;
+  onMake: () => void;
+}) {
+  if (noCvs) return <span className="text-ink-3">Not attached</span>;
+  if (cv === "ready")
+    return (
+      <span className={CHIP + " bg-success-soft text-success"}>
+        <FileIcon /> Attached
+      </span>
+    );
+  if (cv === "making")
+    return (
+      <span className={CHIP + " bg-surface-2 text-ink-2"}>
+        <span className="size-[0.9em] animate-spin rounded-full border-2 border-ink-3 border-t-transparent" />{" "}
+        Making
+      </span>
+    );
+  if (readOnly) return <span className="text-ink-3">Not attached</span>;
+  // ponytail: "Make it" stands in for the prepared-CV box; with the backend it
+  // builds the PDF from the candidate's record (what the email says, the PDF says).
+  return (
+    <button
+      type="button"
+      onClick={onMake}
+      className={CHIP + " bg-warn-soft text-warn hover:bg-warn/20"}
+    >
+      <PenIcon /> Make it
+    </button>
+  );
+}
+
+/** A cell that reads as the email's own text and edits in place: click, type,
+ *  Enter (or click away) keeps it, Escape puts it back. A changed cell carries a
+ *  small dot: it is saved to the candidate after the email goes. */
+function Cell({
+  value,
+  display,
+  placeholder,
+  multiline,
+  edited,
+  readOnly,
+  onSave,
+}: {
+  value: string;
+  display: ReactNode;
+  placeholder?: string;
+  multiline?: boolean;
+  edited: boolean;
+  readOnly: boolean;
+  onSave: (v: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(value);
+  const box = useRef<HTMLTextAreaElement & HTMLInputElement>(null);
+  useEffect(() => {
+    if (editing) box.current?.focus();
+  }, [editing]);
+  const keep = () => {
+    setEditing(false);
+    if (text !== value) onSave(text);
+  };
+  if (readOnly)
+    return <span className="block whitespace-pre-line">{display}</span>;
+  if (editing) {
+    const common = {
+      value: text,
+      placeholder,
+      onKeyDown: (e: React.KeyboardEvent) => {
+        if (e.key === "Escape") {
+          setText(value);
+          setEditing(false);
+        }
+        if (e.key === "Enter" && (!multiline || e.ctrlKey || e.metaKey)) {
+          e.preventDefault();
+          keep();
+        }
+      },
+      className:
+        "block w-full rounded-xs bg-surface px-1 py-0.5 text-ink outline-none ring-2 ring-brand/30",
+    };
+    return multiline ? (
+      <div>
+        <NoteTools box={box} onChange={setText} />
+        <textarea
+          ref={box}
+          rows={4}
+          {...common}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={keep}
+          className={common.className + " resize-y font-sans"}
+        />
+        <p className="mt-1 text-caption text-ink-3">Ctrl+Enter keeps it</p>
+      </div>
+    ) : (
+      <input
+        ref={box}
+        {...common}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={keep}
+      />
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        setText(value);
+        setEditing(true);
+      }}
+      title={
+        edited
+          ? "Changed here - saved to the candidate after the email goes"
+          : "Click to change"
+      }
+      className="relative -mx-1 block w-[calc(100%+0.5rem)] whitespace-pre-line rounded-xs px-1 py-0.5 text-left hover:bg-surface-2"
+    >
+      {display || <span className="text-ink-3">—</span>}
+      {edited && (
+        <span
+          aria-label="Changed"
+          className="absolute -right-1 top-0.5 size-1.5 rounded-full bg-brand"
+        />
+      )}
+    </button>
+  );
+}
+
+/** The notes' own marks, as the TA System writes them: ==highlight==, **bold**,
+ *  *italic*, a "- " bullet and a ">" arrow line. The buttons only wrap the
+ *  selected words, so the text stays plain and the email reads it the same way. */
+function NoteTools({
+  box,
+  onChange,
+}: {
+  box: React.RefObject<HTMLTextAreaElement | null>;
+  onChange: (v: string) => void;
+}) {
+  const wrap = (open: string, close = open) => {
+    const t = box.current;
+    if (!t) return;
+    const { selectionStart: a, selectionEnd: b, value } = t;
+    const next =
+      value.slice(0, a) + open + value.slice(a, b) + close + value.slice(b);
+    onChange(next);
+    requestAnimationFrame(() => {
+      t.focus();
+      t.setSelectionRange(a + open.length, b + open.length);
+    });
+  };
+  const line = (mark: string) => {
+    const t = box.current;
+    if (!t) return;
+    const start = t.value.lastIndexOf("\n", t.selectionStart - 1) + 1;
+    onChange(t.value.slice(0, start) + mark + t.value.slice(start));
+    requestAnimationFrame(() => t.focus());
+  };
+  const B =
+    "flex h-[max(1.6rem,22px)] min-w-[max(1.6rem,22px)] items-center justify-center rounded-xs px-1 text-ink-2 hover:bg-surface-3 hover:text-ink";
+  return (
+    // onMouseDown keeps the box focused, so a mark lands on the words still selected.
+    <div
+      className="mb-1 flex items-center gap-0.5"
+      onMouseDown={(e) => e.preventDefault()}
+    >
+      <button
+        type="button"
+        title="Highlight"
+        onClick={() => wrap("==")}
+        className={B}
+      >
+        <span className="rounded-xs bg-sticky-yellow px-0.5 text-caption font-medium text-ink">
+          ab
+        </span>
+      </button>
+      <button
+        type="button"
+        title="Bold"
+        onClick={() => wrap("**")}
+        className={B + " font-bold"}
+      >
+        B
+      </button>
+      <button
+        type="button"
+        title="Italic"
+        onClick={() => wrap("*")}
+        className={B + " italic"}
+      >
+        I
+      </button>
+      <button
+        type="button"
+        title="Bullet"
+        onClick={() => line("- ")}
+        className={B}
+      >
+        •
+      </button>
+      <button
+        type="button"
+        title="Arrow line"
+        onClick={() => line(">")}
+        className={B}
+      >
+        ›
+      </button>
+    </div>
+  );
+}
+
+/** Notes drawn with their marks (formatNoteHtml in the TA System). */
+export function Notes({ text }: { text: string }) {
+  if (!text.trim()) return null;
+  return (
+    <span className="block space-y-0.5">
+      {text.split("\n").map((raw, i) => {
+        const arrow = raw.startsWith(">");
+        const bullet = raw.startsWith("- ");
+        const body = raw.replace(/^>\s?/, "").replace(/^- /, "");
+        return (
+          <span key={i} className="flex gap-1.5">
+            {arrow && <span className="text-brand">›</span>}
+            {bullet && <span className="text-ink-3">•</span>}
+            <span>{inline(body)}</span>
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+function inline(s: string): ReactNode[] {
+  return s.split(/(==[^=]+==|\*\*[^*]+\*\*|\*[^*]+\*)/g).map((part, i) => {
+    if (/^==.+==$/.test(part))
+      return (
+        <mark key={i} className="rounded-xs bg-sticky-yellow px-0.5 text-ink">
+          {part.slice(2, -2)}
+        </mark>
+      );
+    if (/^\*\*.+\*\*$/.test(part))
+      return (
+        <b key={i} className="font-semibold text-ink">
+          {part.slice(2, -2)}
+        </b>
+      );
+    if (/^\*.+\*$/.test(part)) return <i key={i}>{part.slice(1, -1)}</i>;
+    return <Fragment key={i}>{part}</Fragment>;
+  });
+}
+
+function NewColumn({ onDone }: { onDone: (name: string) => void }) {
+  const [name, setName] = useState("");
+  return (
+    <input
+      autoFocus
+      value={name}
+      onChange={(e) => setName(e.target.value)}
+      onBlur={() => onDone(name)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") onDone(name);
+        if (e.key === "Escape") onDone("");
+      }}
+      placeholder="Column name"
+      aria-label="New column name"
+      className="w-[max(8rem,100px)] rounded-xs bg-surface px-1 py-0.5 normal-case text-ink outline-none ring-2 ring-brand/30"
+    />
+  );
+}
+
+/* ---------- Table 2: today's effort ---------- */
+
+export type EffortKey =
+  "lEffort" | "sets" | "da" | "scoop" | "l" | "post" | "addOns" | "backUp";
+export type Effort = Record<EffortKey, number>;
+export type Targets = Partial<Record<EffortKey, number>>;
+
+// The TA System's effort columns (EFFORT_COLUMNS). The CV columns add up into the
+// SETS cell ("2 · 14 CVs"), so each CV counts once.
+const CV_COLUMNS: EffortKey[] = [
+  "da",
+  "scoop",
+  "l",
+  "post",
+  "addOns",
+  "backUp",
+];
+const EFFORT_LABEL: Record<EffortKey, string> = {
+  lEffort: "L effort",
+  sets: "Sets",
+  da: "DA",
+  scoop: "Scoop",
+  l: "L",
+  post: "Post",
+  addOns: "Add-ons",
+  backUp: "Back-up",
+};
+const EFFORT_HINT: Partial<Record<EffortKey, string>> = {
+  da: "Direct applicant",
+  l: "LinkedIn",
+  post: "Job post",
+};
+
+export const cvTotal = (e: Effort) =>
+  CV_COLUMNS.reduce((n, k) => n + (e[k] || 0), 0);
+
+export function EffortTiles({
+  effort,
+  targets,
+  workType,
+  date,
+  assignee,
+  readOnly,
+  onChange,
+  onTarget,
+}: {
+  effort: Effort;
+  targets: Targets;
+  workType: "100%" | "Follow-up" | "Add-on";
+  date: string;
+  assignee: string;
+  readOnly: boolean;
+  onChange: (k: EffortKey, n: number) => void;
+  onTarget: (k: EffortKey, n: number | undefined) => void;
+}) {
+  const keys = Object.keys(EFFORT_LABEL) as EffortKey[];
+  // The tile whose empty target the TA just chose to set.
+  const [targetFor, setTargetFor] = useState<EffortKey | null>(null);
+  const anyTarget = keys.some((k) => targets[k] !== undefined);
+  return (
+    <>
+      {/* DATE, ASSIGNEE and 100% / FOLLOW UP: the row's first three cells. The work
+          type is the workday's, never typed here. */}
+      <p className="mt-[max(0.4rem,4px)] text-small text-ink-2">
+        {date} · {assignee} · <b className="font-medium text-ink">{workType}</b>
+      </p>
+      <div className="mt-[max(0.6rem,6px)] flex flex-wrap gap-[max(0.6rem,6px)]">
+        {keys.map((k) => {
+          const label =
+            k === "lEffort" && workType === "Follow-up"
+              ? "CVs"
+              : EFFORT_LABEL[k];
+          return (
+            <div
+              key={k}
+              title={EFFORT_HINT[k]}
+              className="group/tile min-w-[max(5.5rem,72px)] rounded-sm bg-surface-2 px-[max(0.9rem,9px)] py-[max(0.6rem,6px)] focus-within:ring-2 focus-within:ring-brand/30"
+            >
+              <span className="flex items-baseline gap-1">
+                <Num
+                  value={effort[k]}
+                  readOnly={readOnly}
+                  label={label}
+                  onChange={(n) => onChange(k, n ?? 0)}
+                  className="w-[3ch] text-h3 font-medium text-ink"
+                />
+                {k === "sets" && (
+                  <span className="whitespace-nowrap text-small text-ink-2">
+                    · {cvTotal(effort)} CVs
+                  </span>
+                )}
+              </span>
+              <span className="block text-caption font-medium text-ink-3">
+                {label}
+              </span>
+              {/* The TARGET row: only when a target is set (owner, 17 Nov 2026: the
+                  empty "target —" lines read as broken). The line keeps its height
+                  so the tiles stay level; with none set, "Set target" shows on
+                  hover, focus or touch. */}
+              {(!readOnly || anyTarget) && (
+                <span className="mt-0.5 flex h-[max(1rem,13px)] items-center gap-1 whitespace-nowrap text-caption text-ink-3">
+                  {targets[k] !== undefined || targetFor === k ? (
+                    <>
+                      Target
+                      <Num
+                        value={targets[k]}
+                        readOnly={readOnly}
+                        label={`${label} target`}
+                        onChange={(n) => onTarget(k, n)}
+                        onBlur={() => setTargetFor(null)}
+                        autoFocus={targetFor === k}
+                        className="w-[3ch] text-ink-2"
+                      />
+                    </>
+                  ) : (
+                    !readOnly && (
+                      <button
+                        type="button"
+                        onClick={() => setTargetFor(k)}
+                        aria-label={`Set a ${label} target`}
+                        className="opacity-0 transition-opacity hover:text-brand focus-visible:opacity-100 group-hover/tile:opacity-100 max-md:opacity-100 [@media(hover:none)]:opacity-100"
+                      >
+                        Set target
+                      </button>
+                    )
+                  )}
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+function Num({
+  value,
+  readOnly,
+  label,
+  onChange,
+  className,
+  placeholder,
+  onBlur,
+  autoFocus,
+}: {
+  value: number | undefined;
+  readOnly: boolean;
+  label: string;
+  onChange: (n: number | undefined) => void;
+  className: string;
+  placeholder?: string;
+  onBlur?: () => void;
+  autoFocus?: boolean;
+}) {
+  if (readOnly)
+    return <span className={className}>{value ?? placeholder ?? ""}</span>;
+  return (
+    <input
+      inputMode="numeric"
+      value={value ?? ""}
+      placeholder={placeholder}
+      aria-label={label}
+      onBlur={onBlur}
+      autoFocus={autoFocus}
+      onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+      onChange={(e) => {
+        const d = e.target.value.replace(/\D/g, "").slice(0, 3);
+        onChange(d === "" ? undefined : Number(d));
+      }}
+      className={
+        "bg-transparent outline-none placeholder:text-ink-3 " + className
+      }
+    />
+  );
+}
+
+/* ---------- Referee calls ---------- */
+
+export type Ref = {
+  id: string;
+  company: string;
+  referral: string;
+  phone: string;
+  feedback: string;
+  good: boolean;
+};
+
+/** The day's referee calls (from the Referee Calls view), in the TA System's two
+ *  groups. A call can be moved to the other group, and the whole block left out. */
+export function RefereeCalls({
+  refs,
+  include,
+  readOnly,
+  onInclude,
+  onMove,
+}: {
+  refs: Ref[];
+  include: boolean;
+  readOnly: boolean;
+  onInclude: (v: boolean) => void;
+  onMove: (id: string) => void;
+}) {
+  const [moved, setMoved] = useState<string | null>(null);
+  return (
+    <>
+      <div className="mt-[max(1.5rem,12px)] flex items-center gap-3">
+        <h3 className={SECTION + " mt-0"}>Referee calls · {refs.length}</h3>
+        {!readOnly && (
+          <label className="ml-auto flex cursor-pointer items-center gap-2 text-caption font-medium text-ink-2">
+            Include in email
+            <button
+              type="button"
+              role="switch"
+              aria-checked={include}
+              aria-label="Include the referee calls in the email"
+              onClick={() => onInclude(!include)}
+              className={
+                "relative h-[max(1.25rem,18px)] w-[max(2.25rem,32px)] rounded-full transition-colors " +
+                (include ? "bg-brand" : "bg-border-strong")
+              }
+            >
+              <span
+                className={
+                  "absolute left-[2px] top-[2px] size-[calc(100%-4px)] max-w-[max(1rem,14px)] rounded-full bg-surface shadow-card transition-transform " +
+                  (include
+                    ? "translate-x-[calc(max(2.25rem,32px)-max(1rem,14px)-4px)]"
+                    : "")
+                }
+              />
+            </button>
+          </label>
+        )}
+      </div>
+      {include ? (
+        // The TA System's two groups in one quiet box like the candidate table above:
+        // a header row with a small tinted label, then one light row per call. A call
+        // crosses to the other group with the small arrows that show on its row.
+        <div className="mt-[max(0.7rem,6px)] grid grid-cols-2 divide-x divide-border overflow-hidden rounded-md border border-border max-md:grid-cols-1 max-md:divide-x-0 max-md:divide-y">
+          {[true, false].map((good) => {
+            const group = refs.filter((r) => r.good === good);
+            return (
+              <section key={String(good)} className="min-w-0">
+                <h4 className="flex items-center gap-2 border-b border-border bg-surface-2 px-[max(0.8rem,8px)] py-[max(0.55rem,6px)]">
+                  <span
+                    className={
+                      CHIP +
+                      (good
+                        ? " bg-success-soft text-success"
+                        : " bg-surface-3 text-ink-2")
+                    }
+                  >
+                    <span
+                      className={
+                        "size-1.5 rounded-full " +
+                        (good ? "bg-success" : "bg-ink-3")
+                      }
+                    />
+                    {good ? "Positive · contacts available" : "Not successful"}
+                  </span>
+                  <span className="text-caption text-ink-3">
+                    {group.length}
+                  </span>
+                </h4>
+                <ul className="divide-y divide-border">
+                  {group.map((r) => (
+                    <RefRow
+                      key={r.id + String(r.good)}
+                      r={r}
+                      readOnly={readOnly}
+                      moved={r.id === moved}
+                      onMove={() => (setMoved(r.id), onMove(r.id))}
+                    />
+                  ))}
+                  {!group.length && (
+                    <li className="px-[max(0.8rem,8px)] py-[max(0.7rem,7px)] text-caption text-ink-3">
+                      No calls here
+                    </li>
+                  )}
+                </ul>
+              </section>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="mt-[max(0.7rem,6px)] rounded-md border border-dashed border-border px-[max(0.8rem,8px)] py-[max(0.7rem,7px)] text-small text-ink-3">
+          {refs.length} call{refs.length === 1 ? "" : "s"} kept, but left out of
+          this email.
+        </p>
+      )}
+    </>
+  );
+}
+
+/** One call as a light row: who, how to reach them, what they said. */
+function RefRow({
+  r,
+  readOnly,
+  onMove,
+  moved,
+}: {
+  r: Ref;
+  readOnly: boolean;
+  onMove: () => void;
+  moved: boolean;
+}) {
+  const el = useRef<HTMLLIElement>(null);
+  const other = r.good ? "Not successful" : "Positive";
+  // Only the row you just moved settles into its new group; nothing moves on a plain
+  // draw (the dependency keeps a later redraw from settling it again).
+  useGSAP(
+    () => {
+      if (moved) gsap.from(el.current, { ...PIN_IN, stagger: 0 });
+    },
+    { dependencies: [moved] },
+  );
+  return (
+    <li
+      ref={el}
+      className="group/ref px-[max(0.8rem,8px)] py-[max(0.7rem,7px)]"
+    >
+      <div className="flex items-center gap-2">
+        <p
+          className="min-w-0 flex-1 truncate text-small font-medium text-ink"
+          title={r.company}
+        >
+          {r.company}
+        </p>
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={onMove}
+            title={`Move to ${other}`}
+            aria-label={`Move ${r.company} to ${other}`}
+            className="flex size-[max(1.5rem,20px)] shrink-0 items-center justify-center rounded-full text-ink-3 opacity-0 transition-opacity hover:bg-surface-3 hover:text-ink focus-visible:opacity-100 group-hover/ref:opacity-100 max-md:opacity-100 [@media(hover:none)]:opacity-100"
+          >
+            <svg {...svg} className="size-[0.95em]">
+              <path d="M7 7h11l-3-3M17 17H6l3 3" />
+            </svg>
+          </button>
+        )}
+      </div>
+      <p className="flex min-w-0 items-baseline gap-1.5 text-caption text-ink-3">
+        <span className="truncate" title={r.referral}>
+          {r.referral}
+        </span>
+        <span aria-hidden>·</span>
+        <span className="shrink-0 whitespace-nowrap font-mono">{r.phone}</span>
+      </p>
+      <p className="mt-1 text-small text-ink-2">{r.feedback}</p>
+    </li>
+  );
+}
+
+/* ---------- shared bits ---------- */
+
+export const SECTION =
+  "mt-[max(1.5rem,12px)] text-caption font-medium uppercase text-ink-3";
+export const CHIP =
+  "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-[max(0.7rem,8px)] py-[max(0.25rem,3px)] text-caption font-medium";
+
+const svg = {
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 2,
+  strokeLinecap: "round",
+  strokeLinejoin: "round",
+  "aria-hidden": true,
+} as const;
+export const FileIcon = () => (
+  <svg {...svg} className="size-[1.1em]">
+    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+    <path d="M14 3v5h5" />
+  </svg>
+);
+const PenIcon = () => (
+  <svg {...svg} className="size-[1.1em]">
+    <path d="M4 20h4L19 9l-4-4L4 16z" />
+  </svg>
+);
+const Plus = () => (
+  <svg {...svg} strokeWidth={2.4} className="size-[0.9em]">
+    <path d="M12 5v14M5 12h14" />
+  </svg>
+);
+export const Cross = () => (
+  <svg {...svg} strokeWidth={2.4} className="size-[0.9em]">
+    <path d="M6 6l12 12M18 6 6 18" />
+  </svg>
+);
