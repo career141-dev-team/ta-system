@@ -234,7 +234,8 @@ const INTRO_CVS =
   "Dear Sir,\n\nPlease find the attached Shortlisted CV for the above-mentioned position";
 const INTRO_ACTIVITY =
   "Dear Sir,\n\nPlease find today's activity for the above-mentioned position.";
-const OUTRO = `Thank You\nBest Regards,\n\n${TA_NAME.split(" ")[0]}\nExecutive - Talent Acquisition`;
+const outroFor = (name: string) => `Thank You\nBest Regards,\n\n${name.split(" ")[0]}\nExecutive - Talent Acquisition`;
+const OUTRO = outroFor(TA_NAME);
 
 const fmtDay = (d: Date) =>
   d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
@@ -371,7 +372,13 @@ export default function DailyEmailView() {
   // is the next step, so Send says so.
   const signedIn = useLive();
   const job = signedIn ? jobFromAddress() : null;
-  const [localMails, setMails] = useState<Mail[]>(() => (signedIn ? [newMail("eod", 1)] : [newMail("eod", 1), ...HISTORY]));
+  // Signed in, a new email is the signed-in person's: their name and sign-off, and
+  // no sample referee calls (25 Nov: live emails carried the sample TA's sign-off
+  // "Chathura" and showed made-up referee rows; the TA System builds the real
+  // referee block itself when it sends).
+  const newOwn = (kind: Kind, n: number, extra: Partial<Mail> = {}) =>
+    newMail(kind, n, signedIn ? { by: me.name, outro: outroFor(me.name), refs: [], includeRefs: false, ...extra } : extra);
+  const [localMails, setMails] = useState<Mail[]>(() => (signedIn ? [newOwn("eod", 1)] : [newMail("eod", 1), ...HISTORY]));
   // Signed in (D5 step 4): the opening's real emails - sent, failed, not confirmed -
   // and the days that missed their End of day, from ui/email:emails. The screen's
   // own drafts stay here; what the backend holds is shown as it is, read only.
@@ -500,7 +507,7 @@ export default function DailyEmailView() {
   };
   const addMidday = () => {
     if (eodSent) return;
-    const m = newMail("midday", (middays.at(-1)?.n ?? 0) + 1);
+    const m = newOwn("midday", (middays.at(-1)?.n ?? 0) + 1);
     setMails((all) => [m, ...all]);
     setOpenId(m.id);
     setTab("midday");
@@ -802,7 +809,7 @@ export default function DailyEmailView() {
   };
 
   const reviseOf = (m: Mail) => {
-    const r = newMail("eod", 1, {
+    const r = newOwn("eod", 1, {
       revisedOf: m.id,
       day: m.day,
       rows: (m.rows ?? []).map((c) => ({ ...c })),
@@ -821,7 +828,7 @@ export default function DailyEmailView() {
     if (signedIn) {
       const iso = (emailsRead?.ok ? emailsRead.missed : []).find((x) => dayOf(x.date) === day)?.date;
       if (!iso) return say("That day is no longer open for a late End of day.", undefined, true);
-      const m = newMail("eod", 1, { day, missed: true, forDate: iso, to: [...(built?.to ?? TO)], cc: [...(built?.cc ?? CC)] });
+      const m = newOwn("eod", 1, { day, missed: true, forDate: iso, to: [...(built?.to ?? TO)], cc: [...(built?.cc ?? CC)] });
       setMails((all) => [m, ...all]);
       setMissedFor(iso);
       open(m);
@@ -1184,7 +1191,7 @@ export default function DailyEmailView() {
               />
 
               {/* Referee calls go with the End of day only. */}
-              {isEod && !mail.missed && (
+              {isEod && !mail.missed && !signedIn && (
                 <RefereeCalls
                   refs={mail.refs}
                   include={mail.includeRefs}
@@ -1393,7 +1400,7 @@ export default function DailyEmailView() {
                     </p>
                   )}
                   {/* Eye-marked profiles: next steps to take, never a reason to hold the email. */}
-                  {isEod && WORK_TYPE === "100%" && EYE.length > 0 && (
+                  {isEod && !signedIn && WORK_TYPE === "100%" && EYE.length > 0 && (
                     <p className="mt-[max(0.8rem,8px)] border-t border-border pt-[max(0.7rem,6px)] text-caption text-ink-2">
                       Eye-marked:{" "}
                       {EYE.map(
