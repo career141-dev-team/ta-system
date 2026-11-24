@@ -266,8 +266,8 @@ Pre-merge checklist:
 - 2026-11-18 Similar designation feeds Suggestions: Research's other names for the job are searched first (src/lib/similarTitles.ts, sourcing + claudeSourcing prompts), no extra queries.
 
 <!-- skill-meta
-verified-commit: 55faf38f
-verified-hash: d83f9d780b763575932480534b2688998ddabe7c
+verified-commit: 0e4bda36
+verified-hash: 3ac48ea7135cd1f71cebe4da64591c109a0fa218
 verified-date: 2026-11-24
 sources:
   src/app/openings/[id]/hh/**
