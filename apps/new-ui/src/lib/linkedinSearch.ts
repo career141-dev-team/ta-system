@@ -9,6 +9,7 @@
 // makes them a little lower).
 import type { Ask } from "../app/linkedin-search/read";
 import { toProfile, type Profile } from "./linkedinProfile";
+import { linkedinWebSearch } from "./linkedinWebSearch";
 
 const SEARCH = "harvestapi~linkedin-profile-search";
 const PROFILE = "harvestapi~linkedin-profile-scraper";
@@ -130,7 +131,9 @@ const clean = (v: unknown) => arr(v).map((x) => String(x).trim().slice(0, 80)).f
 
 /** Validates the TA's search and runs it. Returns a Response for either host. */
 export async function linkedinSearch(token: string | undefined, body: unknown): Promise<Response> {
-  if (!token) return Response.json({ error: "LinkedIn search is not switched on yet: the Apify key is not set." }, { status: 500 });
+  // Without Apify the public results are read by web search instead (25 Nov).
+  const webKey = (typeof process !== "undefined" ? process.env.ANTHROPIC_API_KEY : undefined)?.trim();
+  if (!token && !webKey) return Response.json({ error: "LinkedIn search is not switched on yet: the Apify key is not set." }, { status: 500 });
   const b = (body ?? {}) as Raw;
   const a: Ask = {
     titles: clean(b.titles),
@@ -142,6 +145,7 @@ export async function linkedinSearch(token: string | undefined, body: unknown): 
   };
   if (!a.titles.length && !a.companies.length && !a.locations.length && !a.keywords.length)
     return Response.json({ error: "Tell me a job title, a company, a place or a skill." }, { status: 400 });
+  if (!token) return linkedinWebSearch(webKey!, a, "Apify is not set up.");
 
   try {
     // 1. One page of 25, Short mode: $0.10, no charge per person.
@@ -200,6 +204,8 @@ export async function linkedinSearch(token: string | undefined, body: unknown): 
     };
     return Response.json(result);
   } catch (e) {
-    return Response.json({ error: e instanceof Error ? e.message : "Apify failed" }, { status: 502 });
+    const why = e instanceof Error ? e.message : "Apify failed";
+    if (webKey) return linkedinWebSearch(webKey, a, `Apify refused (${why.slice(0, 120)}).`);
+    return Response.json({ error: why }, { status: 502 });
   }
 }
