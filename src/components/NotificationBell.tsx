@@ -195,10 +195,10 @@ export function NotificationBell() {
   const poll = useCallback(async () => {
     try {
       const res = await fetch("/api/notifications", { cache: "no-store" });
-      if (!res.ok) return;
+      if (!res.ok) return false;
       const data = (await res.json()) as { signedOut?: boolean; unreadCount: number; notifications: NotificationItem[] };
       // Between session tokens — keep what is shown; the next poll catches up.
-      if (data.signedOut) return;
+      if (data.signedOut) return true;
       const unread = data.notifications.filter((n) => !n.read);
 
       if (seenIds.current) {
@@ -216,40 +216,48 @@ export function NotificationBell() {
 
       setItems(data.notifications);
       setUnreadCount(data.unreadCount);
+      return true;
     } catch {
       // A missed poll is invisible — the next one catches up.
+      return false;
     }
   }, []);
 
   useEffect(() => {
-    poll();
-    let intervalId: NodeJS.Timeout;
-
-    // 10s polling when page is visible for fast responsive notification; 20s when in background
-    const startPolling = () => {
-      clearInterval(intervalId);
-      const ms = typeof document !== "undefined" && document.hidden ? 20_000 : 10_000;
-      intervalId = setInterval(poll, ms);
+    // Calmer polling (23 Nov): every 30 s while the tab is visible and 60 s
+    // while it is hidden - hidden tabs still poll, because a new item chimes
+    // from the background (the shared AudioContext above) - one request at a
+    // time, and the wait doubles up to 5 min while polls fail.
+    let live = true;
+    let busy = false;
+    let delay = 30_000;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = () => {
+      clearTimeout(timer);
+      if (live) timer = setTimeout(run, delay);
     };
-
-    startPolling();
-
-    const onVisibilityChange = () => {
-      if (!document.hidden) poll();
-      startPolling();
+    const run = async () => {
+      if (busy) return schedule();
+      busy = true;
+      try {
+        delay = (await poll()) ? (document.hidden ? 60_000 : 30_000) : Math.min(delay * 2, 300_000);
+      } finally {
+        busy = false;
+      }
+      schedule();
     };
-
-    const onFocus = () => {
-      poll();
+    // Focus and visibilitychange often fire together; run() ignores the second.
+    const onWake = () => {
+      if (!document.hidden) void run();
     };
-
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    window.addEventListener("focus", onFocus);
-
+    void run();
+    document.addEventListener("visibilitychange", onWake);
+    window.addEventListener("focus", onWake);
     return () => {
-      clearInterval(intervalId);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-      window.removeEventListener("focus", onFocus);
+      live = false;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onWake);
+      window.removeEventListener("focus", onWake);
     };
   }, [poll]);
 

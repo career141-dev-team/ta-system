@@ -64,7 +64,10 @@ export function ExtrasSales() {
   // A running refresh is checked every 10 seconds so its counts appear without a reload.
   useEffect(() => {
     if (!summary?.running) return;
-    const t = setInterval(() => void loadSummary(), 10000);
+    // Visible tabs only (23 Nov): a hidden tab has no one to show the counts to.
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") void loadSummary();
+    }, 10000);
     return () => clearInterval(t);
   }, [summary?.running, loadSummary]);
   useEffect(() => { setRows([]); setCursor(null); setDone(false); void load(false, null); }, [load]);

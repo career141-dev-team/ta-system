@@ -91,6 +91,9 @@ export async function GET(req: NextRequest) {
         why: declined?.note ?? null,
         eye: !!r.isEyeMarked,
         hasCv: r.cvMatch?.hasCv ?? !!r.candidateId,
+        // The linked candidate, so the new UI's "View CV" opens their real CV through
+        // /api/ui/cv?candidate= (which checks the reader may open it) - 23 Nov 2026.
+        cvId: r.candidateId ?? null,
         cvMatch: r.cvMatch && !r.cvMatch.decided ? { name: r.cvMatch.fullName, strength: r.cvMatch.strength, reasons: r.cvMatch.reasons } : null,
         addOn: !!r.isAddOn,
         pipeline: app ? STAGE_LABEL[app.stage as keyof typeof STAGE_LABEL] ?? app.stage : null,

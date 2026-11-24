@@ -136,7 +136,8 @@ eq("openings: a TA sees only their own", openingsSrc.includes("by_userId_isActiv
   for (const [f, src] of [["openings", openingsSrc], ["lead", read("convex/ui/lead.ts")], ["desk", read("convex/ui/desk.ts")]] as const)
     eq(`${f}: day N never from assignedAt alone`, /j\.assignedAt \?/.test(src), false);
   eq("today: own day only, never the reviewers' panel", read("convex/ui/day.ts").includes("ownOnly: true"), true);
-  eq("dashboard: ownOnly skips the desk-wide assignment scan", read("convex/ta/workdays.ts").includes('teamView ? await ctx.db.query("jobAssignments").collect()'), true);
+  // 23 Nov: the scan also waits for withFilters, and ownOnly turns teamView off.
+  eq("dashboard: ownOnly skips the desk-wide assignment scan", read("convex/ta/workdays.ts").includes('const filters = teamView && !!args.withFilters;') && read("convex/ta/workdays.ts").includes('filters ? await ctx.db.query("jobAssignments").collect()'), true);
   eq("emails: the door asks for the last 31 days without the HTML", read("convex/ui/email.ts").includes("recent: true"), true);
   const lead = read("convex/ui/lead.ts");
   eq("lead: a TA's own candidates from their index, not every role's newest", lead.includes('"by_workday_owner"'), true);

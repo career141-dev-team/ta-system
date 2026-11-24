@@ -256,11 +256,14 @@ jobs:
           scp -q "/tmp/new-ui-$SHA.tgz" "/tmp/new-ui-api-$SHA.mjs" deploy/scripts/remote-new-ui.sh deploy-target:/tmp/
           ssh deploy-target "bash /tmp/remote-new-ui.sh '$SHA'"
 
+      # Asked on the server itself (Caddy, the real certificate, the live link):
+      # since 24 Nov the address sits behind Cloudflare, whose bot check answers
+      # GitHub's runners 403 although the site is up for people.
       - name: Live check
         working-directory: .
         run: |
           for i in 1 2 3 4 5; do
-            code=$(curl -s -o /dev/null -w '%{http_code}' https://new.career141.com/today) && [ "$code" = 200 ] && { echo "new.career141.com/today 200"; exit 0; }
+            code=$(ssh deploy-target "curl -s -o /dev/null -w '%{http_code}' --resolve new.career141.com:443:127.0.0.1 https://new.career141.com/today") && [ "$code" = 200 ] && { echo "new.career141.com/today 200"; exit 0; }
             sleep 5
           done
-          echo "::error::new.career141.com/today did not answer 200 (last: $code)"; exit 1
+          echo "::error::new.career141.com/today did not answer 200 on the server (last: $code)"; exit 1

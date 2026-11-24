@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useCallback, useEffect, useId, useRef, useState, useTransition } from "react";
+import { Suspense, useCallback, useEffect, useId, useReducer, useRef, useState, useTransition } from "react";
 import { useSearchParams } from "next/navigation";
 import { changeWorkday } from "@/app/workday/actions";
 import {
@@ -25,78 +25,112 @@ import { canReviewWorkdays } from "@/lib/workdayRoles";
 import { useChatgptResearch } from "./useChatgptResearch";
 import { WorkingStageMenu } from "./WorkingStageMenu";
 
-function useWorkday(detail: boolean, enabled = true, query = "") {
-  const [data, setData] = useState<WorkdayPayload | null>(null);
-  const [error, setError] = useState("");
-  const request = useRef<AbortController | null>(null);
-  const load = useCallback(async (): Promise<boolean> => {
-    if (!enabled) return true;
-    // A poll started before Save must not overwrite the refreshed checks.
-    request.current?.abort();
-    const current = new AbortController();
-    request.current = current;
-    try {
-      const response = await fetch(`/api/workday?detail=${detail ? "1" : "0"}${query}`, {
-        cache: "no-store",
-        signal: current.signal,
-      });
-      if (!response.ok) {
-        // The route says which step failed (10 Nov); an older build's answer has no body to read.
-        const body = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(body?.error || "Could not load workday checks. Please retry.");
+// One poll per request URL for the whole tab (23 Nov). The rail, the EOD
+// composer's checks and every open team row each ran their own timer; two
+// hooks asking for the same URL now share one timer and one request, and the
+// timer stops when the last of them unmounts.
+type WorkdayFeed = {
+  data: WorkdayPayload | null;
+  error: string;
+  users: number;
+  listeners: Set<() => void>;
+  load: () => Promise<boolean>;
+  start: () => void;
+  stop: () => void;
+};
+const workdayFeeds = new Map<string, WorkdayFeed>();
+
+function createWorkdayFeed(url: string): WorkdayFeed {
+  let request: AbortController | null = null;
+  let live = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let delay = 20000;
+  const feed: WorkdayFeed = {
+    data: null, error: "", users: 0, listeners: new Set(),
+    load: async (): Promise<boolean> => {
+      // A poll started before Save must not overwrite the refreshed checks.
+      request?.abort();
+      const current = new AbortController();
+      request = current;
+      try {
+        const response = await fetch(url, { cache: "no-store", signal: current.signal });
+        if (!response.ok) {
+          // The route says which step failed (10 Nov); an older build's answer has no body to read.
+          const body = (await response.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(body?.error || "Could not load workday checks. Please retry.");
+        }
+        const next: WorkdayPayload = await response.json();
+        if (current.signal.aborted || request !== current) return true;
+        feed.data = next;
+        feed.error = "";
+        feed.listeners.forEach((l) => l());
+        return true;
+      } catch (error) {
+        if (current.signal.aborted || request !== current) return true;
+        feed.error = safeErrorMessage(error, "The workday could not be loaded. Try again.");
+        feed.listeners.forEach((l) => l());
+        return false;
+      } finally {
+        if (request === current) request = null;
       }
-      const next: WorkdayPayload = await response.json();
-      if (current.signal.aborted || request.current !== current) return true;
-      setData(next);
-      setError("");
-      return true;
-    } catch (error) {
-      if (current.signal.aborted || request.current !== current) return true;
-      setError(safeErrorMessage(error, "The workday could not be loaded. Try again."));
-      return false;
-    } finally {
-      if (request.current === current) request.current = null;
-    }
-  }, [detail, enabled, query]);
+    },
+    start: () => {
+      // One request at a time (29 Oct). The 20-second interval and window focus
+      // each aborted the request in flight and sent another, but aborting in the
+      // browser does not stop the work on the backend, so a slow load piled up.
+      // A poll or focus now waits for the answer; the next poll is timed from it,
+      // with jitter so a team's drawers do not ask together, and slows down while
+      // loads fail. A save still reloads at once (workday-changed).
+      live = true;
+      const schedule = () => {
+        if (!live) return;
+        clearTimeout(timer);
+        timer = setTimeout(() => void poll(), delay + Math.random() * 5000);
+      };
+      const poll = async () => {
+        if (document.visibilityState === "visible" && !request)
+          delay = (await feed.load()) ? 20000 : Math.min(delay * 2, 120000);
+        schedule();
+      };
+      const focused = () => { if (!request) void feed.load(); };
+      const changed = () => { void feed.load(); };
+      window.addEventListener("workday-changed", changed);
+      window.addEventListener("focus", focused);
+      feed.stop = () => {
+        live = false;
+        request?.abort();
+        clearTimeout(timer);
+        window.removeEventListener("workday-changed", changed);
+        window.removeEventListener("focus", focused);
+      };
+      void feed.load().then(schedule);
+    },
+    stop: () => {},
+  };
+  return feed;
+}
+
+function useWorkday(detail: boolean, enabled = true, query = "") {
+  const url = `/api/workday?detail=${detail ? "1" : "0"}${query}`;
+  const [, rerender] = useReducer((n: number) => n + 1, 0);
+  // Switching the request keeps showing the last answer until the new one lands.
+  const last = useRef<WorkdayPayload | null>(null);
   useEffect(() => {
     if (!enabled) return;
-    // One request at a time (29 Oct). The 20-second interval and window focus
-    // each aborted the request in flight and sent another, but aborting in the
-    // browser does not stop the work on the backend, so a slow load piled up.
-    // A poll or focus now waits for the answer; the next poll is timed from it,
-    // with jitter so a team's drawers do not ask together, and slows down while
-    // loads fail. A save still reloads at once (workday-changed).
-    let live = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let delay = 20000;
-    const schedule = () => {
-      if (!live) return;
-      clearTimeout(timer);
-      timer = setTimeout(() => void poll(), delay + Math.random() * 5000);
-    };
-    const poll = async () => {
-      if (document.visibilityState === "visible" && !request.current)
-        delay = (await load()) ? 20000 : Math.min(delay * 2, 120000);
-      schedule();
-    };
-    const focused = () => {
-      if (!request.current) void load();
-    };
-    const changed = () => {
-      void load();
-    };
-    void load().then(schedule);
-    window.addEventListener("workday-changed", changed);
-    window.addEventListener("focus", focused);
+    let feed = workdayFeeds.get(url);
+    if (!feed) { feed = createWorkdayFeed(url); workdayFeeds.set(url, feed); }
+    feed.listeners.add(rerender);
+    if (feed.users++ === 0) feed.start();
+    rerender();
     return () => {
-      live = false;
-      request.current?.abort();
-      clearTimeout(timer);
-      window.removeEventListener("workday-changed", changed);
-      window.removeEventListener("focus", focused);
+      feed.listeners.delete(rerender);
+      if (--feed.users === 0) { feed.stop(); workdayFeeds.delete(url); }
     };
-  }, [load, enabled]);
-  return { data, error, load };
+  }, [url, enabled]);
+  const feed = enabled ? workdayFeeds.get(url) : undefined;
+  if (feed?.data) last.current = feed.data;
+  const load = useCallback(async () => (enabled ? (await workdayFeeds.get(url)?.load()) ?? true : true), [url, enabled]);
+  return { data: feed?.data ?? last.current, error: feed?.error ?? "", load };
 }
 
 const inputClass =
@@ -653,10 +687,26 @@ export function WorkdayDashboard({ active = true }: { active?: boolean }) {
   const requestedFocus = `${requestedDay}:${requestedJob}:${params.get("checkTask")}`;
   const [dismissedFocus, setDismissedFocus] = useState<string | null>(null);
   const focus = requestedDay && dismissedFocus !== requestedFocus ? { day: requestedDay, job: requestedJob } : null;
-  const { data, error, load } = useWorkday(true, active, focus ? `&checkDay=${encodeURIComponent(focus.day)}` : `&date=${encodeURIComponent(date)}&cursor=${encodeURIComponent(cursor)}&ta=${encodeURIComponent(ta)}${allHistory ? "&history=all" : ""}`);
+  // Sent EOD emails are fetched when their section is opened, not polled (23 Nov).
+  const [sentEmails, setSentEmails] = useState<NonNullable<WorkdayPayload["sentEmails"]> | null>(null);
+  const [sentError, setSentError] = useState("");
+  const loadSent = () => {
+    setSentError("");
+    fetch("/api/workday?sent=only", { cache: "no-store" })
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error("load"))))
+      .then((body: { sentEmails?: NonNullable<WorkdayPayload["sentEmails"]> }) => setSentEmails(body.sentEmails ?? []))
+      .catch(() => setSentError("Could not load sent emails. Close and open this section to retry."));
+  };
+  // The TA / position choices cost a read of every assignment and user; asked
+  // for once when the filters open (or a saved filter needs its names), then kept.
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [choices, setChoices] = useState<{ teamAssignments: NonNullable<WorkdayPayload["teamAssignments"]>; teamMembers: NonNullable<WorkdayPayload["teamMembers"]> } | null>(null);
+  const wantFilters = !choices && (filtersOpen || !!ta || !!jobFilter);
+  const { data, error, load } = useWorkday(true, active, `${wantFilters ? "&filters=1" : ""}${focus ? `&checkDay=${encodeURIComponent(focus.day)}` : `&date=${encodeURIComponent(date)}&cursor=${encodeURIComponent(cursor)}&ta=${encodeURIComponent(ta)}${allHistory ? "&history=all" : ""}`}`);
   useEffect(() => setHistoryLoading(false), [data, error]);
-  const teamChoices = [...(data?.teamAssignments ?? []), ...(data?.team ?? []).flatMap(day => day.jobs.map(job => ({ userId: day.userId, name: day.name, jobId: job.jobId, title: job.title })))];
-  const taChoices = [...new Map([...(data?.teamMembers ?? []), ...teamChoices].map(choice => [choice.userId, choice.name])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  useEffect(() => { if (data?.teamAssignments && data.teamMembers) setChoices({ teamAssignments: data.teamAssignments, teamMembers: data.teamMembers }); }, [data]);
+  const teamChoices = [...(choices?.teamAssignments ?? []), ...(data?.team ?? []).flatMap(day => day.jobs.map(job => ({ userId: day.userId, name: day.name, jobId: job.jobId, title: job.title })))];
+  const taChoices = [...new Map([...(choices?.teamMembers ?? []), ...teamChoices].map(choice => [choice.userId, choice.name])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
   const positionChoices = [...new Map(teamChoices.filter(choice => !ta || choice.userId === ta).map(choice => [choice.jobId, choice.title])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
   const finishedToday = data?.lastFinishedDate === workdayDate(Date.now());
   const team = (data?.team ?? []).filter(day => focus ? day.id === focus.day : (!ta || day.userId === ta) && (!date || day.date === date)).map(day => ({ ...day, requests: day.requests.filter(request => focus ? !focus.job || request.jobId === focus.job : !jobFilter || request.jobId === jobFilter), jobs: day.jobs.filter(job => focus ? !focus.job || job.jobId === focus.job : !jobFilter || job.jobId === jobFilter).map(job => ({ ...job, checks: job.checks.filter(c => focus || !status || (c.exception ? "excused" : c.waiting ? "waiting" : c.status ?? "incomplete") === status) })) })).filter(day => day.jobs.length > 0 || day.requests.length > 0);
@@ -673,11 +723,11 @@ export function WorkdayDashboard({ active = true }: { active?: boolean }) {
       {!data && !error && <p role="status">Loading workday…</p>}
       {data?.canWork && (
         <>
-          <details className="rounded-xl border border-rule p-4">
+          <details className="rounded-xl border border-rule p-4" onToggle={e => { if (e.currentTarget.open) loadSent(); }}>
             <summary className="cursor-pointer font-semibold">Sent EOD emails · last 31 days</summary>
-            {!data.sentEmails?.length ? <p className="mt-3 text-sm text-ink-soft">No retained EOD emails.</p> :
-              [...new Set(data.sentEmails.slice().sort((a, b) => b.sentAt - a.sentAt).map(e => e.rootId))].map(rootId => {
-                const versions = data.sentEmails!.filter(e => e.rootId === rootId).sort((a, b) => b.sentAt - a.sentAt);
+            {sentError ? <p className="mt-3 text-sm text-danger">{sentError}</p> : !sentEmails ? <p className="mt-3 text-sm text-ink-soft">Loading…</p> : !sentEmails.length ? <p className="mt-3 text-sm text-ink-soft">No retained EOD emails.</p> :
+              [...new Set(sentEmails.slice().sort((a, b) => b.sentAt - a.sentAt).map(e => e.rootId))].map(rootId => {
+                const versions = sentEmails.filter(e => e.rootId === rootId).sort((a, b) => b.sentAt - a.sentAt);
                 return <details key={rootId} className="mt-3 rounded border border-rule p-3" open>
                   <summary className="text-sm font-medium">{versions[0].title} · {versions[0].date}</summary>
                   {versions.map(e => <div key={e.id} className="mt-3 text-xs">
@@ -747,7 +797,7 @@ export function WorkdayDashboard({ active = true }: { active?: boolean }) {
       {(data?.canReview ?? data?.canLead) && data && (
         <>
           <h2 className="text-lg font-semibold">Team checks</h2>{focus && <button className="text-xs text-brand underline" onClick={() => setDismissedFocus(requestedFocus)}>Show all workdays</button>}
-          <details open><summary className="cursor-pointer text-sm text-brand">Filter team checks</summary><div className="mt-3 space-y-3">
+          <details onToggle={e => { if (e.currentTarget.open) setFiltersOpen(true); }}><summary className="cursor-pointer text-sm text-brand">Filter team checks</summary><div className="mt-3 space-y-3">
           <label className="block text-xs">Day<input type="date" value={date} onChange={e => { setDate(e.target.value); setCursor(""); }} className={inputClass} /></label>
           <label className="block text-xs">TA<select value={ta} onChange={e => { setTa(e.target.value); setJobFilter(""); setCursor(""); }} className={inputClass}><option value="">All TAs</option>{taChoices.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
           <label className="block text-xs">Position<select value={jobFilter} onChange={e => setJobFilter(e.target.value)} className={inputClass}><option value="">All positions</option>{positionChoices.map(([id, title]) => <option key={id} value={id}>{title}</option>)}</select></label>

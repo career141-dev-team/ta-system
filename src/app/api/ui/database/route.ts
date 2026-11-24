@@ -50,7 +50,10 @@ export async function POST(req: NextRequest) {
   const read = readSearchBody(await req.json().catch(() => null));
   if (!read.ok) return answer(req, read, 400);
   const { q, mode, full } = read.body;
-  await primeStore({ allApplications: true });
+  // 23 Nov: the tables (vocabulary, openings) only. This route reads applications for one thing, the
+  // availability rule (free / in a pipeline / placed before) in searchDatabase, and its rows carry no
+  // pipeline markers, so the ~10k applications are loaded below only when the search asks for that rule.
+  await primeStore({});
 
   if (mode === "boolean") {
     const error = parseBoolean(q).error;
@@ -72,6 +75,7 @@ export async function POST(req: NextRequest) {
   }
 
   const criteria = parseConversation(q, repo.vocabulary()).criteria;
+  if (criteria.availability !== "any") await primeStore({ allApplications: true });
   let engine: EngineSearch | null = cachedEngineSearch(q, criteria, ENGINE_LIMIT);
   let refining = false;
   let problem: string | null = null;

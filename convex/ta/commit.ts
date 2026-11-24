@@ -277,6 +277,17 @@ async function locate(
   before: Row,
 ): Promise<(Row & { _id: string }) | null> {
   if (model.locate === "by_key") {
+    // 23 Nov: these two tables have an index on the key, so read the one row
+    // instead of collecting the whole table. Any other by_key model keeps the scan.
+    const db = ctx.db as unknown as { query: (t: string) => { withIndex: (i: string, f: (q: { eq: (f: string, v: unknown) => unknown }) => unknown) => { first: () => Promise<unknown> } } };
+    if (model.backend === "taSettings") {
+      return (await db.query("taSettings").withIndex("by_key", (q) => q.eq("key", before.key)).first()) as (Row & { _id: string }) | null;
+    }
+    if (model.backend === "matchExclusions") {
+      return (await db.query("matchExclusions")
+        .withIndex("by_opening_candidate", (q) => (q.eq("openingId", before.openingId) as { eq: (f: string, v: unknown) => unknown }).eq("candidateId", before.candidateId))
+        .first()) as (Row & { _id: string }) | null;
+    }
     const all = (await ctx.db.query(model.backend as never).collect()) as (Row & { _id: string })[];
     return all.find((d) => model.key(model.fromDoc(d as never)) === model.key(before)) ?? null;
   }

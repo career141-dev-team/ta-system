@@ -169,7 +169,10 @@ export function ScoopUpload({ openingId, senders }: { openingId: string; senders
   useEffect(() => {
     if (!waitingKey) return;
     let stop = false;
+    let busy = false; // one request at a time (23 Nov)
     const tick = async () => {
+      if (busy || document.visibilityState !== "visible") return;
+      busy = true;
       try {
         const res = await fetch(`/api/scoops/upload?openingId=${encodeURIComponent(openingId)}&ids=${encodeURIComponent(waitingKey)}`);
         const json = (await res.json()) as { ok: boolean; message?: string; files?: (Pick<Row, "state" | "name" | "note" | "stage" | "label" | "progress" | "elapsedMs" | "estimateSeconds"> & { id: string })[] };
@@ -196,9 +199,12 @@ export function ScoopUpload({ openingId, senders }: { openingId: string; senders
         if (landed) router.refresh();
       } catch {
         /* the next tick asks again */
+      } finally {
+        busy = false;
       }
     };
-    const timer = setInterval(tick, 4000);
+    // 10 s, not 4 s, and quiet while the tab is hidden (23 Nov).
+    const timer = setInterval(tick, 10_000);
     tick();
     return () => {
       stop = true;

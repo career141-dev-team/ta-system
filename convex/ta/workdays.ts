@@ -1320,7 +1320,13 @@ export const dashboard = internalQuery({
      * the desk and every assigned opening; for an admin that ran past the 1 s
      * limit ("Function execution timed out", 4.4 s) and the new UI never shows it.
      */
-    ownOnly: v.optional(v.boolean()) },
+    ownOnly: v.optional(v.boolean()),
+    /**
+     * The reviewers' TA / position choices (teamAssignments, teamMembers). They
+     * read every assignment, a job per job and every user, so they come only
+     * when the filter panel asks (23 Nov); every 20 s poll used to pay for them.
+     */
+    withFilters: v.optional(v.boolean()) },
   handler: async (ctx, args) => {
     const user = await requireActor(ctx, args.actorId);
     const role = roleOf(user);
@@ -1470,12 +1476,14 @@ export const dashboard = internalQuery({
     // Assignment choices must exist even before a TA starts a workday.
     // From the small assignment rows, not a scan of every opening (see above):
     // only openings with a recruiter on them can list a TA here.
-    const allAssignments = teamView ? await ctx.db.query("jobAssignments").collect() : [];
+    // Skipped unless withFilters (23 Nov); summaryView then reads a title per day job.
+    const filters = teamView && !!args.withFilters;
+    const allAssignments = filters ? await ctx.db.query("jobAssignments").collect() : [];
     const byJob = new Map<string, Doc<"jobAssignments">[]>();
     for (const a of allAssignments) if (a.isActive && recruiters.includes(a.assignmentRole)) byJob.set(a.jobId as string, [...(byJob.get(a.jobId as string) ?? []), a]);
     const reviewJobs = (await Promise.all([...byJob.keys()].map((id) => ctx.db.get(id as Id<"jobs">))))
       .filter((job): job is Doc<"jobs"> => !!job);
-    const teamAssignments = teamView ? await Promise.all(reviewJobs
+    const teamAssignments = filters ? await Promise.all(reviewJobs
       .filter(job => !isGone(job) && (deskWide || job.taLeadId === user._id))
       .map(async job => {
         const assigned = byJob.get(job._id as string) ?? [];
@@ -1550,7 +1558,7 @@ export const dashboard = internalQuery({
       ),
       team,
       teamAssignments: teamAssignments.flat(),
-      teamMembers: teamView ? (await ctx.db.query("users").collect())
+      teamMembers: filters ? (await ctx.db.query("users").collect())
         .filter(ta => ta.isActive && ["ta", "ta_support"].includes(roleOf(ta)))
         .map(ta => ({ userId: ta._id, name: mapUser(ta).name })) : [],
       options,

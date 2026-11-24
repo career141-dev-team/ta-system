@@ -82,6 +82,17 @@ export const state = {
   recentWrites: [] as RecentWrite[],
   /** When a write made OUTSIDE the store last marked the tables stale (resetStore). */
   staleAt: 0,
+  /** When a write outside the store last marked only the small tables stale (staleOpening). */
+  tablesStaleAt: 0,
+  /*
+   * Opening id -> when a write outside the store changed its applications
+   * (23 Nov). Pages that hold every application re-read just these openings
+   * before they render, instead of all ~10,000 applications and every
+   * candidate on the alert stages, which is what resetStore made them do.
+   */
+  dirtyOpenings: new Map<Id, number>(),
+  /** Opening id -> when staleOpening last marked it; never cleared, so a fetch of it already in flight is not trusted as fresh. */
+  openingStaleAt: new Map<Id, number>(),
   /** When a request last asked for the working set; the warm loop stops when the desk is idle. */
   lastRequestAt: 0,
   /** What pages have asked for so far, so the warm loop refreshes only that. */
@@ -277,6 +288,32 @@ export function invalidateOpening(id: Id): void {
   state.openings.delete(id);
   state.events.delete(id);
   state.version++;
+}
+
+/**
+ * A write went to Convex directly and changed ONE opening's applications - a
+ * stage move, a follow-up, a CV upload (23 Nov). The writer's next page must
+ * show it, but nothing else changed: the other openings' applications and
+ * every candidate record are still right. So:
+ *  - the small tables are re-read (posts, rounds, interviews, offers and alerts
+ *    can move with a stage), but not the heavy text ones;
+ *  - this opening's applications and history are re-read when next asked for,
+ *    and pages holding every application re-read only this opening;
+ *  - the named candidates are re-read (a CV upload changes the person).
+ * resetStore did all of that for every opening and every candidate, which put
+ * the next page behind a 10-28 s reload after nearly every save.
+ */
+export function staleOpening(id: Id, candidateIds: Id[] = []): void {
+  const now = Date.now();
+  state.tablesAt = 0;
+  state.tablesStaleAt = now;
+  state.openings.delete(id);
+  state.events.delete(id);
+  state.dirtyOpenings.set(id, now);
+  state.openingStaleAt.set(id, now);
+  for (const c of candidateIds) state.candidates.delete(c);
+  state.version++;
+  state.writes++;
 }
 
 /**

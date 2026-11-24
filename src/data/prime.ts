@@ -60,7 +60,7 @@ import * as backend from "@/data/convex/backend";
 import { blank, CANDIDATE_EVICT_MS, CANDIDATE_TTL_MS, primedVocabulary, realId, setCommitter, SLOW_TABLES_TTL_MS, state, TABLES_TTL_MS } from "@/data/primeState";
 import { convexMutationSync } from "@/data/convex/syncCall";
 import { convexQuery } from "@/lib/convexServer";
-import { mustWait, overlayWrites } from "@/data/warm";
+import { mustWait, settleOpenings, overlayWrites } from "@/data/warm";
 
 /*
  * How the store saves: one Convex transaction per write (convex/ta/commit.ts).
@@ -69,7 +69,7 @@ import { mustWait, overlayWrites } from "@/data/warm";
  */
 setCommitter((ops) => convexMutationSync<{ ids: Record<string, string> }>("ta/commit:apply", { ops }));
 
-export { primed, primedVocabulary, hasCandidate, missingCandidateMessage, resetStore, invalidateOpening, markTablesStale } from "@/data/primeState";
+export { primed, primedVocabulary, hasCandidate, missingCandidateMessage, resetStore, invalidateOpening, markTablesStale, staleOpening } from "@/data/primeState";
 
 /** What a page needs on top of the small tables. */
 export interface PrimeScope {
@@ -202,6 +202,8 @@ function whatIsNeeded(scope: PrimeScope, now: number): Need {
   const held = (id: Id) => (state.candidates.has(id) ? "fresh" : "wait");
   if (scope.allApplications || scope.followUps) {
     worse(mustWait(state.allAt, TABLES_TTL_MS, now));
+    // A save outside the store changed these openings: re-read them first (23 Nov).
+    if (state.dirtyOpenings.size > 0) worse("wait");
     // The alert badge names the people on the alert stages: a stage move from
     // this process may have put somebody there whose record was never fetched.
     if (scope.followUps && state.allAt) {
@@ -302,6 +304,10 @@ function overlay<T>(table: string, rows: T[], since: number, within?: (row: Reco
 
 /** A fetch is settled unless a write outside the store marked the tables stale while it ran. */
 const settledAt = (fetchStart: number, now: number) => (state.staleAt > fetchStart ? 0 : now);
+/** The small tables also go stale on the narrower mark (staleOpening). */
+/** One opening's rows also go stale on staleOpening (23 Nov): a fetch begun before it may predate the save. */
+const openingSettledAt = (id: Id, fetchStart: number, now: number) => ((state.openingStaleAt.get(id) ?? 0) > fetchStart ? 0 : settledAt(fetchStart, now));
+const tablesSettledAt = (fetchStart: number, now: number) => (state.tablesStaleAt > fetchStart ? 0 : settledAt(fetchStart, now));
 
 async function refresh(scope: PrimeScope): Promise<boolean> {
   const now = Date.now();
@@ -383,8 +389,8 @@ async function refresh(scope: PrimeScope): Promise<boolean> {
         (db as unknown as Record<string, unknown[]>)[table] = overlay(table, rows as unknown[], fetchStart);
       }
       state.snapshot = db;
-      state.tablesAt = settledAt(fetchStart, now);
-      if (slowDue) state.slowAt = state.tablesAt;
+      state.tablesAt = tablesSettledAt(fetchStart, now);
+      if (slowDue) state.slowAt = settledAt(fetchStart, now);
       changed = true;
     } catch (e) {
       if (!state.snapshot) throw e;
@@ -409,8 +415,9 @@ async function refresh(scope: PrimeScope): Promise<boolean> {
       // fetch began are kept by the overlay.
       db.applications = overlay("applications", applications, fetchStart);
       state.allAt = settledAt(fetchStart, now);
-      if (state.allAt) for (const o of db.openings) state.openings.set(o.id, now);
+      if (state.allAt) for (const o of db.openings) if (openingSettledAt(o.id, fetchStart, now)) state.openings.set(o.id, now);
       changed = true;
+      settleOpenings(state.dirtyOpenings, fetchStart);
     } catch (e) {
       if (state.allAt === 0 && db.applications.length === 0) throw e;
       console.warn("[prime] applications refresh failed; keeping the rows held:", e instanceof Error ? e.message : e);
@@ -424,7 +431,8 @@ async function refresh(scope: PrimeScope): Promise<boolean> {
       backend.opening(actor, openingId),
     ]);
     db.applications = [...db.applications.filter((a) => a.openingId !== openingId), ...overlay("applications", apps, fetchStart, mine)];
-    state.openings.set(openingId, settledAt(fetchStart, now));
+    state.openings.set(openingId, openingSettledAt(openingId, fetchStart, now));
+    settleOpenings(state.dirtyOpenings, fetchStart, [openingId]);
     // Posts and assignments come with the whole tables above, with their real
     // ids. But the opening itself must be here even when that list is not:
     // a refresh of the small tables that fails keeps the older list, and a
@@ -440,6 +448,28 @@ async function refresh(scope: PrimeScope): Promise<boolean> {
   }
 
   /*
+   * Openings a save outside the store changed (staleOpening, 23 Nov). A page
+   * that holds every application re-reads only these, not all of them. One
+   * that fails keeps the rows held and stays dirty, so the next page tries
+   * again; it is not worth a page that will not render.
+   */
+  if ((scope.allApplications || scope.followUps) && state.dirtyOpenings.size > 0) {
+    const ids = [...state.dirtyOpenings.keys()];
+    const fetchStart = Date.now();
+    try {
+      const lists = await Promise.all(ids.map((id) => backend.applications(actor, id)));
+      ids.forEach((openingId, i) => {
+        const mine = (r: Record<string, unknown>) => r.openingId === openingId;
+        db.applications = [...db.applications.filter((a) => a.openingId !== openingId), ...overlay("applications", lists[i], fetchStart, mine)];
+      });
+      settleOpenings(state.dirtyOpenings, fetchStart, ids);
+      changed = true;
+    } catch (e) {
+      console.warn("[prime] re-reading changed openings failed; keeping the rows held:", e instanceof Error ? e.message : e);
+    }
+  }
+
+  /*
    * The opening's history. Pipeline events were loaded whole — every stage
    * move since the platform began, on every reload — and the app reads them
    * only for one application or one opening (9 Nov).
@@ -450,7 +480,7 @@ async function refresh(scope: PrimeScope): Promise<boolean> {
     const mine = (r: Record<string, unknown>) => r.openingId === openingId;
     const events = await backend.eventsFor(actor, openingId);
     db.pipelineEvents = [...db.pipelineEvents.filter((e) => e.openingId !== openingId), ...overlay("pipelineEvents", events, fetchStart, mine)];
-    state.events.set(openingId, settledAt(fetchStart, now));
+    state.events.set(openingId, openingSettledAt(openingId, fetchStart, now));
     changed = true;
   }
 
