@@ -65,7 +65,8 @@ export default function RowLink({
 
   const active = pathname === href || pathname.startsWith(href + "/");
   return (
-    // prefetch off: these pages are not built yet, so there is nothing to fetch ahead.
+    // prefetch off: every row opens its view in place; this link's own address has no page
+    // in the static build, so fetching it ahead would only fail (25 Nov 2026).
     <Link href={href} prefetch={false} aria-current={active ? "page" : undefined} className={ROW + (active ? ON : OFF)}>
       {children}
     </Link>

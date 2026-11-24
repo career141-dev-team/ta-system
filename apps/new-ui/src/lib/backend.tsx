@@ -288,6 +288,19 @@ export const door = {
   markAllRead: makeFunctionReference<"mutation">("ui/day:markAllRead"),
 };
 
+// Hovering an opening card starts the reads its page asks for first, so the page opens on
+// answers already here instead of waiting a round trip to the server (25 Nov 2026). Reads
+// only, nothing that writes or spends; the same args the page sends (incl. "view as"), or
+// Convex would treat them as different reads. Kept 10 s, then dropped if nobody opened it.
+export function prewarmOpening(openingId: string) {
+  if (!client) return;
+  const as = getViewed()?.id;
+  const warm = (query: FunctionReference<"query">, args: Record<string, unknown>) =>
+    client.prewarmQuery({ query, args: as && READS_AS.has(getFunctionName(query)) ? { ...args, as } : args, extendSubscriptionFor: 10_000 });
+  for (const q of [door.summary, door.openingTargets, door.team, door.placements]) warm(q, { openingId });
+  warm(door.board, { openingId, limit: 50 });
+}
+
 /** The board's columns in the backend's words, in the same order as the UI's STAGES. */
 export const STAGE_KEYS = [
   "ta_follow_up", "ai_follow_up", "director_review", "director_shortlist", "client_shortlist",

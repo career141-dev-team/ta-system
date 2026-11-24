@@ -126,7 +126,6 @@ export function Bell() {
       <li key={a.id} data-row>
         <Link
           href={a.href}
-          prefetch={false}
           onClick={() => {
             g.ids.forEach((id) => markRead(id));
             close();
@@ -238,7 +237,7 @@ function MenuRow({ icon, label, hint, href, onClick }: { icon: string; label: st
   return (
     <li data-row role="none">
       {href ? (
-        <Link href={href} prefetch={false} role="menuitem" onClick={onClick} className={cls}>
+        <Link href={href} role="menuitem" onClick={onClick} className={cls}>
           {inner}
         </Link>
       ) : (
