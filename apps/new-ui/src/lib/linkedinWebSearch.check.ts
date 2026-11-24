@@ -1,5 +1,5 @@
 // Run from the repo root: node --experimental-strip-types --import ./tests/alias.mjs apps/new-ui/src/lib/linkedinWebSearch.check.ts
-import { readTitle, toWebFound, webQueries } from "./linkedinWebSearch";
+import { abroad, readTitle, toWebFound, webQueries } from "./linkedinWebSearch";
 const eq = (l: string, a: unknown, b: unknown) => { if (JSON.stringify(a) !== JSON.stringify(b)) { console.error("FAIL", l, a, b); process.exit(1); } };
 const ask = { titles: ["Brand Manager"], companies: ["Unilever"], locations: ["Colombo"], keywords: ["FMCG"], years: "", minYears: 0 };
 
@@ -13,4 +13,8 @@ const f = toWebFound({ url: "https://lk.linkedin.com/in/oshani-e/", title: "Osha
 eq("one link per person, on www", f.url, "https://www.linkedin.com/in/oshani-e");
 eq("the brief checked against what the result says", f.checks.map((c) => c.ok), [true, true, true, true]);
 eq("the place it names", f.place, "Colombo");
+eq("Sydney for a Colombo search is abroad", abroad({ url: "https://www.linkedin.com/in/k", title: "Karmel S - Brand Manager", snippet: "Greater Sydney Area" }, ask), true);
+eq("another country host is abroad", abroad({ url: "https://au.linkedin.com/in/k", title: "K", snippet: "" }, ask), true);
+eq("Sri Lanka named stays", abroad({ url: "https://www.linkedin.com/in/k", title: "K", snippet: "ex Dubai, now Colombo" }, ask), false);
+eq("a search abroad is left alone", abroad({ url: "https://au.linkedin.com/in/k", title: "K", snippet: "Sydney" }, { ...ask, locations: ["Sydney"] }), false);
 console.log("linkedinWebSearch: all checks pass");

@@ -31,6 +31,21 @@ export function readTitle(t: string): { name: string; headline: string } {
 }
 
 /** One result as the chat's row, with the brief checked against what it says. */
+/**
+ * A result placed in another country, for a search in Sri Lanka (or no place
+ * named): another country's LinkedIn host, or another country named and no word
+ * of Sri Lanka (25 Nov: "Greater Sydney Area" came back for Brand managers in Colombo).
+ */
+export function abroad(hit: { url: string; title: string; snippet: string }, a: Ask): boolean {
+  const asked = a.locations.join(" ");
+  if (asked && !/sri lanka|colombo|kandy|galle|negombo|jaffna|kurunegala|matara|lanka/i.test(asked)) return false;
+  const host = hit.url.toLowerCase().match(/^https?:\/\/([a-z]{2})\.linkedin\.com\//)?.[1];
+  if (host && host !== "lk") return true;
+  const text = `${hit.title} ${hit.snippet}`.toLowerCase();
+  if (/sri lanka|colombo|kandy|galle|negombo|lanka/.test(text)) return false;
+  return /\b(australia|sydney|melbourne|india|mumbai|delhi|bangalore|chennai|dubai|uae|abu dhabi|qatar|doha|saudi|singapore|malaysia|united kingdom|london|united states|usa|canada|toronto|germany|bangladesh|dhaka|pakistan|maldives|new zealand)\b/.test(text);
+}
+
 export function toWebFound(hit: { url: string; title: string; snippet: string }, a: Ask): Found {
   const { name, headline } = readTitle(hit.title);
   const text = `${hit.title} ${hit.snippet}`;
@@ -96,7 +111,7 @@ export async function linkedinWebSearch(key: string, a: Ask, why: string): Promi
   const seen = new Map<string, Found>();
   let ran = 0;
   for (const hits of await Promise.all(queries.map((q) => oneSearch(key, q).then((h) => (ran++, h)).catch(() => [])))) {
-    for (const h of hits) if (!seen.has(slug(h.url))) seen.set(slug(h.url), toWebFound(h, a));
+    for (const h of hits) if (!seen.has(slug(h.url)) && !abroad(h, a)) seen.set(slug(h.url), toWebFound(h, a));
   }
   const score = (f: Found) => f.checks.filter((c) => c.ok).length;
   const checked = [...seen.values()].sort((x, y) => score(y) - score(x));
