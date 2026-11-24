@@ -11,6 +11,7 @@ import { adultHit } from "./adultFilter";
 import { reserve, serperMaxCost, SpendCapError } from "./spend";
 import { keepHit, parseBooleanQuery, toNaturalSearch } from "./websearch";
 import { claudeSearchEnabled, claudeSearchPaused, claudeWebSearch } from "./claudeSub";
+import { anthropicWebSearch, apiSearchEnabled } from "./apiSearch";
 
 export interface SearchHit {
   url: string;
@@ -100,7 +101,7 @@ export function searxngEngines(): string {
 
 /** Whether any search can run. Kept under its old name: callers ask "can we search?". */
 export function serperConfigured(): boolean {
-  return claudeSearchEnabled() || searchProvider() !== null;
+  return apiSearchEnabled() || claudeSearchEnabled() || searchProvider() !== null;
 }
 
 /**
@@ -120,6 +121,13 @@ export async function search(q: string, num = 10, page = 1): Promise<SearchResul
 }
 
 async function searchUnfiltered(q: string, num: number, page: number): Promise<SearchResult> {
+  // The Anthropic API's web search answers first when its key is there (25 Nov):
+  // SearXNG's free engines block this server after a few dozen searches.
+  if (page === 1 && apiSearchEnabled()) {
+    const r = await searxngSlot(() => anthropicWebSearch(q, num), API_MAX_IN_FLIGHT, 0, "anthropic");
+    if (r.hits.length) return r;
+    if (r.error) console.warn(`[search] ${r.error} — asking the next engine: ${q.slice(0, 120)}`);
+  }
   if (page === 1 && claudeSearchEnabled()) {
     const resting = claudeSearchPaused();
     if (!resting) {
@@ -136,6 +144,9 @@ async function searchUnfiltered(q: string, num: number, page: number): Promise<S
  * How many Claude searches run at once. Each is a CLI process in the app's
  * own container, so this is a memory ceiling as much as a speed one.
  */
+/** How many API web searches run at once (each is one HTTPS call). */
+const API_MAX_IN_FLIGHT = Number(process.env.C141_API_SEARCH_CONCURRENCY ?? "") || 4;
+
 const CLAUDE_MAX_IN_FLIGHT = Number(process.env.C141_CLAUDE_SEARCH_CONCURRENCY ?? "") || 3;
 
 /** The search engine behind Claude: SearXNG, Serper or OpenAI, whichever is set up. */

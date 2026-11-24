@@ -232,6 +232,7 @@ Pre-merge checklist:
 6. Anything changing what users see or what reaches candidates is flagged for the owner; any live change goes only through the release pipeline (never `convex deploy/run/import/env set` from a laptop, never point a local run at a live address). Use /merge-teammate for teammate branches.
 
 ## History
+- 2026-11-25 Every search (Research, Suggestions, Benchmark) asks the Anthropic API's own web search first when `ANTHROPIC_API_KEY` is set (`src/lib/apiSearch.ts`, Haiku + `web_search_20250305`, one search per call, 4 at once; off with `C141_API_SEARCH=off`). On the new server SearXNG's free engines block the IP after a few dozen searches (a Suggestions round read 2 profiles from 28 searches), and Haiku-only mode had switched the subscription search off. Addresses come only from the tool's results; the reply lends snippets. About 1 cent a search; `C141_API_SEARCH_DAILY` caps a Colombo day (default 400), past it SearXNG answers. Test: `tests/apisearch.test.ts`.
 - 2026-11-23 `/api/ui/links` rows carry `cvId` (the row's linked `candidateId`, else null) so the new UI's "View CV" opens that person's real CV through `/api/ui/cv?candidate=`, which checks the reader may open it. A row with only an undecided CV match has no `cvId`. Test: `tests/uilinks.test.ts`.
 - 2026-11-21 (R7) The new UI's Excel Tables add answers before the CV check: `/api/ui/links` sets `matchLater=1` on `add`, and `addLink` then runs `matchLink` in `after()` (the row shows the match when the table reads again; the add took ~9 s). The old page sends no such field, so it still waits and says "already in the database" in its answer. Test: `tests/uismallfixes.test.ts`.
 - 2026-11-20 Research leaves a placeholder industry out of its searches (`industryWord` in `src/lib/researchSearch.ts`: Other / N/A / None / Unknown / "-" read as no industry): a client filed under "Other" searched for '"John Keells" Other' and "top Other companies in Sri Lanka". The market search reads "top companies in <where>" when there is no industry. Test: `tests/research.test.ts`.
@@ -265,9 +266,9 @@ Pre-merge checklist:
 - 2026-11-18 Similar designation feeds Suggestions: Research's other names for the job are searched first (src/lib/similarTitles.ts, sourcing + claudeSourcing prompts), no extra queries.
 
 <!-- skill-meta
-verified-commit: f8176ff4
-verified-hash: 75734024b8ec0fd16864a320ae5ef85d2d1a94da
-verified-date: 2026-11-23
+verified-commit: 0e4bda36
+verified-hash: 3ac48ea7135cd1f71cebe4da64591c109a0fa218
+verified-date: 2026-11-24
 sources:
   src/app/openings/[id]/hh/**
   src/app/openings/[id]/sourcingGate.ts
