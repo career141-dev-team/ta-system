@@ -318,3 +318,25 @@ export const queueScoop = mutation({
     }
   },
 });
+
+/**
+ * "Run matching again" on Database CVs (25 Nov). It said "do it in AURA for
+ * now"; it now starts the same engine run as the old app (jobs/jobs:
+ * triggerReverseMatch, whose watchdog clears a run that never finishes).
+ * Anyone who may read the opening, once its JD is approved, one run at a time.
+ */
+export const rerunMatching = mutation({
+  args: { openingId: v.string() },
+  handler: async (ctx, args): Promise<Done> => {
+    const open = await openFor(ctx, args.openingId);
+    if (!open.ok) return open;
+    if (open.job.jdStatus !== "approved") return refused("Approve the job description first - matching reads it.");
+    if (open.job.reverseMatchStatus === "running") return { ok: true, message: "Matching is already running - the list updates when it finishes." };
+    try {
+      await ctx.runMutation(internal.jobs.jobs.triggerReverseMatch, { jobId: open.jobId });
+    } catch (error) {
+      return refused(inWords(error, "Matching could not start. Try again."));
+    }
+    return { ok: true, message: "Matching started - the list updates in about a minute." };
+  },
+});

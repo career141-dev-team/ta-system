@@ -105,6 +105,7 @@ export default function DatabaseCvsView() {
       );
   }
   const notForJob = useDoorMutation(door.notForJob);
+  const rerunLive = useDoorMutation(door.rerunMatching);
   // Real matches start unfiltered: the design's sample filters would hide most of them.
   const [f, setF] = useState<Filters>(live ? { ...ANY } : { ...ANY, fit: "strong", notice: 1, city: "Colombo" });
   const [fOpen, setFOpen] = useState(false);
@@ -192,7 +193,21 @@ export default function DatabaseCvsView() {
   };
   const rerun = () => {
     if (matching) return;
-    if (live) return say("Running matching again is not switched on here yet - do it in AURA for now.", undefined, true);
+    // Live: the real engine run (ui/opening:rerunMatching, 25 Nov); the list follows by itself when it saves.
+    if (live) {
+      setMatching(true);
+      void (rerunLive({ openingId: job! }) as Promise<DoorDone | undefined>).then(
+        (r) => {
+          say(r?.message ?? "Matching could not start. Try again.", undefined, !r?.ok);
+          timer.current = setTimeout(() => setMatching(false), r?.ok ? 90_000 : 0);
+        },
+        () => {
+          setMatching(false);
+          say("Matching could not start. Try again.", undefined, true);
+        },
+      );
+      return;
+    }
     // Matching reads the approved JD; the TA System refuses it before approval.
     if (!jdApproved) return say("Approve the job description first - matching reads it.", undefined, true);
     setMatching(true);

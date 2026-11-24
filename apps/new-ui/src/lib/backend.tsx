@@ -225,6 +225,7 @@ export const door = {
   accessPending: makeFunctionReference<"query">("ui/access:pending"),
   accessDecide: makeFunctionReference<"mutation">("ui/access:decide"),
   setFollowUp: makeFunctionReference<"mutation">("ui/opening:setFollowUp"),
+  rerunMatching: makeFunctionReference<"mutation">("ui/opening:rerunMatching"),
   setQuestions: makeFunctionReference<"mutation">("ui/manage:setQuestions"),
   scoops: makeFunctionReference<"query">("ui/opening:scoops"),
   matches: makeFunctionReference<"query">("ui/opening:matches"),
