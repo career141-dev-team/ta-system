@@ -232,6 +232,7 @@ Pre-merge checklist:
 6. Anything changing what users see or what reaches candidates is flagged for the owner; any live change goes only through the release pipeline (never `convex deploy/run/import/env set` from a laptop, never point a local run at a live address). Use /merge-teammate for teammate branches.
 
 ## History
+- 2026-11-23 `/api/ui/links` rows carry `cvId` (the row's linked `candidateId`, else null) so the new UI's "View CV" opens that person's real CV through `/api/ui/cv?candidate=`, which checks the reader may open it. A row with only an undecided CV match has no `cvId`. Test: `tests/uilinks.test.ts`.
 - 2026-11-21 (R7) The new UI's Excel Tables add answers before the CV check: `/api/ui/links` sets `matchLater=1` on `add`, and `addLink` then runs `matchLink` in `after()` (the row shows the match when the table reads again; the add took ~9 s). The old page sends no such field, so it still waits and says "already in the database" in its answer. Test: `tests/uismallfixes.test.ts`.
 - 2026-11-20 Research leaves a placeholder industry out of its searches (`industryWord` in `src/lib/researchSearch.ts`: Other / N/A / None / Unknown / "-" read as no industry): a client filed under "Other" searched for '"John Keells" Other' and "top Other companies in Sri Lanka". The market search reads "top companies in <where>" when there is no industry. Test: `tests/research.test.ts`.
 - 2026-11-20 Research keeps only search results that name the client (`namedHit` in `src/lib/researchSearch.ts`: every word of the name - `nameTokens`, or the whole name when it has no long word - in the title, snippet or address). SearXNG ignores the quotes round a name, so "John Keells" also returned John Lewis, Bible verses and Wikipedia's "John"; all of it was listed under Sources and johnlewis.com was taken as the website. The client, LinkedIn, about and competitors searches are filtered; `pickOfficialSite` (client and competitors) only picks a named result; the client and competitors searches now carry the place (`where`, Sri Lanka by default). The market and role searches are not filtered. Test: `tests/research.test.ts`.
@@ -263,9 +264,9 @@ Pre-merge checklist:
 - 2026-11-18 Similar designation feeds Suggestions: Research's other names for the job are searched first (src/lib/similarTitles.ts, sourcing + claudeSourcing prompts), no extra queries.
 
 <!-- skill-meta
-verified-commit: 85237c20
+verified-commit: f8176ff4
 verified-hash: 75734024b8ec0fd16864a320ae5ef85d2d1a94da
-verified-date: 2026-11-21
+verified-date: 2026-11-23
 sources:
   src/app/openings/[id]/hh/**
   src/app/openings/[id]/sourcingGate.ts
