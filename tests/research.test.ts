@@ -55,6 +55,11 @@ eq(
   groundedCompetitors(["John Keells Holdings", "Made Up Ltd", "Hayleys PLC", "Aitken Spence"], "John Keells Holdings and Aitken Spence lead; Hayleys PLC too", "Hayleys PLC"),
   ["John Keells Holdings", "Aitken Spence"],
 );
+eq(
+  "a list's title or the client's own unit is not a competitor",
+  groundedCompetitors(["John Keells CG Auto", "Top companies in Sri Lanka", "List of largest companies in Sri Lanka", "Aitken Spence"], "John Keells CG Auto; Top companies in Sri Lanka; List of largest companies in Sri Lanka; Aitken Spence", "John Keells"),
+  ["Aitken Spence"],
+);
 eq("json in a code fence", parseJsonObject('```json\n{"a": 1}\n```'), { a: 1 });
 eq("no json", parseJsonObject("sorry"), null);
 

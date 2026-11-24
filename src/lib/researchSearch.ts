@@ -213,11 +213,23 @@ export function groundedCompetitors(proposed: string[], evidence: string, client
     if (name.length < 2 || name.length > 80) continue;
     if (!text.includes(name.toLowerCase())) continue;
     const key = nameTokens(name).join(" ");
-    if (!key || key === client) continue;
+    if (!key || key === client || notACompetitor(name, clientName)) continue;
     if (out.some((o) => nameTokens(o).join(" ") === key)) continue;
     out.push(name);
   }
   return out.slice(0, MAX_COMPETITORS);
+}
+
+/**
+ * A list's or an article's title, or the client's own unit, read as a company
+ * (25 Nov: "Top companies in Sri Lanka", "List of largest companies in Sri
+ * Lanka" and "John Keells CG Auto" came back as John Keells's competitors).
+ */
+export function notACompetitor(name: string, clientName: string): boolean {
+  if (/\b(top|largest|biggest|best|leading|list of|companies|firms|brands)\b/i.test(name)) return true;
+  const own = nameTokens(clientName);
+  const theirs = new Set(nameTokens(name));
+  return own.length > 0 && own.every((w) => theirs.has(w));
 }
 
 /** The first JSON object in a model's answer, however it is wrapped. */
@@ -361,7 +373,7 @@ export async function researchViaSearch(input: ResearchInput, given: ResearchDep
         .filter((k) => k.length >= 2 && k.length <= 80)
         .filter((k) => {
           const key = nameTokens(k).join(" ");
-          return Boolean(key) && key !== clientKey && !competitors.some((c) => nameTokens(c).join(" ") === key);
+          return Boolean(key) && key !== clientKey && !notACompetitor(k, name) && !competitors.some((c) => nameTokens(c).join(" ") === key);
         })
         .slice(0, Math.max(0, MAX_COMPETITORS - competitors.length));
     }
