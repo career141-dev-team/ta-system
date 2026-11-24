@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { DUR, EASE, gsap, useExit, useSwap, useTabGlide } from "@/lib/gsap";
 import { useMe } from "@/lib/role";
-import { door, useDoorQuery, useLive, type DoorOpenings } from "@/lib/backend";
+import { door, prewarmOpening, useDoorQuery, useLive, type DoorOpenings } from "@/lib/backend";
 import { clientOf, createFields, readOpeningForm, sendOpenings, type OpeningForm } from "./openingsLive";
 import { useFilters } from "@/lib/filters";
 import { NoResults, ResultLine } from "@/app/FilterBits";
@@ -348,7 +348,10 @@ function Card({
     <Link
       // ponytail: every card opens the one opening built so far.
       href={live ? `/openings/demo?job=${o.id}` : o.referee ? "/openings/demo?referee=1" : "/openings/demo"}
-      prefetch={false}
+      // The page's files come ahead by themselves; pointing at a card also starts the
+      // opening's first reads, so it opens on answers already here (25 Nov 2026).
+      onPointerEnter={live ? () => prewarmOpening(o.id) : undefined}
+      onFocus={live ? () => prewarmOpening(o.id) : undefined}
       onMouseLeave={armed ? onDisarm : undefined}
       className="group relative flex h-[clamp(116px,15.5dvh,168px)] flex-col gap-[clamp(5px,0.95dvh,10px)] rounded-lg border border-border bg-surface px-[max(1.625rem,16px)] py-[clamp(12px,2dvh,22px)] transition-colors hover:border-border-strong hover:shadow-card"
     >

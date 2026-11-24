@@ -62,8 +62,8 @@ export function NavLinks({ pathname = "" }: { pathname?: string }) {
           <Link
             key={href}
             href={href}
-            // Most of these pages are not built yet: fetching them ahead only costs requests.
-            prefetch={href === "/today" ? undefined : false}
+            // Every page here is built now: Next fetches its files ahead (in view / on hover),
+            // so a click does not wait a round trip to the server (25 Nov 2026).
             aria-current={active ? "page" : undefined}
             onMouseEnter={(e) => moveTo(e.currentTarget)}
             className={
