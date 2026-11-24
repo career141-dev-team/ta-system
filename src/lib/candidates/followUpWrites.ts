@@ -20,8 +20,9 @@ export type CandidateFollowUpWriteResult =
   | { ok: true; message: string }
   | { ok: false; status: 400 | 403 | 404 | 409; message: string; notice?: boolean };
 
-function refreshed(openingId: string, deps: Pick<OpeningWriteDeps, "resetStore" | "revalidatePath">) {
-  deps.resetStore();
+function refreshed(openingId: string, deps: Pick<OpeningWriteDeps, "staleOpening" | "revalidatePath">) {
+  // Only this opening changed: re-read it, not the whole desk (23 Nov).
+  deps.staleOpening(openingId);
   deps.revalidatePath("/alerts");
   deps.revalidatePath(`/openings/${openingId}`, "layout");
 }
@@ -46,7 +47,7 @@ export async function sendCandidateFollowUp(
   openingId: string,
   applicationId: string,
   channel: Channel | undefined,
-  deps: Pick<OpeningWriteDeps, "convexQuery" | "convexMutation" | "resetStore" | "revalidatePath">,
+  deps: Pick<OpeningWriteDeps, "convexQuery" | "convexMutation" | "staleOpening" | "revalidatePath">,
 ): Promise<CandidateFollowUpWriteResult> {
   const decision = await allowed(user, openingId, applicationId, deps);
   if (!decision.ok) return decision;
@@ -96,7 +97,7 @@ export async function setCandidateConversationOwner(
   openingId: string,
   applicationId: string,
   owner: "ta" | "assistant",
-  deps: Pick<OpeningWriteDeps, "convexQuery" | "convexMutation" | "resetStore" | "revalidatePath">,
+  deps: Pick<OpeningWriteDeps, "convexQuery" | "convexMutation" | "staleOpening" | "revalidatePath">,
 ): Promise<CandidateFollowUpWriteResult> {
   const decision = await allowed(user, openingId, applicationId, deps);
   if (!decision.ok) return decision;
@@ -128,7 +129,7 @@ export async function stopCandidateFollowUp(
   user: User,
   openingId: string,
   applicationId: string,
-  deps: Pick<OpeningWriteDeps, "convexQuery" | "convexMutation" | "resetStore" | "revalidatePath">,
+  deps: Pick<OpeningWriteDeps, "convexQuery" | "convexMutation" | "staleOpening" | "revalidatePath">,
 ): Promise<CandidateFollowUpWriteResult> {
   const decision = await allowed(user, openingId, applicationId, deps);
   if (!decision.ok) return decision;

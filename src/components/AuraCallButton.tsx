@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { Room, RoomEvent, Track, type Participant, type RemoteParticipant, type RemoteTrack, type TranscriptionSegment } from "livekit-client";
+import type { Room, Participant, RemoteParticipant, RemoteTrack, TranscriptionSegment } from "livekit-client";
 import { completeWebCall, startWebCall, type CallLine } from "@/app/voiceActions";
 import { safeErrorMessage } from "@/lib/userError";
 
@@ -128,6 +128,8 @@ function AuraCallDialog({
     callId.current = r.aiCallId;
     startedAt.current = Date.now();
 
+    // 23 Nov: livekit-client (~440 KB) loads only when a call starts, not with every page that renders this component.
+    const { Room, RoomEvent, Track } = await import("livekit-client");
     const lk = new Room({ adaptiveStream: true, dynacast: true });
     room.current = lk;
     lk.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {

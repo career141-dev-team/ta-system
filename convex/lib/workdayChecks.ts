@@ -40,7 +40,8 @@ export async function requiredChecks(ctx: QueryCtx | MutationCtx, day: Doc<"taWo
     full ? ctx.db.query("taSourcingRuns").withIndex("by_job", q => q.eq("jobId", entry.jobId)).order("desc").take(SOURCING_RUNS) : none<Doc<"taSourcingRuns">>(),
     ctx.db.query("applications").withIndex("by_workday_owner", q => q.eq("jobId", entry.jobId).eq("ownerTaId", day.userId)).collect(),
     ctx.db.normalizeId("taWorkdays", day._id) ? ctx.db.query("taWorkdayMail").withIndex("by_workday_job", q => q.eq("workdayId", day._id).eq("jobId", entry.jobId)).collect() : Promise.resolve([]),
-    ctx.db.query("reviewRounds").withIndex("by_opening", q => q.eq("openingId", entry.jobId)).collect(),
+    // 23 Nov: only director rounds are used below, so read just those.
+    ctx.db.query("reviewRounds").withIndex("by_opening_kind", q => q.eq("openingId", entry.jobId).eq("kind", "director")).collect(),
     ctx.db.get(entry.jobId),
   ]);
   const applicable = newestSuggestions.filter(s => !s.generatedFor || s.generatedFor === day.userId);

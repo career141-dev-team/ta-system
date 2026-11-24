@@ -14,7 +14,7 @@ type PipelineMoveResult =
 
 type PipelineWriteDeps = Pick<
   OpeningWriteDeps,
-  "convexQuery" | "convexMutation" | "resetStore" | "revalidatePath"
+  "convexQuery" | "convexMutation" | "staleOpening" | "revalidatePath"
 > & { primeApplications?: () => Promise<void> };
 
 function userName(id: string): string {
@@ -22,7 +22,8 @@ function userName(id: string): string {
 }
 
 function refreshed(openingId: string, deps: PipelineWriteDeps): void {
-  deps.resetStore();
+  // Only this opening changed: re-read it, not the whole desk (23 Nov).
+  deps.staleOpening(openingId);
   deps.revalidatePath(`/openings/${openingId}`, "layout");
 }
 

@@ -30,11 +30,14 @@ export default async function DatabaseHome({
   // person in the database" arrived here with ?q= and dropped the visitor on
   // an empty box, looking like the link was broken.
   const { q } = await searchParams;
+  // The shelf needs no user, so it starts before pageUser and runs beside it (23 Nov).
+  const shelfP = isConvex() ? databaseShelf() : null;
+  shelfP?.catch(() => {}); // pageUser may redirect first; the await below still throws as before
   const user = await pageUser("database.read");
   // Backed by Convex the working set holds only what this page primed, so
   // `repo.candidates()` is not the database. The count and the words come from
   // the backend, which can answer both without handing over 77,000 people.
-  const shelf = isConvex() ? await databaseShelf() : null;
+  const shelf = shelfP ? await shelfP : null;
   const local = repo.candidates();
   const vocab = shelf
     ? { titles: shelf.titles.map((t) => t.title), skills: shelf.skills, industries: shelf.industries, cities: shelf.cities, employers: shelf.employers, qualifications: [], languages: [], nationalities: [] }

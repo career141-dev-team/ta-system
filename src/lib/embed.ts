@@ -174,6 +174,7 @@ export async function embedTexts(texts: string[]): Promise<EmbedResult> {
         res = await fetch(url, {
           method: "POST",
           headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+          signal: AbortSignal.timeout(15_000), // a hung provider returns the network failure below instead of waiting forever (23 Nov)
           // Only providers that keep nothing and train on nothing (see lib/ai).
           body: JSON.stringify({
             model: name,

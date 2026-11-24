@@ -204,6 +204,7 @@ Pre-merge checklist:
 Repo hard rules that apply: never touch the live backend or VPS from a laptop (no `convex deploy/run/env set`, no starting or restarting the voice containers); all outbound goes through `convex/lib/outreachSafety.ts` and `outboundGuard.ts`; data changes are `dryRun` migrations run by the pipeline; work on a `<person>/<topic>` branch and merge by PR. Anything that changes what the candidate hears (prompt, opening, closing, questions) or what a TA sees recorded must be flagged to the owner to decide.
 
 ## History
+- 23 Nov 2026 (load-reduction): `AuraCallButton`, `WebCallPanel` and `voice/VoiceTestPanel` import `livekit-client` types only and load the library with `await import("livekit-client")` when a call starts, so its ~540 KB chunk is no longer in the initial bundle of pages that show a candidate row. Connection logic is unchanged.
 
 - 2026-09-15 `637a766` Hold the AI screening call in a browser room (no SIP trunk): `ta/voice:prepareWebCall`, room and token minted by the Next server, results on the candidate's Call tab. `376c8a2` outbound lock (`C141_OUTBOUND_LOCK`) added to LiveKit SIP and ElevenLabs calls; dispatch calls require a desk user on the opening.
 - 2026-09-16 `4d63446` Call / WhatsApp / Email per Follow-up candidate; Aura worker (LiveKit Agents) asks salary, expected, notice and the opening's questions; transcript read into the record (`voiceExtract`, `applyCallAnswers`); job questions repeating a standard detail are asked once.

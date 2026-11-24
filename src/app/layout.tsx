@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
+import type { User } from "@/data/types";
 import "./globals.css";
-import { TopNav } from "@/components/TopNav";
+import { TopNav, type NavBadges } from "@/components/TopNav";
 import { Flash } from "@/components/Flash";
 import { Suspense } from "react";
 import Script from "next/script";
 import { currentUser } from "@/lib/session";
 import { alertsFor } from "@/lib/sla";
 import { ClerkProvider, Show } from "@clerk/nextjs";
-import { DeskAssistant } from "@/components/DeskAssistant";
-import { FeedbackWidget } from "@/components/FeedbackWidget";
+import { LazyDeskAssistant, LazyFeedbackWidget } from "@/components/LazyChrome";
 import { NavigationProgress } from "@/components/NavigationProgress";
 import { primeStore } from "@/data/prime";
 import { repo } from "@/data/store";
@@ -42,15 +42,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // Null on the sign-in screen, which is the one page that renders without a
   // session — and therefore without the top bar.
   const user = await currentUser();
-  // Follow-ups too: the alert badge below counts them, and a follow-up whose
-  // candidate is not held is dropped from that count rather than miscounted.
-  if (user) await primeStore({ allApplications: true, followUps: true });
-  // The badge counts the same alerts the Alerts page lists. It used to read a
-  // stored count, which drifted: the 13 Sep audit found accounts showing one
-  // where six were waiting.
-  const readAlertIds = user ? repo.readAlertIds(user.id) : new Set<string>();
-  const alertCount = user ? alertsFor(user.id).filter((a) => !readAlertIds.has(a.id)).length : 0;
-  const feedbackBadgeCount = user ? repo.unseenFeedbackCount(user) : 0;
+  // Not awaited: the top bar's badges stream in when counted (navBadges below).
+  const badges = user ? navBadges(user) : undefined;
   /*
    * Microsoft Clarity — heatmaps, session replays, rage clicks (28 Sep). Off
    * unless CLARITY_PROJECT_ID is set on the server; read per request, so the
@@ -89,7 +82,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {uiOnly() ? (
           // Laptop screen work without a sign-in service (lib/uiOnly.ts).
           <>
-            {user ? <TopNav user={user} alertCount={alertCount} feedbackBadgeCount={feedbackBadgeCount} /> : null}
+            {user ? <TopNav user={user} badges={badges} /> : null}
             <Suspense fallback={null}>
               <NavigationProgress />
             </Suspense>
@@ -97,12 +90,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <Flash />
             </Suspense>
             {user && canViewWorkday(user.role) ? <WorkdayWorkspace role={user.role}>{children}</WorkdayWorkspace> : children}
-            {user ? <DeskAssistant /> : null}
-            {user ? <FeedbackWidget isTa={isTa(user)} /> : null}
+            {user ? <LazyDeskAssistant /> : null}
+            {user ? <LazyFeedbackWidget isTa={isTa(user)} /> : null}
           </>
         ) : (
         <ClerkProvider signInUrl="/signin" signUpUrl="/signup" afterSignOutUrl="/signin">
-          {user ? <TopNav user={user} alertCount={alertCount} feedbackBadgeCount={feedbackBadgeCount} /> : null}
+          {user ? <TopNav user={user} badges={badges} /> : null}
           <Suspense fallback={null}>
             <NavigationProgress />
           </Suspense>
@@ -110,11 +103,39 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <Flash />
           </Suspense>
           {user && canViewWorkday(user.role) ? <WorkdayWorkspace role={user.role}>{children}</WorkdayWorkspace> : children}
-          {user ? <DeskAssistant /> : null}
-          {user ? <FeedbackWidget isTa={isTa(user)} /> : null}
+          {user ? <LazyDeskAssistant /> : null}
+          {user ? <LazyFeedbackWidget isTa={isTa(user)} /> : null}
         </ClerkProvider>
         )}
       </body>
     </html>
   );
+}
+
+/**
+ * The top bar's alert and feedback counts. Counting alerts needs every
+ * application and the people being chased, which can take seconds when the
+ * store is cold or a save has just marked it stale. Until 23 Nov the root
+ * layout awaited that before sending any page; now it is a promise the bar's
+ * badges read when it settles, and the page renders alongside it. A failed
+ * count shows no badge rather than an error page.
+ */
+function navBadges(user: User): Promise<NavBadges> {
+  // Follow-ups too: the alert badge counts them, and a follow-up whose
+  // candidate is not held is dropped from that count rather than miscounted.
+  return primeStore({ allApplications: true, followUps: true })
+    .then(() => {
+      // The badge counts the same alerts the Alerts page lists. It used to read a
+      // stored count, which drifted: the 13 Sep audit found accounts showing one
+      // where six were waiting.
+      const readAlertIds = repo.readAlertIds(user.id);
+      return {
+        alerts: alertsFor(user.id).filter((a) => !readAlertIds.has(a.id)).length,
+        feedback: repo.unseenFeedbackCount(user),
+      };
+    })
+    .catch((e) => {
+      console.warn("[layout] badge counts failed:", e instanceof Error ? e.message : e);
+      return { alerts: 0, feedback: 0 };
+    });
 }

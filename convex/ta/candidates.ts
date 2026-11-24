@@ -430,36 +430,64 @@ export const setCandidateTotal = internalMutation({
   },
 });
 
+const VOCABULARY_KEY = "vocabulary";
+
+/** The scan itself: a bounded sample of full candidate rows. */
+async function computeVocabulary(ctx: QueryCtx, sampleSize: number) {
+  const rows = await ctx.db.query("candidates").take(Math.min(sampleSize, 4000));
+  const titles = new Map<string, number>();
+  const skills = new Set<string>();
+  const cities = new Set<string>();
+  const employers = new Set<string>();
+  const industries = new Set<string>();
+  for (const c of rows) {
+    const t = c.currentJobTitle ?? c.currentTitle;
+    if (t) titles.set(t, (titles.get(t) ?? 0) + 1);
+    for (const s of (c.skills ?? []).slice(0, 12)) if (typeof s === "string") skills.add(s);
+    const city = c.locationStructured?.city ?? null;
+    if (city) cities.add(city);
+    if (c.currentEmployer) employers.add(c.currentEmployer);
+    if (c.sector) industries.add(c.sector);
+    for (const i of c.industries ?? []) industries.add(i);
+  }
+  return {
+    titles: [...titles.entries()].sort((a, b) => b[1] - a[1]).slice(0, 400).map(([t, n]) => ({ title: t, count: n })),
+    skills: [...skills].slice(0, 600),
+    cities: [...cities].slice(0, 200),
+    employers: [...employers].slice(0, 400),
+    industries: [...industries].slice(0, 200),
+    sampled: rows.length,
+  };
+}
+
 /** Titles, skills, cities and employers the database actually contains, from a
- *  bounded sample — what the search box completes against. */
+ *  bounded sample — what the search box completes against.
+ *
+ *  23 Nov: the app asks every 10 minutes and each ask read 1,500 full candidate
+ *  rows. A cron (`refreshVocabulary`) keeps the answer in one taSettings row; the
+ *  scan runs only when that row is missing or a sample size is asked for. */
 export const vocabulary = internalQuery({
   args: { actorId: v.optional(v.string()), sample: v.optional(v.number()) },
   handler: async (ctx, args) => {
     await optionalActor(ctx, args.actorId);
-    const rows = await ctx.db.query("candidates").take(Math.min(args.sample ?? 1500, 4000));
-    const titles = new Map<string, number>();
-    const skills = new Set<string>();
-    const cities = new Set<string>();
-    const employers = new Set<string>();
-    const industries = new Set<string>();
-    for (const c of rows) {
-      const t = c.currentJobTitle ?? c.currentTitle;
-      if (t) titles.set(t, (titles.get(t) ?? 0) + 1);
-      for (const s of (c.skills ?? []).slice(0, 12)) if (typeof s === "string") skills.add(s);
-      const city = c.locationStructured?.city ?? null;
-      if (city) cities.add(city);
-      if (c.currentEmployer) employers.add(c.currentEmployer);
-      if (c.sector) industries.add(c.sector);
-      for (const i of c.industries ?? []) industries.add(i);
+    if (args.sample === undefined) {
+      const row = await ctx.db.query("taSettings").withIndex("by_key", (q) => q.eq("key", VOCABULARY_KEY)).first();
+      if (row) {
+        try { return JSON.parse(row.value) as Awaited<ReturnType<typeof computeVocabulary>>; } catch { /* unreadable row: recompute */ }
+      }
     }
-    return {
-      titles: [...titles.entries()].sort((a, b) => b[1] - a[1]).slice(0, 400).map(([t, n]) => ({ title: t, count: n })),
-      skills: [...skills].slice(0, 600),
-      cities: [...cities].slice(0, 200),
-      employers: [...employers].slice(0, 400),
-      industries: [...industries].slice(0, 200),
-      sampled: rows.length,
-    };
+    return await computeVocabulary(ctx, args.sample ?? 1500);
+  },
+});
+
+/** Cron: recompute the vocabulary into its settings row (23 Nov). */
+export const refreshVocabulary = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const value = JSON.stringify(await computeVocabulary(ctx, 1500));
+    const row = await ctx.db.query("taSettings").withIndex("by_key", (q) => q.eq("key", VOCABULARY_KEY)).first();
+    if (row) await ctx.db.patch(row._id, { value, updatedAt: Date.now() });
+    else await ctx.db.insert("taSettings", { key: VOCABULARY_KEY, value, updatedAt: Date.now() });
   },
 });
 
