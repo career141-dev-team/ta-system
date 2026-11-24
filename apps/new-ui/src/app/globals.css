@@ -1,0 +1,317 @@
+@import "tailwindcss";
+
+/* A short window (a laptop with its browser bars: about 1267 x 587). Tabs drop the
+   tall top margins they keep for a full-height screen, so more rows show (owner 14 Nov
+   2026: "only 2.5 rows visible"). Not on phones, which scroll the page anyway. */
+@custom-variant short (@media (max-height: 760px) and (min-width: 768px));
+
+:root {
+  /* The page behind every board: the guidelines' canvas with its dots (DESIGN.md). */
+  --background: #f6f7f9;
+  --foreground: #16191d;
+  --board-dot: #dde1ea;
+  --board-gap: 1.375rem;
+}
+
+/* The design is drawn 1920 wide. Every size in the app is in rem, and 1rem is
+   1/120 of the window width, so the screen keeps the design's proportions at
+   any window size or browser zoom (16px at 1920). It stops shrinking at 9px
+   (a 1080 window) so text stays readable, and stops growing at 16px.
+   So: write sizes with Tailwind's rem scale (h-8.5, not h-[34px]). */
+html {
+  font-size: clamp(9px, min(calc(100vw / 120), calc(100dvh / 62)), 16px);
+}
+/* ...and by the height too (owner 14 Nov 2026: on a short laptop window a tab showed
+   two and a half rows and hid the rest): a wide, short window - 1267 x 587 - takes
+   the smaller of the two, so spacing and boxes tighten and more rows fit, while text
+   keeps its readable floor (every text size is max(rem, px)). A full-height 1920
+   window is unchanged. */
+
+/* One motion rhythm for CSS, matching DUR and EASE in src/lib/gsap.ts: every
+   transition-* utility without its own duration runs 180ms on the same curve as
+   GSAP's power3.out (12 Nov 2026: hovers ran at 150, 200 and 300ms). */
+@theme {
+  --dur-tap: 120ms;
+  --dur-fast: 180ms;
+  --ease-out: cubic-bezier(0.215, 0.61, 0.355, 1);
+  --default-transition-duration: var(--dur-fast);
+  --default-transition-timing-function: var(--ease-out);
+}
+
+/* A plain @theme (not inline), so every colour utility reads its variable and dark
+   mode below can swap the palette without touching a component (14 Nov 2026). */
+@theme {
+  /* ===== The design guidelines (DESIGN.md), from the owner's Figma page
+     "Whiteboard - a calm workspace for recruiters", 13 Nov 2026. Every screen
+     takes its colours, type, corners and shadows from here - never a hex in a
+     component. ===== */
+
+  /* Canvas and surfaces: neutral, near-white boards so the data and the green
+     actions stand out. */
+  --color-canvas: #f6f7f9;
+  --color-surface: #ffffff;
+  --color-surface-2: #f3f4f6;
+  --color-surface-3: #eceef1;
+  --color-border: #e7e9ed;
+  --color-border-strong: #d3d7dd;
+  /* Ink: text, strongest to quietest; marker is the "pen" colour. */
+  --color-ink: #16191d;
+  --color-ink-2: #4e5862;
+  --color-ink-3: #8a939c;
+  --color-marker: #1f2a37;
+  /* Brand: Career141 green for actions. */
+  --color-brand: #165b42;
+  --color-brand-strong: #0b3f2c;
+  --color-brand-soft: #e6f2ec;
+  --color-brand-tint: #f2f8f5;
+  --color-brand-leaf: #3fa34d;
+  /* Status: always paired with its soft tint. */
+  --color-info: #167ca9;
+  --color-info-soft: #eaf7fe;
+  --color-warn: #a8791b;
+  --color-warn-soft: #fcf5e3;
+  --color-danger: #d93a31;
+  --color-danger-soft: #fdeceb;
+  --color-success: #1e8a4c;
+  --color-success-soft: #e5f5ec;
+  --color-violet: #6e4fe8;
+  --color-violet-soft: #f0ecfe;
+  /* Sticky notes. */
+  --color-sticky-yellow: #fff3b0;
+  --color-sticky-mint: #d9f4e3;
+  --color-sticky-sky: #dceefb;
+  --color-sticky-pink: #fde1e3;
+  --color-sticky-lilac: #ece5fe;
+  /* AURA: for AI only. */
+  --color-aura-1: #8b5cff;
+  --color-aura-2: #3d6bff;
+  --color-aura-3: #22d3c5;
+  --color-aura-4: #8cf55a;
+  /* The night behind AURA's mark (the sign-in card); the same in light and dark. */
+  --color-aura-night: #0b0b12;
+
+  /* Older names, kept so nothing breaks; new code uses the names above. */
+  --color-background: var(--color-canvas);
+  --color-foreground: var(--color-ink);
+  --color-muted: var(--color-ink-2);
+  --color-pill-line: var(--color-brand);
+  --color-line: var(--color-border);
+  --color-soft: var(--color-surface-2);
+
+  /* Faces: Poppins for the product; Caveat is the marker pen (greetings, sticky
+     notes, AURA hints - never data); JetBrains Mono for ids and times. */
+  --font-sans: "Poppins", ui-sans-serif, system-ui, sans-serif;
+  --font-hand: "Caveat", "Poppins", cursive;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* The type scale (Figma text styles WB/...). Sizes are the 1920 design's px in
+     rem, each with a floor so a laptop window stays readable. Use the class
+     (text-h1 ...) with its weight: display/h1 font-light, h3/caption
+     font-medium, hand-l font-bold. */
+  --text-display: max(3.5rem, 36px);
+  --text-display--line-height: 1.18;
+  --text-display--letter-spacing: -0.027em;
+  --text-h1: max(2.5rem, 28px);
+  --text-h1--line-height: 1.25;
+  --text-h1--letter-spacing: -0.025em;
+  --text-h2: max(1.625rem, 20px);
+  --text-h2--line-height: 1.31;
+  --text-h2--letter-spacing: -0.015em;
+  --text-h3: max(1.125rem, 15px);
+  --text-h3--line-height: 1.44;
+  --text-h3--letter-spacing: -0.006em;
+  --text-body: max(1rem, 13.5px);
+  --text-body--line-height: 1.625;
+  --text-small: max(0.9375rem, 13px);
+  --text-small--line-height: 1.5;
+  --text-caption: max(0.8125rem, 12px);
+  --text-caption--line-height: 1.33;
+  --text-caption--letter-spacing: 0.025em;
+  --text-mono: max(0.875rem, 12.5px);
+  --text-mono--line-height: 1.38;
+  --text-hand-l: max(2.125rem, 24px);
+  --text-hand-l--line-height: 1.12;
+  --text-hand-m: max(1.5rem, 18px);
+  --text-hand-m--line-height: 1.17;
+
+  /* Corners: soft and rounded. */
+  --radius-xs: 0.375rem;
+  --radius-sm: 0.625rem;
+  --radius-md: 1rem;
+  --radius-lg: 1.5rem;
+  --radius-xl: 2rem;
+  --radius-pill: 999px;
+
+  /* Depth: boards float on the dotted canvas; nothing has a heavy border. */
+  --shadow-card: 0 1px 2px rgba(15, 23, 31, 0.04), 0 6px 18px -4px rgba(15, 23, 31, 0.05);
+  --shadow-float: 0 2px 6px rgba(15, 23, 31, 0.06), 0 18px 40px -8px rgba(15, 23, 31, 0.1);
+  --shadow-sticky: 0 8px 14px -6px rgba(77, 64, 13, 0.12);
+  --shadow-aura: 0 8px 28px -6px rgba(107, 84, 255, 0.28);
+
+  /* Screen sizes taken from the owner's screen designs (11-12 Nov 2026), each
+     with a floor for the laptop window. */
+  --text-nav: max(0.75rem, 12.5px);
+  --text-title: max(1rem, 15px);
+  --text-pill: max(0.71875rem, 11px);
+  --text-tab: max(1rem, 13px);
+  --text-row: max(1.5rem, 15px);
+  /* The pipeline's cards, readable on a laptop (owner 14 Nov 2026: "the Kanban text
+     is small... make the cards so they can see them clearly"). */
+  --text-col: max(0.95rem, 14px);
+  --text-card-name: max(1rem, 15px);
+  --text-card-sub: max(0.85rem, 13px);
+  --text-card-line: max(0.9rem, 13.5px);
+  --text-chip: max(0.75rem, 12px);
+  --text-tool: max(0.8rem, 12.5px);
+}
+
+/* Dark mode (owner, 14 Nov 2026: "dark mode we can implement"): the same tokens,
+   darker. "White" is the paper of a card and "black" the strongest ink, so a dark
+   button (bg-ink, text-white) turns light with dark words and still reads. Chosen
+   from the person's menu; kept in this browser (src/lib/theme.ts). */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #0e1114;
+  --foreground: #e6e9ec;
+  --board-dot: #20262d;
+  --color-white: #171b20;
+  --color-black: #ffffff;
+  --color-canvas: #12161a;
+  --color-surface: #171b20;
+  --color-surface-2: #1f252b;
+  --color-surface-3: #283037;
+  --color-border: #262d34;
+  --color-border-strong: #39424b;
+  --color-ink: #e6e9ec;
+  --color-ink-2: #aeb7c0;
+  --color-ink-3: #7c8792;
+  --color-marker: #e6e9ec;
+  --color-brand: #34a172;
+  --color-brand-strong: #4dbb8a;
+  --color-brand-soft: #16301f;
+  --color-brand-tint: #121f18;
+  --color-brand-leaf: #5cc46a;
+  --color-info: #57b6e2;
+  --color-info-soft: #10283a;
+  --color-warn: #e2b252;
+  --color-warn-soft: #2d2412;
+  --color-danger: #ee6b62;
+  --color-danger-soft: #3a1b19;
+  --color-success: #4cc27f;
+  --color-success-soft: #13301f;
+  --color-violet: #a28cff;
+  --color-violet-soft: #241e3e;
+  --color-sticky-yellow: #3a3317;
+  --color-sticky-mint: #163226;
+  --color-sticky-sky: #15293a;
+  --color-sticky-pink: #3a1c22;
+  --color-sticky-lilac: #261f3d;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 18px -4px rgba(0, 0, 0, 0.4);
+  --shadow-float: 0 2px 6px rgba(0, 0, 0, 0.4), 0 18px 40px -8px rgba(0, 0, 0, 0.55);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+/* The board surface: a FigJam-style dotted canvas drawn in CSS, no image.
+   One dot per --board-gap square; change the two variables above to tune it. */
+.board {
+  background-color: var(--background);
+  background-image: radial-gradient(
+    circle,
+    var(--board-dot) 1px,
+    transparent 1.5px
+  );
+  background-size: var(--board-gap) var(--board-gap);
+}
+
+/* Press feedback (12 Nov 2026: nothing answered a press). Every button and link
+   gives a little under the finger, and all their hover colours move at the one
+   speed. Unlayered on purpose, so it reaches elements whose utilities set their
+   own transition list; at rest nothing looks different. Opacity is left out:
+   GSAP fades buttons, and a CSS transition would drag behind every frame. An
+   element GSAP has moved carries an inline `scale: none` and keeps still. */
+:where(button, a, [role="button"]) {
+  transition-property: color, background-color, border-color, box-shadow, translate, scale;
+  transition-duration: var(--dur-fast), var(--dur-fast), var(--dur-fast), var(--dur-fast), var(--dur-fast), var(--dur-tap);
+  transition-timing-function: var(--ease-out);
+}
+/* The press itself is GSAP's now - in and a spring back (src/app/Motion.tsx). */
+
+/* Keyboard focus, everywhere (13 Nov 2026: there was none). Only for the keyboard
+   (:focus-visible), so a mouse click draws nothing. In the base layer so a box's
+   own outline-none wins; and not on text boxes - a browser counts a click into one
+   as focus-visible, and the square outline sat inside rounded bars (owner, 14 Nov
+   2026: "a very thick outline as a box"). A text box shows focus by its caret and
+   by its bar's own ring (focus-within / has-[...]). */
+@layer base {
+  :where(a, button, select, summary, [tabindex], input[type="checkbox"], input[type="radio"]):focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+  }
+}
+
+/* Every scrollbar in the app, in AURA's look (owner, 14 Nov 2026: the browser's
+   own bar "does not have the vibe of our page"). Always visible, so a TA can see
+   there is more: a soft round pill on a clear track, darker under the pointer.
+   Lists that hide their bar ([scrollbar-width:none]) keep hiding it. Chrome,
+   Edge and Safari read the ::-webkit-scrollbar rules (only while scrollbar-color
+   is unset, so that one is given to Firefox alone). */
+@layer base {
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background: var(--color-border-strong) padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-ink-3);
+  }
+  @supports (-moz-appearance: none) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--color-border-strong) transparent;
+    }
+  }
+}
+
+/* Loading, the premium way (owner, 14 Nov 2026: "use the motion to load the screen...
+   give the premium vibe"). Pure CSS on purpose: it runs the moment the page paints,
+   before React takes the page over, and writes nothing into the HTML - so it can
+   never cause a hydration mismatch the way a script tween did.
+   - The top bar drops in and the board rises in once, on the first load. Fill mode
+     "backwards" only: once done they hold nothing, so GSAP stays free to move the
+     top bar inside a view.
+   - .shimmer: a soft light sweeping across a placeholder shaped like what is coming. */
+@keyframes enter-drop {
+  from { opacity: 0; transform: translateY(-14px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes enter-rise {
+  from { opacity: 0; transform: translateY(18px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes shimmer {
+  from { background-position: 150% 0; }
+  to { background-position: -50% 0; }
+}
+.enter-nav { animation: enter-drop 0.6s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+.enter-board { animation: enter-rise 0.75s cubic-bezier(0.22, 1, 0.36, 1) 0.1s backwards; }
+.shimmer {
+  background: linear-gradient(100deg, var(--color-surface-2) 30%, var(--color-surface) 50%, var(--color-surface-2) 70%);
+  background-size: 250% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .enter-nav, .enter-board { animation-duration: 0.01s; animation-delay: 0s; }
+  .shimmer { animation: none; }
+}

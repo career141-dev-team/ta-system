@@ -88,6 +88,31 @@ be on main) or by reverting on main and releasing again.
 A direct `npx convex deploy` is still possible in an emergency (docs/STAGING.md,
 "Common operations"), but the next pipeline run will redeploy what is in git.
 
+## Two UIs, one repo (24 Nov 2026)
+
+The new UI (new.career141.com) lives in `apps/new-ui`, moved in from
+`career141-dev/ta-system-ui` with its history. It is its own Next.js static
+site with its own `package.json`; the old app's type check and image leave
+`apps/` out.
+
+- **Change the new UI**: edit `apps/new-ui/...`, pull request, merge, release
+  as usual. A release that changed only `apps/new-ui/**` deploys only the new
+  UI (a static build uploaded to `/opt/new-ui/releases/<sha>`, switched live by
+  one link, `deploy/scripts/remote-new-ui.sh`); the backend and old app are
+  left alone.
+- **Change the old app or the backend**: as before; the new UI is left alone.
+- **Both**: one release, backend first, then the new UI.
+- **Manual**: Deploy Production > Run workflow > components `new-ui`.
+- **Go back**: on the server, `ln -sfn /opt/new-ui/releases/<older sha> /opt/new-ui/current`
+  (the last five are kept).
+
+The build needs two public repository variables, or it builds the sample
+version and the release stops: `NEW_UI_CLERK_PUBLISHABLE_KEY` (the live
+`pk_live_...`) and optionally `NEW_UI_CONVEX_URL` (default
+`https://ta-system-api.career141.com`). Caddy's block is
+`deploy/production/new-ui.Caddyfile`; LinkedIn Search and Extract with AI run
+in the `new-ui-api` container and read `APIFY_TOKEN` from `/opt/new-ui/.env`.
+
 ## Convex specifics
 
 **Functions** — deployed on every run; unchanged code is a no-op.

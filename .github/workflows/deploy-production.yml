@@ -30,7 +30,7 @@ on:
       components:
         description: What to deploy
         type: choice
-        options: [all, app, convex]
+        options: [all, app, convex, new-ui]
         default: all
       run_function:
         description: Convex function to run after deploying (optional, e.g. migrations/foo:run)
@@ -61,6 +61,8 @@ jobs:
     outputs:
       sha: ${{ steps.check.outputs.sha }}
       backup: ${{ steps.backup.outputs.need }}
+      new_ui: ${{ steps.parts.outputs.new_ui }}
+      rest: ${{ steps.parts.outputs.rest }}
     steps:
       - name: Production enabled
         if: ${{ vars.PRODUCTION_ENABLED != 'true' }}
@@ -87,6 +89,34 @@ jobs:
             exit 1
           fi
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # One repo, two UIs (24 Nov 2026): a release deploys only the parts it
+      # changes. apps/new-ui/** is the new UI (its own static site and routes);
+      # everything else is the backend and the old app, deployed as before.
+      # Unknown "before" (first push, manual run) = deploy what was asked, or all.
+      - name: Which parts changed?
+        id: parts
+        env:
+          BEFORE: ${{ github.event.before }}
+          COMPONENTS: ${{ inputs.components }}
+        run: |
+          new_ui=false; rest=false
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            case "$COMPONENTS" in
+              new-ui) new_ui=true ;;
+              all|"") new_ui=true; rest=true ;;
+              *) rest=true ;;
+            esac
+          elif [ -z "$BEFORE" ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            new_ui=true; rest=true
+          else
+            changed=$(git diff --name-only "$BEFORE" HEAD)
+            echo "$changed" | grep -q '^apps/new-ui/' && new_ui=true
+            echo "$changed" | grep -v '^apps/new-ui/' | grep -q . && rest=true
+          fi
+          echo "new_ui=$new_ui" >> "$GITHUB_OUTPUT"
+          echo "rest=$rest" >> "$GITHUB_OUTPUT"
+          echo "This release deploys - new UI: $new_ui, backend + old app: $rest"
 
       # A full dump of the 15 GB database takes about 15 minutes. The owner
       # takes a backup each morning, so a release takes one only when it runs
@@ -124,6 +154,7 @@ jobs:
   deploy:
     name: Production
     needs: [gate, ci]
+    if: ${{ needs.gate.outputs.rest == 'true' }}
     uses: ./.github/workflows/deploy.yml
     secrets: inherit
     with:
@@ -145,3 +176,91 @@ jobs:
       backup_postgres_container: ${{ needs.gate.outputs.backup == 'true' && (vars.PRODUCTION_POSTGRES_CONTAINER || 'career141-postgres-1') || '' }}
       backup_postgres_db: ${{ vars.PRODUCTION_POSTGRES_DB || 'convex_self_hosted' }}
       backup_postgres_user: ${{ vars.PRODUCTION_POSTGRES_USER || 'convex' }}
+
+  # The new UI (apps/new-ui) on new.career141.com, served from the same server by
+  # Caddy (deploy/production/new-ui.Caddyfile). Its own static build, uploaded as
+  # a release folder and switched live with one link (deploy/scripts/remote-new-ui.sh).
+  # It runs after the backend when both changed, so a screen never goes live
+  # before the backend it calls.
+  new-ui:
+    name: New UI
+    needs: [gate, ci, deploy]
+    if: ${{ always() && needs.gate.outputs.new_ui == 'true' && needs.gate.result == 'success' && needs.ci.result == 'success' && (needs.deploy.result == 'success' || needs.deploy.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: https://new.career141.com
+    defaults:
+      run:
+        working-directory: apps/new-ui
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/new-ui/package-lock.json
+
+      - run: npm ci
+
+      # The live build reads the real backend; without these two public values
+      # it silently builds the sample-data version (seen 19 Nov), so it is checked.
+      - name: Build
+        run: npm run build:static
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+          NEXT_PUBLIC_CONVEX_URL: ${{ vars.NEW_UI_CONVEX_URL || 'https://ta-system-api.career141.com' }}
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ vars.NEW_UI_CLERK_PUBLISHABLE_KEY }}
+
+      - name: The build talks to the live backend
+        env:
+          URL: ${{ vars.NEW_UI_CONVEX_URL || 'https://ta-system-api.career141.com' }}
+        run: |
+          test -f out/today.html
+          grep -rqF "$URL" out/_next/static || { echo "::error::The new UI build has no backend address - it would be the sample version. Set NEW_UI_CLERK_PUBLISHABLE_KEY."; exit 1; }
+
+      - name: Package
+        env:
+          SHA: ${{ needs.gate.outputs.sha }}
+        run: |
+          tar -czf "/tmp/new-ui-$SHA.tgz" -C out .
+          npx --yes esbuild@0.25.12 server/api.ts --bundle --platform=node --target=node22 --format=esm --outfile="/tmp/new-ui-api-$SHA.mjs"
+
+      - name: SSH access
+        working-directory: .
+        env:
+          KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ vars.VPS_KNOWN_HOSTS }}
+          HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" >> ~/.ssh/known_hosts
+          cat >> ~/.ssh/config <<EOF
+          Host deploy-target
+            HostName $HOST
+            User ${{ secrets.VPS_USERNAME }}
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+          EOF
+
+      - name: Upload and switch
+        working-directory: .
+        env:
+          SHA: ${{ needs.gate.outputs.sha }}
+        run: |
+          scp -q "/tmp/new-ui-$SHA.tgz" "/tmp/new-ui-api-$SHA.mjs" deploy/scripts/remote-new-ui.sh deploy-target:/tmp/
+          ssh deploy-target "bash /tmp/remote-new-ui.sh '$SHA'"
+
+      - name: Live check
+        working-directory: .
+        run: |
+          for i in 1 2 3 4 5; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' https://new.career141.com/today) && [ "$code" = 200 ] && { echo "new.career141.com/today 200"; exit 0; }
+            sleep 5
+          done
+          echo "::error::new.career141.com/today did not answer 200 (last: $code)"; exit 1

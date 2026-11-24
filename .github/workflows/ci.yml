@@ -60,3 +60,40 @@ jobs:
           # Clerk's publishable key is public and only read in the browser. A
           # well-formed placeholder is enough to build.
           NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk
+
+  # The new UI (apps/new-ui, moved in from ta-system-ui on 24 Nov 2026): its own
+  # packages, type check, lint and static build, apart from the old app's.
+  new-ui:
+    name: New UI - typecheck, lint, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/new-ui
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/new-ui/package-lock.json
+
+      - run: npm ci
+
+      # LayoutProps/PageProps come from Next's route types, made by typegen.
+      - name: Typecheck
+        run: npx next typegen && npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Static build
+        run: npm run build:static
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+
+      - name: Bundle the server routes
+        run: npx --yes esbuild@0.25.12 server/api.ts --bundle --platform=node --target=node22 --format=esm --outfile=/tmp/new-ui-api.mjs

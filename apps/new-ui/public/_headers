@@ -1,0 +1,6 @@
+# Cloudflare Pages: files whose names change with their contents (Next.js chunks,
+# the pdf.js worker under its version) are kept by the browser for a year.
+/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable
+/pdfjs/*
+  Cache-Control: public, max-age=31536000, immutable
