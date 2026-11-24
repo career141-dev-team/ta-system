@@ -46,6 +46,7 @@ const ALLOWED_PUBLIC = new Set<string>([
   "ui/opening:matches",
   "ui/opening:strategies",
   "ui/opening:setFollowUp",
+  "ui/opening:rerunMatching",
   "ui/opening:saveJd",
   "ui/opening:scoopUploadUrl",
   "ui/opening:queueScoop",
