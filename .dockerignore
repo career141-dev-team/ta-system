@@ -14,3 +14,6 @@ tools/embed/.venv
 tools/embed/models
 *.log
 *.tsbuildinfo
+# The new UI (24 Nov 2026) is its own static site, built and shipped by its own
+# release step - it is not part of the old app's image.
+apps

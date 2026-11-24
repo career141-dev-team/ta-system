@@ -1,0 +1,24 @@
+# The new UI's block in /etc/caddy/Caddyfile on the production server (24 Nov 2026).
+# Kept here so the server can be rebuilt from the repo; Caddy itself is set up by hand.
+# Static export in /opt/new-ui/current (a link to the live release, see
+# deploy/scripts/remote-new-ui.sh); the two Apify routes run in the new-ui-api
+# container on 127.0.0.1:3200.
+new.career141.com {
+	encode zstd gzip
+	handle /api/linkedin-* {
+		reverse_proxy 127.0.0.1:3200
+	}
+	handle {
+		root * /opt/new-ui/current
+		redir / /today 302
+		@immutable path /_next/static/* /pdfjs/*
+		header @immutable Cache-Control "public, max-age=31536000, immutable"
+		try_files {path} {path}.html {path}/index.html
+		file_server
+	}
+	handle_errors {
+		root * /opt/new-ui/current
+		rewrite * /404.html
+		file_server
+	}
+}

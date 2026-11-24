@@ -33,6 +33,10 @@ const nextConfig: NextConfig = {
   cacheComponents: !staticExport,
   partialPrefetching: !staticExport,
   turbopack: {
+    // Inside the TA System repo (apps/new-ui since 24 Nov 2026) Next would take
+    // the repo root as its root and build the old app's files; the UI is built
+    // from its own folder, always.
+    root: process.cwd(),
     rules: {
       "*.css": {
         loaders: ["@tailwindcss/turbopack"],
