@@ -30,6 +30,22 @@ export function readPlan(text: string, names: string[], tas: [string, string][],
     found.push({ at, name: n });
     t = t.slice(0, at) + " ".repeat(k.length) + t.slice(at + k.length);
   }
+  // Then a word only one strategy's name has, said in any form: "the headhunting"
+  // is Direct headhunt (25 Nov: "Haifa should do the headhunting and the scoop
+  // route" placed only SCOOP, and the rest was never asked about). Everyday words
+  // ("company", "search") never count on their own.
+  const COMMON = new Set(["company", "search", "searches", "people", "daily", "report", "check", "review", "other", "group"]);
+  const words = names.map((n) => norm(n).trim().split(" ").filter((w) => w.length >= 5 && !COMMON.has(w)));
+  names.forEach((n, i) => {
+    if (found.some((f) => f.name === n)) return;
+    for (const w of words[i]) {
+      if (words.some((ws, j) => j !== i && ws.includes(w))) continue;
+      const at = t.search(new RegExp(` ${w}[a-z]* `));
+      if (at < 0) continue;
+      found.push({ at, name: n });
+      return;
+    }
+  });
   for (const [id, first] of tas) {
     const at = t.indexOf(norm(first));
     if (at >= 0) found.push({ at, ta: id });
