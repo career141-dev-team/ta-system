@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useGlide } from "@/lib/gsap";
 import { ROLES, useRole, type Role } from "@/lib/role";
+import { prewarmPage } from "@/lib/backend";
 
 // The five links of the owner's second top bar (TopNavV2, 12 Nov 2026), on the
 // same routes as the TA System so a link means the same place in both. Alerts
@@ -65,7 +66,10 @@ export function NavLinks({ pathname = "" }: { pathname?: string }) {
             // Every page here is built now: Next fetches its files ahead (in view / on hover),
             // so a click does not wait a round trip to the server (25 Nov 2026).
             aria-current={active ? "page" : undefined}
-            onMouseEnter={(e) => moveTo(e.currentTarget)}
+            onMouseEnter={(e) => {
+              moveTo(e.currentTarget);
+              prewarmPage(href);
+            }}
             className={
               // Same height, never squeezed, text big enough to read at a glance (owner, 14 Nov).
               "relative flex shrink-0 items-center border-r border-border px-[max(1.5rem,14px)] text-[max(1rem,14.5px)] transition-colors " +

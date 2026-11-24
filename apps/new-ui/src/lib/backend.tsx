@@ -301,6 +301,14 @@ export function prewarmOpening(openingId: string) {
   warm(door.board, { openingId, limit: 50 });
 }
 
+/** The same for a top-bar page: hovering "Openings" starts its list read (25 Nov: the first visit waited ~0.8 s for it). */
+export function prewarmPage(href: string) {
+  if (!client) return;
+  const as = getViewed()?.id;
+  if (href === "/openings")
+    client.prewarmQuery({ query: door.openings, args: as && READS_AS.has(getFunctionName(door.openings)) ? { as } : {}, extendSubscriptionFor: 10_000 });
+}
+
 /** The board's columns in the backend's words, in the same order as the UI's STAGES. */
 export const STAGE_KEYS = [
   "ta_follow_up", "ai_follow_up", "director_review", "director_shortlist", "client_shortlist",
