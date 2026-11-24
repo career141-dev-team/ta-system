@@ -5,6 +5,7 @@ import { Fragment, useRef, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
 import { DUR, EASE, gsap, motionOK, useGSAP } from "@/lib/gsap";
 import { useMe } from "@/lib/role";
+import { useViewed } from "@/lib/viewAs";
 import AuraGlow from "./AuraGlow";
 
 // Placeholder until the backend is wired: the waiting line and the three numbers
@@ -48,7 +49,10 @@ export default function Today({
 }) {
   const root = useRef<HTMLDivElement>(null);
   const [part, date] = useSyncExternalStore(noop, readNow, () => "morning|").split("|");
-  const { first } = useMe();
+  const { first: own } = useMe();
+  // Viewing as a TA shows their screen, greeting included (25 Nov: it said the admin's name).
+  const viewed = useViewed();
+  const first = viewed?.name ? viewed.name.split(" ")[0] : own;
   const words = `Good ${part}, ${first}`.split(" ");
   // Pointing at Start workday gathers AURA's light; pressing it sends a pulse out
   // first, then the day opens.
