@@ -353,8 +353,8 @@ export default function ResearchView() {
           />
           {run !== "none" && me.lead && (
             <span className="text-small text-ink-3">
-              {reviewed || REVIEWED_BY
-                ? `Reviewed by ${REVIEWED_BY ?? "the TA"}`
+              {reviewed || (!signedIn && REVIEWED_BY)
+                ? `Reviewed by ${(!signedIn && REVIEWED_BY) || "the TA"}`
                 : "Not reviewed yet by the TA on 100%"}
             </span>
           )}
