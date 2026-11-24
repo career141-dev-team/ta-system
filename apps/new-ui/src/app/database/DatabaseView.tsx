@@ -24,7 +24,7 @@ import {
 import { POOL, filterReply, panelOf } from "./aura";
 import FilterBar from "./FilterBar";
 import { petSay } from "@/lib/pet";
-import { candidateCall, cvHeaders, cvUrl, door, OLD_SERVER, saveLiveFile, useDoorMutation, useDoorQuery } from "@/lib/backend";
+import { candidateCall, cvHeaders, cvUrl, door, OLD_SERVER, saveLiveFile, useDoorMutation, useDoorQuery, useLive } from "@/lib/backend";
 import { useSignedInPerson } from "@/lib/role";
 import type { MyDay } from "@/lib/askAura";
 import { chipsOf, jobIn, pastChats, personOf, readLive, whoIn, type LiveAnswer } from "./live";
@@ -189,8 +189,12 @@ function Looking({ look, compact }: { look: Look; compact: boolean }) {
 export default function DatabaseView() {
   const gate = useWorkdayGate();
   const live = useSignedInPerson() !== null;
-  const [threads, setThreads] = useState(START);
-  const [openId, setOpenId] = useState("sap");
+  // The live site never shows the sample chats, even for the moment before the
+  // signed-in person is known (25 Nov: a ?q= link searched the sample pool and
+  // the sample chats stayed in the list).
+  const liveSite = useLive();
+  const [threads, setThreads] = useState<typeof START>(liveSite ? [] : START);
+  const [openId, setOpenId] = useState(liveSite ? "" : "sap");
   const recent = useDoorQuery(door.searchRecent, live ? {} : "skip") as { ok: true; searches: { id: string; query: string; count: number; at: number }[] } | { ok: false } | undefined;
   const day = useDoorQuery(door.myDay, live ? {} : "skip") as ({ ok: true } & MyDay) | { ok: false } | undefined;
   const positions = day?.ok ? day.positions : [];
@@ -467,6 +471,8 @@ export default function DatabaseView() {
   // starts a new chat with those words (the old /database/results?for=&q=).
   const asked = useRef(false);
   useEffect(() => {
+    // On the live site the search waits for the signed-in person, or it runs on the samples.
+    if (liveSite && !live) return;
     const sp = new URLSearchParams(location.search);
     // From an opening: the job title, then the whole JD, sent as the search.
     const forJob = sp.get("for");
@@ -480,7 +486,7 @@ export default function DatabaseView() {
     if (as && !q) queueMicrotask(() => setOpenId(""));
     if (!q) return;
     queueMicrotask(() => sendRef.current(q, { fresh: true, as }));
-  }, []);
+  }, [live, liveSite]);
   const newSearch = () => {
     setOpenId("");
     setText("");
