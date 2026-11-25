@@ -17,7 +17,8 @@ export type SnipFields = {
 type Read = { ok: true; approved: boolean; fields?: SnipFields } | { ok: false; message: string };
 
 /** The opening's card, read once per opening. */
-export function useSnippet(on: boolean, job: string | null): Read | undefined {
+/** `approved` is the opening's own flag: when it turns true the card is read again (it was "not approved" a moment ago). */
+export function useSnippet(on: boolean, job: string | null, approved = false): Read | undefined {
   const [got, setGot] = useState<{ job: string; read: Read }>();
   useEffect(() => {
     if (!on || !job) return;
@@ -31,7 +32,7 @@ export function useSnippet(on: boolean, job: string | null): Read | undefined {
     return () => {
       gone = true;
     };
-  }, [on, job]);
+  }, [on, job, approved]);
   return got?.job === job ? got.read : undefined;
 }
 

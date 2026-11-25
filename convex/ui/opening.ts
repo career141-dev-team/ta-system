@@ -140,7 +140,10 @@ export const scoops = query({
     // An opening with more than 400 applications since its oldest scoop
     // would hide older scoops; add an index on [jobId, scoopAt] if one does.
     const rows = (await ctx.db.query("applications").withIndex("by_jobId", (q) => q.eq("jobId", o.jobId)).order("desc").take(400))
-      .filter((a) => a.scoopAt || a.taSourcingChannel === "SCOOP")
+      // A scoop is a CV the TA uploaded as one (the old Scoops tab: scoopReceivedAt or sent-by, not dropped out).
+      // the "SCOOP" sourcing label is only what database matches carry, so it must not count (25 Nov: a new
+      // opening showed 17 matched people as scoops).
+      .filter((a) => (a.scoopReceivedAt || a.scoopFromUserId) && a.currentStage !== "unresponsive")
       .slice(0, Math.min(args.limit ?? 50, 200));
     const people = await Promise.all(rows.map(async (a) => ({ ...card(a, await ctx.db.get(a.candidateId)), sentBy: (a.scoopFromUserId ?? a.scoopByUserId ?? null) as string | null })));
     const who = await names(ctx, people.flatMap((p) => [p.ownerId, p.sentBy].filter((x): x is string => !!x)));
