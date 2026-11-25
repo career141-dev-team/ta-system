@@ -122,16 +122,28 @@ export function Bell() {
   const row = (g: Group) => {
     const { a } = g;
     const { problem, text } = splitProblem(a.title);
-    return (
-      <li key={a.id} data-row>
+    const rowClass = "flex w-full items-start gap-3.5 rounded-sm px-3 py-[max(0.8rem,9px)] text-left transition-colors hover:bg-surface-2 " + (g.unread ? "bg-canvas" : "");
+    // Something with a screen opens it; a problem with none is read here and marked read (no jump to Today).
+    const wrap = (inner: React.ReactNode) =>
+      a.href ? (
         <Link
           href={a.href}
           onClick={() => {
             g.ids.forEach((id) => markRead(id));
             close();
           }}
-          className={"flex items-start gap-3.5 rounded-sm px-3 py-[max(0.8rem,9px)] transition-colors hover:bg-surface-2 " + (g.unread ? "bg-canvas" : "")}
+          className={rowClass}
         >
+          {inner}
+        </Link>
+      ) : (
+        <button type="button" onClick={() => g.ids.forEach((id) => markRead(id))} className={rowClass}>
+          {inner}
+        </button>
+      );
+    return (
+      <li key={a.id} data-row>
+        {wrap(<>
           <span className={"mt-0.5 flex size-[max(2.375rem,30px)] shrink-0 items-center justify-center rounded-full " + (problem ? "bg-warn-soft text-warn" : ICON[a.icon].tint)}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-[45%]" aria-hidden="true">
               {problem ? <path d="M12 9v4m0 4h.01M10.3 4.3 2.8 17.5A2 2 0 0 0 4.5 20.5h15a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0Z" /> : ICON[a.icon].path}
@@ -149,7 +161,7 @@ export function Bell() {
             <span className="mt-0.5 block text-caption leading-snug text-ink-3 [overflow-wrap:anywhere]">{a.body}</span>
           </span>
           {g.unread && <span aria-label="Not read yet" className="mt-2 size-2 shrink-0 rounded-full bg-brand" />}
-        </Link>
+        </>)}
       </li>
     );
   };

@@ -6,7 +6,8 @@
 import { useSyncExternalStore } from "react";
 
 export type Icon = "task" | "chat" | "person" | "bell";
-export type Alert = { id: string; icon: Icon; title: string; body: string; href: string; needs: boolean; unread: boolean };
+/** `href` null = nothing to open (a system problem an admin only needs to read): pressing it just marks it read. */
+export type Alert = { id: string; icon: Icon; title: string; body: string; href: string | null; needs: boolean; unread: boolean };
 
 let alerts: Alert[] = [
   { id: "a1", icon: "task", title: "Rashmi gave you strategies", body: "Finance Manager · accept to start", href: "/openings/demo", needs: true, unread: true },
