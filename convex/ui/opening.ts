@@ -193,6 +193,8 @@ export const matches = query({
         location: c.location ?? null,
         years: c.totalExperienceYears ?? null,
         noticeDays: c.noticePeriodDays ?? null,
+        // The last four jobs, so the list can show the position and from-to years of each.
+        jobs: (c.jobHistory ?? []).slice(0, 4).map((j) => ({ title: j.title ?? null, company: j.company ?? null, startDate: j.startDate ?? null, endDate: j.endDate ?? null })),
       });
     }
     return { ok: true as const, status: found.status, matchedAt: found.matchedAt, results: out };
