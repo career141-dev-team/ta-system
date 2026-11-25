@@ -122,6 +122,19 @@ const dayWords = (t: number) => {
   return d <= 0 ? "today" : d === 1 ? "yesterday" : `${d} days ago`;
 };
 
+/** The backend hands out its upload address on the "actions" host, which a browser on new.career141.com cannot reach
+ * (25 Nov: every scoop failed with "Failed to fetch"). The API host takes the same file with the same token. */
+function storageUrl(url: string): string {
+  const api = process.env.NEXT_PUBLIC_CONVEX_URL;
+  if (!api) return url;
+  try {
+    const u = new URL(url);
+    return new URL(u.pathname + u.search, api).toString();
+  } catch {
+    return url;
+  }
+}
+
 export default function ScoopsView() {
   // Live: the opening's scoops (ui/opening:scoops). Shortlist goes through
   // ui/pipeline:shortlist, Delete through ui/manage:removeFromOpening.
@@ -156,7 +169,7 @@ export default function ScoopsView() {
       try {
         const u = (await uploadUrl({})) as { ok: boolean; url?: string; message?: string } | undefined;
         if (!u?.ok || !u.url) throw new Error(u?.message ?? "Could not start the upload.");
-        const res = await fetch(u.url, { method: "POST", headers: { "Content-Type": f.type || "application/octet-stream" }, body: f });
+        const res = await fetch(storageUrl(u.url), { method: "POST", headers: { "Content-Type": f.type || "application/octet-stream" }, body: f });
         if (!res.ok) throw new Error("The file did not upload. Try again.");
         const { storageId } = (await res.json()) as { storageId: string };
         const q = (await queueScoop({ openingId: job!, storageId, fileName: f.name })) as DoorDone | undefined;
