@@ -20,7 +20,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import { isGone } from "../../src/lib/bin";
 import { isDeskWideUser } from "../ta/guard";
 import { mayReadOpening, NotSignedIn, uiUser } from "./me";
-import { inWords, scoopFileRefusal } from "./rules";
+import { inWords, scoopFileRefusal, uploadFault } from "./rules";
 
 const refused = (message: string) => ({ ok: false as const, message });
 type Refused = { ok: false; message: string };
@@ -340,5 +340,61 @@ export const rerunMatching = mutation({
       return refused(inWords(error, "Matching could not start. Try again."));
     }
     return { ok: true, message: "Matching started - the list updates in about a minute." };
+  },
+});
+
+/**
+ * Where each scoop the person sent has really got to (25 Nov): the reading
+ * pipeline's own stage, never a timer. Own uploads only. A failed one says
+ * whose side the problem is on (rules.uploadFault).
+ */
+export const scoopStatus = query({
+  args: { cvUploadIds: v.array(v.string()) },
+  handler: async (ctx, args): Promise<Refused | { ok: true; uploads: unknown[] }> => {
+    let user: Doc<"users">;
+    try {
+      user = await uiUser(ctx);
+    } catch (error) {
+      return refused(error instanceof NotSignedIn ? error.message : "Could not check who you are.");
+    }
+    const mine: string[] = [];
+    const raw = new Map<string, string | undefined>();
+    for (const id of args.cvUploadIds.slice(0, 20)) {
+      const key = ctx.db.normalizeId("cvUploads", id);
+      const up = key ? await ctx.db.get(key) : null;
+      if (up && up.scoopedBy === user._id) {
+        mine.push(id);
+        raw.set(id, up.errorMessage);
+      }
+    }
+    if (!mine.length) return { ok: true, uploads: [] };
+    const rows = (await ctx.runQuery(internal.ta.scoopUpload.status, { actorId: user._id, cvUploadIds: mine })) as { id: string; state: string; note?: string | null }[];
+    return {
+      ok: true,
+      uploads: rows.map((r) => {
+        if (r.state !== "failed") return r;
+        const fault = uploadFault(raw.get(r.id));
+        return { ...r, fault: fault.who, note: fault.say };
+      }),
+    };
+  },
+});
+
+/** Try a failed scoop again (the same rule as the old Try again: only who sent it, workday and job access checked). */
+export const retryScoop = mutation({
+  args: { cvUploadId: v.string() },
+  handler: async (ctx, args): Promise<Refused | { ok: true }> => {
+    let user: Doc<"users">;
+    try {
+      user = await uiUser(ctx);
+    } catch (error) {
+      return refused(error instanceof NotSignedIn ? error.message : "Could not check who you are.");
+    }
+    try {
+      await ctx.runMutation(internal.ta.hhUpload.retry, { actorId: user._id, cvUploadId: args.cvUploadId });
+      return { ok: true };
+    } catch (error) {
+      return refused(inWords(error, "Could not try this CV again. Upload it again."));
+    }
   },
 });

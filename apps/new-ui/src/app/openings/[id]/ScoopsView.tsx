@@ -105,7 +105,12 @@ const initials = (name: string) =>
     .slice(0, 2)
     .toUpperCase();
 
-type Upload = { id: string; file: string; url?: string; bad?: boolean; state: "reading" | "done" | "failed"; sentBy?: string };
+type Upload = {
+  id: string; file: string; url?: string; bad?: boolean; state: "reading" | "done" | "failed"; sentBy?: string;
+  // Signed in: what the CV reader itself reports (ui/opening:scoopStatus) - never a timer.
+  live?: boolean; label?: string; progress?: number; note?: string; fault?: "you" | "us"; name?: string | null; attention?: boolean;
+};
+type DoorStatus = Answer<{ uploads: { id: string; state: "reading" | "done" | "held" | "failed" | "missing"; label?: string; progress?: number; note?: string | null; fault?: "you" | "us"; name?: string | null }[] }>;
 
 /** Scoops, as the TA System has it: the counts, the upload panel (only for people who
  *  can act on the opening), and every scoop on the opening with Shortlist. Clicking a
@@ -160,11 +165,13 @@ export default function ScoopsView() {
   const takeOff = useDoorMutation(door.removeFromOpening);
   const uploadUrl = useDoorMutation(door.scoopUploadUrl);
   const queueScoop = useDoorMutation(door.queueScoop);
+  const retryScoop = useDoorMutation(door.retryScoop);
   // Signed in: each CV goes to the backend's file store, then into the scoop reading
   // queue (ui/opening:queueScoop re-checks size and type); it joins the list once read.
   const sendScoops = async (files: File[]) => {
     let sent = 0;
     let why = "";
+    const rows: Upload[] = [];
     for (const f of files) {
       try {
         const u = (await uploadUrl({})) as { ok: boolean; url?: string; message?: string } | undefined;
@@ -172,15 +179,24 @@ export default function ScoopsView() {
         const res = await fetch(storageUrl(u.url), { method: "POST", headers: { "Content-Type": f.type || "application/octet-stream" }, body: f });
         if (!res.ok) throw new Error("The file did not upload. Try again.");
         const { storageId } = (await res.json()) as { storageId: string };
-        const q = (await queueScoop({ openingId: job!, storageId, fileName: f.name })) as DoorDone | undefined;
-        if (q && !q.ok) throw new Error(q.message);
+        const q = (await queueScoop({ openingId: job!, storageId, fileName: f.name })) as (DoorDone & { cvUploadId?: string }) | undefined;
+        if (!q?.ok || !q.cvUploadId) throw new Error(q && !q.ok ? q.message : "The CV could not be queued.");
         sent++;
+        rows.push({ id: q.cvUploadId, file: f.name, state: "reading", live: true, label: "Sent - waiting for a CV reader", progress: 4, sentBy: sentBy || undefined });
       } catch (e) {
         why = e instanceof Error ? e.message : "The file did not upload.";
+        // A network drop is not the person's doing; a refusal of the file itself is.
+        const net = /failed to fetch|network|did not upload|load failed/i.test(why);
+        rows.push({
+          id: "x" + ++seq.current, file: f.name, state: "failed", live: true,
+          note: net ? "The file did not reach our server - check your connection and upload it again. If it keeps happening it is on our side." : why,
+          fault: net ? "us" : "you",
+        });
       }
     }
-    if (sent) say(` - each one joins the list once it is read.`, `${sent} CV${sent === 1 ? "" : "s"} sent for reading`);
-    if (why) say(`${files.length - sent} not sent: ${why}`, undefined, true);
+    setUploads((u) => [...u, ...rows]);
+    if (sent) say(` - the real progress shows below.`, `${sent} CV${sent === 1 ? "" : "s"} sent for reading`);
+    if (why) say(`${files.length - sent} not sent - see the reason below`, undefined, true);
   };
   const [mode, setMode] = useState<"list" | "read">("list");
   const [chosen, setChosen] = useState(SCOOPS[0].id);
@@ -210,6 +226,26 @@ export default function ScoopsView() {
     NO_FILTERS,
   );
   const [uploads, setUploads] = useState<Upload[]>([]);
+  // Signed in, the reading pipeline reports each CV's stage by itself (a live query).
+  const watching = uploads.filter((u) => u.live && u.state === "reading").map((u) => u.id);
+  const status = useDoorQuery(door.scoopStatus, watching.length ? { cvUploadIds: watching } : "skip") as DoorStatus | undefined;
+  const [seenStatus, setSeenStatus] = useState<DoorStatus | undefined>(undefined);
+  if (status !== seenStatus) {
+    setSeenStatus(status);
+    if (status?.ok) {
+      const by = new Map(status.uploads.map((r) => [r.id, r]));
+      setUploads((all) =>
+        all.map((x) => {
+          const r = x.live && x.state === "reading" ? by.get(x.id) : undefined;
+          if (!r) return x;
+          if (r.state === "failed") return { ...x, state: "failed", label: r.label, progress: 100, note: r.note ?? undefined, fault: r.fault ?? "us" };
+          if (r.state === "missing") return { ...x, state: "failed", note: "We lost track of this upload. Upload the CV again.", fault: "us" };
+          if (r.state === "done" || r.state === "held") return { ...x, state: "done", label: r.state === "held" ? "Needs attention" : "Read and added", progress: 100, name: r.name, note: r.note ?? undefined, attention: r.state === "held" };
+          return { ...x, label: r.label, progress: r.progress };
+        }),
+      );
+    }
+  }
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const dragDepth = useRef(0);
@@ -270,12 +306,15 @@ export default function ScoopsView() {
   // CV is still being read.
   const readingNow = uploads.filter((u) => u.state === "reading").length;
   const finished = uploads.length - readingNow;
+  // Signed in: the true overall share, the mean of what the reader reports for each CV.
+  const liveUps = uploads.filter((u) => u.live && u.state !== "failed");
+  const overall = liveUps.length ? Math.round(liveUps.reduce((n, u) => n + (u.state === "done" ? 100 : (u.progress ?? 0)), 0) / liveUps.length) : null;
   useGSAP(
     () => {
       const bar = root.current?.querySelector("[data-read-bar]");
-      if (bar) gsap.to(bar, { scaleX: readingNow ? Math.max(0.12, (finished / uploads.length) * 0.9 + 0.08) : 1, duration: DUR.slow, ease: EASE.out });
+      if (bar) gsap.to(bar, { scaleX: !readingNow ? 1 : overall != null ? Math.max(0.04, overall / 100) : Math.max(0.12, (finished / uploads.length) * 0.9 + 0.08), duration: DUR.slow, ease: EASE.out });
     },
-    { dependencies: [readingNow, finished, uploads.length], scope: root, revertOnUpdate: false },
+    { dependencies: [readingNow, finished, uploads.length, overall], scope: root, revertOnUpdate: false },
   );
 
   // A CV dropped beside the panel must not make the browser open the file.
@@ -408,6 +447,14 @@ export default function ScoopsView() {
   };
 
   const retry = (u: Upload) => {
+    if (u.live && !u.id.startsWith("x")) {
+      setUploads((all) => all.map((x) => (x.id === u.id ? { ...x, state: "reading", label: "Waiting for a CV reader", progress: 4, note: undefined } : x)));
+      void retryScoop({ cvUploadId: u.id }).then((r) => {
+        const d = r as DoorDone | undefined;
+        if (d && !d.ok) setUploads((all) => all.map((x) => (x.id === u.id ? { ...x, state: "failed", note: d.message, fault: "us" } : x)));
+      });
+      return;
+    }
     const again = { ...u, bad: false, state: "reading" as const };
     setUploads((all) => all.map((x) => (x.id === u.id ? again : x)));
     read(again);
@@ -626,7 +673,9 @@ export default function ScoopsView() {
                 <span className={"size-[max(0.6rem,7px)] shrink-0 rounded-full bg-success " + (readingNow ? "animate-pulse" : "")} />
                 <p className="whitespace-nowrap text-[max(0.9625rem,13px)] font-medium text-ink">
                   {readingNow
-                    ? `Reading ${readingNow} CV${readingNow === 1 ? "" : "s"} — about ${mins} minute${mins === 1 ? "" : "s"}`
+                    ? overall != null
+                      ? `Reading ${readingNow} CV${readingNow === 1 ? "" : "s"} — ${overall}% done`
+                      : `Reading ${readingNow} CV${readingNow === 1 ? "" : "s"} — about ${mins} minute${mins === 1 ? "" : "s"}`
                     : `Read ${finished - failed.length} CV${finished - failed.length === 1 ? "" : "s"}`}
                 </p>
                 <div className="h-[max(0.4rem,5px)] w-[max(26rem,60px)] min-w-0 overflow-hidden rounded-full bg-white max-md:flex-1">
@@ -642,10 +691,31 @@ export default function ScoopsView() {
                 </button>
               </div>
               {/* A CV that would not read stays named, with Try again and Remove (4.3). */}
+              {/* Signed in: each CV with the reader's own stage and share, so nothing is a guess. */}
+              {uploads.filter((u) => u.live && u.state !== "failed").map((u) => (
+                <div key={u.id} className="mt-2 text-[max(0.9125rem,12.5px)]">
+                  <div className="flex items-center gap-[max(0.8rem,8px)]">
+                    <span className="min-w-0 truncate font-medium text-ink">{u.name || u.file}</span>
+                    <span className={u.attention ? "text-warn" : u.state === "done" ? "text-success" : "text-ink-2"}>{u.label}</span>
+                    <span className="ml-auto tabular-nums text-ink-3">{u.state === "done" ? "100%" : `${u.progress ?? 0}%`}</span>
+                  </div>
+                  <div className="mt-1 h-[3px] overflow-hidden rounded-full bg-white">
+                    <div className={"h-full rounded-full transition-[width] duration-500 " + (u.attention ? "bg-warn" : "bg-brand")} style={{ width: (u.state === "done" ? 100 : (u.progress ?? 0)) + "%" }} />
+                  </div>
+                  {u.note && <p className="mt-1 text-ink-2">{u.note}</p>}
+                </div>
+              ))}
               {failed.map((u) => (
-                <div key={u.id} role="alert" className="mt-2 flex items-center gap-[max(0.8rem,8px)] text-[max(0.9125rem,12.5px)]">
+                <div key={u.id} role="alert" className="mt-2 flex flex-wrap items-center gap-x-[max(0.8rem,8px)] gap-y-1 text-[max(0.9125rem,12.5px)]">
                   <span className="min-w-0 truncate font-medium text-ink">{u.file}</span>
-                  <span className="text-danger">Could not be read</span>
+                  {u.note ? (
+                    <>
+                      <span className="rounded-full bg-surface px-2 text-caption font-medium text-ink-2">{u.fault === "you" ? "Needs your action" : "On our side"}</span>
+                      <span className="basis-full text-danger sm:basis-auto">{u.note}</span>
+                    </>
+                  ) : (
+                    <span className="text-danger">Could not be read</span>
+                  )}
                   <button type="button" onClick={() => retry(u)} className={SMALL + " ml-auto"}>
                     Try again
                   </button>

@@ -6,7 +6,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { cardLimit, inWords, scoopFileRefusal, normalizeQuestions, strategyRowsToSubmit, matchableEmail, moveRefusal, toCard, openingCard, withEdits, BOARD_STAGES, BACKEND_STAGES, daysOpen, columnCount } from "../convex/ui/rules";
+import { cardLimit, inWords, scoopFileRefusal, uploadFault, normalizeQuestions, strategyRowsToSubmit, matchableEmail, moveRefusal, toCard, openingCard, withEdits, BOARD_STAGES, BACKEND_STAGES, daysOpen, columnCount } from "../convex/ui/rules";
 import { fillDecision, targetOf } from "../convex/lib/placementCount";
 import { isEodCandidateEligible } from "../src/lib/eodEligibility";
 import { datesBetween, peopleOf } from "../convex/ui/trackRules";
@@ -75,6 +75,11 @@ eq("the door never calls the generic save (its rules live in the old app)", /com
 eq("approve JD is not in the door (Research and Suggestions start in the old app)", /approveJd/.test(opening.replace(/\/\/.*$/gm, "")), false);
 eq("scoop size is read from storage, not the browser", opening.includes("ctx.db.system.get(args.storageId)"), true);
 eq("scoop: empty file", scoopFileRefusal("a.pdf", 0, "application/pdf"), "Choose a CV file first.");
+eq("upload fault: a scan is the sender's to fix", uploadFault("Could not recover enough text").who, "you");
+eq("upload fault: a model failure is ours", uploadFault("LLM failed to extract candidate data: DeepSeek failed").who, "us");
+eq("upload fault: a timeout is ours", uploadFault("timed out after 90 s").who, "us");
+eq("upload fault: nothing recorded is ours", uploadFault(undefined).who, "us");
+eq("scoop status: own uploads only, the reader's own stage", read("convex/ui/opening.ts").includes("up.scoopedBy === user._id") && read("convex/ui/opening.ts").includes("internal.ta.scoopUpload.status"), true);
 eq("scoop: over 10 MB", scoopFileRefusal("a.pdf", 11 * 1024 * 1024, "application/pdf"), "a.pdf is over 10 MB. Save a smaller PDF and try again.");
 eq("scoop: rtf refused", scoopFileRefusal("a.rtf", 100, "application/rtf"), "a.rtf is not a PDF or a Word document.");
 eq("scoop: docx fine", scoopFileRefusal("a.docx", 100, ""), null);

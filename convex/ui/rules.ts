@@ -155,6 +155,22 @@ export function scoopFileRefusal(name: string, size: number, type: string): stri
   return null;
 }
 
+/**
+ * A CV that would not read, told to the person who sent it (25 Nov): "you" when
+ * the file is the problem and they can fix it, "us" when the reader or the
+ * system is - then they are told it is ours and being looked at. The raw
+ * engineering text (errorMessage) never reaches the screen.
+ */
+export function uploadFault(raw: string | undefined): { who: "you" | "us"; say: string } {
+  const m = (raw ?? "").toLowerCase();
+  if (/not found|storage/.test(m) && /file|url|storage/.test(m)) return { who: "you", say: "The stored file is gone. Remove this row and upload the CV again." };
+  if (/could not recover enough text|scanned|ocr/.test(m)) return { who: "you", say: "This looks like a scan the reader could not read. Upload a text-based PDF or a Word copy of the CV." };
+  if (/empty|0 bytes|corrupt|password|encrypted|not a pdf/.test(m)) return { who: "you", say: "The file could not be opened - it may be empty, damaged or password-protected. Save a clean PDF or Word copy and upload it again." };
+  if (/safety|guard/.test(m)) return { who: "you", say: "This CV could not be read safely. Upload a cleaner PDF or Word copy." };
+  if (/time(d)? ?out|interrupted|>s?10m/.test(m)) return { who: "us", say: "The CV reader took too long on this one. That is on our side. Press Try again in a minute; if it fails again we will already be looking at it." };
+  return { who: "us", say: "Our CV reader hit a problem on this CV. That is on our side, not yours, and we are fixing it. The file is kept - press Try again later." };
+}
+
 // ── Rules moved out of the old app (PR 1b, 18 Nov) ──────────────────────────
 // Each one is the old Next.js action's rule, word for word where it refused.
 
