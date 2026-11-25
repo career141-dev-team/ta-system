@@ -1,0 +1,692 @@
+{
+ "searches": [
+  {
+   "id": "h01",
+   "text": "acct colombo 5y big4",
+   "truth": "role=accountant; place=lk-d-colombo; years>=5; ctype=big4",
+   "family": "finance"
+  },
+  {
+   "id": "h02",
+   "text": "snr accountant dubai cima part",
+   "truth": "role=accountant; ~level=2; place=ae-dubai; qual=cima",
+   "family": "finance"
+  },
+  {
+   "id": "h03",
+   "text": "internal auditor doha acca",
+   "truth": "role=internal_auditor; place=qa-doha; qual=acca",
+   "family": "finance"
+  },
+  {
+   "id": "h04",
+   "text": "bank credit analyst kandy",
+   "truth": "role=credit_analyst; place=lk-d-kandy; ctype=bank",
+   "family": "finance"
+  },
+  {
+   "id": "h05",
+   "text": "fin analyst london cfa >> women only pls",
+   "truth": "role=financial_analyst; place=gb-london; qual=cfa; gender=female",
+   "family": "finance"
+  },
+  {
+   "id": "h06",
+   "text": "hr exec colombo 3-5 yrs chrm",
+   "truth": "role=hr; place=lk-d-colombo; years=3..5; qual=chrm",
+   "family": "hr"
+  },
+  {
+   "id": "h07",
+   "text": "recruiter dubai female under 35",
+   "truth": "role=recruiter; place=ae-dubai; gender=female; age<=35",
+   "family": "hr"
+  },
+  {
+   "id": "h08",
+   "text": "HR manager bangalore cipd",
+   "truth": "role=hr; ~level=4; place=in-bengaluru; qual=cipd",
+   "family": "hr"
+  },
+  {
+   "id": "h09",
+   "text": "hr officer galle >> add kurunegala too",
+   "truth": "role=hr; place=lk-d-galle|lk-d-kurunegala",
+   "family": "hr"
+  },
+  {
+   "id": "h10",
+   "text": "sales exec manchester / birmingham 2y",
+   "truth": "role=sales; place=gb-manchester|gb-birmingham; years>=2",
+   "family": "sales"
+  },
+  {
+   "id": "h11",
+   "text": "area sales mgr fmcg sri lanka",
+   "truth": "role=sales; ~level=4; ctype=fmcg; place=c-LK",
+   "family": "sales"
+  },
+  {
+   "id": "h12",
+   "text": "key account manager riyadh arabic",
+   "truth": "role=key_account; place=sa-riyadh; lang=Arabic",
+   "family": "sales"
+  },
+  {
+   "id": "h13",
+   "text": "bde mumbai male 25-32",
+   "truth": "role=sales; place=in-mumbai; gender=male; age=25..32",
+   "family": "sales"
+  },
+  {
+   "id": "h14",
+   "text": "java dev colombo 4+ yrs",
+   "truth": "role=software_engineer; skill=Java; place=lk-d-colombo; years>=4",
+   "family": "it"
+  },
+  {
+   "id": "h15",
+   "text": "qa eng istqb chennai",
+   "truth": "role=qa_engineer; qual=istqb; place=in-chennai",
+   "family": "it"
+  },
+  {
+   "id": "h16",
+   "text": "data scientist aws cert uk",
+   "truth": "role=data_scientist; qual=aws; place=c-GB",
+   "family": "it"
+  },
+  {
+   "id": "h17",
+   "text": "it support dubai >> srilankans only >> with ccna",
+   "truth": "role=it_support; place=ae-dubai; nat=LK; qual=ccna",
+   "family": "it"
+  },
+  {
+   "id": "h18",
+   "text": "devops eng gulf exp",
+   "truth": "role=devops; worked=g-gcc",
+   "family": "it"
+  },
+  {
+   "id": "h19",
+   "text": "civil eng 8 yrs gulf worked ceng",
+   "truth": "role=civil_engineer; years>=8; worked=g-gcc; qual=ceng",
+   "family": "engineering"
+  },
+  {
+   "id": "h20",
+   "text": "QS colombo rics",
+   "truth": "role=quantity_surveyor; place=lk-d-colombo; qual=rics",
+   "family": "engineering"
+  },
+  {
+   "id": "h21",
+   "text": "senior QS abu dhabi",
+   "truth": "role=quantity_surveyor; ~level=2; place=ae-abu-dhabi",
+   "family": "engineering"
+  },
+  {
+   "id": "h22",
+   "text": "mech engineer qatar nebosh",
+   "truth": "role=mechanical_engineer; place=c-QA; qual=nebosh",
+   "family": "engineering"
+  },
+  {
+   "id": "h23",
+   "text": "elec eng 28-40 male kerala",
+   "truth": "role=electrical_engineer; age=28..40; gender=male; place=in-s-kerala",
+   "family": "engineering"
+  },
+  {
+   "id": "h24",
+   "text": "hse officer oman nebosh",
+   "truth": "role=hse; place=c-OM; qual=nebosh",
+   "family": "engineering"
+  },
+  {
+   "id": "h25",
+   "text": "staff nurse dubai dha",
+   "truth": "role=nurse; place=ae-dubai; qual=dha",
+   "family": "nursing"
+  },
+  {
+   "id": "h26",
+   "text": "nurse riyadh scfhs female",
+   "truth": "role=nurse; place=sa-riyadh; qual=scfhs; gender=female",
+   "family": "nursing"
+  },
+  {
+   "id": "h27",
+   "text": "RN uk nmc 3 yrs",
+   "truth": "role=nurse; place=c-GB; qual=nmc_uk; years>=3",
+   "family": "nursing"
+  },
+  {
+   "id": "h28",
+   "text": "icu nurse colombo >> slnc registered >> asiri exp",
+   "truth": "role=nurse; kw=ICU; place=lk-d-colombo; qual=slnc; company=Asiri Hospitals",
+   "family": "nursing"
+  },
+  {
+   "id": "h29",
+   "text": "chef de partie 5 star dubai",
+   "truth": "role=chef; ctype=hotel; place=ae-dubai",
+   "family": "hospitality"
+  },
+  {
+   "id": "h30",
+   "text": "front office exec hotel colombo or galle",
+   "truth": "role=front_office; ctype=hotel; place=lk-d-colombo|lk-d-galle",
+   "family": "hospitality"
+  },
+  {
+   "id": "h31",
+   "text": "steward maldives resort under 30",
+   "truth": "role=food_beverage; ctype=hotel; place=c-MV; age<=30",
+   "family": "hospitality"
+  },
+  {
+   "id": "h32",
+   "text": "sous chef male kandy",
+   "truth": "role=chef; gender=male; place=lk-d-kandy",
+   "family": "hospitality"
+  },
+  {
+   "id": "h33",
+   "text": "pa to ceo colombo female",
+   "truth": "role=personal_assistant; place=lk-d-colombo; gender=female",
+   "family": "admin"
+  },
+  {
+   "id": "h34",
+   "text": "admin officer jaffna",
+   "truth": "role=admin; place=lk-d-jaffna",
+   "family": "admin"
+  },
+  {
+   "id": "h35",
+   "text": "receptionist doha",
+   "truth": "role=receptionist; place=qa-doha",
+   "family": "admin"
+  },
+  {
+   "id": "h36",
+   "text": "office mgr pune 6y",
+   "truth": "role=admin; ~level=4; place=in-pune; years>=6",
+   "family": "admin"
+  },
+  {
+   "id": "h37",
+   "text": "procurement exec colombo 2-4y",
+   "truth": "role=procurement; place=lk-d-colombo; years=2..4",
+   "family": "supply"
+  },
+  {
+   "id": "h38",
+   "text": "merchandiser brandix mas",
+   "truth": "role=merchandiser; company=Brandix|MAS Holdings",
+   "family": "apparel"
+  },
+  {
+   "id": "h39",
+   "text": "driver gcc licence",
+   "truth": "role=driver; licence=gcc_light",
+   "family": "trades"
+  },
+  {
+   "id": "h40",
+   "text": "accountant kuwait >> not big4 >> aat or acca",
+   "truth": "role=accountant; place=kw-kuwait-city; !ctype=big4; qual=aat_sl|acca",
+   "family": "finance"
+  }
+ ],
+ "phrasings": [
+  {
+   "text": "female accountants not older than 40",
+   "expect": "role=accountant; gender=female; age<=40",
+   "tags": [
+    "gender",
+    "age"
+   ]
+  },
+  {
+   "text": "men only, hr, colombo",
+   "expect": "gender=male; role=hr; place=lk-d-colombo",
+   "tags": [
+    "gender"
+   ]
+  },
+  {
+   "text": "no females please, driver",
+   "expect": "role=driver; gender=male",
+   "tags": [
+    "gender",
+    "neg"
+   ]
+  },
+  {
+   "text": "not men, nurse dubai",
+   "expect": "role=nurse; place=ae-dubai; gender=female",
+   "tags": [
+    "gender",
+    "neg"
+   ]
+  },
+  {
+   "text": "ladies preferred, sales exec",
+   "expect": "role=sales; ~gender=female",
+   "tags": [
+    "gender"
+   ]
+  },
+  {
+   "text": "accountant 25-35 years old",
+   "expect": "role=accountant; age=25..35",
+   "tags": [
+    "age"
+   ]
+  },
+  {
+   "text": "accountant 2-3 years experience",
+   "expect": "role=accountant; years=2..3",
+   "tags": [
+    "years",
+    "age"
+   ]
+  },
+  {
+   "text": "front office under 30",
+   "expect": "role=front_office; age<=30",
+   "tags": [
+    "age"
+   ]
+  },
+  {
+   "text": "sales below 5 years experience",
+   "expect": "role=sales; years<=5",
+   "tags": [
+    "years",
+    "age"
+   ]
+  },
+  {
+   "text": "driver over 45 yrs old",
+   "expect": "role=driver; age>=45",
+   "tags": [
+    "age"
+   ]
+  },
+  {
+   "text": "nurse aged 30",
+   "expect": "role=nurse; age=30",
+   "tags": [
+    "age"
+   ]
+  },
+  {
+   "text": "females 22-26 with a degree",
+   "expect": "gender=female; age=22..26; qual=bachelors",
+   "tags": [
+    "gender",
+    "age",
+    "qual"
+   ]
+  },
+  {
+   "text": "guys for site engineer",
+   "expect": "role=civil_engineer; gender=male",
+   "tags": [
+    "gender",
+    "role"
+   ]
+  },
+  {
+   "text": "female candidates only, no males, marketing exec",
+   "expect": "role=marketing; gender=female",
+   "tags": [
+    "gender",
+    "neg"
+   ]
+  },
+  {
+   "text": "male HR, below 28",
+   "expect": "role=hr; gender=male; age<=28",
+   "tags": [
+    "gender",
+    "age"
+   ]
+  },
+  {
+   "text": "receptionist, nobody over 50",
+   "expect": "role=receptionist; age<=50",
+   "tags": [
+    "age",
+    "neg"
+   ]
+  },
+  {
+   "text": "hr, male or female both fine",
+   "expect": "role=hr",
+   "tags": [
+    "gender"
+   ]
+  },
+  {
+   "text": "QS 10 yrs exp, age 35-45",
+   "expect": "role=quantity_surveyor; years>=10; age=35..45",
+   "tags": [
+    "years",
+    "age"
+   ]
+  },
+  {
+   "text": "accountant not in dubai",
+   "expect": "role=accountant; !place=ae-dubai",
+   "tags": [
+    "neg",
+    "place"
+   ]
+  },
+  {
+   "text": "sales exec, no big 4 background",
+   "expect": "role=sales; !ctype=big4",
+   "tags": [
+    "neg",
+    "company"
+   ]
+  },
+  {
+   "text": "software engineer excluding india",
+   "expect": "role=software_engineer; !place=c-IN",
+   "tags": [
+    "neg",
+    "place"
+   ]
+  },
+  {
+   "text": "auditor not from a bank",
+   "expect": "role=auditor; !ctype=bank",
+   "tags": [
+    "neg",
+    "company"
+   ]
+  },
+  {
+   "text": "5 years accountant",
+   "expect": "role=accountant; years>=5",
+   "tags": [
+    "years"
+   ]
+  },
+  {
+   "text": "min 3 yrs hr",
+   "expect": "role=hr; years>=3",
+   "tags": [
+    "years"
+   ]
+  },
+  {
+   "text": "max 2 years experience merchandiser",
+   "expect": "role=merchandiser; years<=2",
+   "tags": [
+    "years"
+   ]
+  },
+  {
+   "text": "at least 10 years finance manager",
+   "expect": "role=accountant; ~level=4; years>=10",
+   "tags": [
+    "years",
+    "level"
+   ]
+  },
+  {
+   "text": "colombo accountant",
+   "expect": "role=accountant; place=lk-d-colombo",
+   "tags": [
+    "place"
+   ]
+  },
+  {
+   "text": "kandy sales",
+   "expect": "role=sales; place=lk-d-kandy",
+   "tags": [
+    "place"
+   ]
+  },
+  {
+   "text": "living in dubai, hr",
+   "expect": "role=hr; place=ae-dubai",
+   "tags": [
+    "place"
+   ]
+  },
+  {
+   "text": "worked in qatar, procurement",
+   "expect": "role=procurement; worked=c-QA",
+   "tags": [
+    "place"
+   ]
+  },
+  {
+   "text": "gulf experience nurse",
+   "expect": "role=nurse; worked=g-gcc",
+   "tags": [
+    "place"
+   ]
+  },
+  {
+   "text": "based in negombo, admin",
+   "expect": "role=admin; place=lk-negombo",
+   "tags": [
+    "place"
+   ]
+  },
+  {
+   "text": "banglore software engineer",
+   "expect": "role=software_engineer; place=in-bengaluru",
+   "tags": [
+    "place",
+    "role"
+   ]
+  },
+  {
+   "text": "doha or riyadh, accountant",
+   "expect": "role=accountant; place=qa-doha|sa-riyadh",
+   "tags": [
+    "place"
+   ]
+  },
+  {
+   "text": "mt lavinia teacher",
+   "expect": "role=teacher; place=lk-mount-lavinia",
+   "tags": [
+    "place"
+   ]
+  },
+  {
+   "text": "accountant, up to 1.5 lakhs",
+   "expect": "role=accountant; salary<=150000:LKR",
+   "tags": [
+    "money"
+   ]
+  },
+  {
+   "text": "hr expecting below 8000 AED",
+   "expect": "role=hr; salary<=8000:AED",
+   "tags": [
+    "money"
+   ]
+  },
+  {
+   "text": "engineer not more than 3k usd",
+   "expect": "salary<=3000:USD",
+   "tags": [
+    "money"
+   ]
+  },
+  {
+   "text": "sales at least 12k AED",
+   "expect": "role=sales; salary>=12000:AED",
+   "tags": [
+    "money"
+   ]
+  },
+  {
+   "text": "notice max 30 days, accountant",
+   "expect": "role=accountant; notice<=30",
+   "tags": [
+    "notice"
+   ]
+  },
+  {
+   "text": "can join within 2 weeks, nurse",
+   "expect": "role=nurse; notice<=14",
+   "tags": [
+    "notice"
+   ]
+  },
+  {
+   "text": "senior software engineer",
+   "expect": "role=software_engineer; ~level=2",
+   "tags": [
+    "role",
+    "level"
+   ]
+  },
+  {
+   "text": "trainee auditor",
+   "expect": "role=auditor; ~level=0",
+   "tags": [
+    "role",
+    "level"
+   ]
+  },
+  {
+   "text": "cfo",
+   "expect": "role=accountant; ~level=8",
+   "tags": [
+    "role",
+    "level"
+   ]
+  },
+  {
+   "text": "cima finalist",
+   "expect": "qual=cima:finalist",
+   "tags": [
+    "qual"
+   ]
+  },
+  {
+   "text": "fully qualified acca",
+   "expect": "qual=acca:member",
+   "tags": [
+    "qual"
+   ]
+  },
+  {
+   "text": "part qualified CA sri lanka",
+   "expect": "qual=ca_sl:part_qualified",
+   "tags": [
+    "qual"
+   ]
+  },
+  {
+   "text": "mba, marketing manager",
+   "expect": "role=marketing; ~level=4; qual=mba",
+   "tags": [
+    "qual",
+    "level"
+   ]
+  },
+  {
+   "text": "ex dialog, sales",
+   "expect": "role=sales; company=Dialog Axiata PLC",
+   "tags": [
+    "company"
+   ]
+  },
+  {
+   "text": "currently at a bank, credit officer",
+   "expect": "role=credit_analyst; ctype@now=bank",
+   "tags": [
+    "company"
+   ]
+  },
+  {
+   "text": "big 4 auditor",
+   "expect": "role=auditor; ctype=big4",
+   "tags": [
+    "collision",
+    "company"
+   ]
+  },
+  {
+   "text": "sri lankan nurse in dubai",
+   "expect": "role=nurse; nat=LK; place=ae-dubai",
+   "tags": [
+    "collision"
+   ]
+  },
+  {
+   "text": "indian chef in london",
+   "expect": "role=chef; nat=IN; place=gb-london",
+   "tags": [
+    "collision"
+   ]
+  },
+  {
+   "text": "ex sri lanka telecom, engineer",
+   "expect": "company=Sri Lanka Telecom",
+   "tags": [
+    "collision",
+    "company"
+   ]
+  },
+  {
+   "text": "arabic speaker receptionist",
+   "expect": "role=receptionist; lang=Arabic",
+   "tags": [
+    "other"
+   ]
+  },
+  {
+   "text": "sap skill, accountant, cv within 6 months",
+   "expect": "role=accountant; skill=SAP; cv<=6",
+   "tags": [
+    "other"
+   ]
+  },
+  {
+   "text": "any women in sales? 30-40",
+   "expect": "role=sales; gender=female; age=30..40",
+   "tags": [
+    "gender",
+    "age"
+   ]
+  },
+  {
+   "text": "40 years old, not 40 years experience, accountant",
+   "expect": "role=accountant; age=40",
+   "tags": [
+    "age",
+    "years"
+   ]
+  },
+  {
+   "text": "accountant colombo >> actually kandy",
+   "expect": "role=accountant; place=lk-d-kandy",
+   "tags": [
+    "convo"
+   ]
+  },
+  {
+   "text": "nurse dubai >> add dha",
+   "expect": "role=nurse; place=ae-dubai; qual=dha",
+   "tags": [
+    "convo"
+   ]
+  }
+ ]
+}
