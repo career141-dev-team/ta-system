@@ -188,7 +188,10 @@ function Looking({ look, compact }: { look: Look; compact: boolean }) {
 
 export default function DatabaseView() {
   const gate = useWorkdayGate();
-  const live = useSignedInPerson() !== null;
+  const person = useSignedInPerson();
+  const live = person !== null;
+  // The history is the signed-in person's own: when someone else signs in (same browser tab), start from theirs.
+  const personKey = person ? person.name + "|" + person.role : "";
   // The live site never shows the sample chats, even for the moment before the
   // signed-in person is known (25 Nov: a ?q= link searched the sample pool and
   // the sample chats stayed in the list).
@@ -200,14 +203,23 @@ export default function DatabaseView() {
   const positions = day?.ok ? day.positions : [];
   const record = useDoorMutation(door.searchRecord);
   // Signed in: the chats are this person's own past searches, never the samples.
-  const loaded = useRef(false);
+  const loaded = useRef<string | false>(false);
   useEffect(() => {
-    if (!live || loaded.current) return;
+    if (!live) return;
+    if (loaded.current && loaded.current !== personKey) {
+      loaded.current = false;
+      queueMicrotask(() => {
+        setThreads([]);
+        setOpenId("");
+      });
+      return;
+    }
+    if (loaded.current) return;
     if (!recent?.ok) {
       queueMicrotask(() => setThreads((all) => (all === START ? [] : all)));
       return;
     }
-    loaded.current = true;
+    loaded.current = personKey;
     const today = new Date().toDateString();
     queueMicrotask(() => {
       setThreads((all) => [
@@ -216,7 +228,8 @@ export default function DatabaseView() {
       ]);
       setOpenId((o) => (o === "sap" ? "" : o));
     });
-  }, [live, recent]);
+  }, [live, recent, personKey]);
+  const removeChat = useDoorMutation(door.searchRemove);
   const [mode, setMode] = useState<Mode>("people");
   const [thinking, setThinking] = useState(false);
   const [look, setLook] = useState<Look | null>(null);
@@ -592,6 +605,12 @@ export default function DatabaseView() {
                         all.map((x) => (x.id === t.id ? { ...x, title } : x)),
                       )
                     }
+                    onDelete={() => {
+                      // Signed in the past search is deleted from the person's own history too.
+                      if (live && t.q) void removeChat({ query: t.q });
+                      setThreads((all) => all.filter((x) => x.id !== t.id));
+                      if (openId === t.id) setOpenId("");
+                    }}
                   />
                 ))}
             </div>
@@ -691,13 +710,17 @@ function ChatItem({
   on,
   onOpen,
   onRename,
+  onDelete,
 }: {
   title: string;
   on: boolean;
   onOpen: () => void;
   onRename: (t: string) => void;
+  onDelete: () => void;
 }) {
   const [editing, setEditing] = useState(false);
+  // Delete needs a second press (a deleted chat is gone for good).
+  const [sure, setSure] = useState(false);
   const [draft, setDraft] = useState(title);
   const keep = () => {
     setEditing(false);
@@ -755,6 +778,16 @@ function ChatItem({
         className="mr-1.5 shrink-0 rounded-full p-1.5 text-ink-3 opacity-0 transition-opacity hover:bg-surface hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 max-md:opacity-100"
       >
         <PencilIcon />
+      </button>
+      <button
+        type="button"
+        onClick={() => (sure ? onDelete() : setSure(true))}
+        onBlur={() => setSure(false)}
+        aria-label={sure ? `Press again to delete "${title}"` : `Delete "${title}"`}
+        title={sure ? "Press again to delete" : "Delete this chat"}
+        className={"mr-1.5 shrink-0 rounded-full px-1.5 py-1 text-caption transition-opacity hover:bg-surface focus-visible:opacity-100 max-md:opacity-100 " + (sure ? "font-medium text-danger opacity-100" : "text-ink-3 opacity-0 hover:text-ink group-hover:opacity-100")}
+      >
+        {sure ? "Delete?" : "✕"}
       </button>
     </div>
   );

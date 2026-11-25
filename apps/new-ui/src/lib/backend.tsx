@@ -273,6 +273,7 @@ export const door = {
   myDay: makeFunctionReference<"query">("ui/myDay:today"),
   searchRecord: makeFunctionReference<"mutation">("ui/searches:record"),
   searchRecent: makeFunctionReference<"query">("ui/searches:recent"),
+  searchRemove: makeFunctionReference<"mutation">("ui/searches:remove"),
   planSnooze: makeFunctionReference<"mutation">("ui/plan:snooze"),
   planChange: makeFunctionReference<"action">("ui/planTalk:change"),
   scoopUploadUrl: makeFunctionReference<"mutation">("ui/opening:scoopUploadUrl"),
@@ -425,6 +426,15 @@ type DoorBell = Answer<{ rows: { unreadCount: number; notifications: { id: strin
 const NEEDS = new Set(["strategy_assigned", "workday_exception", "opening_access_requested", "eod_stuck", "eod_reminder", "workday_expired", "eod_lead_digest"]);
 const ICON: Record<string, Alert["icon"]> = { strategy_assigned: "task", workday_exception: "task", eod_reminder: "task", opening_changed: "person", candidate_placed: "person" };
 
+/** Where a notification goes when pressed (25 Nov: every one without an opening went to Today, so an admin's alerts seemed to do nothing). */
+function bellHref(type: string, jobId: string | null): string {
+  if (type === "opening_access_requested") return "/openings";
+  if (type === "strategy_assigned") return jobId ? `/openings/demo?job=${jobId}&view=strategies` : "/strategy";
+  if (type === "scoop_received") return jobId ? `/openings/demo?job=${jobId}&view=scoops` : "/today";
+  if (jobId) return `/openings/demo?job=${jobId}`;
+  return "/today";
+}
+
 /** The person's real notifications into the bell (src/app/alerts/data.ts). */
 function LiveBell() {
   const viewed = useViewed();
@@ -436,7 +446,7 @@ function LiveBell() {
     setLiveAlerts(
       got.rows.notifications.map((n) => ({
         id: n.id, title: n.title, body: n.body, unread: !n.read, needs: NEEDS.has(n.type), icon: ICON[n.type] ?? "bell",
-        href: n.jobId ? `/openings/demo?job=${n.jobId}` : "/today",
+        href: bellHref(n.type, n.jobId),
       })),
       (id) => void (id ? one({ notificationId: id }) : all({})).catch(() => {}),
     );
