@@ -138,6 +138,24 @@ function JdScreen({ live }: { live?: LiveJdData }) {
   const [readAt, setReadAt] = useState("");
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<{ bold?: string; rest: string; n: number } | null>(null);
+  // Real job: every chat answer that produced a JD is one version, oldest = Version 1.
+  const liveVersions = liveRows
+    .filter((r) => r.role === "assistant" && r.jd)
+    .map((r, i) => ({
+      key: r.id,
+      n: i + 1,
+      when: new Date(r.at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }),
+      what: r.body.length > 70 ? r.body.slice(0, 70).trimEnd() + "…" : r.body,
+    }))
+    .reverse();
+  const restoreLive = async (messageId: string) => {
+    if (!live || busy) return;
+    setBusy(true);
+    const r = await jdCall({ do: "restore", openingId: live.job, messageId });
+    setBusy(false);
+    await jdChat.reload();
+    setToast({ rest: r.message, n: Date.now() });
+  };
   const bar = useRef<HTMLDivElement>(null);
   const talk = useRef<HTMLDivElement>(null);
   const doc = useRef<HTMLDivElement>(null);
@@ -229,13 +247,22 @@ function JdScreen({ live }: { live?: LiveJdData }) {
               <span className="truncate text-caption text-ink-3" title={approved ? approvedBy : undefined}>
                 {live ? "" : approved ? approvedBy || "Approved" : `Saved ${savedAt || (VERSIONS.find((v) => v.n === version)?.when ?? "")}`}
               </span>
-              {!live && <History
-                version={version}
-                onRestore={(n) => {
-                  setVersion(n);
-                  setToast({ bold: `Version ${n}`, rest: approved ? " is back. It stays approved." : " is back.", n: Date.now() });
-                }}
-              />}
+              {live ? (
+                liveVersions.length > 0 && (
+                  <History versions={liveVersions} current={lastJd ?? ""} canRestore={canWrite && !busy} onRestore={(id) => void restoreLive(id)} />
+                )
+              ) : (
+                <History
+                  versions={VERSIONS.map((v) => ({ key: String(v.n), n: v.n, when: v.when, what: v.what }))}
+                  current={String(version)}
+                  canRestore
+                  onRestore={(k) => {
+                    const n = Number(k);
+                    setVersion(n);
+                    setToast({ bold: `Version ${n}`, rest: approved ? " is back. It stays approved." : " is back.", n: Date.now() });
+                  }}
+                />
+              )}
               <button
                 type="button"
                 onClick={copy}
@@ -488,7 +515,7 @@ function JdScreen({ live }: { live?: LiveJdData }) {
 }
 
 /** Earlier versions, each one back with a click (the old JD history). */
-function History({ version, onRestore }: { version: number; onRestore: (n: number) => void }) {
+function History({ versions, current, canRestore, onRestore }: { versions: { key: string; n: number; when: string; what: string }[]; current: string; canRestore: boolean; onRestore: (key: string) => void }) {
   const { open, setOpen, root, panel, shown } = useLiftMenu();
   return (
     <div ref={root} className="relative ml-auto">
@@ -508,23 +535,23 @@ function History({ version, onRestore }: { version: number; onRestore: (n: numbe
       {shown && (
         <div ref={panel} role="menu" className="absolute right-0 top-full z-30 mt-2 flex w-[max(20rem,260px)] flex-col rounded-md bg-surface p-1.5 shadow-float ring-1 ring-border/60">
           <p className="px-3 pb-1 pt-1.5 text-caption font-medium uppercase text-ink-3">Versions</p>
-          {VERSIONS.map((v) => (
+          {versions.map((v) => (
             <button
-              key={v.n}
+              key={v.key}
               type="button"
               role="menuitem"
-              disabled={v.n === version}
+              disabled={v.key === current || !canRestore}
               onClick={() => {
-                onRestore(v.n);
+                onRestore(v.key);
                 setOpen(false);
               }}
               className="flex flex-col items-start gap-0.5 rounded-sm px-3 py-2 text-left hover:bg-surface-2 disabled:hover:bg-transparent"
             >
               <span className="text-small font-medium text-ink">
                 Version {v.n} · {v.when}
-                {v.n === version ? " · showing" : ""}
+                {v.key === current ? " · showing" : ""}
               </span>
-              <span className="text-caption text-ink-3">{v.n === version ? v.what : `${v.what} — restore`}</span>
+              <span className="text-caption text-ink-3">{v.key === current ? v.what : `${v.what} — restore`}</span>
             </button>
           ))}
         </div>

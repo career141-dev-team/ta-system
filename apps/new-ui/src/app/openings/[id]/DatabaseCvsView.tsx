@@ -81,8 +81,17 @@ const keep = (f: Filters) => (p: Person) => {
 };
 
 type DoorMatches = Answer<{
-  results: { cvId: string; overallScore: number; name: string; title: string | null; company: string | null; location: string | null; years: number | null; noticeDays: number | null }[];
+  results: { cvId: string; overallScore: number; name: string; title: string | null; company: string | null; location: string | null; years: number | null; noticeDays: number | null; jobs?: { title: string | null; company: string | null; startDate: string | null; endDate: string | null }[] }[];
 }>;
+
+/** "2020 – Now", "2016 – 2020", or one year. The CV's own dates are free text, so only the year is read. */
+function periodOf(start: string | null, end: string | null): string {
+  const year = (s: string | null) => s?.match(/(?:19|20)\d{2}/)?.[0] ?? "";
+  const from = year(start);
+  const to = !end?.trim() || /present|current|now|ongoing|date/i.test(end) ? "Now" : year(end);
+  if (from && to) return from === to ? from : `${from} – ${to}`;
+  return from || to;
+}
 
 export default function DatabaseCvsView() {
   const gate = useWorkdayGate();
@@ -101,6 +110,8 @@ export default function DatabaseCvsView() {
         real.results.map((m) => ({
           id: m.cvId, cv: cvUrl({ candidate: m.cvId }), name: m.name, title: m.title ?? "", company: m.company ?? "", city: m.location ?? "",
           years: m.years ?? 0, notice: m.noticeDays == null ? 0 : Math.round(m.noticeDays / 30), tags: [], score: Math.round(m.overallScore),
+          // No history on the CV: leave it out and the row shows the current job as "Now".
+          career: m.jobs?.length ? m.jobs.map((j) => ({ period: periodOf(j.startDate, j.endDate), title: j.title ?? "", company: j.company ?? "" })) : undefined,
         })),
       );
   }

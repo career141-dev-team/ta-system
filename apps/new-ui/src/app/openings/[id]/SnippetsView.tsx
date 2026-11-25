@@ -68,6 +68,27 @@ const LEVELS = [
   { pill: "Senior Level", short: "Senior", colour: 3 },
   { pill: "C-Level", short: "C-Level", colour: 4 },
 ];
+/** A new title across both lines, split the way the old system does (src/lib/snippet.ts splitTitle):
+ *  "A / B / C" -> lead "A / B", main "C"; up to two words -> main only; else the last two words are the main line. */
+function titleLines(title: string): { line1: string; line2: string } {
+  const t = title.trim();
+  const parts = t.split("/").map((p) => p.trim()).filter(Boolean);
+  let lead = "";
+  let main = t;
+  if (parts.length > 1) {
+    lead = parts.slice(0, -1).join(" / ");
+    main = parts[parts.length - 1];
+  } else {
+    const words = t.split(/\s+/);
+    if (words.length > 2) {
+      const cut = words.length - 2;
+      lead = words.slice(0, cut).join(" ");
+      main = words.slice(cut).join(" ");
+    }
+  }
+  return { line1: lead.slice(0, 60), line2: main.toUpperCase().slice(0, 40) };
+}
+
 /** The level read off the title, the old system's levelFromTitle. */
 function levelOf(title: string) {
   const t = title.toLowerCase();
@@ -230,7 +251,7 @@ function drawCard(ctx: CanvasRenderingContext2D, s: Snip, logo: HTMLImageElement
   fit(s.line1, s.bold ? 700 : 300, 42);
   ctx.fillText(s.line1, 57, 252);
   if (s.underline) ctx.fillRect(57, 258, ctx.measureText(s.line1).width, 2.5);
-  fit(s.line2, 700, 52.7);
+  fit(s.line2, s.bold ? 700 : 300, 52.7); // both lines follow the Bold button (owner's choice, 25 Nov 2026)
   ctx.fillText(s.line2, 57, 307);
   if (s.underline) ctx.fillRect(57, 313, ctx.measureText(s.line2).width, 2.5);
 
@@ -383,7 +404,7 @@ function ask(text: string, cur: Snip, parts: Part[]): { patch: Partial<Snip>; re
     if (/white (text|title|heading)/.test(t)) did("the title white", { ink: 2 });
     else if (/(black|dark) (text|title|heading)/.test(t)) did("the title black", { ink: 0 });
     else if (/green (text|title|heading)/.test(t)) did("the title green", { ink: 1 });
-    if (title) did("the title", { line1: title[1].slice(0, 60) }); // the bold second line stays, as the old system edits them apart
+    if (title) did("the title", titleLines(title[1]));
   }
   // New words for a picked part.
   if (parts.length && words && !title) {
@@ -392,7 +413,7 @@ function ask(text: string, cur: Snip, parts: Part[]): { patch: Partial<Snip>; re
     // New words need one place to go.
     if (texty.length > 1) return { patch, reply: `Which one should read “${value}”? Let go of all but one of ${texty.map((k) => "/" + k).join(" ")} (the x on a tag) and say it again.` };
     const first = texty[0];
-    if (first === "title") did("the title", { line1: value.slice(0, 60) });
+    if (first === "title") did("the title", titleLines(value));
     else if (first === "sector") did("the sector", { sector: value.slice(0, 30) });
     else if (first === "email" || first === "phone") did(PARTS.find((p) => p.key === first)!.name, { [first]: value.slice(0, 40) });
     else if (first === "requirements") did("the requirements", { bullets: value.split(/;|\n/).map((b) => b.trim().slice(0, 160)).filter(Boolean) });
