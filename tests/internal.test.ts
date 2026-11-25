@@ -50,6 +50,8 @@ const ALLOWED_PUBLIC = new Set<string>([
   "ui/opening:saveJd",
   "ui/opening:scoopUploadUrl",
   "ui/opening:queueScoop",
+  "ui/opening:scoopStatus",
+  "ui/opening:retryScoop",
   "ui/manage:setQuestions",
   "ui/manage:acceptStrategies",
   "ui/manage:submitStrategies",

@@ -458,7 +458,7 @@ export default function SnippetsView() {
   // Signed in (R6, 21 Nov): the opening's own card from the TA System; the refine is real.
   const live = useLive();
   const job = live ? jobFromAddress() : null;
-  const real = useSnippet(live, job);
+  const real = useSnippet(live, job, sampleApproved);
   const [busy, setBusy] = useState(false);
   const [filled, setFilled] = useState<string | null>(null);
   if (live && real?.ok && real.fields && filled !== job) {
@@ -567,7 +567,8 @@ export default function SnippetsView() {
   };
 
   const step = (d: number) => setS((x) => ({ ...x, body: Math.min(40, Math.max(16, x.body + d)) }));
-  if (live && !real)
+  // Approved a moment ago: the card is being made - not "not approved".
+  if (live && (!real || (sampleApproved && real.ok && !real.approved)))
     return (
       <div className="flex flex-1 flex-col px-[max(1.5rem,14px)] pt-[max(1.4rem,14px)] max-md:pt-11">
         <BackButton />

@@ -15,6 +15,7 @@
 import { NextResponse } from "next/server";
 import { POST as refine } from "@/app/api/snippet/refine/route";
 import { primeStore } from "@/data/prime";
+import { invalidateOpening } from "@/data/primeState";
 import { repo } from "@/data/store";
 import { currentUser } from "@/lib/session";
 import { snippetFromOpening } from "@/lib/snippet";
@@ -35,6 +36,9 @@ export async function GET(req: Request) {
   const user = await currentUser();
   if (!user || !user.isActive) return signIn(req);
   const id = new URL(req.url).searchParams.get("position") ?? "";
+  // The JD is approved through the new UI, straight in the backend: read this opening fresh, or the held copy
+  // still says "not approved" (25 Nov).
+  if (id) invalidateOpening(id);
   await primeStore({ openingId: id });
   const o = id ? repo.opening(id) : null;
   const client = o ? repo.client(o.clientId) : null;

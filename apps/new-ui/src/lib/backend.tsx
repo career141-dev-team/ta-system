@@ -277,6 +277,8 @@ export const door = {
   planChange: makeFunctionReference<"action">("ui/planTalk:change"),
   scoopUploadUrl: makeFunctionReference<"mutation">("ui/opening:scoopUploadUrl"),
   queueScoop: makeFunctionReference<"mutation">("ui/opening:queueScoop"),
+  scoopStatus: makeFunctionReference<"query">("ui/opening:scoopStatus"),
+  retryScoop: makeFunctionReference<"mutation">("ui/opening:retryScoop"),
   refreshChecks: makeFunctionReference<"mutation">("ui/day:refreshChecks"),
   startDay: makeFunctionReference<"mutation">("ui/day:start"),
   addPosition: makeFunctionReference<"mutation">("ui/day:addPosition"),
