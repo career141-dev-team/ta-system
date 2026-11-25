@@ -6,7 +6,7 @@ import Link from "next/link";
 import { DUR, EASE, gsap } from "@/lib/gsap";
 import { getTheme, setTheme } from "@/lib/theme";
 import { useDoorSignOut } from "@/lib/backend";
-import { canViewAs, personOf, ROLES, setRole, useRole, useSignedInPerson, worksADay } from "@/lib/role";
+import { canViewAs, personOf, ROLES, setRole, useIsAdmin, useRole, useSignedInPerson, worksADay } from "@/lib/role";
 import { markRead, useAlerts, type Alert, type Icon } from "./alerts/data";
 import TellUs from "./feedback/TellUs";
 import { openPetPicker, useMyPet } from "@/lib/pet";
@@ -255,6 +255,7 @@ export function Person() {
   const role = useRole();
   const { pet, hidden: petHidden } = useMyPet();
   const signedIn = useSignedInPerson();
+  const isAdmin = useIsAdmin();
   const signOut = useDoorSignOut();
   const me = personOf(role);
   // What the page is showing now (read when the menu opens; the boot script set it).
@@ -311,7 +312,7 @@ export function Person() {
             />
             <MenuRow icon="board" label={worksADay(role) ? "My feedback" : "Feedback board"} hint={worksADay(role) ? "where it is" : "everyone's"} href="/feedback" onClick={close} />
             <MenuRow icon="bin" label="Bin" hint="7 days" href="/bin" onClick={close} />
-            <MenuRow icon="people" label="People & roles" hint="admin" href="/people" onClick={close} />
+            {isAdmin && <MenuRow icon="people" label="People & roles" hint="admin" href="/people" onClick={close} />}
             <li role="separator" className="mx-2.5 my-1.5 h-px bg-border" />
             {/* Until sign-in: see the app as each role (homes, rights). Signed in, the
                 account decides who is looking, so it steps aside (18 Nov). */}

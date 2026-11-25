@@ -23,6 +23,29 @@ export const record = mutation({
   },
 });
 
+/**
+ * Delete one chat from the person's own history (25 Nov). A chat is a search and the ones it was continued
+ * from (the list shows them once), so every own row whose words start the chat's words goes. Only own rows.
+ */
+export const remove = mutation({
+  args: { query: v.string() },
+  handler: async (ctx, a) => {
+    const w = await who(ctx);
+    if (!w.ok) return w;
+    const q = a.query.trim().slice(0, MAX_QUERY);
+    if (!q) return { ok: false as const, message: "Nothing to delete." };
+    const rows = await ctx.db.query("searchHistory").withIndex("by_user", (x) => x.eq("userId", w.user._id)).order("desc").take(200);
+    let n = 0;
+    for (const r of rows) {
+      if (q.startsWith(r.query)) {
+        await ctx.db.delete(r._id);
+        n++;
+      }
+    }
+    return { ok: true as const, message: n ? "Deleted." : "Already gone." };
+  },
+});
+
 /** The person's last 40 searches, newest first. */
 export const recent = query({
   args: {},

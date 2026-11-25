@@ -32,6 +32,11 @@ export const useSignedInPerson = () =>
  *  changes what is drawn; the backend still judges every call by the real account.
  *  Remove before the switch-over (Track E step E9). */
 export const canViewAs = () => !signed || signed.role === "Admin";
+/** The admin tools (People & roles, quick access) are for admin accounts only (25 Nov); the sample, signed out, shows them as before. */
+export const useIsAdmin = () => {
+  const me = useSignedInPerson();
+  return !me || me.role === "Admin";
+};
 // Signed in, "View as" lives only in this tab (sessionStorage, 20 Nov 2026): kept in
 // localStorage it outlived the session, so the real admin came back as "TA" with the
 // Strategy Planner gone. A fresh tab always opens on the real role. The preview

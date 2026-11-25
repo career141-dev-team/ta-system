@@ -80,6 +80,7 @@ eq("upload fault: a model failure is ours", uploadFault("LLM failed to extract c
 eq("upload fault: a timeout is ours", uploadFault("timed out after 90 s").who, "us");
 eq("upload fault: nothing recorded is ours", uploadFault(undefined).who, "us");
 eq("scoops: the old definition (scoopReceivedAt or sent-by), never the database-match label", (() => { const b = read("convex/ui/opening.ts").split("export const scoops = query")[1].split("export const postApplicants")[0]; return b.includes("a.scoopReceivedAt || a.scoopFromUserId") && !b.includes("taSourcingChannel") && !b.includes("a.scoopAt"); })(), true);
+eq("search history: delete takes own rows only", (() => { const b = read("convex/ui/searches.ts").split("export const remove")[1].split("export const recent")[0]; return b.includes("by_user") && b.includes("w.user._id") && b.includes("startsWith"); })(), true);
 eq("scoop status: own uploads only, the reader's own stage", read("convex/ui/opening.ts").includes("up.scoopedBy === user._id") && read("convex/ui/opening.ts").includes("internal.ta.scoopUpload.status"), true);
 eq("scoop: over 10 MB", scoopFileRefusal("a.pdf", 11 * 1024 * 1024, "application/pdf"), "a.pdf is over 10 MB. Save a smaller PDF and try again.");
 eq("scoop: rtf refused", scoopFileRefusal("a.rtf", 100, "application/rtf"), "a.rtf is not a PDF or a Word document.");
