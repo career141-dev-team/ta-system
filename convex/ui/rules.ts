@@ -156,6 +156,21 @@ export function scoopFileRefusal(name: string, size: number, type: string): stri
 }
 
 /**
+ * The newest jobs first, at most three (the Database CVs row shows the three most recent, 25 Nov). A job still
+ * running ("Present", blank end) is the newest; then by end year, then start year. The CV's own order is kept for ties.
+ */
+export function recentJobs<T extends { startDate?: string | null; endDate?: string | null }>(jobs: T[] | null | undefined, count = 3): T[] {
+  const year = (s?: string | null) => Number(s?.match(/(?:19|20)\d{2}/)?.[0] ?? 0);
+  const ongoing = (j: T) => !j.endDate?.trim() || /present|current|now|ongoing|date/i.test(j.endDate);
+  const key = (j: T) => (ongoing(j) ? 9999 : year(j.endDate)) * 10000 + year(j.startDate);
+  return (jobs ?? [])
+    .map((j, i) => ({ j, i }))
+    .sort((a, b) => key(b.j) - key(a.j) || a.i - b.i)
+    .slice(0, count)
+    .map((x) => x.j);
+}
+
+/**
  * A CV that would not read, told to the person who sent it (25 Nov): "you" when
  * the file is the problem and they can fix it, "us" when the reader or the
  * system is - then they are told it is ours and being looked at. The raw

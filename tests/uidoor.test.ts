@@ -6,7 +6,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { cardLimit, inWords, scoopFileRefusal, uploadFault, normalizeQuestions, strategyRowsToSubmit, matchableEmail, moveRefusal, toCard, openingCard, withEdits, BOARD_STAGES, BACKEND_STAGES, daysOpen, columnCount } from "../convex/ui/rules";
+import { cardLimit, inWords, scoopFileRefusal, uploadFault, recentJobs, normalizeQuestions, strategyRowsToSubmit, matchableEmail, moveRefusal, toCard, openingCard, withEdits, BOARD_STAGES, BACKEND_STAGES, daysOpen, columnCount } from "../convex/ui/rules";
 import { fillDecision, targetOf } from "../convex/lib/placementCount";
 import { isEodCandidateEligible } from "../src/lib/eodEligibility";
 import { datesBetween, peopleOf } from "../convex/ui/trackRules";
@@ -81,6 +81,11 @@ eq("upload fault: a timeout is ours", uploadFault("timed out after 90 s").who, "
 eq("upload fault: nothing recorded is ours", uploadFault(undefined).who, "us");
 eq("scoops: the old definition (scoopReceivedAt or sent-by), never the database-match label", (() => { const b = read("convex/ui/opening.ts").split("export const scoops = query")[1].split("export const postApplicants")[0]; return b.includes("a.scoopReceivedAt || a.scoopFromUserId") && !b.includes("taSourcingChannel") && !b.includes("a.scoopAt"); })(), true);
 eq("search history: delete takes own rows only", (() => { const b = read("convex/ui/searches.ts").split("export const remove")[1].split("export const recent")[0]; return b.includes("by_user") && b.includes("w.user._id") && b.includes("startsWith"); })(), true);
+eq("recent jobs: the running job first, then the latest end year, three at most", recentJobs([
+  { startDate: "2010", endDate: "2014" }, { startDate: "2019", endDate: "Present" }, { startDate: "2014", endDate: "2019" }, { startDate: "2005", endDate: "2009" },
+]).map((j) => j.startDate), ["2019", "2014", "2010"]);
+eq("recent jobs: none is none", recentJobs(undefined), []);
+eq("matches: the career is read from candidateResumes too", read("convex/ui/opening.ts").split("export const matches")[1].includes("candidateResumes"), true);
 eq("scoop status: own uploads only, the reader's own stage", read("convex/ui/opening.ts").includes("up.scoopedBy === user._id") && read("convex/ui/opening.ts").includes("internal.ta.scoopUpload.status"), true);
 eq("scoop: over 10 MB", scoopFileRefusal("a.pdf", 11 * 1024 * 1024, "application/pdf"), "a.pdf is over 10 MB. Save a smaller PDF and try again.");
 eq("scoop: rtf refused", scoopFileRefusal("a.rtf", 100, "application/rtf"), "a.rtf is not a PDF or a Word document.");
