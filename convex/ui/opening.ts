@@ -20,7 +20,8 @@ import type { Doc, Id } from "../_generated/dataModel";
 import { isGone } from "../../src/lib/bin";
 import { isDeskWideUser } from "../ta/guard";
 import { mayReadOpening, NotSignedIn, uiUser } from "./me";
-import { inWords, scoopFileRefusal, uploadFault } from "./rules";
+import { liveFacts } from "../lib/candidateFacts";
+import { inWords, recentJobs, scoopFileRefusal, uploadFault } from "./rules";
 
 const refused = (message: string) => ({ ok: false as const, message });
 type Refused = { ok: false; message: string };
@@ -188,16 +189,22 @@ export const matches = query({
       if (gone) continue;
       const c = await ctx.db.get(id);
       if (!c) continue;
+      // Extraction writes the dated job history to candidateResumes, not to the candidate (the old system merges the
+      // two the same way, ta/candidates.ts withCareer). Reading only the candidate left every row without years.
+      const resume = await ctx.db.query("candidateResumes").withIndex("by_candidateId", (q) => q.eq("candidateId", id)).first();
+      const career = (resume?.jobHistory?.length ? resume.jobHistory : c.jobHistory) ?? [];
+      const recent = recentJobs(career);
       out.push({
         ...r,
         name: c.fullName?.trim() || "Name not on record",
-        title: c.currentJobTitle ?? null,
-        company: c.currentEmployer ?? null,
+        title: c.currentJobTitle ?? recent[0]?.title ?? null,
+        company: c.currentEmployer ?? recent[0]?.company ?? null,
         location: c.location ?? null,
-        years: c.totalExperienceYears ?? null,
+        // As of today from the job dates, like the old Database screen (convex/lib/candidateFacts).
+        years: liveFacts(c, career).totalExperienceYears ?? c.totalExperienceYears ?? null,
         noticeDays: c.noticePeriodDays ?? null,
-        // The last four jobs, so the list can show the position and from-to years of each.
-        jobs: (c.jobHistory ?? []).slice(0, 4).map((j) => ({ title: j.title ?? null, company: j.company ?? null, startDate: j.startDate ?? null, endDate: j.endDate ?? null })),
+        // The three most recent jobs, each with its from-to years.
+        jobs: recent.map((j) => ({ title: j.title ?? null, company: j.company ?? null, startDate: j.startDate ?? null, endDate: j.endDate ?? null })),
       });
     }
     return { ok: true as const, status: found.status, matchedAt: found.matchedAt, results: out };
