@@ -427,7 +427,10 @@ const NEEDS = new Set(["strategy_assigned", "workday_exception", "opening_access
 const ICON: Record<string, Alert["icon"]> = { strategy_assigned: "task", workday_exception: "task", eod_reminder: "task", opening_changed: "person", candidate_placed: "person" };
 
 /** Where a notification goes when pressed (25 Nov: every one without an opening went to Today, so an admin's alerts seemed to do nothing). */
-function bellHref(type: string, jobId: string | null): string {
+function bellHref(type: string, jobId: string | null, title = ""): string | null {
+  // A system problem (a mailbox not read, no WhatsApp arriving, a deep CV queue) has no screen of its own:
+  // sending the admin to Today looked like the alert did nothing (25 Nov). It is read in place instead.
+  if (/^problem:/i.test(title) || type === "mailbox_stalled") return null;
   if (type === "opening_access_requested") return "/openings";
   if (type === "strategy_assigned") return jobId ? `/openings/demo?job=${jobId}&view=strategies` : "/strategy";
   if (type === "scoop_received") return jobId ? `/openings/demo?job=${jobId}&view=scoops` : "/today";
@@ -446,7 +449,7 @@ function LiveBell() {
     setLiveAlerts(
       got.rows.notifications.map((n) => ({
         id: n.id, title: n.title, body: n.body, unread: !n.read, needs: NEEDS.has(n.type), icon: ICON[n.type] ?? "bell",
-        href: bellHref(n.type, n.jobId),
+        href: bellHref(n.type, n.jobId, n.title),
       })),
       (id) => void (id ? one({ notificationId: id }) : all({})).catch(() => {}),
     );
