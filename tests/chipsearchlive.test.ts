@@ -50,5 +50,24 @@ ok("both named = no filter", genderAsked("male or female") === null);
 delete process.env.ANTHROPIC_API_KEY;
 ok("no key: no name reading, nobody dropped", (await genderByName(["Nimali Perera"])) === null);
 
+// 26 Nov 2026: the AI check's order is the mark first, then the score - never the check round;
+// and the check is told the gender the route found.
+{
+  const { createSearch } = await import("../convex/lib/search/chipSearch");
+  const seen: string[] = [];
+  const fake = async (system: string, user: string) => {
+    if (/checking a shortlist/.test(system)) { seen.push(user); return JSON.stringify({ r: [[1, 1, "maybe"], [2, 2, "call"], [3, 1, "maybe"]] }); }
+    return null;
+  };
+  const search = createSearch([], fake);
+  const hit = (id: string, score: number) => ({ card: { id, title: "Head of Finance", jobs: [], quals: [] }, score, why: [] });
+  const r = await search.checkAll("head of finance, female", [hit("a", 100), hit("b", 50), hit("c", 300)], { a: "f" });
+  console.log("the AI check order");
+  ok("the mark first, then the score", r.final.map((h: any) => h.card.id).join(",") === "b,c,a", r.final.map((h: any) => h.card.id).join(","));
+  ok("the check is told the gender", /\| female \|/.test(seen[0]) && /gender not on file/.test(seen[0]), seen[0]?.slice(0, 200));
+  ok("nobody removed, nothing lost", r.removed.length === 0 && r.final.length === 3);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
+
