@@ -93,6 +93,7 @@ unreachable, held by) and plain warnings. Hidden rows keep a `hiddenReason`. TAs
 9. **Agent rows rank first**; rows added from the normal search come after them, labelled.
 10. **Rejections lower similar people**: same title as someone the director or client rejected for the opening
     (or marked not relevant, if marks are ever used) → moved lower with a note. Not hidden. Never the searched title.
+12. **"Only Sri Lankans" (owner, 26 Nov: keep as is).** People living in Sri Lanka are searched as they are; only people abroad must have studied in Sri Lanka. Foreigners living in Sri Lanka can appear; the TA checks on LinkedIn. Nationality is never guessed from names.
 
 ## 5. Run the tests
 

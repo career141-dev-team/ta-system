@@ -50,7 +50,7 @@ Planned capabilities `linkedin.search` (run searches) and `linkedin.admin` (sett
 
 ## Known quirks, gaps and unverified items
 
-- "Only Sri Lankans" with people living in Sri Lanka also admits foreigners who live there (nationality is never guessed from names); open owner decision whether to require "studied in Sri Lanka" for everyone.
+- "Only Sri Lankans" with people living in Sri Lanka also admits foreigners who live there (nationality is never guessed from names); owner decided (26 Nov) to keep it so: the TA checks on LinkedIn.
 - Agent Search is beta; price and output shape may change (columns are read by meaning in `results.ts:columnRole`).
 - Normal search costs 0.03 credits a person (basic) and 0.13 with the employer (`normalSearchWithCompany`, on) - measured 26 Nov. One unexplained 0.106 / person bill that day.
 - Joined-rules quality rests on one paid search per kind (26 Nov) (unverified at scale).
@@ -66,7 +66,7 @@ Run `node tests/run.mjs linkedinSearch` (fake Crustdata, no spend), `npx tsc --n
 - 25-26 Nov 2026: engine built outside the repo by the owner with Claude; 2 rounds of adversarial checks (31 defects fixed); 4 paid Crustdata tests; owner decisions recorded in the README section 4. Moved into the repo in this pull request.
 
 <!-- skill-meta
-verified-commit: d8b9c8b2
+verified-commit: 7dc4e312
 verified-hash: 765dba16f2128a194e7867eca3db1de83aa227ae
 verified-date: 2026-11-26
 sources:
