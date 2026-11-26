@@ -82,8 +82,10 @@ export async function POST(req: NextRequest) {
   // 26 Nov 2026: 28,002 records (Aug-Sep CV import) were never filled from their CV: no name,
   // no email, no phone, no CV file. The new search finds them from their CV text, but a TA
   // cannot reach them, so they are not shown (owner: "hide them").
+  // The data layer (src/lib/live/mapLive.ts) writes "Unnamed candidate" into an empty name, so that counts as none.
+  const realName = (n?: string | null) => !!n?.trim() && n.trim() !== "Unnamed candidate";
   const reachable = (c: { fullName?: string | null; email?: string | null; phone?: string | null }) =>
-    !!(c.fullName?.trim() || c.email?.trim() || c.phone?.trim());
+    !!(realName(c.fullName) || c.email?.trim() || c.phone?.trim());
   const want = genderAsked(q);
   const narrow = want
     ? async (ids: string[]) => {
@@ -117,7 +119,7 @@ export async function POST(req: NextRequest) {
       const checked = found.filter((x) => x.h.ai != null);
       if (checked.length >= 5) found = checked;
       // Records with no name (a CV read, no name saved) go to the end, never on top.
-      const named = (x: (typeof found)[number]) => !!x.c.fullName?.trim();
+      const named = (x: (typeof found)[number]) => realName(x.c.fullName);
       found = [...found.filter(named), ...found.filter((x) => !named(x))];
       const rows = found.slice(0, ROWS).map(({ h, c }) => personOf(c, chipScore(h.score), h.aiWhy || h.why.join(" · ")));
       if (rows.length) {
