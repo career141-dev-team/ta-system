@@ -86,7 +86,7 @@ The scenario requests also work:
 - Agent Search cost $1.18–2.40 here, against $0.60–0.87 in the plan. Tighter forms add checks and cost more.
 - Company now comes back on every normal-search row (5 of 5 in the cost test).
 
-**Spend:** $5.52 in total. The UAE search was $1.18, and solar + strategy were $4.34 (Agent $3.29, normal-search top-ups $1.05). The balance went from $24.02 to **$18.51** (61.69 credits), then to **$18.27** after the $0.24 company-cost test, then to **$16.04** after the $2.22 joined-rules test. The reserve guard stops any paid call that would go below 35 credits.
+**Spend:** $5.52 in total. The UAE search was $1.18, and solar + strategy were $4.34 (Agent $3.29, normal-search top-ups $1.05). The balance went from $24.02 to **$18.51** (61.69 credits), then to **$18.27** after the $0.24 company-cost test, then to **$16.04** after the $2.22 joined-rules test. On 26 Nov another key (#40913, from a server) spent about $5.80; the CEO search then spent $2.49 (owner approved using part of the director's credit). **$7.70 left.** The reserve guard stops any paid call that would go below 35 credits.
 
 ## 3b. Joined-rules cost test (26 Nov, $2.22, owner approved up to $3.50)
 
@@ -99,6 +99,15 @@ Decision: `queryStyle: "auto"` — joined rules only when the form has no area y
 
 **Top-up:** now off by default (owner). The joined test ran with it off: no basic-search cost; solar showed 26 and the
 note "Press Show more".
+
+## 3c. Owner's CEO request (26 Nov, $2.49)
+
+CEO / COO / VP calibre, apparel or textile, activewear / athleisure / sportswear in their career, Sri Lankans in
+Sri Lanka or anywhere. The free check first found 5 defects (industry "not apparel", location, titles, main criterion,
+fake client name); all fixed with tests (144 pass). Result: **30 people**, 114 s, 8.30 credits = $2.49; all Director
+to C-level, 20-40 years; 27 of 30 with activewear evidence (2 unknown); 27 live in Sri Lanka, 3 abroad
+(Bangladesh 2, Ethiopia 1). MAS 4, INQUBE 3, Ananta 2, Brandix 2.
+**Gap:** "lives in Sri Lanka" also lets in foreigners who live in Sri Lanka; nationality is never guessed from names.
 
 ## 4. Not covered
 

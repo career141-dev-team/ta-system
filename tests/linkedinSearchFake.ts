@@ -43,7 +43,7 @@ export function makePeople(n: number, over: Partial<FakePerson> = {}, start = 10
   }));
 }
 
-type AgentState = { id: string; query: string; reads: number; doneAfter: number; outcome: "succeeded" | "failed" | "never"; cancelled: boolean; charged: boolean; people: FakePerson[]; credits: number };
+type AgentState = { owner: string; id: string; query: string; reads: number; doneAfter: number; outcome: "succeeded" | "failed" | "never"; cancelled: boolean; charged: boolean; people: FakePerson[]; credits: number };
 
 export type FakeOptions = {
   people?: FakePerson[];
@@ -55,6 +55,8 @@ export type FakeOptions = {
   /** Column naming style for Agent output. */
   columnStyle?: "standard" | "variant" | "swapped" | "blanks";
   balance?: number;
+  /** Separate Crustdata accounts by key (two keys = two balances). Keys not listed use the single balance. */
+  keyBalances?: Record<string, number>;
   lockedFields?: string[];
   /** Force the next N calls of a path prefix to 429 (counts as calls). */
   force429?: { path: string; times: number; reset: number };
@@ -71,6 +73,13 @@ export function fakeCrustdata(clock: Clock, opts: FakeOptions = {}) {
   const hits: Record<string, number[]> = { agent: [], person: [] };
   const limits = { agent: opts.limits?.agent ?? 6, person: opts.limits?.person ?? 5 };
   let balance = opts.balance ?? 1000;
+  const keyBal: Record<string, number> = { ...(opts.keyBalances ?? {}) };
+  let who = ""; // the API key of the request being served
+  const bal = () => (who in keyBal ? keyBal[who] : balance);
+  const spend = (c: number) => {
+    if (who in keyBal) keyBal[who] -= c;
+    else balance -= c;
+  };
   let force = opts.force429 ? { ...opts.force429 } : null;
   let seq = 0;
   const sendHeader = opts.sendCreditHeader ?? true;
@@ -163,17 +172,18 @@ export function fakeCrustdata(clock: Clock, opts: FakeOptions = {}) {
       return r;
     };
     if (!/^Bearer .+/.test(init.headers.authorization ?? "")) return log(respond(401, { error: { type: "unauthorized", message: "bad key" } }));
+    who = init.headers.authorization.slice(7);
     if (init.headers["x-api-version"] !== "2025-11-01") return log(respond(400, { error: { type: "invalid_request", message: "version" } }));
     if (force && path.startsWith(force.path) && force.times > 0) {
       force.times--;
       return log(respond(429, { error: { type: "rate_limit_error", message: "Rate limit exceeded", metadata: [] } }, { "x-ratelimit-reset": String(force.reset) }));
     }
-    if (path === "/account/credits") return log(respond(200, { account: { credits: balance } }));
+    if (path === "/account/credits") return log(respond(200, { account: { credits: bal() } }));
 
     if (path === "/agent/searches" && init.method === "POST") {
       const lim = limited("agent");
       if (lim) return log(lim);
-      if (balance <= 0) return log(respond(402, { error: { type: "insufficient_credits", message: "Insufficient credits." } }));
+      if (bal() <= 0) return log(respond(402, { error: { type: "insufficient_credits", message: "Insufficient credits." } }));
       const key = init.headers["Idempotency-Key"];
       if (key && idem.has(key)) {
         const id = idem.get(key)!;
@@ -183,6 +193,7 @@ export function fakeCrustdata(clock: Clock, opts: FakeOptions = {}) {
       const n = m ? +m[1] : 30;
       const id = `41690-${(++seq).toString().padStart(4, "0")}`;
       searches.set(id, {
+        owner: who,
         id, query: body.query, reads: 0, doneAfter: opts.agentReadsUntilDone ?? 3, outcome: opts.agentOutcome ?? "succeeded",
         cancelled: false, charged: false, people: agentPeople.slice(0, n), credits: opts.agentCredits ?? 2.5,
       });
@@ -192,7 +203,7 @@ export function fakeCrustdata(clock: Clock, opts: FakeOptions = {}) {
     const read = path.match(/^\/agent\/searches\/([^/]+)$/);
     if (read && init.method === "GET") {
       const s = searches.get(decodeURIComponent(read[1]));
-      if (!s) return log(respond(404, { error: { type: "not_found", message: "no search" } }));
+      if (!s || (who in keyBal && s.owner !== who)) return log(respond(404, { error: { type: "not_found", message: "no search" } }));
       s.reads++;
       if (s.cancelled) return log(respond(200, { search_id: s.id, state: "cancelled", output: null, credits_used: { total_cost: 0 }, error: null }));
       if (s.outcome === "never" || s.reads < s.doneAfter) return log(respond(200, { search_id: s.id, state: "running", output: null, credits_used: null, error: null }));
@@ -200,7 +211,7 @@ export function fakeCrustdata(clock: Clock, opts: FakeOptions = {}) {
       const first = !s.charged;
       if (first) {
         s.charged = true;
-        balance -= s.credits;
+        spend(s.credits);
       }
       const headers: Record<string, string> = sendHeader ? { "x-credits-used": first ? String(s.credits) : "0" } : {};
       return log(respond(200, { search_id: s.id, query: s.query, state: "succeeded", created_at: "2026-11-26T09:00:00Z", output: agentOutput(s), credits_used: { agent_cost: s.credits * 0.7, search_cost: s.credits * 0.3, enrich_cost: 0, contact_cost: 0, total_cost: s.credits }, error: null }, headers));
@@ -215,7 +226,7 @@ export function fakeCrustdata(clock: Clock, opts: FakeOptions = {}) {
     if (path === "/person/search") {
       const lim = limited("person");
       if (lim) return log(lim);
-      if (balance <= 0) return log(respond(402, { error: { type: "insufficient_credits", message: "Insufficient credits." } }));
+      if (bal() <= 0) return log(respond(402, { error: { type: "insufficient_credits", message: "Insufficient credits." } }));
       const fields: string[] = body.fields ?? [];
       const locked = (opts.lockedFields ?? []).filter((l) => fields.some((f) => f === l || f.startsWith(l + ".")));
       if (locked.length) {
@@ -232,7 +243,7 @@ export function fakeCrustdata(clock: Clock, opts: FakeOptions = {}) {
       }
       const page = list.slice(0, body.limit ?? 20);
       const credits = Math.round(page.length * 0.03 * 1000) / 1000;
-      balance -= credits;
+      spend(credits);
       const withCompany = fields.includes("experience.employment_details.current");
       const profiles = page.map((p) => ({
         crustdata_person_id: p.id,

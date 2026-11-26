@@ -124,6 +124,9 @@ function savedFromRow(id: string, r: ResultRow, now: string, prev?: SavedProfile
 export function savedMatchScore(p: SavedProfile, f: StandardForm): number {
   if (p.optedOut) return -1;
   if (f.location.country && (p.country ?? "").toLowerCase() !== f.location.country.toLowerCase()) return -1;
+  // "Sri Lankans abroad / anywhere": a saved profile holds no education, so only people living in that home country
+  // count as a free match; Sri Lankans abroad come from the paid search, which checks where they studied.
+  if (f.location.studiedIn && (p.country ?? "").toLowerCase() !== f.location.studiedIn.toLowerCase()) return -1;
   const company = p.currentCompany.toLowerCase();
   if (f.excludeCompanies.some((e) => e && company.includes(e.toLowerCase().split(/\s+/)[0]))) return -1;
   let s = 0;

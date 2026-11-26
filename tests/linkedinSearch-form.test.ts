@@ -370,3 +370,52 @@ test("auto query style (paid test 26 Nov): joined only without area years and mu
   assert.equal(agentQuery(simple, undefined, "auto").query, agentQuery(simple, undefined, "joined").query);
   assert.equal(agentQuery(area, undefined, "auto").query, agentQuery(area, undefined, "full").query);
 });
+
+// ---- Owner's CEO request (26 Nov): activewear CEO / COO / VP, Sri Lankans in Sri Lanka or anywhere -------------
+
+const ceo = () =>
+  formFromRules({
+    text: readFileSync(new URL("./fixtures/linkedinSearch/ceo-request.txt", import.meta.url), "utf8"),
+    taNote: readFileSync(new URL("./fixtures/linkedinSearch/ceo-note.txt", import.meta.url), "utf8"),
+  });
+
+test("CEO request: 'apparel or textile industry' is both, never 'not apparel'", () => {
+  const f = ceo();
+  assert.equal(f.industry, "apparel or textile manufacturers");
+  assert.deepEqual(f.notIndustries, []);
+  assert.ok(!codes(f).includes("clash_jd_ta_industry"));
+});
+
+test("CEO request: 'either in Sri Lanka or anywhere outside' → Sri Lankans anywhere, no question", () => {
+  const f = ceo();
+  assert.deepEqual(f.location, { country: null, city: null, studiedIn: "Sri Lanka" });
+  assert.deepEqual(codes(f), []);
+  const q = agentQuery(f, undefined, "auto").query;
+  assert.match(q, /either lives in Sri Lanka, or lives in another country and studied at a school or university in Sri Lanka/);
+  assert.doesNotMatch(q, /lives in Bangladesh/);
+});
+
+test("CEO request: COO / CEO / VP calibre, general management titles incl. marketing and operations", () => {
+  const f = ceo();
+  assert.deepEqual([f.levelLow, f.levelHigh], ["director", "c_level"]);
+  assert.equal(f.role, "Chief Executive Officer");
+  for (const t of ["Chief Executive Officer", "Chief Operating Officer", "Managing Director", "Vice President Operations", "Vice President Marketing"]) {
+    assert.ok(f.titles.includes(t), t);
+  }
+  assert.ok(!f.titles.some((t) => /Production Officer|\(CEO\)/.test(t)));
+});
+
+test("CEO request: the TA's main criterion is the must-have (career activewear / athleisure / sportswear)", () => {
+  const f = ceo();
+  assert.equal(f.mustHaves.length, 1);
+  assert.match(f.mustHaves[0], /activewear or athleisure wear or sportswear experience/i);
+});
+
+test("CEO request: 'Leading Apparel Manufacturing …' is a description, not a company to exclude", () => {
+  assert.deepEqual(ceo().excludeCompanies, []);
+});
+
+test("CEO-style COO JD with a GM / Director target still searches only the target level", () => {
+  const f = formFromRules({ text: "COO - apparel group, Sri Lanka, 18+ years\nLooking for GM Operations / Directors who can step up" });
+  assert.ok(!agentQuery(f).query.includes("Chief Operating Officer"));
+});

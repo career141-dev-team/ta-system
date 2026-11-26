@@ -127,6 +127,8 @@ export function expandShortForms(s: string): string {
  */
 export type FunctionDef = { key: string; words: RegExp; core: string[]; side?: string[] };
 export const FUNCTIONS: FunctionDef[] = [
+  // CEO / COO / MD: the whole business, not one function (owner's CEO request, 26 Nov).
+  { key: "general_management", words: /\b(chief executive officer|ceo|chief operating officer|coo|managing director|country manager|general management)\b/i, core: ["Operations"] },
   { key: "quantity_surveying", words: /\b(quantity survey\w*|qs|cost engineer\w*|estimat\w+)\b/i, core: ["Quantity Surveyor", "Cost Engineer"] },
   { key: "ehs", words: /\b(ehs|hse|she|health\s*(&|and)\s*safety|environment\w*,?\s*health|safety)\b/i, core: ["EHS", "HSE", "Health & Safety"] },
   { key: "renewable_engineering", words: /\b(solar|renewable|pv|photovoltaic|green energy|wind energy)\b/i, core: ["Solar PV Engineer", "Renewable Energy Engineer", "Electrical Engineer"] },
@@ -219,6 +221,8 @@ export const QUAL_RE = new RegExp(`\\b(${QUALIFICATIONS.join("|")})\\b`, "g");
 /** Industries with look-alikes to leave out (section 4.1). Order: most specific first. */
 export type IndustryDef = { key: string; words: RegExp; name: string; not: string[] };
 export const INDUSTRIES: IndustryDef[] = [
+  // "apparel or textile industry" means both — never "not apparel" (owner's CEO request, 26 Nov).
+  { key: "apparel_textile", words: /\b(apparel|garments?)\b[^.\n]{0,20}\b(or|and|\/|&)\s*(textiles?|fabrics?)\b|\b(textiles?|fabrics?)\b[^.\n]{0,20}\b(or|and|\/|&)\s*(apparel|garments?)\b/i, name: "apparel or textile manufacturers", not: [] },
   { key: "fabric", words: /\b(fabrics?|textile mills?|textiles?|knit fabric|woven fabric|dyeing)\b/i, name: "fabric / textile manufacturers", not: ["garment / apparel makers"] },
   { key: "activewear", words: /\b(activewear|active wear|sportswear|athleisure)\b/i, name: "apparel manufacturers making activewear / sportswear", not: ["intimates / lingerie makers"] },
   { key: "intimates", words: /\b(intimates?|lingerie|intimate apparel)\b/i, name: "apparel manufacturers making intimates / lingerie", not: ["activewear makers"] },

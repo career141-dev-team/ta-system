@@ -28,7 +28,7 @@ Nothing here is wired yet: no Convex functions, tables, pages or settings use it
 | Interface | Where | Wire it to |
 |---|---|---|
 | `HttpFetch` | `createCrustdataClient({ fetch })` | `globalFetch` (Convex actions have `fetch`) |
-| `apiKey` | `createCrustdataClient({ apiKey })` | `process.env.CRUSTDATA_API_KEY` — **server settings only, set through the release pipeline**. Never the owner's test key. |
+| `apiKey` / `apiKeys` | `createCrustdataClient({ apiKeys: [k1, k2] })` | `process.env.CRUSTDATA_API_KEY` and optional `CRUSTDATA_API_KEY_2` — **server settings only, set through the release pipeline**. Never the owner's test key. Owner (26 Nov): when the first account runs out (402, or below the reserve), new paid calls use the next key; a running search stays on the key that started it. `onKeySwitch(index, reason)` → log it. Two keys help only when they are on **different Crustdata accounts** (keys on one account share one balance). |
 | `RateGate` | `createCrustdataClient({ gate })` | **A Convex-table version** (one row per call, `by_bucket_time`): several actions run at once, so the in-memory gate is not enough in production. Limits in `LIMITS`: 6 Agent starts / min, 5 normal searches / min, 300 reads / min. |
 | `onSpend` | client option | `spendToStore(store)` → insert into **`liSpend`** (kind, credits, usd, crustdataRef, userId, searchId, openingId). |
 | `onRaw` | client option | Insert raw responses into a raw-response table; **delete after 30 days** (plan, section 9). |

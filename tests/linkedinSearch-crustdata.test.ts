@@ -171,3 +171,45 @@ test("network error is retried", async () => {
   const r = await client.personSearch({ limit: 1 }, "find_one");
   assert.equal(r.profiles.length, 1);
 });
+
+// ---- Owner (26 Nov): "I have another API key; use it once this one finishes" --------------------------------
+
+test("two keys: when the first account runs out (402), the next paid call uses the second key", async () => {
+  const clock = fakeClock();
+  const fake = fakeCrustdata(clock, { keyBalances: { first: 2, second: 100 }, agentCredits: 2.5 });
+  const switches: string[] = [];
+  const client = createCrustdataClient({ apiKeys: ["first", "second"], fetch: fake.fetch, clock, onKeySwitch: (i, why) => void switches.push(`${i}:${why}`) });
+  const a = await client.runAgent("Find 30 people. a", "k1"); // first key: 2 credits, the search costs 2.5 → goes below 0
+  assert.equal(a.status, "succeeded");
+  const b = await client.runAgent("Find 30 people. b", "k2"); // first key now refused (402) → second key
+  assert.equal(b.status, "succeeded", "the search started and was read with the second key");
+  assert.equal(switches.length, 1);
+  assert.match(switches[0], /^1:/);
+  const starts = fake.calls.filter((c) => c.path === "/agent/searches");
+  assert.deepEqual(starts.map((c) => [c.headers.authorization, c.status]), [["Bearer first", 202], ["Bearer first", 402], ["Bearer second", 202]]);
+});
+
+test("two keys: the reserve check moves to the second key instead of stopping", async () => {
+  const clock = fakeClock();
+  const fake = fakeCrustdata(clock, { keyBalances: { first: 30, second: 100 } });
+  const client = createCrustdataClient({ apiKeys: ["first", "second"], fetch: fake.fetch, clock, reserveCredits: 33.4 });
+  const r = await client.runAgent("Find 30 people. c", "k3");
+  assert.equal(r.status, "succeeded");
+  assert.ok(fake.calls.filter((c) => c.path === "/agent/searches").every((c) => c.headers.authorization === "Bearer second"));
+});
+
+test("two keys: when both run out, it stops and reports", async () => {
+  const clock = fakeClock();
+  const fake = fakeCrustdata(clock, { keyBalances: { first: 0, second: 0 } });
+  const client = createCrustdataClient({ apiKeys: ["first", "second"], fetch: fake.fetch, clock });
+  await assert.rejects(client.startAgent("Find 30 people.", "k"), (e: CrustdataError) => e.code === "low_balance");
+});
+
+test("two keys: a search started on the first key is read and cancelled with the first key", async () => {
+  const clock = fakeClock();
+  const fake = fakeCrustdata(clock, { keyBalances: { first: 50, second: 50 }, agentReadsUntilDone: 50 });
+  const client = createCrustdataClient({ apiKeys: ["first", "second"], fetch: fake.fetch, clock });
+  const r = await client.runAgent("Find 30 people. d", "k4", { timeoutSeconds: 30 });
+  assert.equal(r.status, "timeout");
+  assert.ok(fake.calls.filter((c) => c.path.startsWith("/agent/searches/")).every((c) => c.headers.authorization === "Bearer first"));
+});

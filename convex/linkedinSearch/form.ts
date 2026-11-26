@@ -233,6 +233,7 @@ function tidyTitle(t: string): string {
   s = s.replace(/\b[A-Z]{4,}\b/g, (w) => (/^(CAPEX|OPEX|FMCG|NEBOSH)$/.test(w) ? w : titleCase(w)));
   s = expandShortForms(s);
   // Titles keep EHS / HSE short (the long form is for the query text).
+  s = s.replace(/\s*\((CEO|COO|CFO|CMO|CTO|MD|GM|VP|HOD|AGM|DGM)\)/gi, "");
   return s.replace(/EHS \(Environment, Health & Safety\)/g, "EHS").replace(/HSE \(Health, Safety & Environment\)/g, "HSE");
 }
 
@@ -291,6 +292,7 @@ function areaName(area: string | null, industryKey: string | null): string | nul
 // ---- Location ----------------------------------------------------------------------------
 
 const SL_PEOPLE = /\bsri\s*lankans?\b/i;
+const ANYWHERE = /\b(anywhere|any country|worldwide|globally|either in sri lanka or|in sri lanka or (any(where)?\s+)?(outside|abroad|overseas)|sri lanka or abroad|sri lanka and (outside|abroad|overseas))\b/i;
 const OVERSEAS = /\b(overseas|abroad|foreign|outside sri lanka|expats?)\b/i;
 const EXPLICIT_LOC = /\b(only\s+(in|from)|profiles?\s+only\s+from|based\s+in|living\s+in|lives\s+in|resid\w+\s+in|located\s+in|from)\s+(the\s+)?([A-Za-z ]{3,30})/i;
 
@@ -310,6 +312,13 @@ function readLocation(text: string, lines: string[], taText: string, opening?: S
   const slPeople = SL_PEOPLE.test(text);
 
   // Sri Lankans abroad: "Sri Lankans in the UAE", "Sri Lankans overseas".
+  // "Sri Lankans … either in Sri Lanka or anywhere outside" → Sri Lankans in any country (owner's CEO request, 26 Nov).
+  if (SL_PEOPLE.test(text) && ANYWHERE.test(text)) {
+    out.studiedIn = HOME_COUNTRY;
+    out.named = ["Sri Lankans anywhere (Sri Lanka or abroad)"];
+    out.notes.push("Searching Sri Lankans anywhere: living in Sri Lanka, or abroad and studied in Sri Lanka (never guessed from names).");
+    return out;
+  }
   const lineWithSl = lines.filter((l) => SL_PEOPLE.test(l));
   for (const l of lineWithSl) {
     const abroad = placesIn(l).filter((p) => p.country !== HOME_COUNTRY);
@@ -420,7 +429,8 @@ function readExclusions(text: string, client: string | null, req: SearchRequest)
   const out: string[] = [];
   if (client) out.push(client);
   const kvClient = kv(splitLines(text), /^(company|client|employer|organi[sz]ation)$/i);
-  if (kvClient) out.push(cleanCompany(kvClient));
+  // "COMPANY : Leading Apparel Manufacturing – Activewear …" is a description of a hidden client, not a name.
+  if (kvClient && !/^(leading|a|an|reputed|well[- ]known|large|top|our client|confidential|prestigious|renowned|one of)\b/i.test(kvClient)) out.push(cleanCompany(kvClient));
   if (req.opening?.client) out.push(cleanCompany(req.opening.client));
   for (const m of text.matchAll(/\bat\s+([A-Z][\w&.'’]*(?:\s+[A-Z&][\w&.'’]*){0,5})\s*\(?(?:[Pp]vt|PVT|[Pp]rivate)\)?\s*(?:[Ll]td|LTD|[Ll]imited)\b/g)) out.push(cleanCompany(m[1]));
   const NAME = "[A-Za-z][\\w&.'’-]*(?:\\s+[A-Z][\\w&.'’-]*){0,3}";
@@ -477,10 +487,22 @@ const LEVEL_TITLE: Record<Level, (core: string) => string[]> = {
   c_level: (c) => (/finance/i.test(c) ? ["Chief Financial Officer"] : /operations|manufacturing/i.test(c) ? ["Chief Operating Officer"] : [`Chief ${c} Officer`]),
 };
 
-function closeTitles(role: string, fnKey: string, low: Level | null, high: Level | null, taTitles: string[]): string[] {
+/** CEO / COO / MD / VP titles inside the level window, plus "VP / Director <X>" for the backgrounds the TA names. */
+function generalTitles(low: Level, high: Level, sideText: string): string[] {
+  const inWin = (l: Level) => levelIndex(l) >= levelIndex(low) && levelIndex(l) <= levelIndex(high);
+  const out: string[] = [];
+  if (inWin("c_level")) out.push("Chief Executive Officer", "Chief Operating Officer", "Managing Director");
+  const sides = ["Operations", ...FUNCTIONS.filter((x) => x.key !== "general_management" && x.key !== "planning" && x.words.test(sideText)).map((x) => x.core[0])];
+  if (inWin("director")) for (const s of [...new Set(sides)].slice(0, 4)) out.push(`Vice President ${s}`, `Director of ${s}`);
+  if (inWin("gm")) out.push("General Manager Operations");
+  return out;
+}
+
+function closeTitles(role: string, fnKey: string, low: Level | null, high: Level | null, taTitles: string[], sideText = ""): string[] {
   const out = [role, ...taTitles];
   const fn = FUNCTIONS.find((f) => f.key === fnKey);
-  if (fn && low && high) {
+  if (fnKey === "general_management" && low && high) out.push(...generalTitles(low, high, sideText));
+  else if (fn && low && high) {
     const span = LEVELS.slice(levelIndex(low), levelIndex(high) + 1).slice(0, 4);
     for (const lvl of span) {
       for (const core of fn.core.slice(0, 2)) out.push(...LEVEL_TITLE[lvl](core.replace(/\s+Engineer$/, " Engineer")));
@@ -655,7 +677,9 @@ export function formFromRules(req: SearchRequest): StandardForm {
   if (jdTitle && (!taLevels.length || taLevels.includes(f.signals.jdTitleLevel as Level))) f.role = jdTitle;
   else if (f.levelHigh && coreTitle) f.role = LEVEL_TITLE[f.levelHigh](coreTitle).slice(-1)[0];
   else f.role = jdTitle ?? taTitles[0] ?? "";
-  f.titles = f.role ? closeTitles(f.role, f.function, f.levelLow, f.levelHigh, taTitles) : taTitles.slice(0, MAX_TITLES);
+  f.titles = f.role ? closeTitles(f.role, f.function, f.levelLow, f.levelHigh, taTitles, taText) : taTitles.slice(0, MAX_TITLES);
+  // A general role whose target is below C-level drops the C-level JD title ("COO JD, looking for GM / Directors").
+  if (f.function === "general_management" && f.levelHigh && f.levelHigh !== "c_level") f.titles = f.titles.filter((t) => !/^chief\b/i.test(t));
 
   // Location.
   const loc = readLocation(kept + "\n" + taKept, lines.concat(splitLines(taKept)), taText, req.opening);
@@ -664,7 +688,7 @@ export function formFromRules(req: SearchRequest): StandardForm {
   f.signals.sriLankansReadAsHome = loc.sriLankansReadAsHome;
   // Owner's rule (26 Nov): default is Sri Lanka or Sri Lankans; follow other places / nationalities only when asked.
   f.signals.localsAsked = LOCALS.test(norm0 + "\n" + (req.taNote ?? ""));
-  if (!f.location.country && !loc.overseasNoCountry) {
+  if (!f.location.country && !f.location.studiedIn && !loc.overseasNoCountry) {
     f.location.country = HOME_COUNTRY;
     f.signals.locationDefault = "home";
     f.notes.push("No location given — searching people who live in Sri Lanka (default).");
@@ -682,14 +706,25 @@ export function formFromRules(req: SearchRequest): StandardForm {
 
   // Must-haves (max 3) and nice-to-haves.
   const musts: string[] = [];
+  const taMusts: string[] = [];
   const nices: string[] = [];
   const isFieldLine = (l: string) =>
     /\byears?\b/i.test(expandShortForms(l)) && !/\b(experience in|exposure to)\b.*\b(and|,)\b/i.test(l) ? true : /\b(sri lanka|location|based|lives|overseas)\b/i.test(l) || SL_PEOPLE.test(l);
-  for (const l of [...taLineList, ...lines.filter((x) => !taSet.has(x))]) {
+  // The TA's note is often one paragraph: read it sentence by sentence.
+  const taSentences = taLineList.flatMap((x) => x.split(/(?<=[.!?])\s+(?=[A-Z])/));
+  for (const x of taSentences) taSet.add(x);
+  for (const l of [...taSentences, ...lines.filter((x) => !taSet.has(x))]) {
     if (l === titleLine || EDUCATION_LINE.test(l) || QUAL_RE.test(l) || (QUAL_RE.lastIndex = 0)) continue;
     if (NICE_LINE.test(l)) {
       if (l.split(/\s+/).length <= 4 || /:$/.test(l)) continue;
       nices.push(capFirst(l.replace(/[.;]+$/, "")));
+      continue;
+    }
+    // "The main criteria here is they should be having activewear … experience" → the TA's must-have.
+    const crit = taSet.has(l) ? l.match(/\b(?:main criteri\w*|key requirement|must)\b[^.]*?\b(?:should (?:be )?hav(?:e|ing)|must (?:have|be having)|is that they have|is)\s+([^.]{6,160})/i) : null;
+    if (crit) {
+      const m = cleanMust(crit[1].replace(/^(they|the person|candidates?)\s+(should\s+)?(be\s+)?(having|have)\s+/i, ""));
+      if (m) taMusts.push(m);
       continue;
     }
     if (taSet.has(l) && /^only\b/i.test(l) && !isFieldLine(l) && !/designation/i.test(l)) {
@@ -704,6 +739,12 @@ export function formFromRules(req: SearchRequest): StandardForm {
   if (yHit?.area && !f.areaYears && yHit.area.split(/\s+/).length >= 3 && !industryOf(yHit.area)) {
     musts.unshift(`Experience in ${yHit.area.replace(/\s+for this position.*$/i, "").replace(/[,.]+$/, "")}`);
   }
+  // The TA's own criterion wins over a JD must-have on the same subject ("activewear").
+  const MUST_STOP = /^(experience|strong|proven|hands|having|their|career|knowledge|ability|manufacturing|management)$/i;
+  const keyWords = (m: string) => m.toLowerCase().split(/[^a-z]+/).filter((w) => w.length >= 6 && !MUST_STOP.test(w));
+  const taKeys = new Set(taMusts.flatMap(keyWords));
+  const jdMusts = musts.filter((m) => !keyWords(m).some((w) => taKeys.has(w)));
+  musts.splice(0, musts.length, ...taMusts, ...jdMusts);
   const seenM = new Set<string>();
   const uniqM = musts.filter((m) => !seenM.has(m.toLowerCase()) && (seenM.add(m.toLowerCase()), true));
   f.mustHaves = uniqM.slice(0, MAX_MUST);

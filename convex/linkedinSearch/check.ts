@@ -44,7 +44,7 @@ export function checkForm(f: StandardForm, accepted: CheckQuestion["code"][] = [
   if (!f.role && f.titles.length === 0 && f.currentCompanies.length === 0) {
     q.push({ code: "missing_role", field: "role", question: "Which role or job title should we search for?" });
   }
-  if (!f.location.country) {
+  if (!f.location.country && !f.location.studiedIn) {
     q.push({
       code: "missing_location",
       field: "location",
@@ -112,7 +112,7 @@ export function checkForm(f: StandardForm, accepted: CheckQuestion["code"][] = [
       field: "location",
       question: `Two locations named (${named.join(" / ")}). One search uses one location. Which first? (The other can run as a second search.)`,
       options: s.overseasNoCountry
-        ? [`Lives in ${HOME_COUNTRY}`, "Sri Lankans living in Bangladesh", "Sri Lankans living in the UAE", "Both — two searches"]
+        ? [`Lives in ${HOME_COUNTRY}`, "Sri Lankans anywhere (Sri Lanka or abroad)", "Sri Lankans living in Bangladesh", "Sri Lankans living in the UAE"]
         : [...named, "Both — two searches"],
     });
   }
@@ -201,6 +201,8 @@ const FAMILY: Record<string, string> = {
 };
 function sameFamily(a: string, b: string): boolean {
   // "renewable" is the parent of both solar kinds; "apparel" of activewear; "manufacturing" of heavy manufacturing.
+  // "apparel or textile" is the parent of apparel, activewear, intimates and fabric.
+  if (a === "apparel_textile" || b === "apparel_textile") return [a, b].every((x) => ["apparel_textile", "apparel", "activewear", "intimates", "fabric"].includes(x));
   if (a === "renewable" || b === "renewable") return /solar|renewable/.test(a) && /solar|renewable/.test(b);
   if (a === "apparel" || b === "apparel") return FAMILY[a]?.startsWith("apparel") && FAMILY[b]?.startsWith("apparel");
   if (a === "manufacturing" || b === "manufacturing") return true;
@@ -233,6 +235,7 @@ export function answerToEdits(f: StandardForm, code: CheckQuestion["code"], answ
     case "missing_location":
     case "clash_two_locations":
     case "overseas_where": {
+      if (/sri lankans anywhere/i.test(a)) return { location: { country: null, city: null, studiedIn: HOME_COUNTRY } };
       const abroad = a.match(/sri lankans (?:living )?in (?:the )?(.+)$/i);
       if (abroad) {
         const country = abroad[1].trim().replace(/^uae$/i, "United Arab Emirates");

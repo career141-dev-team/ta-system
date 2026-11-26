@@ -14,8 +14,8 @@ Design source: owner's Full Plan v1.2 (25 Nov 2026) and `convex/linkedinSearch/R
 
 ## How it works now
 
-1. `form.ts:formFromRules(request)` - rules only, deterministic. Normalises text; takes out salary, benefits, working terms, notice period, gender, age, religion, marital status, nationality, ethnicity, soft skills and chat asks (`REMOVALS`, segment-based so a one-line request keeps its role / place / years). Reads title (`readTitle`, `cutTitle`), function (`FUNCTIONS`), target level (TA's own lines win over the JD title), years (TA "strong" lines - caps / must / only - win), years in an area (`areaName`), industry + look-alikes (`INDUSTRIES`), must-haves (max 3), exclusions (`readExclusions`, client from "Company:" lines and "(Pvt) Ltd"), split roles, fresh-graduate flag, qualifications (never sent; checked in the headline).
-2. Location default (owner, 26 Nov): no place -> lives in Sri Lanka; another country (also a JD job location) -> Sri Lankans living there (`studiedIn: "Sri Lanka"`); `LOCALS` words (locals, other nationality, any nationality) or type `india` -> everyone there. City is a preference only.
+1. `form.ts:formFromRules(request)` - rules only, deterministic. CEO / COO / MD titles map to function `general_management` (`vocab.ts`), whose close titles are CEO / COO / MD plus "Vice President / Director of <X>" for the backgrounds the TA names (`generalTitles`). "apparel or textile" is industry `apparel_textile` (both, no look-alike exclusion). A TA sentence like "the main criteria … should be having X" becomes the first must-have and drops JD must-haves on the same subject. Normalises text; takes out salary, benefits, working terms, notice period, gender, age, religion, marital status, nationality, ethnicity, soft skills and chat asks (`REMOVALS`, segment-based so a one-line request keeps its role / place / years). Reads title (`readTitle`, `cutTitle`), function (`FUNCTIONS`), target level (TA's own lines win over the JD title), years (TA "strong" lines - caps / must / only - win), years in an area (`areaName`), industry + look-alikes (`INDUSTRIES`), must-haves (max 3), exclusions (`readExclusions`, client from "Company:" lines and "(Pvt) Ltd"), split roles, fresh-graduate flag, qualifications (never sent; checked in the headline).
+2. Location default (owner, 26 Nov): no place -> lives in Sri Lanka; another country (also a JD job location) -> Sri Lankans living there (`studiedIn: "Sri Lanka"`); `LOCALS` words (locals, other nationality, any nationality) or type `india` -> everyone there. "Sri Lankans … in Sri Lanka or anywhere" (`ANYWHERE`) -> `country: null, studiedIn: "Sri Lanka"` = lives in Sri Lanka, or abroad and studied in Sri Lanka (no country filter, no question). City is a preference only.
 3. `form.ts:extractForm(request, {llm, cache})` - optional LLM (Haiku via `convex/lib/llm.ts`) fills only fixed-word fields (role, level, years, area, a known industry) and adds must-haves up to 3 (`aiMustHaves`, removable by the TA); extras go to `suggestedMustHaves`. Answers are cached per text (`LlmCache`) so the same JD gives the same form.
 4. `formKey(form)` = `c141-` + SHA-256 of the search-relevant fields -> Crustdata `Idempotency-Key` and saved-search key.
 5. `check.ts:checkForm(form, accepted)` - free. Questions: missing role / level / years; clashes (level vs years, JD vs TA industry, two locations, overseas without a country); too broad; too many must-haves; split roles. Warnings: JD title vs target, default location, fresh graduates, removed items, qualifications. `answerToEdits` turns an answer button into form edits.
@@ -33,7 +33,7 @@ Today: `store.ts:memoryStore()` only (tests). `Store` interface maps to plan tab
 
 ## Backend wiring
 
-`crustdata.ts:createCrustdataClient({ apiKey, fetch, gate, onSpend, onRaw, reserveCredits })`. Base `https://api.crustdata.com`, header `x-api-version: 2025-11-01`. Endpoints: `POST /agent/searches` (+ `Idempotency-Key`), `GET /agent/searches/{id}`, `POST /agent/searches/{id}/cancel`, `POST /person/search`, `GET /account/credits`. Limits (`LIMITS`): 6 Agent starts / min, 5 normal searches / min, 300 reads / min - production needs a Convex-table `RateGate`. Env name: `CRUSTDATA_API_KEY` (server settings only; never a value in code). `onSpend` -> `engine.ts:spendToStore`.
+`crustdata.ts:createCrustdataClient({ apiKey, fetch, gate, onSpend, onRaw, reserveCredits })`. Base `https://api.crustdata.com`, header `x-api-version: 2025-11-01`. Endpoints: `POST /agent/searches` (+ `Idempotency-Key`), `GET /agent/searches/{id}`, `POST /agent/searches/{id}/cancel`, `POST /person/search`, `GET /account/credits`. Limits (`LIMITS`): 6 Agent starts / min, 5 normal searches / min, 300 reads / min - production needs a Convex-table `RateGate`. Env names: `CRUSTDATA_API_KEY` and optional `CRUSTDATA_API_KEY_2` (server settings only; never a value in code). `apiKeys: [k1, k2]`: when an account returns 402 or is below `reserveCredits`, new paid calls move to the next key (`onKeySwitch`); a running search is read and cancelled with the key that started it (`searchKey`). Keys on one Crustdata account share one balance, so a second key helps only on a second account. `onSpend` -> `engine.ts:spendToStore`.
 
 ## Access and roles
 
@@ -50,6 +50,7 @@ Planned capabilities `linkedin.search` (run searches) and `linkedin.admin` (sett
 
 ## Known quirks, gaps and unverified items
 
+- "Only Sri Lankans" with people living in Sri Lanka also admits foreigners who live there (nationality is never guessed from names); open owner decision whether to require "studied in Sri Lanka" for everyone.
 - Agent Search is beta; price and output shape may change (columns are read by meaning in `results.ts:columnRole`).
 - Normal search costs 0.03 credits a person (basic) and 0.13 with the employer (`normalSearchWithCompany`, on) - measured 26 Nov. One unexplained 0.106 / person bill that day.
 - Joined-rules quality rests on one paid search per kind (26 Nov) (unverified at scale).
@@ -65,8 +66,8 @@ Run `node tests/run.mjs linkedinSearch` (fake Crustdata, no spend), `npx tsc --n
 - 25-26 Nov 2026: engine built outside the repo by the owner with Claude; 2 rounds of adversarial checks (31 defects fixed); 4 paid Crustdata tests; owner decisions recorded in the README section 4. Moved into the repo in this pull request.
 
 <!-- skill-meta
-verified-commit: 147a2af1
-verified-hash: 5a421e380680872d3a0dc2258297196ca4b48939
+verified-commit: d8b9c8b2
+verified-hash: 765dba16f2128a194e7867eca3db1de83aa227ae
 verified-date: 2026-11-26
 sources:
   convex/linkedinSearch/**

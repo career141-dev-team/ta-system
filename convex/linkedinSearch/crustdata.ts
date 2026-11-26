@@ -109,7 +109,11 @@ export type PersonSearchResult = {
 };
 
 export type CrustdataDeps = {
-  apiKey: string;
+  /** One key, or several in order (owner, 26 Nov): when an account runs out, new paid calls use the next key. */
+  apiKey?: string;
+  apiKeys?: string[];
+  /** Told when the client moves to the next key (index, reason). Keys are never passed to it. */
+  onKeySwitch?: (index: number, reason: string) => void;
   fetch: HttpFetch;
   clock?: Clock;
   baseUrl?: string;
@@ -134,15 +138,26 @@ export function createCrustdataClient(deps: CrustdataDeps) {
   const price = deps.creditPriceUSD ?? 0.3;
   const maxRetries = deps.maxRetries ?? 4;
   const charged = new Set<string>();
+  const keys = (deps.apiKeys?.length ? deps.apiKeys : [deps.apiKey ?? ""]).filter(Boolean);
+  if (!keys.length) throw new Error("createCrustdataClient: no API key");
+  let cur = 0;
+  // A search is read and cancelled with the key (account) that started it.
+  const searchKey = new Map<string, number>();
+  const nextKey = (reason: string) => {
+    if (cur >= keys.length - 1) return false;
+    cur++;
+    deps.onKeySwitch?.(cur, reason);
+    return true;
+  };
 
-  async function raw(method: string, path: string, bucket: Bucket, body?: unknown, extra?: Record<string, string>) {
+  async function raw(method: string, path: string, bucket: Bucket, body?: unknown, extra?: Record<string, string>, keyIndex = cur) {
     let attempt = 0;
     let sendBody = body as Record<string, unknown> | undefined;
     const skipped: string[] = [];
     for (;;) {
       await gate.acquire(bucket);
       const headers: Record<string, string> = {
-        authorization: `Bearer ${deps.apiKey}`,
+        authorization: `Bearer ${keys[keyIndex]}`,
         "content-type": "application/json",
         "x-api-version": API_VERSION,
         ...(extra ?? {}),
@@ -209,21 +224,35 @@ export function createCrustdataClient(deps: CrustdataDeps) {
     await deps.onSpend?.({ kind, credits, usd: Math.round(credits * price * 10000) / 10000, crustdataRef: ref, estimated, meta });
   }
 
-  async function balance(): Promise<number | null> {
-    const { json } = await raw("GET", "/account/credits", "read");
+  async function balance(keyIndex = cur): Promise<number | null> {
+    const { json } = await raw("GET", "/account/credits", "read", undefined, undefined, keyIndex);
     const acct = (json.account ?? json) as { credits?: number };
     return typeof acct.credits === "number" ? acct.credits : null;
   }
 
   async function guardReserve(estimate: number) {
     if (!deps.reserveCredits) return;
-    const left = await balance();
+    let left = await balance();
+    // Below the reserve on this key → try the next key before stopping.
+    while (left != null && left - estimate < deps.reserveCredits && nextKey(`reserve reached (${left.toFixed(1)} credits left)`)) left = await balance();
     if (left != null && left - estimate < deps.reserveCredits) {
       throw new CrustdataError(
         "reserve",
         0,
         `Stopped before a paid call: ${left.toFixed(1)} credits left, ${deps.reserveCredits} are kept in reserve.`,
       );
+    }
+  }
+
+  /** A paid call: on 402 (this account is out of credit) move to the next key and try again. */
+  async function paid<T>(call: () => Promise<T>): Promise<T> {
+    for (;;) {
+      try {
+        return await call();
+      } catch (e) {
+        if (e instanceof CrustdataError && e.code === "low_balance" && nextKey("account out of credit (402)")) continue;
+        throw e;
+      }
     }
   }
 
@@ -251,17 +280,19 @@ export function createCrustdataClient(deps: CrustdataDeps) {
     async startAgent(query: string, idempotencyKey: string): Promise<{ searchId: string; state: string }> {
       if (query.length < 1 || query.length > 10_000) throw new CrustdataError("bad_request", 0, "Agent query must be 1–10,000 characters.");
       await guardReserve(AGENT_ESTIMATE_CREDITS);
-      const { json } = await raw("POST", "/agent/searches", "agent_start", { query }, { "Idempotency-Key": idempotencyKey });
-      return { searchId: String(json.search_id), state: String(json.state ?? "running") };
+      const { json } = await paid(() => raw("POST", "/agent/searches", "agent_start", { query }, { "Idempotency-Key": idempotencyKey }));
+      const searchId = String(json.search_id);
+      searchKey.set(searchId, cur);
+      return { searchId, state: String(json.state ?? "running") };
     },
 
     async readAgent(searchId: string): Promise<AgentRead> {
-      const { json, res } = await raw("GET", `/agent/searches/${encodeURIComponent(searchId)}`, "read");
+      const { json, res } = await raw("GET", `/agent/searches/${encodeURIComponent(searchId)}`, "read", undefined, undefined, searchKey.get(searchId) ?? cur);
       return parseRead(json, res);
     },
 
     async cancelAgent(searchId: string): Promise<void> {
-      await raw("POST", `/agent/searches/${encodeURIComponent(searchId)}/cancel`, "read", {});
+      await raw("POST", `/agent/searches/${encodeURIComponent(searchId)}/cancel`, "read", {}, undefined, searchKey.get(searchId) ?? cur);
     },
 
     /** Start, wait, read. Charges are logged once per search id (repeats with the same key cost $0). */
@@ -304,8 +335,9 @@ export function createCrustdataClient(deps: CrustdataDeps) {
     /** Normal search. `kind` decides the spend-log line. */
     async personSearch(body: Record<string, unknown>, kind: SpendKind, meta?: Record<string, unknown>): Promise<PersonSearchResult> {
       const limit = Number(body.limit ?? 20);
-      await guardReserve(limit * NORMAL_CREDITS_PER_PERSON);
-      const { json, res, skipped } = await raw("POST", "/person/search", "person_search", body);
+      const withEmployer = Array.isArray(body.fields) && (body.fields as string[]).some((f) => f.startsWith("experience"));
+      await guardReserve(limit * (withEmployer ? 0.13 : NORMAL_CREDITS_PER_PERSON));
+      const { json, res, skipped } = await paid(() => raw("POST", "/person/search", "person_search", body));
       const profiles = (json.profiles ?? json.data ?? json.results ?? []) as PersonProfile[];
       const header = headerCredits(res);
       const credits = header ?? profiles.length * NORMAL_CREDITS_PER_PERSON;

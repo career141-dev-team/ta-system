@@ -21,6 +21,9 @@ function yearsPhrase(min: number | null, max: number | null): string | null {
 /** Where the person lives — always the person, never the company's office. */
 export function locationPhrase(f: StandardForm): string | null {
   const { country, city, studiedIn } = f.location;
+  if (!country && studiedIn) {
+    return `either lives in ${studiedIn}, or lives in another country and studied at a school or university in ${studiedIn}`;
+  }
   if (!country) return null;
   if (studiedIn && studiedIn !== country) {
     return `currently lives in ${country} and studied at a school or university in ${studiedIn}`;
