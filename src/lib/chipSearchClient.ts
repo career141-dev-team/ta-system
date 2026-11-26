@@ -1,0 +1,61 @@
+/**
+ * The chip search service (services/chip-search) as the Database chat's first
+ * choice for plain-words searches (26 Nov 2026). On the app's Docker network
+ * only. Any failure - not started, still loading, slow, refused - answers
+ * null and the chat falls back to the old engine, so the chat never breaks
+ * because of it. C141_CHIP_SEARCH=off switches it off without a release.
+ */
+export type ChipHit = { id: string; score: number; why: string[]; ai: number | null; aiWhy: string };
+export type ChipAnswer = {
+  ok: true;
+  total: number;
+  removed: number;
+  hits: ChipHit[];
+  job: string[];
+  not: string[];
+  industry: string[];
+  level: number | null;
+  years: [number | null, number | null] | null;
+};
+
+const URL_DEFAULT = "http://chip-search:3311/search";
+const WAIT_MS = 45_000;
+
+// The chat sends the same words again (re-opening a past chat, the full pass after the quick one).
+const held = new Map<string, { at: number; a: ChipAnswer }>();
+const HOLD_MS = 10 * 60_000;
+
+export async function chipSearch(turns: string[]): Promise<ChipAnswer | null> {
+  if (process.env.C141_CHIP_SEARCH === "off") return null;
+  const key = turns.join("\n");
+  const h = held.get(key);
+  if (h && Date.now() - h.at < HOLD_MS) return h.a;
+  try {
+    const r = await fetch(process.env.C141_CHIP_SEARCH_URL || URL_DEFAULT, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ turns }),
+      signal: AbortSignal.timeout(WAIT_MS),
+    });
+    if (!r.ok) return null;
+    const a = (await r.json()) as ChipAnswer;
+    if (!a?.ok || !Array.isArray(a.hits)) return null;
+    if (held.size > 200) held.clear();
+    held.set(key, { at: Date.now(), a });
+    return a;
+  } catch {
+    return null;
+  }
+}
+
+/** The search's own 0-450 rank as the chat's 0-99 match figure. */
+export const chipScore = (rank: number) => Math.max(1, Math.min(99, Math.round(rank / 4)));
+
+/** One line on what the search read, for the chat's "I looked for" line. */
+export function chipReadLine(a: ChipAnswer): string {
+  const parts: string[] = [];
+  if (a.job.length) parts.push(a.job.slice(0, 4).join(", "));
+  if (a.years) parts.push(`${a.years[0] ?? 0}-${a.years[1] ?? "+"} years`);
+  if (a.industry.length) parts.push(a.industry.slice(0, 3).join(", "));
+  return parts.join(" · ");
+}

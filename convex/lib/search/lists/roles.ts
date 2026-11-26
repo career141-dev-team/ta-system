@@ -23,7 +23,7 @@ export const FAMILIES = [
   "Finance & Accounts", "Audit & Tax", "Banking & Financial Services", "Human Resources", "Sales",
   "Marketing", "Customer Service", "IT & Software", "Data & Analytics", "Engineering", "Construction & QS",
   "Healthcare", "Hospitality", "Administration", "Supply Chain & Logistics", "Apparel & Manufacturing",
-  "Trades & Services", "Education", "Legal", "Creative & Media", "General Management",
+  "Trades & Services", "Agriculture & Plantation", "Education", "Legal", "Creative & Media", "General Management",
 ] as const;
 
 export const ROLES: Role[] = [
@@ -61,6 +61,7 @@ export const ROLES: Role[] = [
   { id: "qa_engineer", label: "QA / Test Engineer", family: "IT & Software", titles: ["qa engineer", "quality assurance engineer", "software tester", "test engineer", "automation engineer", "sdet", "qa lead"], near: ["software_engineer", "business_analyst"] },
   { id: "devops", label: "DevOps / Cloud", family: "IT & Software", titles: ["devops engineer", "cloud engineer", "site reliability engineer", "sre", "platform engineer", "systems administrator", "system administrator"], near: ["software_engineer", "network_engineer"] },
   { id: "network_engineer", label: "Network / Infrastructure", family: "IT & Software", titles: ["network engineer", "network administrator", "infrastructure engineer", "it infrastructure", "security engineer", "cyber security analyst", "soc analyst"], near: ["devops", "it_support"] },
+  { id: "it_manager", label: "IT Manager / Head of IT / IT infrastructure manager / CIO", family: "IT & Software", titles: ["it manager", "head of it", "it head", "ict manager", "information technology manager", "it infrastructure manager", "cio", "chief information officer", "it director", "head of information technology", "systems manager"], near: ["it_support", "network_engineer", "project_manager"] },
   { id: "it_support", label: "IT Support / Helpdesk", family: "IT & Software", titles: ["it support", "it executive", "it officer", "helpdesk", "desktop support", "it technician", "it assistant", "it administrator"], near: ["network_engineer"] },
   { id: "business_analyst", label: "Business Analyst", family: "IT & Software", titles: ["business analyst", "ba", "product owner", "systems analyst", "functional consultant", "sap consultant", "erp consultant", "sap fico consultant"], near: ["project_manager", "data_analyst"] },
   { id: "project_manager", label: "Project Manager (IT / delivery)", family: "IT & Software", titles: ["project manager", "it project manager", "scrum master", "delivery manager", "program manager", "project coordinator", "pmo"], near: ["business_analyst"] },
@@ -101,7 +102,9 @@ export const ROLES: Role[] = [
   { id: "warehouse", label: "Warehouse / Stores", family: "Supply Chain & Logistics", titles: ["storekeeper", "store keeper", "warehouse assistant", "warehouse supervisor", "stores executive", "inventory controller", "warehouse manager", "stores clerk"], near: ["supply_chain"] },
   // Apparel
   { id: "merchandiser", label: "Merchandiser (apparel)", family: "Apparel & Manufacturing", titles: ["merchandiser", "assistant merchandiser", "senior merchandiser", "merchandising executive", "merchandising manager", "fabric merchandiser"], near: ["production_planner"] },
-  { id: "production_planner", label: "Production / Planning", family: "Apparel & Manufacturing", titles: ["production planner", "production executive", "production manager", "planning executive", "industrial engineer", "garment technologist", "production supervisor"], near: ["merchandiser", "quality_control"] },
+  { id: "production_planner", label: "Production / Factory / Plant management and production planning", family: "Apparel & Manufacturing", titles: ["production planner", "production executive", "production manager", "planning executive", "planning manager", "production supervisor", "factory manager", "plant manager", "manufacturing manager", "production engineer", "head of production", "cutting manager", "finishing manager", "washing manager"], near: ["merchandiser", "quality_control", "industrial_engineer"] },
+  { id: "industrial_engineer", label: "Industrial Engineering / Lean / Process improvement", family: "Apparel & Manufacturing", titles: ["industrial engineer", "ie executive", "ie manager", "lean manager", "process improvement", "operational excellence", "work study", "continuous improvement", "lean enterprise"], near: ["production_planner"] },
+  { id: "garment_technologist", label: "Garment / Fabric Technologist, Pattern maker, Product development", family: "Apparel & Manufacturing", titles: ["garment technologist", "fabric technologist", "pattern maker", "pattern technologist", "product developer", "product development executive", "sample room", "technical designer"], near: ["merchandiser", "production_planner", "fashion_designer"] },
   { id: "quality_control", label: "Quality Control / Assurance", family: "Apparel & Manufacturing", titles: ["quality controller", "qc executive", "quality assurance executive", "quality inspector", "qa executive", "quality manager"], near: ["production_planner"] },
   // Trades & services
   { id: "driver", label: "Driver", family: "Trades & Services", titles: ["driver", "heavy vehicle driver", "light vehicle driver", "delivery driver", "chauffeur", "bus driver"] },
@@ -119,7 +122,14 @@ export const ROLES: Role[] = [
   { id: "graphic_designer", label: "Graphic Designer", family: "Creative & Media", titles: ["graphic designer", "visualiser", "visualizer", "multimedia designer", "video editor", "motion graphics"], near: ["ui_ux", "digital_marketing"] },
   { id: "content_writer", label: "Content Writer / Copywriter", family: "Creative & Media", titles: ["content writer", "copywriter", "journalist", "editor", "technical writer"], near: ["digital_marketing"] },
   // General management
-  { id: "operations", label: "Operations / General Management", family: "General Management", titles: ["operations manager", "operations executive", "general manager", "branch manager", "country manager", "ceo", "managing director", "chief executive officer", "coo", "business manager", "operations"], near: [] },
+  { id: "operations", label: "Operations manager (runs the day-to-day operations of a business or branch)", family: "General Management", titles: ["operations manager", "operations executive", "branch manager", "business manager", "operations", "coo", "chief operating officer", "head of operations", "operations director"], near: ["executive_leadership"] },
+  { id: "executive_leadership", label: "Top leadership: CEO, Managing Director, General Manager, Founder, Country head, Director", family: "General Management", titles: ["ceo", "chief executive officer", "managing director", "general manager", "founder", "co-founder", "country manager", "country head", "director", "president", "vice president", "agm", "dgm"], near: ["operations"] },
+  { id: "consultant", label: "Management / Business consultant", family: "General Management", titles: ["management consultant", "business consultant", "consultant", "strategy consultant"] },
+  { id: "sustainability", label: "Sustainability / ESG / Social compliance", family: "General Management", titles: ["sustainability manager", "sustainability executive", "esg", "social compliance", "compliance and sustainability"], near: ["hse"] },
+  { id: "maintenance_engineer", label: "Maintenance / Facilities / Plant engineering", family: "Engineering", titles: ["maintenance engineer", "maintenance manager", "facilities manager", "facility manager", "engineering manager", "head of engineering", "plant engineer", "utility engineer"], near: ["mechanical_engineer", "electrical_engineer"] },
+  { id: "chemist", label: "Chemist / Laboratory / R&D scientist", family: "Engineering", titles: ["chemist", "research and development", "r&d executive", "r&d manager", "laboratory chemist", "food technologist", "research scientist"], near: ["lab_technician", "quality_control"] },
+  { id: "fashion_designer", label: "Fashion / Apparel designer", family: "Creative & Media", titles: ["fashion designer", "apparel designer", "print designer", "textile designer"], near: ["garment_technologist", "graphic_designer"] },
+  { id: "agriculture", label: "Agriculture / Plantation / Estate", family: "Agriculture & Plantation", titles: ["agriculture", "agronomist", "plantation manager", "estate manager", "assistant superintendent", "field officer agriculture"] },
 ];
 
 export const ROLE_BY_ID = new Map(ROLES.map((r) => [r.id, r]));

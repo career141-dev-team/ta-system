@@ -21,6 +21,7 @@ import { primeStore } from "@/data/prime";
 import { repo } from "@/data/store";
 import { EMPTY_CRITERIA } from "@/data/types";
 import { can } from "@/lib/auth";
+import { chipReadLine, chipScore, chipSearch, type ChipHit } from "@/lib/chipSearchClient";
 import { booleanScore, booleanTerms } from "@/lib/booleanScore";
 import { cachedEngineSearch, deskCriteria, engineSearch, incompleteProblem, quickEngineSearch, type EngineSearch } from "@/lib/engineSearch";
 import { conversationText, describe, parseBoolean, parseConversation } from "@/lib/query";
@@ -72,6 +73,25 @@ export async function POST(req: NextRequest) {
       .slice(0, ROWS)
       .map(({ c, s }) => personOf(c, s?.overall ?? null, s?.reasons[0] ?? ""));
     return answer(req, { ok: true, total, rows, read: null, chips: [], refining: false, problem: total ? null : "Nothing in the database matched that search." });
+  }
+
+  // 26 Nov 2026: the chip search answers first (one final answer, no quick pass);
+  // the old engine below runs only when it cannot answer.
+  const chip = await chipSearch(q.split("\n"));
+  if (chip && chip.hits.length) {
+    try {
+      await primeStore({ candidateIds: chip.hits.slice(0, ROWS * 2).map((h) => h.id) });
+      const rows = chip.hits
+        .map((h) => ({ h, c: repo.candidate(h.id) }))
+        .filter((x): x is { h: ChipHit; c: NonNullable<typeof x.c> } => !!x.c)
+        .slice(0, ROWS)
+        .map(({ h, c }) => personOf(c, chipScore(h.score), h.aiWhy || h.why.join(" · ")));
+      if (rows.length) {
+        return answer(req, { ok: true, total: chip.total, rows, read: chipReadLine(chip) || null, chips: [], refining: false, problem: null });
+      }
+    } catch {
+      // The records could not be read: the old engine below answers instead.
+    }
   }
 
   const criteria = parseConversation(q, repo.vocabulary()).criteria;
