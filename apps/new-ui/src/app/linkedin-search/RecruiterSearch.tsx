@@ -56,7 +56,9 @@ const PRIMARY = "flex items-center gap-1.5 rounded-full bg-brand px-4 py-2 text-
 const FIELD = "rounded-full border border-border bg-surface px-4 py-2 text-small text-ink outline-none placeholder:text-ink-3 focus:border-brand";
 const PILL = "flex items-center gap-2 rounded-full border border-border bg-surface px-3.5 py-1.5 text-small text-ink";
 const ROUND = "flex size-[max(2.75rem,36px)] shrink-0 items-center justify-center rounded-full";
-const COLUMN = "ml-[7.7rem] mr-auto max-w-[62.5rem] max-lg:mx-auto";
+const COLUMN = "mx-auto w-full max-w-[56rem]";
+/** The first screen's typing box: the owner's AURA gradient for a border. */
+const GRAD = "border-[1.5px] border-transparent bg-[linear-gradient(var(--color-surface),var(--color-surface)),linear-gradient(90deg,var(--color-aura-1),var(--color-aura-2),var(--color-aura-3),var(--color-aura-4))] [background-clip:padding-box,border-box] [background-origin:border-box]";
 
 const ICON = {
   plus: "M5 12h14M12 5v14",
@@ -179,93 +181,8 @@ function Search({ store }: { store: string }) {
 
   const spend = status?.ok && status.limitUsd !== null ? { spent: status.spentUsd ?? 0, limit: status.limitUsd } : null;
 
-  return (
-    <div className="relative flex min-h-0 flex-1 max-md:flex-col">
-      <aside className="flex w-[23.4%] min-w-[max(15rem,200px)] shrink-0 flex-col gap-[max(0.6rem,6px)] border-r border-border px-[max(1.75rem,14px)] pb-6 pt-[max(2.25rem,20px)] max-md:w-auto max-md:border-b max-md:border-r-0 max-md:pb-3 max-md:pt-4">
-        <div className="flex items-center justify-between gap-3">
-          <button type="button" onClick={newSearch} className="flex h-[max(3.1rem,40px)] items-center gap-2 whitespace-nowrap rounded-full bg-brand px-[max(1rem,12px)] text-body font-medium text-white hover:bg-brand-strong">
-            <Icon name="plus" />
-            New search
-          </button>
-          <button type="button" onClick={() => setShowChats((v) => !v)} aria-expanded={showChats} className="text-small text-brand md:hidden">
-            {showChats ? "Hide chats" : "Chats"}
-          </button>
-        </div>
-        <nav aria-label="Chats" className={"mt-[max(1.6rem,12px)] flex flex-col gap-1 overflow-y-auto " + (showChats ? "max-md:max-h-48" : "max-md:hidden")}>
-          {(["Today", "Earlier"] as const).map((when) => {
-            // The date is read only when there are chats, never while the page is built.
-            const list = chats.filter((c) => (new Date(c.at).toDateString() === new Date().toDateString()) === (when === "Today"));
-            return list.length === 0 ? null : (
-              <div key={when} className="mb-2 flex flex-col gap-1">
-                <p className="mb-1 px-[max(0.9rem,10px)] text-caption font-medium uppercase text-ink-3">{when}</p>
-                {list.map((c) => (
-                  <div key={c.id} className={"group flex items-center rounded-md " + (openId === c.id ? "bg-surface-2" : "hover:bg-surface-2/60")}>
-                    <button
-                      type="button"
-                      title={c.title}
-                      aria-current={openId === c.id || undefined}
-                      onClick={() => {
-                        setOpenId(c.id);
-                        pickJob(c.job);
-                        setShowChats(false);
-                      }}
-                      className={"min-w-0 flex-1 truncate px-[max(0.9rem,10px)] py-[max(0.7rem,8px)] text-left text-body " + (openId === c.id ? "text-ink" : "text-ink-2")}
-                    >
-                      {c.title}
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={`Delete "${c.title}"`}
-                      title="Delete this chat"
-                      onClick={() => {
-                        setChats((all) => all.filter((x) => x.id !== c.id));
-                        if (openId === c.id) setOpenId("");
-                      }}
-                      className="mr-1.5 rounded-full p-1.5 text-ink-3 opacity-0 hover:bg-surface hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 max-md:opacity-100"
-                    >
-                      <Icon name="x" className="size-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            );
-          })}
-        </nav>
-      </aside>
-
-      <section className="relative isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        {!chat && <Glow src="/aurora-start.svg" inset="-31.82% -14.29%" className="top-1/2 h-[27.5rem] w-[61.25rem] max-w-full -translate-y-1/2" />}
-        <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-[max(1.5rem,12px)] pb-6 pt-[max(2.25rem,20px)]">
-          {!chat ? (
-            <div className="flex flex-col items-center gap-3 pt-[8vh] text-center">
-              <Image src="/aura-mark.png" alt="AURA" width={56} height={56} className="size-[max(3.5rem,44px)] rounded-full" />
-              <h1 className="text-h2 text-ink">Who do you need on LinkedIn?</h1>
-              <p className="max-w-[36rem] text-small text-ink-3">Say it in plain words, paste the job description, or pick an opening below. I ask what is missing first, and that costs nothing.</p>
-              <div className="mt-2 flex max-w-[48rem] flex-wrap justify-center gap-2">
-                {TRY.map((t) => (
-                  <button key={t} type="button" onClick={() => setText(t)} className={CHIP}>
-                    {t}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className={COLUMN + " flex flex-col gap-[max(2.1rem,18px)]"}>
-              {chat.turns.map((t, i) => (
-                <div key={t.run} data-turn className="flex flex-col gap-[max(1.2rem,12px)]">
-                  <div className="flex justify-end">
-                    <p className="max-h-48 max-w-[80%] overflow-y-auto whitespace-pre-line rounded-lg rounded-br-xs bg-surface-2 px-[max(1.25rem,14px)] py-[max(0.75rem,9px)] text-body text-ink">{t.said}</p>
-                  </div>
-                  <Answer id={t.run} latest={i === chat.turns.length - 1 && !sending} go={(args, words) => void go(args, words)} newSearch={newSearch} job={job} add={add} said={said} inTable={inTable} />
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="relative isolate px-[max(1.5rem,12px)] pb-[max(2.4rem,14px)]">
-          <AuraBarGlow className="bottom-[max(1.2rem,8px)]" />
-          <div className={COLUMN + " flex flex-col gap-3"}>
+  const composer = (
+          <div className={COLUMN + " flex flex-col gap-3 text-left"}>
             {error && <p role="alert" className="rounded-md bg-danger-soft px-4 py-3 text-small text-danger">{error}</p>}
             {finding && (
               <form
@@ -319,7 +236,7 @@ function Search({ store }: { store: string }) {
                 </p>
               )}
             </div>
-            <div className="flex items-end gap-[max(0.9rem,8px)] rounded-xl bg-surface p-2.5 shadow-float ring-1 ring-border/60 transition-shadow focus-within:ring-2 focus-within:ring-brand/30">
+            <div className={"flex items-end gap-[max(0.9rem,8px)] rounded-xl p-2.5 shadow-float transition-shadow " + (chat ? "bg-surface ring-1 ring-border/60 focus-within:ring-2 focus-within:ring-brand/30" : "flex-wrap " + GRAD)}>
               <button type="button" onClick={() => setFinding((v) => !v)} aria-expanded={finding} aria-label="Find one person" title="Find one person" className={ROUND + (finding ? " bg-brand text-white" : " bg-surface-2 text-ink-2 hover:bg-surface-3 hover:text-ink")}>
                 <Icon name="person" />
               </button>
@@ -332,13 +249,13 @@ function Search({ store }: { store: string }) {
                     search(text);
                   }
                 }}
-                rows={1}
+                rows={chat ? 1 : 2}
                 maxLength={20000}
                 placeholder={job ? "Press send to search for this opening, or say who you need" : "A job title, a place and years — or paste a JD"}
                 aria-label="Ask AURA to search LinkedIn"
-                className="max-h-32 min-w-0 flex-1 resize-none self-center bg-transparent py-2 pl-[max(0.75rem,8px)] text-body text-ink outline-none placeholder:text-ink-3 [field-sizing:content]"
+                className={"max-h-32 min-w-0 resize-none self-center bg-transparent py-2 pl-[max(0.75rem,8px)] text-body text-ink outline-none placeholder:text-ink-3 " + (chat ? "flex-1 [field-sizing:content]" : "order-first w-full basis-full")}
               />
-              <button type="button" disabled={!mic.ok} onClick={mic.toggle} aria-pressed={mic.on} aria-label={mic.on ? "Stop listening" : "Speak"} title={mic.ok ? (mic.on ? "Stop listening" : "Speak") : "Speaking is not available in this browser"} className={ROUND + " relative disabled:opacity-40 " + (mic.on ? "bg-danger-soft text-danger" : "text-ink-3 hover:text-ink")}>
+              <button type="button" disabled={!mic.ok} onClick={mic.toggle} aria-pressed={mic.on} aria-label={mic.on ? "Stop listening" : "Speak"} title={mic.ok ? (mic.on ? "Stop listening" : "Speak") : "Speaking is not available in this browser"} className={ROUND + " relative disabled:opacity-40 " + (chat ? "" : "ml-auto ") + (mic.on ? "bg-danger-soft text-danger" : "text-ink-3 hover:text-ink")}>
                 {mic.on && <ListenPulse />}
                 <Icon name="mic" className="size-[max(1.25rem,16px)]" />
               </button>
@@ -347,7 +264,100 @@ function Search({ store }: { store: string }) {
               </button>
             </div>
           </div>
+  );
+
+  return (
+    <div className="relative flex min-h-0 flex-1 max-md:flex-col">
+      <aside className="flex w-[23.4%] min-w-[max(15rem,200px)] shrink-0 flex-col gap-[max(0.6rem,6px)] border-r border-border px-[max(1.75rem,14px)] pb-6 pt-[max(2.25rem,20px)] max-md:w-auto max-md:border-b max-md:border-r-0 max-md:pb-3 max-md:pt-4">
+        <div className="flex items-center justify-between gap-3">
+          <button type="button" onClick={newSearch} className="flex h-[max(3.1rem,40px)] items-center gap-2 whitespace-nowrap rounded-full bg-brand px-[max(1rem,12px)] text-body font-medium text-white hover:bg-brand-strong">
+            <Icon name="plus" />
+            New search
+          </button>
+          <button type="button" onClick={() => setShowChats((v) => !v)} aria-expanded={showChats} className="text-small text-brand md:hidden">
+            {showChats ? "Hide chats" : "Chats"}
+          </button>
         </div>
+        <nav aria-label="Chats" className={"mt-[max(1.6rem,12px)] flex flex-col gap-1 overflow-y-auto " + (showChats ? "max-md:max-h-48" : "max-md:hidden")}>
+          {chats.length === 0 && <p className="px-[max(0.9rem,10px)] text-small text-ink-3">Your searches will be listed here.</p>}
+          {(["Today", "Earlier"] as const).map((when) => {
+            // The date is read only when there are chats, never while the page is built.
+            const list = chats.filter((c) => (new Date(c.at).toDateString() === new Date().toDateString()) === (when === "Today"));
+            return list.length === 0 ? null : (
+              <div key={when} className="mb-2 flex flex-col gap-1">
+                <p className="mb-1 px-[max(0.9rem,10px)] text-caption font-medium uppercase text-ink-3">{when}</p>
+                {list.map((c) => (
+                  <div key={c.id} className={"group flex items-center rounded-md " + (openId === c.id ? "bg-surface-2" : "hover:bg-surface-2/60")}>
+                    <button
+                      type="button"
+                      title={c.title}
+                      aria-current={openId === c.id || undefined}
+                      onClick={() => {
+                        setOpenId(c.id);
+                        pickJob(c.job);
+                        setShowChats(false);
+                      }}
+                      className={"min-w-0 flex-1 truncate px-[max(0.9rem,10px)] py-[max(0.7rem,8px)] text-left text-body " + (openId === c.id ? "text-ink" : "text-ink-2")}
+                    >
+                      {c.title}
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Delete "${c.title}"`}
+                      title="Delete this chat"
+                      onClick={() => {
+                        setChats((all) => all.filter((x) => x.id !== c.id));
+                        if (openId === c.id) setOpenId("");
+                      }}
+                      className="mr-1.5 rounded-full p-1.5 text-ink-3 opacity-0 hover:bg-surface hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 max-md:opacity-100"
+                    >
+                      <Icon name="x" className="size-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </nav>
+      </aside>
+
+      <section className="relative isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        {!chat && <Glow src="/aurora-start.svg" inset="-31.82% -14.29%" className="top-1/2 h-[27.5rem] w-[61.25rem] max-w-full -translate-y-1/2" />}
+        <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-[max(1.5rem,12px)] pb-6 pt-[max(2.25rem,20px)]">
+          {!chat ? (
+            <div className="flex min-h-full flex-col items-center justify-center gap-3 text-center">
+              <Image src="/aura-mark.png" alt="AURA" width={56} height={56} className="size-[max(3.5rem,44px)] rounded-full" />
+              <h1 className="text-h2 text-ink">Who do you need on LinkedIn?</h1>
+              <p className="max-w-[36rem] text-small text-ink-3">Say it in plain words, paste the job description, or pick an opening. I ask what is missing first, and that costs nothing.</p>
+              <div className="mt-3 w-full">{composer}</div>
+              <div className="mt-2 flex max-w-[56rem] flex-wrap justify-center gap-2">
+                {TRY.map((t) => (
+                  <button key={t} type="button" onClick={() => setText(t)} className={CHIP}>
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className={COLUMN + " flex flex-col gap-[max(2.1rem,18px)]"}>
+              {chat.turns.map((t, i) => (
+                <div key={t.run} data-turn className="flex flex-col gap-[max(1.2rem,12px)]">
+                  <div className="flex justify-end">
+                    <p className="max-h-48 max-w-[80%] overflow-y-auto whitespace-pre-line rounded-lg rounded-br-xs bg-surface-2 px-[max(1.25rem,14px)] py-[max(0.75rem,9px)] text-body text-ink">{t.said}</p>
+                  </div>
+                  <Answer id={t.run} latest={i === chat.turns.length - 1 && !sending} go={(args, words) => void go(args, words)} newSearch={newSearch} job={job} add={add} said={said} inTable={inTable} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {chat && (
+          <div className="relative isolate px-[max(1.5rem,12px)] pb-[max(2.4rem,14px)]">
+            <AuraBarGlow className="bottom-[max(1.2rem,8px)]" />
+            {composer}
+          </div>
+        )}
       </section>
     </div>
   );
