@@ -6,7 +6,7 @@
  *    answers, the score and the read line.
  */
 import { yearsAsked } from "../convex/lib/search/chipSearch";
-import { chipReadLine, chipScore, chipSearch, type ChipAnswer } from "../src/lib/chipSearchClient";
+import { chipReadLine, chipScore, chipSearch, genderAsked, genderByName, type ChipAnswer } from "../src/lib/chipSearchClient";
 
 let pass = 0, fail = 0;
 const ok = (l: string, cond: boolean, detail = "") => {
@@ -39,6 +39,16 @@ ok("a dead service answers nothing (the old engine runs)", (await chipSearch(["a
 ok("score fits 1-99", chipScore(0) === 1 && chipScore(400) === 99 && chipScore(9999) === 99 && chipScore(200) === 50);
 const a: ChipAnswer = { ok: true, total: 3, removed: 0, hits: [], job: ["Senior Accountant", "Accountant"], not: [], industry: ["bank"], level: 2, years: [5, 8] };
 ok("read line", chipReadLine(a) === "Senior Accountant, Accountant · 5-8 years · bank", chipReadLine(a));
+
+console.log("gender asked");
+ok("female candidates only", genderAsked("Head of Finance. Female candidates only.") === "female");
+ok("ladies", genderAsked("receptionist kandy ladies preferred") === "female");
+ok("male only", genderAsked("driver colombo male only") === "male");
+ok("female not read as male", genderAsked("female accountant") === "female");
+ok("no gender", genderAsked("senior accountant colombo") === null);
+ok("both named = no filter", genderAsked("male or female") === null);
+delete process.env.ANTHROPIC_API_KEY;
+ok("no key: no name reading, nobody dropped", (await genderByName(["Nimali Perera"])) === null);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

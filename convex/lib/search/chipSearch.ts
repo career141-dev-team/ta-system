@@ -52,8 +52,8 @@ const SMALL = new Set(["of", "the", "and", "a", "in", "for", "&"]);
 const hasW = (set: Set<string>, w: string) => set.has(w) || set.has(w + "s") || (w.endsWith("s") && set.has(w.slice(0, -1)));
 
 const JOB_SYSTEM = `A recruiter in Sri Lanka typed a search or pasted a job description (spelling may be wrong). Find the job and answer JSON only:
-{"job":"the job title, spelled right","names":["up to 8 other job titles people with this exact job write on their CVs"],"not":["words that, in a CV job title, mean a DIFFERENT job with the same name"],"industry":["only if the request names an industry or kind of employer: short words found in such employers' names or titles, e.g. apparel -> apparel, garment, clothing, textile, fashion, knit, MAS, Brandix, Hirdaramani"],"types":["the employer types this job is done in, ONLY when the job belongs to particular industries even if not said (motor claims -> insurance; bank branch manager -> bank; executive chef -> hotel; ICU nurse -> hospital; leasing recovery -> finance_company). Pick from: big4, audit_firm, bank, finance_company, insurance, fmcg, apparel, telco, bpo, hotel, hospital, software, construction, government, ngo, retail, logistics, airline, oil_gas, education. Empty for jobs found in any industry (accountant, HR executive, driver)"],"level":"the job's level as a number: 0 trainee/intern, 1 executive/officer, 2 senior executive, 3 assistant manager/team lead/supervisor, 4 manager, 5 senior manager, 6 head/AGM/DGM, 7 GM/director, 8 CEO/CFO/MD; null if not clear","key":["ONLY for specialist jobs: 1-3 short words every right person has in their job title or skills, e.g. SAP FICO consultant -> [\"SAP\"], Oracle DBA -> [\"Oracle\"], Dynamics 365 consultant -> [\"Dynamics\"], Linux administrator -> [\"Linux\"], AML manager -> [\"AML\",\"anti-money laundering\"], trade finance officer -> [\"trade finance\"], ICU nurse -> [\"ICU\",\"intensive care\"], HVAC engineer -> [\"HVAC\"], motor claims -> [\"motor\"], leasing recovery -> [\"leasing\",\"recovery\"]. Empty for general jobs (accountant, HR executive, sales executive)"]}
-Rules: names are the same work only, never a wider or nearby job; when the bare title is used in other fields, write the field into each name (e.g. "software QA lead", "test lead", not "QA lead"; "tea estate manager", "plantation manager", not "estate manager"). "not" examples: architect (building) -> ["software","solution","solutions","cloud","data","enterprise","network","security","systems"]; estate manager (plantation) -> ["real","property"]; software QA -> ["food","garment","factory","production"]. Empty lists when nothing applies. If no job is named: {"job":null,"names":[],"not":[],"industry":[],"types":[],"level":null,"key":[]}`;
+{"job":"the job title, spelled right","names":["up to 8 other job titles people with this exact job write on their CVs"],"not":["words that, in a CV job title, mean a DIFFERENT job with the same name"],"industry":["only if the request names an industry or kind of employer: short words found in such employers' names or titles, e.g. apparel -> apparel, garment, clothing, textile, fashion, knit, MAS, Brandix, Hirdaramani"],"types":["the employer types this job is done in, ONLY when the job belongs to particular industries even if not said (motor claims -> insurance; bank branch manager -> bank; executive chef -> hotel; ICU nurse -> hospital; leasing recovery -> finance_company). Pick from: big4, audit_firm, bank, finance_company, insurance, fmcg, apparel, telco, bpo, hotel, hospital, software, construction, government, ngo, retail, logistics, airline, oil_gas, education. Empty for jobs found in any industry (accountant, HR executive, driver)"],"level":"the job's level as a number: 0 trainee/intern, 1 executive/officer, 2 senior executive, 3 assistant manager/team lead/supervisor, 4 manager, 5 senior manager, 6 head/AGM/DGM, 7 GM/director, 8 CEO/CFO/MD; null if not clear","key":["ONLY for specialist jobs: 1-3 short words every right person has in their job title or skills, e.g. SAP FICO consultant -> [\"SAP\"], Oracle DBA -> [\"Oracle\"], Dynamics 365 consultant -> [\"Dynamics\"], Linux administrator -> [\"Linux\"], AML manager -> [\"AML\",\"anti-money laundering\"], trade finance officer -> [\"trade finance\"], ICU nurse -> [\"ICU\",\"intensive care\"], HVAC engineer -> [\"HVAC\"], motor claims -> [\"motor\"], leasing recovery -> [\"leasing\",\"recovery\"]. Empty for general jobs (accountant, HR executive, sales executive)"],"industryOnly":"true ONLY when the request says the person MUST come from those industries (\"only\", \"must be from\", \"from healthcare or hospitality only\"); false when the industry is a preference or not named"}
+Rules: names are the same work only, never a wider or nearby job; when the bare title is used in other fields, write the field into each name (e.g. "software QA lead", "test lead", not "QA lead"; "tea estate manager", "plantation manager", not "estate manager"). "not" examples: architect (building) -> ["software","solution","solutions","cloud","data","enterprise","network","security","systems"]; estate manager (plantation) -> ["real","property"]; software QA -> ["food","garment","factory","production"]. Empty lists when nothing applies. If no job is named: {"job":null,"names":[],"not":[],"industry":[],"types":[],"level":null,"key":[],"industryOnly":false}`;
 
 /** The final layer: a recruiter's read of the shortlist against the request. */
 const INSPECT_SYSTEM = `You are a senior recruiter in Sri Lanka checking a shortlist before you call anyone. The client's request comes first, then numbered people: title now @ company | place | years of experience | level | earlier titles | qualifications.
@@ -179,12 +179,32 @@ export function createSearch(cards: any[], ask: Ask) {
     };
   };
 
-  return async function search(turns: string[], opts: { inspect?: boolean } = {}) {
+  /**
+   * The final AI check over a ranked list. 26 Nov 2026: a strict request ("female",
+   * "healthcare only") can lose most of the first 60; the people after them were then
+   * shown unchecked. So it checks the next 60 too, up to 180, until 30 are kept.
+   * Also called on its own (checkAll) after the caller has removed people the
+   * search cannot see, such as men by name for "female only".
+   */
+  async function checkAll(request: string, hits: any[]) {
+    const kept: any[] = [], removed: any[] = [];
+    let checked = 0;
+    while (checked < Math.min(hits.length, 180) && kept.length < 30) {
+      // One failed read (time-out, cut answer) is tried once more before the check stops.
+      const ins = (await inspect(request, hits.slice(checked))) ?? (await inspect(request, hits.slice(checked)));
+      if (!ins) break;
+      kept.push(...ins.kept); removed.push(...ins.removed); checked += ins.checked;
+    }
+    const final = checked ? [...kept.filter((h) => h.ai === 2), ...kept.filter((h) => h.ai !== 2), ...hits.slice(checked)] : hits;
+    return { final, removed, checked };
+  }
+
+  const search = async function search(turns: string[], opts: { inspect?: boolean } = {}) {
     const all = turns.join("\n");
     const [read, jobRaw] = await Promise.all([readAi(turns), ask(JOB_SYSTEM, all)]);
     const jo = parseJson(jobRaw) ?? {};
     const TYPES = new Set(["big4", "audit_firm", "bank", "finance_company", "insurance", "fmcg", "apparel", "telco", "bpo", "hotel", "hospital", "software", "construction", "government", "ngo", "retail", "logistics", "airline", "oil_gas", "education"]);
-    const job = { job: jo.job ?? null, names: (jo.names ?? []).map(String), not: (jo.not ?? []).map((x: any) => String(x).toLowerCase()), industry: (jo.industry ?? []).map((x: any) => String(x).toLowerCase()).filter((x: string) => x.length > 1),
+    const job = { job: jo.job ?? null, names: (jo.names ?? []).map(String), not: (jo.not ?? []).map((x: any) => String(x).toLowerCase()), industryOnly: jo.industryOnly === true || jo.industryOnly === "true", industry: (jo.industry ?? []).map((x: any) => String(x).toLowerCase()).filter((x: string) => x.length > 1),
       types: (jo.types ?? []).map((x: any) => String(x)).filter((x: string) => TYPES.has(x)), level: Number.isFinite(jo.level) ? Math.max(0, Math.min(8, Math.round(jo.level))) : null,
       key: (jo.key ?? []).map((x: any) => String(x).toLowerCase().trim()).filter((x: string) => x.length > 1).slice(0, 3) as string[] };
     // A specialist word must appear as a whole word ("sap" not in "sapphire").
@@ -205,6 +225,7 @@ export function createSearch(cards: any[], ask: Ask) {
     });
     const t0 = performance.now();
     const wantPlace: string[] = spec.chips.filter((c: any) => c.field === "place" && !c.not && !/rest of the country/.test(c.label ?? "")).flatMap((c: any) => c.values ?? []);
+    const placeWord = wantPlace.map((v) => PLACE_BY_ID.get(v)?.name ?? v).slice(0, 2).join(" / ") || "the asked place";
     const abroadJob = wantPlace.length > 0 && wantPlace.every((v) => (PLACE_BY_ID.get(v)?.country ?? "LK") !== "LK");
     const jobExact = job.job ? words(job.job).filter((w) => !SMALL.has(w)) : [];
     const chips = spec.chips.filter((c: any) => c !== roleChip && !(c.field === "years" && !c.not)).map((c: any) => ({ ...c, must: c.not || c.field === "gender" || c.field === "age" ? c.must : false }));
@@ -213,7 +234,7 @@ export function createSearch(cards: any[], ask: Ask) {
     const yfit = (y: number | null | undefined) => (ylo == null && yhi == null) ? 0 : y == null ? 5
       : (y >= (ylo ?? 0) && (yhi == null || y <= yhi)) ? 25
       : (y >= (ylo ?? 0) - 1 && (yhi == null || y <= yhi + 2)) ? 10 : -1;
-    const scored: any[] = r.hits.map((h: any) => {
+    let scored: any[] = r.hits.map((h: any) => {
       const p = byId.get(h.id);
       const { th, len } = nameWords.length ? titleMatch(h.id, nameWords) : { th: 0, len: 0 };
       const rh = rolesKept.length && p.roles.some((x: string) => rolesKept.includes(x)) ? 1 : 0;
@@ -240,6 +261,8 @@ export function createSearch(cards: any[], ask: Ask) {
       const kf = !job.key.length ? 0 : hasKey(nowText) ? 50 : hasKey(`${(p.skills ?? []).join(" | ")} ${cvText}`.toLowerCase()) ? 25 : -40;
       return { h, p, th, len, rh, other, ind, indOff, pl, lf, kf, yf: yfit(p.years), ex: exactNow(h.id, jobExact), here: pl > 0 };
     }).filter((x: any) => !x.other && x.yf >= 0 && ((!roleChip && !nameWords.length) || x.th || x.rh));
+    // 26 Nov 2026: "from healthcare or hospitality only" kept telecom and drinks people (industry only scored).
+    if (job.industryOnly && scored.filter((x: any) => x.ind).length >= 10) scored = scored.filter((x: any) => !x.indOff);
     // The job title decides the tier (exact job > job title now > did it before > related role); town, industry, level and years order people inside it.
     const rank = (x: any) => (x.ex ? 200 : x.th === 2 ? 150 + 5 * Math.min(x.len, 3) : x.th === 1 ? 60 : 0) + (x.rh ? 10 : 0) + x.pl + (x.ind ? 40 : x.indOff ? -15 : 0) + x.lf + x.kf + x.yf + 0.3 * x.h.score;
     for (const x of scored) x.rank = rank(x);
@@ -252,7 +275,7 @@ export function createSearch(cards: any[], ask: Ask) {
     }).map((x: any) => ({
       card: x.p, score: Math.round(x.rank), reason: x.h.reason,
       why: [x.ex ? "exact job title now" : x.th === 2 ? "job title now" : x.th === 1 ? "did this job before" : "related role",
-        x.pl >= 45 || (abroadJob && x.pl > 0) ? "in the asked town" : x.pl >= 30 ? "same district" : x.pl > 0 ? "same province" : x.pl < 0 ? "abroad" : null,
+        x.pl >= 45 || (abroadJob && x.pl > 0) ? `in ${placeWord}` : x.pl >= 30 ? "same district" : x.pl > 0 ? "same province" : x.pl < 0 ? "abroad" : null,
         x.ind ? "right industry" : x.indOff ? "other industry" : null, x.lf === 25 ? "right level" : x.lf < 0 ? "level off" : null,
         x.yf === 25 ? "years in range" : x.yf === 10 ? "years close" : x.yf === 5 ? "years not on file" : null].filter(Boolean),
     }));
@@ -269,14 +292,12 @@ export function createSearch(cards: any[], ask: Ask) {
     }
     // Final layer: the AI inspector reads the request again and removes the misfits from the top 40.
     let final = hits, removed: any[] = [], checked = 0;
-    if (opts.inspect !== false) {
-      const ins = await inspect(all, hits);
-      if (ins) { final = [...ins.kept, ...hits.slice(ins.checked)]; removed = ins.removed; checked = ins.checked; }
-    }
+    if (opts.inspect !== false) ({ final, removed, checked } = await checkAll(all, hits));
     return {
       hits: final, removed, checked, all: hits, dups, ms, ai: read.ai && jobRaw != null, holders, missing,
       job: names, not: job.not, industry: [...job.industry, ...job.types], level: job.level, years: yc ? [yc.min, yc.max] : null,
       chips: chips.filter((c: any) => c.field !== "years"), roles: rolesKept,
     };
   };
+  return Object.assign(search, { checkAll });
 }
