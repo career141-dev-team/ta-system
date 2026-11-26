@@ -73,10 +73,11 @@ Run `node tests/run.mjs linkedinSearch` (fake Crustdata, no spend), `npx tsc --n
 
 - 25-26 Nov 2026: engine built outside the repo by the owner with Claude; 2 rounds of adversarial checks (31 defects fixed); 4 paid Crustdata tests; owner decisions recorded in the README section 4. Moved into the repo in this pull request.
 - 26 Nov 2026: wired to tables, background runs and the new UI page.
+- 26 Nov 2026: a question about two places came back after every answer (the form's signals stay). `linkedinRun` now accepts every answered question and carries `accepted` on every result (more, widen, refine too). The page does not offer "Both - two searches" (nothing runs the second one). One search = one person location; no place named = Sri Lanka; another country = Sri Lankans living there unless locals are asked (`form.ts`).
 
 <!-- skill-meta
-verified-commit: 5efc0944
-verified-hash: 3e899710fc540f059d7e8ed5abe011135b6aec23
+verified-commit: 701e0971
+verified-hash: feb4d93d5ed7833eff2a0c5ad09b261d4c44a482
 verified-date: 2026-11-26
 sources:
   convex/linkedinSearch/**

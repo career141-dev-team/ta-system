@@ -144,12 +144,13 @@ export const run = internalAction({
         const accepted = new Set(sc.accepted);
         for (const a of input.answers ?? []) {
           const edits = answerToEdits(form, a.code, a.answer);
-          // "Keep as is", or an answer with no edit of its own, accepts the question.
-          if (!edits || !Object.keys(edits).length) accepted.add(a.code);
-          else form = refineForm(form, edits).form;
+          if (edits && Object.keys(edits).length) form = refineForm(form, edits).form;
+          // An answered question is never asked again (26 Nov 2026): the form still
+          // carries what raised it (two places named in the JD), so it came back for ever.
+          accepted.add(a.code);
         }
         sc.accepted = [...accepted];
-        out = { ...(await engine.searchForm(form, { ...sc, marketCountSeen: kind === "confirm" })), accepted: sc.accepted };
+        out = await engine.searchForm(form, { ...sc, marketCountSeen: kind === "confirm" });
       } else if (kind === "more") out = await engine.showMore(need(), sc);
       else if (kind === "widen") {
         const field = WIDEN.find((f) => f === input.field);
@@ -158,6 +159,8 @@ export const run = internalAction({
       } else if (kind === "refine") out = await engine.refine(need(), { mustHaves: input.mustHaves ?? [] }, sc);
       else out = { status: "found", ...(await engine.findOnePerson(input.person ?? {}, sc)) };
 
+      // What was already answered travels with the chat, through show more, widen and refine too.
+      out = { ...out, accepted: sc.accepted };
       const { status, error } = out as { status?: string; error?: string };
       await ctx.runMutation(ui.update, {
         runId,
