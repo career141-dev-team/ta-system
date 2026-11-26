@@ -318,6 +318,7 @@ Pre-merge checklist:
 Repo hard rules that apply: never touch the live backend from a laptop (no `convex deploy`/`run`/`import`/`env set` against `api.career141.com`, `ta-system-api.career141.com` or the VPS); outbound only through `outreachSafety.ts` and `outboundGuard.ts`; data changes (backfilling `employersText`, reindexing, clearing `currentRoleRank` caches) are migration functions with a `dryRun` argument run by the pipeline; work on a branch and merge by pull request; no secrets in code or docs. Run local with `deploy/local/start-app.sh` only.
 
 ## History
+- 2026-11-26 The new UI's Database chat asks the chip search first (`src/lib/chipSearchClient.ts` in `src/app/api/ui/database/route.ts`, plain-words mode only; Boolean unchanged). The chip search is its own service, `services/chip-search` (`server.ts`), on the app's Docker network as `http://chip-search:3311`: every candidate's search card in memory (94,830, ~0.8 GB), the Run 7 search `convex/lib/search/chipSearch.ts` (job title tier, then town / industry / level / specialist word / years, then a Haiku check of the top 60), three Haiku reads per search, $10/day cap (`CHIP_DAILY_USD`). Any failure answers null and the old engine runs; `C141_CHIP_SEARCH=off` switches it off. Cards: built once on the server (25-26 Nov, read-only export + Haiku batches), new candidates nightly by `build.ts` (`nightly.sh`, read-only export via `export.sql`, at most 3,000 a night; changed records keep their card). Measured on 200 blind-graded jobs: useful top 10 63%, years in range 99%. Old AURA's own Database page is unchanged. Test: `tests/chipsearchlive.test.ts`.
 - 2026-11-25 Reverse match: one person once (`dedupeByPerson`, same name and title) and a TA judge on the engine's best 40 (`convex/lib/taJudge.ts`, called in `matching/agent2.ts`): anonymous lines (title, employer, years, place, skills) to the text model, `n|score|reason` back; its score orders the list, under 50 leaves it, its reason leads the row; no answer = the engine's list stands. Engine scores sat at 93-100 on real openings and a product engineer headed the Garment Technologist list. Test: `tests/tajudge.test.ts`.
 
 - 2026-09-13 (pre-repo, in `dbMatch.ts` header): database matches agreed: nearest 300, hard rules, rules score; model review removed after a blind test of 184 CVs; MEANING_FLOOR 50 and CLOSE_IN_MEANING 0.75 set from a 704-profile blind test.
@@ -359,9 +360,9 @@ With `ANTHROPIC_API_KEY` set (and `C141_LLM_PROVIDER` not `openrouter`) the Deep
 **Haiku only, and cached (5 Nov 2026, later):** with the key set, `askClaudeFirst`, `askBridge`, the CLI scoring (`claudeMatch`), CLI web search and the CV vision bridge all step aside (`hasToken()` is false, `haikuOnly()` in `src/lib/claudeSub.ts`), so every answer is `claude-haiku-5-5` on the API. `anthropicModelFor` ignores `C141_MODEL_*`; `C141_RESEARCH_PROVIDER` does not apply; the reference-CV parser drops its OpenRouter/OpenAI fallbacks; the jdParser drops NVIDIA. System prompts carry `cache_control` in both runtimes.
 
 <!-- skill-meta
-verified-commit: 0871dcb4
+verified-commit: 8b6d4135
 verified-hash: 99377f946a76b94938c7df763441f5394eb51c4d
-verified-date: 2026-11-24
+verified-date: 2026-11-26
 sources:
   src/lib/engineSearch.ts
   src/lib/scoring.ts
