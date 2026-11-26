@@ -27,3 +27,9 @@ eq("job by word", jobIn("finance manager", jobs)?.id, "j1");
 eq("job unclear", jobIn("manager lead", jobs), null);
 eq("past chats once", pastChats([{ id: "b", query: "SAP\n8 years", at: 2 }, { id: "a", query: "SAP", at: 1 }, { id: "c", query: "CIMA", at: 0 }]).map((r) => r.id), ["b", "c"]);
 console.log("live: all checks pass");
+
+// 26 Nov 2026: a pasted brief with a capital "OR" is plain words, not a formula.
+const brief = "We are looking for a Head of Finance for a leading hospital in Sri Lanka. Should be fully qualified ACA or CIMA OR ACCA. Female candidates only.";
+eq("a brief with OR is plain words", readLive(brief, ""), { kind: "search", mode: "natural", q: brief });
+eq("a bracketed formula in a sentence stays boolean", readLive("Find (SAP OR ERP) AND Colombo.", ""), { kind: "search", mode: "boolean", q: "Find (SAP OR ERP) AND Colombo." });
+eq("a short formula stays boolean", readLive("(SAP OR ERP) AND Colombo NOT Accenture", ""), { kind: "search", mode: "boolean", q: "(SAP OR ERP) AND Colombo NOT Accenture" });
