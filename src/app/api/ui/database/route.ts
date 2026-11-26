@@ -79,6 +79,11 @@ export async function POST(req: NextRequest) {
   // the old engine below runs only when it cannot answer.
   // "Female/male only": the other gender is removed by name BEFORE the search's AI check, so the
   // check is spent on people who can be shown (records rarely say male or female; cards hold no names).
+  // 26 Nov 2026: 28,002 records (Aug-Sep CV import) were never filled from their CV: no name,
+  // no email, no phone, no CV file. The new search finds them from their CV text, but a TA
+  // cannot reach them, so they are not shown (owner: "hide them").
+  const reachable = (c: { fullName?: string | null; email?: string | null; phone?: string | null }) =>
+    !!(c.fullName?.trim() || c.email?.trim() || c.phone?.trim());
   const want = genderAsked(q);
   const narrow = want
     ? async (ids: string[]) => {
@@ -90,7 +95,7 @@ export async function POST(req: NextRequest) {
         // sure: the record says so or the name clearly does; maybe: nobody can tell; the rest leave.
         const sure: string[] = [], maybe: string[] = [];
         people.forEach((x, i) => {
-          if (!x.c) return;
+          if (!x.c || !reachable(x.c)) return;
           const rec = String(x.c.gender ?? "").toLowerCase();
           const g = rec === "male" ? "m" : rec === "female" ? "f" : byName?.[i] ?? "?";
           if (g === mine) sure.push(x.id);
@@ -102,11 +107,11 @@ export async function POST(req: NextRequest) {
   const chip = await chipSearch(q.split("\n"), narrow);
   if (chip && chip.hits.length) {
     try {
-      const pool = chip.hits.slice(0, ROWS * 2);
+      const pool = chip.hits.slice(0, ROWS * 3);
       await primeStore({ candidateIds: pool.map((h) => h.id) });
       let found = pool
         .map((h) => ({ h, c: repo.candidate(h.id) }))
-        .filter((x): x is { h: ChipHit; c: NonNullable<typeof x.c> } => !!x.c);
+        .filter((x): x is { h: ChipHit; c: NonNullable<typeof x.c> } => !!x.c && reachable(x.c));
       // 26 Nov 2026: when the AI check passed 5 or more, only checked people are shown - the
       // unchecked ones after them were weak (cement, tea, seafood for a hospital brief).
       const checked = found.filter((x) => x.h.ai != null);
