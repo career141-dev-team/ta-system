@@ -177,7 +177,7 @@ export default function PillMenu({
           className="w-[max(15rem,200px)] rounded-md border border-border bg-surface p-1.5 shadow-float"
         >
           {title && <p className="px-3 pb-1 pt-1.5 text-pill font-semibold text-ink-2">{title}</p>}
-          <div data-glide className="relative" onMouseLeave={(e) => glide.out(glowOf(e.currentTarget))}>
+          <div data-glide className="relative max-h-72 overflow-y-auto" onMouseLeave={(e) => glide.out(glowOf(e.currentTarget))}>
             <span
               data-glow
               aria-hidden="true"
