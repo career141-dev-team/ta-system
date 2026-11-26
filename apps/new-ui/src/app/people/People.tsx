@@ -211,7 +211,10 @@ export default function People() {
     if ((needEmail || p.email.trim()) && !isEmail(p.email)) return "That email does not look right.";
     if (!phoneOk(p.phone)) return "That mobile does not look right. Use the number with its country code.";
     if (p.inbox.trim() && !isEmail(p.inbox)) return "The applications inbox must be an email address.";
-    if (p.email.trim() && people.some((x) => x.id !== p.id && x.email.toLowerCase() === p.email.trim().toLowerCase())) return "Someone on the desk already has that email.";
+    // Only a NEW person is refused for an email already on the desk. An edit saves as old
+    // /people does (ta/users:adminSaveUser checks this only when adding): an older second
+    // record with the same address blocked changing Binath's role (26 Nov 2026).
+    if (!p.id && p.email.trim() && people.some((x) => x.email.toLowerCase() === p.email.trim().toLowerCase())) return "Someone on the desk already has that email.";
     return null;
   };
 
