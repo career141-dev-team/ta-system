@@ -55,7 +55,12 @@ export function readLive(raw: string, prior: string): LiveAsk {
     const names = lines.filter(nameLike);
     if (names.length) return { kind: "names", names };
   }
-  if (/\b(AND|OR|NOT)\b|"[^"]+"/.test(t)) return { kind: "search", mode: "boolean", q: t };
+  // A formula only when it reads like one (26 Nov 2026): "Should be ACA or CIMA OR ACCA." in a pasted
+  // brief was run as Boolean, every word ("we", "for", "a") a must, and the people were nonsense.
+  // A sentence (a full stop, or a long text) is plain words unless it holds a bracketed formula.
+  const ops = /\b(AND|OR|NOT)\b|"[^"]+"/.test(t);
+  const sentence = /[.!?](\s|$)/.test(t) || t.split(/\s+/).length > 20;
+  if (ops && (!sentence || /\([^)]*\b(AND|OR|NOT)\b[^)]*\)/.test(t))) return { kind: "search", mode: "boolean", q: t };
   return { kind: "search", mode: "natural", q: prior ? `${prior}\n${t}` : t };
 }
 
