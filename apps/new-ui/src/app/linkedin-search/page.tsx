@@ -1,9 +1,8 @@
-import LinkedInSearch from "./LinkedInSearch";
+import SearchSwitch from "./SearchSwitch";
 
 export const metadata = { title: "LinkedIn Search - TA System" };
 
-// Testing page: a recruiter's filters go to Apify's harvestapi/linkedin-profile-search
-// through /api/linkedin-search. Nothing is saved.
+// The search engine when its key is in, the older web search until then (SearchSwitch).
 export default function Page() {
-  return <LinkedInSearch />;
+  return <SearchSwitch />;
 }

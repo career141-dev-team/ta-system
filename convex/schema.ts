@@ -3770,6 +3770,59 @@ export default defineSchema({
     error: v.optional(v.string()),
   }).index("by_day", ["day"]),
 
+  // LinkedIn Search (26 Nov): the engine's memory (convex/linkedinSearch/db.ts).
+  // `data` holds the engine's own object as JSON; the columns are what is looked up.
+  liProfiles: defineTable({
+    crustdataId: v.optional(v.string()),
+    urlKey: v.optional(v.string()),
+    nameKey: v.optional(v.string()),
+    country: v.string(),
+    data: v.string(),
+  }).index("by_cd", ["crustdataId"]).index("by_url", ["urlKey"]).index("by_name", ["nameKey"]).index("by_country", ["country"]),
+
+  liSearches: defineTable({
+    searchId: v.string(),
+    formKey: v.string(),
+    userId: v.string(),
+    openingId: v.optional(v.string()),
+    parentSearchId: v.optional(v.string()),
+    state: v.string(),
+    startedAt: v.string(),
+    cancelRequested: v.optional(v.boolean()),
+    data: v.string(),
+  }).index("by_searchId", ["searchId"]).index("by_formKey", ["formKey", "state"]).index("by_opening", ["openingId"]).index("by_parent", ["parentSearchId"]),
+
+  liSeen: defineTable({ profileId: v.string(), searchId: v.string() }).index("by_profile", ["profileId"]).index("by_search", ["searchId"]),
+
+  liSpend: defineTable({
+    userId: v.string(),
+    openingId: v.optional(v.string()),
+    kind: v.string(),
+    credits: v.number(),
+    usd: v.number(),
+    crustdataRef: v.string(),
+    createdAt: v.string(),
+    data: v.string(),
+  }).index("by_createdAt", ["createdAt"]).index("by_ref", ["crustdataRef", "kind"]),
+
+  liPools: defineTable({ role: v.string(), profileIds: v.array(v.string()), refreshedAt: v.string() }).index("by_role", ["role"]),
+  liCache: defineTable({ key: v.string(), value: v.string() }).index("by_key", ["key"]),
+  liGate: defineTable({ bucket: v.string(), at: v.number() }).index("by_bucket_at", ["bucket", "at"]),
+
+  // One press on the new UI's LinkedIn Search page, watched live (convex/ui/linkedinSearch.ts).
+  liRuns: defineTable({
+    userId: v.id("users"),
+    openingId: v.optional(v.string()),
+    kind: v.string(),
+    state: v.union(v.literal("running"), v.literal("done"), v.literal("failed"), v.literal("cancelled")),
+    stage: v.optional(v.string()),
+    input: v.string(),
+    out: v.optional(v.string()),
+    message: v.optional(v.string()),
+    cancelRequested: v.optional(v.boolean()),
+    createdAt: v.number(),
+  }).index("by_user", ["userId"]).index("by_state", ["state"]),
+
 }, { schemaValidation: false });
 
 
