@@ -70,7 +70,10 @@ export function checkForm(f: StandardForm, accepted: CheckQuestion["code"][] = [
   }
 
   // ---- Clashing ---------------------------------------------------------------------------
-  const years = f.totalYears ?? (f.areaYears ? { min: f.areaYears.min, max: f.areaYears.max } : null);
+  const raw = f.totalYears ?? (f.areaYears ? { min: f.areaYears.min, max: f.areaYears.max } : null);
+  // Post-qualification years: qualifying takes about 3 years, so compare 3 more years with the level.
+  const pq = f.signals.postQualification ? 3 : 0;
+  const years = raw ? { min: raw.min != null ? raw.min + pq : null, max: raw.max != null ? raw.max + pq : null } : null;
   if (years && f.levelLow && f.levelHigh && f.totalYears) {
     const [lowMin] = LEVEL_YEARS[f.levelLow];
     const [, highMax] = LEVEL_YEARS[f.levelHigh];
@@ -200,6 +203,9 @@ const FAMILY: Record<string, string> = {
   fabric: "fabric", manufacturing: "mfg", heavy_manufacturing: "mfg",
 };
 function sameFamily(a: string, b: string): boolean {
+  // A combined rule ("healthcare or hospitality") covers each of its parts.
+  if (a.startsWith("combo:")) return a.slice(6).split("+").includes(b) || sameFamily(a.slice(6).split("+")[0], b);
+  if (b.startsWith("combo:")) return sameFamily(b, a);
   // "renewable" is the parent of both solar kinds; "apparel" of activewear; "manufacturing" of heavy manufacturing.
   // "apparel or textile" is the parent of apparel, activewear, intimates and fabric.
   if (a === "apparel_textile" || b === "apparel_textile") return [a, b].every((x) => ["apparel_textile", "apparel", "activewear", "intimates", "fabric"].includes(x));

@@ -69,7 +69,7 @@ export function agentQuery(f: StandardForm, count?: number, style: QueryStyle = 
     hard.push(`works in this function, with a current title like: ${titles.join("; ")}`);
   }
   const yrs = f.totalYears ? yearsPhrase(f.totalYears.min, f.totalYears.max) : null;
-  if (yrs) hard.push(`${yrs} of total work experience`);
+  if (yrs) hard.push(`${yrs} of ${f.signals.postQualification ? "post-qualification" : "total work"} experience`);
   if (f.areaYears) {
     const ay = yearsPhrase(f.areaYears.min, f.areaYears.max);
     if (ay) hard.push(`${ay} of experience in ${f.areaYears.area}`);
@@ -123,7 +123,7 @@ function joinedQuery(f: StandardForm, n: number): AgentQuery {
   } else if (f.currentCompanies.length) hard.push(`currently works at ${f.currentCompanies.join(", ")}`);
   const yrs = f.totalYears ? yearsPhrase(f.totalYears.min, f.totalYears.max) : null;
   const ay = f.areaYears ? yearsPhrase(f.areaYears.min, f.areaYears.max) : null;
-  if (yrs || ay) hard.push([yrs ? `${yrs} of total work experience` : null, ay ? `${ay} of experience in ${f.areaYears!.area}` : null].filter(Boolean).join(", including "));
+  if (yrs || ay) hard.push([yrs ? `${yrs} of ${f.signals.postQualification ? "post-qualification" : "total work"} experience` : null, ay ? `${ay} of experience in ${f.areaYears!.area}` : null].filter(Boolean).join(", including "));
   const where: string[] = [];
   if (f.industry) where.push(`currently or recently works at ${f.industry}${f.companySize ? ` (${f.companySize})` : ""}${f.notIndustries.length ? `, not ${f.notIndustries.join(", not ")}` : ""}`);
   else if (f.companySize) where.push(`works at ${f.companySize}`);

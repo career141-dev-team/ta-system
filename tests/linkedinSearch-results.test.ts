@@ -207,3 +207,19 @@ test("Crustdata city notes: 'City not listed' is blank, '(inferred)' is dropped"
   assert.deepEqual([a.city, a.country], [null, "United Arab Emirates"]);
   assert.deepEqual([b.city, b.country], ["Abu Dhabi", "United Arab Emirates"]);
 });
+
+test("HoF search (26 Nov): one person with two profiles at 'Pegasus Reef Hotel' and 'Pegasus Reef Hotel Sri Lanka' is one person", () => {
+  const f = formFromRules({ text: "Head of Finance, hotels, Sri Lanka, 10+ years" });
+  const mk = (id: number, url: string, company: string) =>
+    rowFromProfile({ crustdata_person_id: id, basic_profile: { name: "Kapila Gunathilaka", current_title: "Head of Finance", location: { country: "Sri Lanka" } }, social_handles: { professional_network_identifier: { profile_url: url } }, experience: { employment_details: { current: [{ name: company }] } } }, f);
+  const out = removeRepeats([mk(1, "https://www.linkedin.com/in/kapila-a", "Pegasus Reef Hotel"), mk(2, "https://www.linkedin.com/in/kapila-b", "Pegasus Reef Hotel Sri Lanka")]);
+  assert.equal(out.rows.length, 1);
+});
+
+test("HoF search (26 Nov): post-qualification years are a minimum — 25 years total is not a years ✘", () => {
+  const f = formFromRules({ text: "Head of Finance, hotels, Sri Lanka, 8-10 years post-qualification experience" });
+  const r = checkRow(rowFromAgent({ id: 1, values: { t: "Head of Finance", y: "25", loc: "Colombo, Sri Lanka" } }, [{ key: "t", label: "Current title" }, { key: "y", label: "Total years of experience" }, { key: "loc", label: "Location" }], [], f, null), f);
+  assert.equal(r.mustHaves.years, "yes");
+  const young = checkRow(rowFromAgent({ id: 2, values: { t: "Head of Finance", y: "8", loc: "Colombo, Sri Lanka" } }, [{ key: "t", label: "Current title" }, { key: "y", label: "Total years of experience" }, { key: "loc", label: "Location" }], [], f, null), f);
+  assert.equal(young.mustHaves.years, "no", "8 years in total cannot hold 8 years after qualifying");
+});

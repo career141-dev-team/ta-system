@@ -42,7 +42,7 @@ export const LEVEL_YEARS: Record<Level, [number, number]> = {
   senior_manager: [10, 20],
   agm: [12, 22],
   dgm: [14, 25],
-  gm: [15, 35],
+  gm: [12, 35],
   director: [15, 40],
   c_level: [15, 45],
 };
@@ -232,6 +232,8 @@ export const INDUSTRIES: IndustryDef[] = [
   { key: "apparel", words: /\b(apparel|garments?|clothing)\b/i, name: "export apparel / garment manufacturers", not: [] },
   { key: "construction", words: /\b(construction|building projects?|civil engineering|contractors?|infrastructure)\b/i, name: "construction / building contractors and consultants", not: [] },
   { key: "heavy_manufacturing", words: /\bheavy\s+(manufacturing|industry|industries|engineering)\b/i, name: "heavy manufacturing (steel, cement, tyres, chemicals, heavy engineering)", not: ["apparel / light assembly"] },
+  { key: "healthcare", words: /\b(healthcare|health care|hospitals?|medical|clinics?)\b/i, name: "hospitals / healthcare", not: [] },
+  { key: "hospitality", words: /\b(hospitality|hotels?|resorts?|leisure)\b/i, name: "hotels / hospitality", not: [] },
   { key: "fmcg", words: /\b(fmcg|consumer goods)\b/i, name: "FMCG", not: [] },
   { key: "food_agro", words: /\b(food|agro|agriculture|poultry|dairy)\b/i, name: "food / agriculture", not: [] },
   { key: "banking", words: /\b(bank|banking|leasing|insurance|financial services)\b/i, name: "banking / financial services", not: [] },

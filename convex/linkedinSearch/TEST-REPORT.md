@@ -4,7 +4,7 @@
 
 ## Result in one line
 
-**138 of 138 tests pass, and the types are clean.** Three real searches worked. One search came back partial because its must-have was too narrow. The real test cost **$5.52**, which is $0.52 over the $5 cap. **$18.51 is left**, so the director's $10 is safe. The CFO search was not run, so the budget was not exceeded further.
+**155 of 155 tests pass, and the types are clean.** Three real searches worked. One search came back partial because its must-have was too narrow. The real test cost **$5.52**, which is $0.52 over the $5 cap. **$18.51 is left**, so the director's $10 is safe. The CFO search was not run, so the budget was not exceeded further.
 
 ## 1. Unit tests with a fake Crustdata server (no spend)
 
@@ -86,7 +86,7 @@ The scenario requests also work:
 - Agent Search cost $1.18–2.40 here, against $0.60–0.87 in the plan. Tighter forms add checks and cost more.
 - Company now comes back on every normal-search row (5 of 5 in the cost test).
 
-**Spend:** $5.52 in total. The UAE search was $1.18, and solar + strategy were $4.34 (Agent $3.29, normal-search top-ups $1.05). The balance went from $24.02 to **$18.51** (61.69 credits), then to **$18.27** after the $0.24 company-cost test, then to **$16.04** after the $2.22 joined-rules test. On 26 Nov another key (#40913, from a server) spent about $5.80; the CEO search then spent $2.49 (owner approved using part of the director's credit). **$7.70 left.** The reserve guard stops any paid call that would go below 35 credits.
+**Spend:** $5.52 in total. The UAE search was $1.18, and solar + strategy were $4.34 (Agent $3.29, normal-search top-ups $1.05). The balance went from $24.02 to **$18.51** (61.69 credits), then to **$18.27** after the $0.24 company-cost test, then to **$16.04** after the $2.22 joined-rules test. On 26 Nov another key (#40913, from a server) spent about $5.80; the CEO search then spent $2.49 (owner approved using part of the director's credit). **$7.70 left on key 1.** Key 2 (second account, 200 credits): $3.02 used for the Head of Finance search, **$56.98 left**. The reserve guard stops any paid call that would go below 35 credits.
 
 ## 3b. Joined-rules cost test (26 Nov, $2.22, owner approved up to $3.50)
 
@@ -108,6 +108,18 @@ fake client name); all fixed with tests (144 pass). Result: **30 people**, 114 s
 to C-level, 20-40 years; 27 of 30 with activewear evidence (2 unknown); 27 live in Sri Lanka, 3 abroad
 (Bangladesh 2, Ethiopia 1). MAS 4, INQUBE 3, Ananta 2, Brandix 2.
 **Gap:** "lives in Sri Lanka" also lets in foreigners who live in Sri Lanka; nationality is never guessed from names.
+
+## 3d. Owner's Head of Finance request (26 Nov, $3.02, key 2)
+
+Hospital Head of Finance, healthcare or hospitality only, ACA / CIMA / ACCA, "female candidates only".
+**Gender is not searched** (discrimination; never guessed from names or photos) — removed and the TA told why.
+The free check first found 4 defects (healthcare / hospitality not read, level-vs-years clash from post-qualification
+years, junk must-have, client Melsta / Melstacorp not left out); the real run found 2 more (one person with two
+profiles, years ✘ on senior people). All fixed with tests (155 pass).
+Result: **16 people, 15 after the repeat fix**, all Head of Finance / GM Finance level in Sri Lanka at hotels, resorts,
+hospitals or clinics; 9 meet the years check, 2 too few, 4 unknown. Crustdata found fewer than 30 ("partial"); the TA
+can press Show more. Headlines were not returned, so ACA / CIMA / ACCA must be checked on LinkedIn.
+The engine switched to key 2 by itself (key 1 below the director's reserve).
 
 ## 4. Not covered
 

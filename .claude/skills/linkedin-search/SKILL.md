@@ -66,8 +66,8 @@ Run `node tests/run.mjs linkedinSearch` (fake Crustdata, no spend), `npx tsc --n
 - 25-26 Nov 2026: engine built outside the repo by the owner with Claude; 2 rounds of adversarial checks (31 defects fixed); 4 paid Crustdata tests; owner decisions recorded in the README section 4. Moved into the repo in this pull request.
 
 <!-- skill-meta
-verified-commit: 7dc4e312
-verified-hash: 765dba16f2128a194e7867eca3db1de83aa227ae
+verified-commit: 530e1f20
+verified-hash: 6dbe814226fce472282cc8614645ba34e23aafdd
 verified-date: 2026-11-26
 sources:
   convex/linkedinSearch/**

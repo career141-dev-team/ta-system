@@ -130,6 +130,8 @@ export type FormSignals = {
   client: string | null;
   /** "Sri Lankans" was read as "lives in Sri Lanka" (no other country named). */
   sriLankansReadAsHome: boolean;
+  /** Years are counted after qualifying ("8-10 years post-qualification"): about 3 more years in total. */
+  postQualification: boolean;
   /** Owner's default (26 Nov): no place → lives in Sri Lanka; another country → Sri Lankans living there. */
   locationDefault: "home" | "sri_lankans_abroad" | null;
   /** The request asks for locals / another nationality / any nationality (then everyone in that country). */

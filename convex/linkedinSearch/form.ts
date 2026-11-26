@@ -239,7 +239,7 @@ function tidyTitle(t: string): string {
 
 // ---- Years -------------------------------------------------------------------------------
 
-type YearsHit = { min: number | null; max: number | null; area: string | null; ta: boolean; strong: boolean };
+type YearsHit = { min: number | null; max: number | null; area: string | null; ta: boolean; strong: boolean; postQual: boolean };
 
 const YEARS_RANGE = /(\d{1,2})\s*(?:years?\s*)?(?:-|to)\s*(\d{1,2})\s*\+?\s*years?/i;
 const YEARS_MIN = /(?:(?:minimum|min\.?|at least|over|more than|above)\s+(?:of\s+)?)?(\d{1,2})\s*(\+|plus)?\s*years?/i;
@@ -270,7 +270,7 @@ function readYears(lines: string[], taLines: Set<string>): YearsHit[] {
     if ((min ?? 0) > 45 || (max ?? 0) > 45) continue;
     const after = x.slice(end);
     const areaM = after.match(/^\s*(?:of\s+)?(?:relevant\s+|hands[- ]on\s+|industry\s+|working\s+|post[- ]qualification\s+|total\s+)?(?:experience|exp)?\s*(?:in|with|within|of)\s+(?:the\s+)?(?!relevant\b|experience\b|exp\b)([^.;\n]{3,120})/i);
-    hits.push({ min, max, area: areaM ? areaM[1].trim() : null, ta: taLines.has(l), strong: isCapsLine(l) || /^(must|only)\b|\b(must have|only)\b/i.test(l) });
+    hits.push({ min, max, area: areaM ? areaM[1].trim() : null, ta: taLines.has(l), strong: isCapsLine(l) || /^(must|only)\b|\b(must have|only)\b/i.test(l), postQual: /\bpost[- ]?qualifi\w*|\bPQE\b|after qualif\w*/i.test(l) });
   }
   return hits;
 }
@@ -429,6 +429,11 @@ function readExclusions(text: string, client: string | null, req: SearchRequest)
   const out: string[] = [];
   if (client) out.push(client);
   const kvClient = kv(splitLines(text), /^(company|client|employer|organi[sz]ation)$/i);
+  // "Melsta Hospitals is seeking …" → the client; "a subsidiary of Melstacorp PLC" → its group (owner, 26 Nov).
+  const seeking = text.match(/\b([A-Z][\w&]*(?:[ \t]+[A-Z][\w&]*){0,3})[ \t]+(?:is|are)[ \t]+(?:seeking|looking for|hiring|recruiting)\b/);
+  if (seeking && !/^(we|our|the|this|they|client)$/i.test(seeking[1]) && !/^(Our|The|This|We)\b/.test(seeking[1])) out.push(cleanCompany(seeking[1]));
+  const parent = text.match(/\bsubsidiary of\s+([A-Z][\w&]*(?:\s+[A-Z][\w&]*){0,3})/);
+  if (parent) out.push(cleanCompany(parent[1]));
   // "COMPANY : Leading Apparel Manufacturing – Activewear …" is a description of a hidden client, not a name.
   if (kvClient && !/^(leading|a|an|reputed|well[- ]known|large|top|our client|confidential|prestigious|renowned|one of)\b/i.test(kvClient)) out.push(cleanCompany(kvClient));
   if (req.opening?.client) out.push(cleanCompany(req.opening.client));
@@ -546,7 +551,7 @@ function emptyForm(): StandardForm {
     signals: {
       jdTitleLevel: null, jdTitle: null, locationsNamed: [], jdIndustryHint: null, taIndustryHint: null, splitRoles: [],
       freshGraduate: false, extraMustHaves: [], yearsFromJd: null, yearsFromTa: null, client: null,
-      sriLankansReadAsHome: false, locationDefault: null, localsAsked: false, overseasNoCountry: false, onlyCompaniesNamed: false, chars: 0,
+      sriLankansReadAsHome: false, postQualification: false, locationDefault: null, localsAsked: false, overseasNoCountry: false, onlyCompaniesNamed: false, chars: 0,
     },
   };
 }
@@ -626,10 +631,22 @@ export function formFromRules(req: SearchRequest): StandardForm {
   f.signals.yearsFromTa = taHit ? { min: taHit.min, max: taHit.max } : null;
   f.signals.yearsFromJd = jdHit ? { min: jdHit.min, max: jdHit.max } : null;
   const yHit = taHit ?? jdHit ?? null;
+  f.signals.postQualification = !!yHit?.postQual;
 
   // Industry — TA line first, JD requirement lines second. "no prior banking experience needed" is not an industry.
   const NEG = /\b(no|not|without|non)[- ](?:prior |previous |any )?[^,.;\n]*/gi;
-  const taInd = industryOf(taText.replace(NEG, " "));
+  let taInd = industryOf(taText.replace(NEG, " "));
+  // "from Healthcare or Hospitality only" → both, as one industry rule (owner's Head of Finance request, 26 Nov).
+  if (taInd && taInd.key !== "apparel_textile") {
+    for (const m of taText.replace(NEG, " ").matchAll(/\b([A-Za-z]+)\s+(?:or|and|\/|&)\s+([A-Za-z]+)\b/g)) {
+      const a = industryOf(m[1]);
+      const c = industryOf(m[2]);
+      if (a && c && a.key !== c.key) {
+        taInd = { key: `combo:${a.key}+${c.key}`, words: new RegExp(`${a.words.source}|${c.words.source}`, "i"), name: `${a.name} or ${c.name}`, not: [] };
+        break;
+      }
+    }
+  }
   const reqLines = lines.filter((l) => !taSet.has(l) && !NICE_LINE.test(l) && (REQUIREMENT_LINE.test(l) || l === titleLine || /\blooking for\b/i.test(l)) && !(client && l.includes(client)));
   const jdInd = industryOf(reqLines.join("\n").replace(NEG, " ")) ?? (jdTitle ? industryOf(jdTitle) : null);
   f.signals.taIndustryHint = taInd?.key ?? null;
@@ -736,7 +753,9 @@ export function formFromRules(req: SearchRequest): StandardForm {
     }
   }
   // "3-5 years of experience in HV and LV systems, generators …" → the skill part is a must-have.
-  if (yHit?.area && !f.areaYears && yHit.area.split(/\s+/).length >= 3 && !industryOf(yHit.area)) {
+  // "… in Finance, Accounting with at least 3 years in a managerial capacity" only repeats the role and level.
+  const repeatsRole = (a: string) => /\b(managerial|management capacity|senior management|leadership role)\b/i.test(a);
+  if (yHit?.area && !f.areaYears && yHit.area.split(/\s+/).length >= 3 && !industryOf(yHit.area) && !repeatsRole(yHit.area)) {
     musts.unshift(`Experience in ${yHit.area.replace(/\s+for this position.*$/i, "").replace(/[,.]+$/, "")}`);
   }
   // The TA's own criterion wins over a JD must-have on the same subject ("activewear").

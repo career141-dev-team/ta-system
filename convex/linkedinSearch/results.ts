@@ -79,7 +79,12 @@ export function normaliseUrl(u: string | null | undefined): string | null {
 
 export function personKey(name: string, company: string): string | null {
   const n = name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]/g, "");
-  const c = company.toLowerCase().replace(/\b(pvt|private|ltd|limited|plc|group|holdings|inc|llc)\b/g, "").replace(/[^a-z0-9]/g, "");
+  // "Pegasus Reef Hotel Sri Lanka" = "Pegasus Reef Hotel": company type words and a trailing country do not count.
+  const c = company
+    .toLowerCase()
+    .replace(/\b(pvt|private|ltd|limited|plc|group|holdings|inc|llc)\b/g, "")
+    .replace(/[\s,.-]+(sri lanka|lanka|bangladesh|india|maldives|uae|united arab emirates)\s*$/i, "")
+    .replace(/[^a-z0-9]/g, "");
   return n && c ? `${n}|${c}` : null;
 }
 
@@ -210,8 +215,12 @@ function functionTick(title: string, headline: string, f: StandardForm): { tick:
 }
 
 function yearsTick(y: YearsValue, f: StandardForm): Tick {
-  const want = f.totalYears;
-  if (!want || !y.known) return "unknown";
+  const base = f.totalYears;
+  if (!base || !y.known) return "unknown";
+  // Post-qualification years: total years are about 3–6 more.
+  const pq = f.signals?.postQualification;
+  // Post-qualification years are a floor for senior roles: total years must be about 3 more; no ceiling.
+  const want = pq ? { min: base.min != null ? base.min + 3 : null, max: null } : base;
   const lo = y.min ?? y.max ?? 0;
   const hi = y.max ?? y.min ?? 99;
   if (want.min != null && hi < want.min) return "no";

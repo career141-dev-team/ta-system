@@ -419,3 +419,43 @@ test("CEO-style COO JD with a GM / Director target still searches only the targe
   const f = formFromRules({ text: "COO - apparel group, Sri Lanka, 18+ years\nLooking for GM Operations / Directors who can step up" });
   assert.ok(!agentQuery(f).query.includes("Chief Operating Officer"));
 });
+
+// ---- Owner's Head of Finance request (26 Nov): hospital, healthcare or hospitality, ACA / CIMA / ACCA ----------
+
+const hof = () =>
+  formFromRules({
+    text: readFileSync(new URL("./fixtures/linkedinSearch/hof-request.txt", import.meta.url), "utf8"),
+    taNote: readFileSync(new URL("./fixtures/linkedinSearch/hof-note.txt", import.meta.url), "utf8"),
+  });
+
+test("HoF request: 'Healthcare or Hospitality only' → both industries, nothing else", () => {
+  const f = hof();
+  assert.equal(f.industry, "hospitals / healthcare or hotels / hospitality");
+  assert.match(agentQuery(f).query, /hospitals \/ healthcare or hotels \/ hospitality/);
+});
+
+test("HoF request: 8-10 years post-qualification → no level clash for Head of Finance; the query says post-qualification", () => {
+  const f = hof();
+  assert.deepEqual(f.totalYears, { min: 8, max: 10 });
+  assert.equal(f.signals.postQualification, true);
+  assert.deepEqual(codes(f), []);
+  assert.match(agentQuery(f).query, /8 to 10 years of post-qualification experience/);
+});
+
+test("HoF request: no junk must-have from the years line; qualifications checked in the headline", () => {
+  const f = hof();
+  assert.deepEqual(f.mustHaves, []);
+  for (const q of ["ACA", "ACCA", "CIMA"]) assert.ok(f.qualifications.includes(q), q);
+});
+
+test("HoF request: the client in the JD (Melsta Hospitals, part of Melstacorp) is left out", () => {
+  const f = hof();
+  assert.ok(f.excludeCompanies.includes("Melsta Hospitals"));
+  assert.ok(f.excludeCompanies.includes("Melstacorp"));
+});
+
+test("HoF request: gender is removed and the TA is told why; never in the query", () => {
+  const f = hof();
+  assert.ok(f.removed.some((r) => r.item === "gender"));
+  assert.doesNotMatch(agentQuery(f).query, /female|women|gender/i);
+});
