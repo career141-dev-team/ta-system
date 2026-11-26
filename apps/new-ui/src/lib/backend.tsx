@@ -386,7 +386,7 @@ function WhoIsLooking() {
   useEffect(() => {
     if (!me?.ok) return;
     const role = ROLE_OF[me.role] ?? "TA";
-    setSignedIn({ role, name: me.name, title: me.role === "admin" ? "Admin" : TITLE_OF[role] });
+    setSignedIn({ role, name: me.name, email: me.email, title: me.role === "admin" ? "Admin" : TITLE_OF[role] });
   }, [me]);
   return null;
 }

@@ -4,7 +4,7 @@
 // convex/ui/me.ts) and every write is blocked here while someone is being viewed.
 // Lives in this tab only, so a new tab always opens on the admin's own view.
 import { useSyncExternalStore } from "react";
-import { setRole, type Role } from "@/lib/role";
+import { canViewAs, setRole, type Role } from "@/lib/role";
 
 export type Viewed = { id: string; name: string; role: Role };
 const KEY = "ta-ui:viewing";
@@ -17,6 +17,7 @@ if (typeof window !== "undefined") {
 }
 export const getViewed = () => viewed;
 export function setViewed(p: Viewed | null) {
+  if (p && !canViewAs()) return;
   viewed = p;
   try {
     if (p) sessionStorage.setItem(KEY, JSON.stringify(p));
