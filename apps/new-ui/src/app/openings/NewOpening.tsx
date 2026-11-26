@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import Image from "next/image";
 import { DUR, EASE, gsap, motionOK, swapIn, useGSAP, useSwap } from "@/lib/gsap";
 import { useMe } from "@/lib/role";
+import { useSpeech } from "@/lib/useSpeech";
 import { door, useDoorAction } from "@/lib/backend";
 import { useLiftMenu } from "./[id]/liftMenu";
 import { CITIES, CLIENTS, EMPTY, TARGET_WORDS, TEAM, readBrief, type Loc, type Opening, type Priority, type Read } from "./data";
@@ -630,37 +631,19 @@ function AuraMark({ breathing = false }: { breathing?: boolean }) {
   );
 }
 
-/** "Record a brief": the browser's own speech, put into the box as text. */
+/** "Record a brief": the browser's own speech, put into the box as text. It listens until
+ *  the person presses stop (26 Nov 2026, owner: a brief cut off in the middle - this used
+ *  its own one-phrase recorder that ended at the first pause and was rebuilt on every
+ *  render; now the shared useSpeech, as the other chat boxes). */
 function Speak({ onText }: { onText: (t: string) => void }) {
-  type Rec = { lang: string; onresult: (e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void; onend: () => void; start: () => void; stop: () => void };
-  const rec = useRef<Rec | null>(null);
-  const [ok, setOk] = useState(false);
-  const [on, setOn] = useState(false);
-  useEffect(() => {
-    const w = window as unknown as { SpeechRecognition?: new () => Rec; webkitSpeechRecognition?: new () => Rec };
-    const R = w.SpeechRecognition ?? w.webkitSpeechRecognition;
-    if (!R) return;
-    const r = new R();
-    r.lang = "en-GB";
-    r.onresult = (e) => onText(e.results[0][0].transcript);
-    r.onend = () => setOn(false);
-    rec.current = r;
-    queueMicrotask(() => setOk(true));
-  }, [onText]);
+  const { ok, on, toggle } = useSpeech(onText);
   return (
     <button
       type="button"
       disabled={!ok}
       aria-pressed={on}
       title={ok ? (on ? "Stop" : "Record a brief") : "Recording is not available in this browser"}
-      onClick={() => {
-        if (!rec.current) return;
-        if (on) rec.current.stop();
-        else {
-          rec.current.start();
-          setOn(true);
-        }
-      }}
+      onClick={toggle}
       className={"flex items-center gap-2 rounded-full py-2 pl-3.5 pr-4 text-small font-medium disabled:opacity-40 " + (on ? "bg-danger-soft text-danger" : "bg-surface text-ink-2 hover:text-ink")}
     >
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-4" aria-hidden="true">

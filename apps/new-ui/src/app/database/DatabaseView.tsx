@@ -26,6 +26,7 @@ import FilterBar from "./FilterBar";
 import { petSay } from "@/lib/pet";
 import { candidateCall, cvHeaders, cvUrl, door, OLD_SERVER, saveLiveFile, useDoorMutation, useDoorQuery, useLive } from "@/lib/backend";
 import { useSignedInPerson } from "@/lib/role";
+import { useSpeech } from "@/lib/useSpeech";
 import type { MyDay } from "@/lib/askAura";
 import { chipsOf, jobIn, pastChats, personOf, readLive, whoIn, type LiveAnswer } from "./live";
 
@@ -1245,38 +1246,10 @@ function Composer({
   onSuggest: (text: string) => void;
 }) {
   const file = useRef<HTMLInputElement>(null);
-  const [listening, setListening] = useState(false);
-  type Rec = {
-    lang: string;
-    interimResults: boolean;
-    onresult: (e: {
-      results: ArrayLike<ArrayLike<{ transcript: string }>>;
-    }) => void;
-    onend: () => void;
-    start: () => void;
-    stop: () => void;
-  };
-  const rec = useRef<Rec | null>(null);
-  const [speech, setSpeech] = useState(false);
-  useEffect(() => {
-    const w = window as unknown as {
-      SpeechRecognition?: new () => Rec;
-      webkitSpeechRecognition?: new () => Rec;
-    };
-    const R = w.SpeechRecognition ?? w.webkitSpeechRecognition;
-    if (!R) return;
-    const r = new R();
-    r.lang = "en-GB";
-    r.interimResults = false;
-    r.onresult = (e) =>
-      onChange(
-        (box.current?.value ? box.current.value + " " : "") +
-          e.results[0][0].transcript,
-      );
-    r.onend = () => setListening(false);
-    rec.current = r;
-    queueMicrotask(() => setSpeech(true));
-  }, [onChange, box]);
+  // The shared recorder (26 Nov 2026): this one ended at the first pause and kept one
+  // phrase, so a spoken JD was cut off in the middle. Now it listens until stop.
+  const mic = useSpeech((t) => onChange((box.current?.value ? box.current.value + " " : "") + t));
+  const { ok: speech, on: listening } = mic;
   const press = () => {
     if (!value.trim() || busy) return;
     onSend();
@@ -1350,14 +1323,7 @@ function Composer({
         <button
           type="button"
           disabled={!speech}
-          onClick={() => {
-            if (!rec.current) return;
-            if (listening) rec.current.stop();
-            else {
-              rec.current.start();
-              setListening(true);
-            }
-          }}
+          onClick={mic.toggle}
           aria-pressed={listening}
           aria-label={
             speech
