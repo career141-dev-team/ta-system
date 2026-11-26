@@ -205,6 +205,9 @@ export default function ScoopsView() {
   // carries the chosen action and the count. `done` shows the drawn tick after it runs.
   const [selecting, setSelecting] = useState<null | "shortlist" | "delete">(null);
   const [done, setDone] = useState<null | "shortlist" | "delete">(null);
+  // The row whose bin was pressed once ("Delete?"), and the ticked rows' Delete asked once.
+  const [sureRow, setSureRow] = useState<string | null>(null);
+  const [surePicked, setSurePicked] = useState(false);
   const tickPath = useRef<SVGPathElement>(null);
   useEffect(() => {
     const p = tickPath.current;
@@ -246,6 +249,9 @@ export default function ScoopsView() {
       );
     }
   }
+  // A status read that failed or was refused used to be ignored, so the bar sat at its first 4% until a
+  // refresh (26 Nov). Now the card says so; the next good answer clears it.
+  const statusFault = watching.length && status && !status.ok ? status.message : "";
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const dragDepth = useRef(0);
@@ -305,6 +311,7 @@ export default function ScoopsView() {
   // The reading bar: filled by the share read so far, never quite full while any
   // CV is still being read.
   const readingNow = uploads.filter((u) => u.state === "reading").length;
+  const failed = uploads.filter((u) => u.state === "failed");
   const finished = uploads.length - readingNow;
   // Signed in: the true overall share, the mean of what the reader reports for each CV.
   const liveUps = uploads.filter((u) => u.live && u.state !== "failed");
@@ -316,6 +323,22 @@ export default function ScoopsView() {
     },
     { dependencies: [readingNow, finished, uploads.length, overall], scope: root, revertOnUpdate: false },
   );
+  // Each CV's own bar, by GSAP like the overall one (DESIGN.md: motion through gsap.ts only).
+  useGSAP(
+    () => {
+      root.current?.querySelectorAll<HTMLElement>("[data-row-bar]").forEach((el) => {
+        gsap.to(el, { scaleX: Number(el.dataset.rowBar) / 100, duration: DUR.slow, ease: EASE.out });
+      });
+    },
+    { dependencies: [uploads], scope: root, revertOnUpdate: false },
+  );
+  // All read and none failed: the card goes by itself a few seconds later (the CVs are in the list).
+  const allRead = uploads.length > 0 && !readingNow && !failed.length;
+  useEffect(() => {
+    if (!allRead) return;
+    const t = setTimeout(() => setUploads((u) => u.filter((x) => x.state !== "done")), 4000);
+    return () => clearTimeout(t);
+  }, [allRead]);
 
   // A CV dropped beside the panel must not make the browser open the file.
   useEffect(() => {
@@ -527,7 +550,6 @@ export default function ScoopsView() {
     setRemoved(null);
   };
 
-  const failed = uploads.filter((u) => u.state === "failed");
   const mins = Math.max(1, Math.ceil(readingNow / 3));
   const pickable = picked.filter((id) => list.some((s) => s.id === id && free(s)));
   const count = selecting === "shortlist" ? pickable.length : picked.length;
@@ -569,6 +591,44 @@ export default function ScoopsView() {
         <Count n={open} label="not shortlisted yet" />
         {CAN_ACT && (
           <div className="ml-auto flex items-center gap-[max(0.9rem,8px)]">
+            {mode === "list" && !selecting && picked.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPicked([]);
+                    setSurePicked(false);
+                  }}
+                  className="h-[max(2.6rem,34px)] rounded-full px-[max(1rem,12px)] text-[max(0.9625rem,13.5px)] text-ink-2 hover:bg-surface-2 hover:text-ink"
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  disabled={!pickable.length}
+                  onClick={() => {
+                    shortlist(pickable);
+                    setPicked([]);
+                  }}
+                  className="flex h-[max(2.6rem,34px)] items-center rounded-full bg-brand px-[max(1.3rem,14px)] text-[max(0.9625rem,13.5px)] font-medium text-white transition-colors hover:bg-brand-strong disabled:pointer-events-none disabled:opacity-50"
+                >
+                  Shortlist · {pickable.length}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!surePicked) return setSurePicked(true);
+                    setSurePicked(false);
+                    remove([...picked]);
+                  }}
+                  onBlur={() => setSurePicked(false)}
+                  className="flex h-[max(2.6rem,34px)] items-center gap-2 rounded-full bg-danger px-[max(1.3rem,14px)] text-[max(0.9625rem,13.5px)] font-medium text-white transition-opacity hover:opacity-90"
+                >
+                  <Bin />
+                  {surePicked ? `Press again to delete ${picked.length}` : `Delete · ${picked.length}`}
+                </button>
+              </>
+            )}
             {mode === "list" && selecting && (
               <>
                 {!done && (
@@ -668,62 +728,74 @@ export default function ScoopsView() {
           )}
 
           {uploads.length > 0 && (
-            <div data-scoop-top className="mt-[max(1rem,8px)] rounded-md bg-surface-2 px-[max(1.4rem,12px)] py-[max(0.75rem,8px)]">
+            // The reading card (26 Nov, owner: "stuck at 4%... no close button... not the design system"):
+            // a white card like the rest of the board, one overall bar, one row per CV with its own x,
+            // and an x that closes the whole card. Closing never stops the reading - each CV still
+            // joins the list once it is read. It closes by itself a few seconds after all are read.
+            <div data-scoop-top role="status" className="mt-[max(1rem,8px)] rounded-md border border-border bg-surface px-[max(1.4rem,12px)] py-[max(1rem,10px)] shadow-card">
               <div className="flex items-center gap-[max(1rem,9px)]">
-                <span className={"size-[max(0.6rem,7px)] shrink-0 rounded-full bg-success " + (readingNow ? "animate-pulse" : "")} />
-                <p className="whitespace-nowrap text-[max(0.9625rem,13px)] font-medium text-ink">
+                <span className={"size-[max(0.6rem,7px)] shrink-0 rounded-full " + (readingNow ? "animate-pulse bg-brand" : failed.length ? "bg-danger" : "bg-success")} />
+                <p className="min-w-0 truncate text-small font-medium text-ink">
                   {readingNow
                     ? overall != null
-                      ? `Reading ${readingNow} CV${readingNow === 1 ? "" : "s"} — ${overall}% done`
-                      : `Reading ${readingNow} CV${readingNow === 1 ? "" : "s"} — about ${mins} minute${mins === 1 ? "" : "s"}`
-                    : `Read ${finished - failed.length} CV${finished - failed.length === 1 ? "" : "s"}`}
+                      ? `Reading ${readingNow} CV${readingNow === 1 ? "" : "s"} · ${overall}% done`
+                      : `Reading ${readingNow} CV${readingNow === 1 ? "" : "s"} · about ${mins} minute${mins === 1 ? "" : "s"}`
+                    : `Read ${finished - failed.length} CV${finished - failed.length === 1 ? "" : "s"}${failed.length ? ` · ${failed.length} not read` : ""}`}
                 </p>
-                <div className="h-[max(0.4rem,5px)] w-[max(26rem,60px)] min-w-0 overflow-hidden rounded-full bg-white max-md:flex-1">
+                <div className="h-[max(0.4rem,5px)] w-[max(22rem,60px)] min-w-0 overflow-hidden rounded-full bg-surface-2 max-md:flex-1">
                   <div data-read-bar className="h-full origin-left scale-x-0 rounded-full bg-brand" />
                 </div>
                 <button
                   type="button"
-                  disabled={!!readingNow}
-                  onClick={() => setUploads((u) => u.filter((x) => x.state === "reading"))}
-                  className="ml-auto whitespace-nowrap text-[max(0.9625rem,13px)] text-ink-2 transition-colors hover:text-ink disabled:opacity-50"
+                  onClick={() => setUploads([])}
+                  aria-label="Close the upload progress"
+                  title={readingNow ? "Close - the CVs keep reading and join the list when done" : "Close"}
+                  className="ml-auto flex size-[max(2rem,28px)] shrink-0 items-center justify-center rounded-full text-ink-2 transition-colors hover:bg-surface-2 hover:text-ink"
                 >
-                  Clear finished
+                  <Cross />
                 </button>
               </div>
-              {/* A CV that would not read stays named, with Try again and Remove (4.3). */}
-              {/* Signed in: each CV with the reader's own stage and share, so nothing is a guess. */}
-              {uploads.filter((u) => u.live && u.state !== "failed").map((u) => (
-                <div key={u.id} className="mt-2 text-[max(0.9125rem,12.5px)]">
-                  <div className="flex items-center gap-[max(0.8rem,8px)]">
-                    <span className="min-w-0 truncate font-medium text-ink">{u.name || u.file}</span>
-                    <span className={u.attention ? "text-warn" : u.state === "done" ? "text-success" : "text-ink-2"}>{u.label}</span>
-                    <span className="ml-auto tabular-nums text-ink-3">{u.state === "done" ? "100%" : `${u.progress ?? 0}%`}</span>
-                  </div>
-                  <div className="mt-1 h-[3px] overflow-hidden rounded-full bg-white">
-                    <div className={"h-full rounded-full transition-[width] duration-500 " + (u.attention ? "bg-warn" : "bg-brand")} style={{ width: (u.state === "done" ? 100 : (u.progress ?? 0)) + "%" }} />
-                  </div>
-                  {u.note && <p className="mt-1 text-ink-2">{u.note}</p>}
-                </div>
-              ))}
-              {failed.map((u) => (
-                <div key={u.id} role="alert" className="mt-2 flex flex-wrap items-center gap-x-[max(0.8rem,8px)] gap-y-1 text-[max(0.9125rem,12.5px)]">
-                  <span className="min-w-0 truncate font-medium text-ink">{u.file}</span>
-                  {u.note ? (
-                    <>
-                      <span className="rounded-full bg-surface px-2 text-caption font-medium text-ink-2">{u.fault === "you" ? "Needs your action" : "On our side"}</span>
-                      <span className="basis-full text-danger sm:basis-auto">{u.note}</span>
-                    </>
-                  ) : (
-                    <span className="text-danger">Could not be read</span>
-                  )}
-                  <button type="button" onClick={() => retry(u)} className={SMALL + " ml-auto"}>
-                    Try again
-                  </button>
-                  <button type="button" onClick={() => setUploads((all) => all.filter((x) => x.id !== u.id))} className={SMALL}>
-                    Remove
-                  </button>
-                </div>
-              ))}
+              {statusFault && <p className="mt-2 text-small text-danger">{statusFault}</p>}
+              <ul className="mt-[max(0.6rem,6px)] space-y-[max(0.6rem,6px)]">
+                {uploads.map((u) => {
+                  const pct = u.state === "reading" ? (u.progress ?? 0) : 100;
+                  return (
+                    <li key={u.id} role={u.state === "failed" ? "alert" : undefined} className="text-small">
+                      <div className="flex flex-wrap items-center gap-x-[max(0.8rem,8px)] gap-y-1">
+                        <span className="min-w-0 truncate font-medium text-ink">{u.name || u.file}</span>
+                        {u.state === "failed" ? (
+                          <span className="rounded-full bg-danger-soft px-2 text-caption font-medium text-danger">{u.fault === "you" ? "Needs your action" : u.note ? "On our side" : "Could not be read"}</span>
+                        ) : (
+                          <span className={u.attention ? "text-warn" : u.state === "done" ? "text-success" : "text-ink-2"}>{u.label ?? (u.state === "done" ? "Read and added" : "Reading")}</span>
+                        )}
+                        <span className="ml-auto flex items-center gap-[max(0.6rem,6px)]">
+                          {u.state === "failed" ? (
+                            <button type="button" onClick={() => retry(u)} className={SMALL}>
+                              Try again
+                            </button>
+                          ) : (
+                            <span className="font-mono text-mono tabular-nums text-ink-3">{pct}%</span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setUploads((all) => all.filter((x) => x.id !== u.id))}
+                            aria-label={`Hide ${u.file} from this list`}
+                            className="flex size-[max(1.6rem,22px)] items-center justify-center rounded-full text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink"
+                          >
+                            <Cross small />
+                          </button>
+                        </span>
+                      </div>
+                      {u.state !== "failed" && (
+                        <div className="mt-1 h-[max(0.25rem,3px)] overflow-hidden rounded-full bg-surface-2">
+                          <div data-row-bar={pct} className={"h-full origin-left scale-x-0 rounded-full " + (u.attention ? "bg-warn" : u.state === "done" ? "bg-success" : "bg-brand")} />
+                        </div>
+                      )}
+                      {u.note && <p className={"mt-1 " + (u.state === "failed" ? "text-danger" : "text-ink-2")}>{u.note}</p>}
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
           )}
 
@@ -760,8 +832,9 @@ export default function ScoopsView() {
                 data-scoop-row={s.id}
                 className="flex flex-wrap items-center gap-x-[max(1.1rem,10px)] gap-y-2 rounded-md border border-surface-3 bg-white px-[max(1.4rem,11px)] py-[max(1.2rem,10px)] transition-shadow hover:shadow-card"
               >
-                {/* The tickbox shows only while a ⋮ "Select to…" is on. */}
-                {selecting && (
+                {/* Every row has its tickbox (26 Nov, owner: uploaded CVs had no select). Ticked rows get
+                    Shortlist / Delete beside the counts; the ⋮ "Select to…" modes still work. */}
+                {CAN_ACT && (
                   <input
                     type="checkbox"
                     disabled={selecting === "shortlist" ? !free(s) : !!s.lockedBy}
@@ -795,6 +868,27 @@ export default function ScoopsView() {
                 <div className="ml-auto flex items-center gap-[max(1.1rem,8px)]">
                   <span className={CHIP + " bg-violet-soft text-violet"}>{s.sentBy ? `Sent by ${s.sentBy} · ${s.sentDay}` : `Uploaded ${s.sentDay}`}</span>
                   <RowAction s={s} onShortlist={() => shortlist([s.id])} />
+                  {CAN_ACT && !s.lockedBy && (
+                    // Delete asks once more on the row itself; the second press takes it off the job.
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (sureRow !== s.id) return setSureRow(s.id);
+                        setSureRow(null);
+                        remove([s.id]);
+                      }}
+                      onBlur={() => setSureRow((r) => (r === s.id ? null : r))}
+                      aria-label={sureRow === s.id ? `Press again to delete ${s.name}` : `Delete ${s.name}`}
+                      title={sureRow === s.id ? "Press again to delete" : "Delete this scoop"}
+                      className={
+                        "flex h-[max(2.6rem,34px)] items-center justify-center gap-1.5 rounded-full transition-colors " +
+                        (sureRow === s.id ? "bg-danger px-[max(1rem,12px)] text-small font-medium text-white" : "w-[max(2.6rem,34px)] text-ink-3 hover:bg-danger-soft hover:text-danger")
+                      }
+                    >
+                      <Bin />
+                      {sureRow === s.id && "Delete?"}
+                    </button>
+                  )}
                 </div>
               </li>
             ))}
@@ -1009,6 +1103,14 @@ function MoreMenu({ listMode, what, refused, onSelect, onDelete }: { listMode: b
 }
 
 const MENU_ITEM = "flex w-full items-center gap-2.5 rounded-sm px-3 py-2 text-left text-small";
+
+function Cross({ small }: { small?: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className={small ? "size-[0.95em]" : "size-[1.15em]"} aria-hidden="true">
+      <path d="M6 6l12 12M18 6 6 18" />
+    </svg>
+  );
+}
 
 function Bin() {
   return (
