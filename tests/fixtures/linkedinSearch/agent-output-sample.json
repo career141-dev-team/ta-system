@@ -1,0 +1,259 @@
+{
+ "search_id": "41690-e2b13aa18a4bbac400744e8bf165a3ec",
+ "state": "succeeded",
+ "created_at": "2026-11-25T08:56:03.274105+00:00",
+ "credits_used": {
+  "agent_cost": 5.97,
+  "search_cost": 1.83,
+  "enrich_cost": 0.0,
+  "contact_cost": 0.0,
+  "total_cost": 7.8
+ },
+ "output": {
+  "note": "We found 30 senior merchandising candidates with 15+ years of experience and the requested Sri Lanka connection. We ranked the strongest activewear, sportswear, and athleisure evidence first; that experience was not verified for every candidate.",
+  "reason": "partial",
+  "person": {
+   "constraints": [
+    {
+     "id": "c1",
+     "text": "Currently holds the title GM Merchandising, Head of Merchandising, or Director of Merchandising.",
+     "importance": "core"
+    },
+    {
+     "id": "c2",
+     "text": "Currently works at an export apparel manufacturer.",
+     "importance": "core"
+    },
+    {
+     "id": "c3",
+     "text": "Has experience in activewear, sportswear, or athleisure.",
+     "importance": "core"
+    },
+    {
+     "id": "c4",
+     "text": "Has 15 or more years of total experience.",
+     "importance": "hard"
+    },
+    {
+     "id": "c5",
+     "text": "Is either based in Sri Lanka, or lives abroad and studied at a school or university in Sri Lanka.",
+     "importance": "hard"
+    }
+   ],
+   "columns": [
+    {
+     "key": "name",
+     "label": "Name",
+     "field": "basic_profile.name"
+    },
+    {
+     "key": "profile_url",
+     "label": "Profile URL",
+     "field": "social_handles.professional_network_identifier.profile_url"
+    },
+    {
+     "key": "current_title",
+     "label": "Current title",
+     "field": null
+    },
+    {
+     "key": "current_company",
+     "label": "Current company",
+     "field": null
+    },
+    {
+     "key": "experience",
+     "label": "Years of experience",
+     "field": null
+    },
+    {
+     "key": "basic_profile_headline",
+     "label": "Headline",
+     "field": "basic_profile.headline"
+    },
+    {
+     "key": "skills_professional_network_",
+     "label": "Skills",
+     "field": "skills.professional_network_skills"
+    },
+    {
+     "key": "location_country",
+     "label": "Country",
+     "field": "basic_profile.location.country"
+    }
+   ],
+   "rows": [
+    {
+     "id": 225971674,
+     "values": {
+      "basic_profile_headline": "Work at Hirdaramani International Export (PVT) Ltd - General Manager Merchandising",
+      "current_company": "Hirdaramani Group",
+      "current_title": "General Manager - Merchandising",
+      "experience": "21",
+      "location_country": "Sri Lanka",
+      "name": "Sisira Senanayake",
+      "profile_url": "https://www.linkedin.com/in/sisira-senanayake-ab600342",
+      "skills_professional_network_": []
+     },
+     "constraints": [
+      {
+       "constraint_id": "c1",
+       "assessment": "satisfied",
+       "evidence": "Current title is General Manager - Merchandising.",
+       "fields": []
+      },
+      {
+       "constraint_id": "c2",
+       "assessment": "satisfied",
+       "evidence": "Company describes garment production and apparel solutions for international brands.",
+       "fields": []
+      },
+      {
+       "constraint_id": "c3",
+       "assessment": "satisfied",
+       "evidence": "Experience names Patagonia, Asics, Nike, and Umbro apparel accounts.",
+       "fields": []
+      },
+      {
+       "constraint_id": "c4",
+       "assessment": "satisfied",
+       "evidence": "Summary states a career spanning 18 years.",
+       "fields": [
+        "professional_network.summary"
+       ]
+      },
+      {
+       "constraint_id": "c5",
+       "assessment": "satisfied",
+       "evidence": "Person is located in Sri Lanka.",
+       "fields": [
+        "basic_profile.location.country"
+       ]
+      }
+     ]
+    },
+    {
+     "id": 166186279,
+     "values": {
+      "basic_profile_headline": "General Manager at MAS Holdings",
+      "current_company": "MAS Holdings",
+      "current_title": "General Manager Merchandising",
+      "experience": "18",
+      "location_country": "Sri Lanka",
+      "name": "Thilan Jayatilaka",
+      "profile_url": "https://www.linkedin.com/in/thilan-jayatilaka-1b61b396",
+      "skills_professional_network_": [
+       "Textiles",
+       "Merchandising",
+       "Strategic Planning",
+       "Apparel",
+       "Sportswear",
+       "Fashion",
+       "Trend Analysis",
+       "Product Development",
+       "Business Analysis"
+      ]
+     },
+     "constraints": [
+      {
+       "constraint_id": "c1",
+       "assessment": "satisfied",
+       "evidence": "Current employer lists title General Manager Merchandising.",
+       "fields": []
+      },
+      {
+       "constraint_id": "c2",
+       "assessment": "satisfied",
+       "evidence": "MAS Holdings is described as a manufacturer of apparel and sportswear.",
+       "fields": []
+      },
+      {
+       "constraint_id": "c3",
+       "assessment": "satisfied",
+       "evidence": "Past role describes leading a sportswear business and performance apparel.",
+       "fields": [
+        "skills.professional_network_skills"
+       ]
+      },
+      {
+       "constraint_id": "c4",
+       "assessment": "satisfied",
+       "evidence": "Profile reports 18 years of experience.",
+       "fields": []
+      },
+      {
+       "constraint_id": "c5",
+       "assessment": "satisfied",
+       "evidence": "Person location country is Sri Lanka.",
+       "fields": [
+        "basic_profile.location.country"
+       ]
+      }
+     ]
+    },
+    {
+     "id": 23797124,
+     "values": {
+      "basic_profile_headline": "Merchandising | Marketing | Supply Chain & Logistics | Sourcing & Procurement | Factory Operations Expert | 23+ Years of Industry Experience",
+      "current_company": "Z&Z Intimates limited",
+      "current_title": "GM Merchandising Marketing Supply Chain Sourcing & Procurement",
+      "experience": "23",
+      "location_country": "Sri Lanka",
+      "name": "Kapila Asanka ",
+      "profile_url": "https://www.linkedin.com/in/kapila-asanka-121b777a",
+      "skills_professional_network_": [
+       "Leadership",
+       "Teamwork",
+       "Communication",
+       "Microsoft Office",
+       "People Management",
+       "Supply Management",
+       "Supplier Management",
+       "Computer Literacy",
+       "Analytical Skills",
+       "Apparel",
+       "Fashion",
+       "Merchandising"
+      ]
+     },
+     "constraints": [
+      {
+       "constraint_id": "c1",
+       "assessment": "satisfied",
+       "evidence": "Current title is GM Merchandising Marketing Supply Chain Sourcing & Procurement.",
+       "fields": []
+      },
+      {
+       "constraint_id": "c2",
+       "assessment": "satisfied",
+       "evidence": "Current employer makes underwear, sportswear, swimwear and intimates garments.",
+       "fields": []
+      },
+      {
+       "constraint_id": "c3",
+       "assessment": "satisfied",
+       "evidence": "Current role explicitly covers sportswear; past product descriptions include yoga pants and leggings.",
+       "fields": []
+      },
+      {
+       "constraint_id": "c4",
+       "assessment": "satisfied",
+       "evidence": "Experience is listed as 23 years.",
+       "fields": [
+        "basic_profile.headline"
+       ]
+      },
+      {
+       "constraint_id": "c5",
+       "assessment": "satisfied",
+       "evidence": "Profile location is Sri Lanka.",
+       "fields": [
+        "basic_profile.location.country"
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ }
+}

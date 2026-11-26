@@ -1,6 +1,6 @@
 ---
 name: skill-sync
-description: Keep the TA System feature skills (/follow-up, /scoop, /sets-shortlist, /strategy-planner, /voice-agent, /email-intake, /cv-extraction, /workday, /eod-email, /database-search, /excel-tables, /openings) in step with the code. Use after changing any feature, when a hook says a skill is out of date, before a pull request, or to add a new feature skill.
+description: Keep the TA System feature skills (/follow-up, /scoop, /sets-shortlist, /strategy-planner, /voice-agent, /email-intake, /cv-extraction, /workday, /eod-email, /database-search, /excel-tables, /openings, /linkedin-search) in step with the code. Use after changing any feature, when a hook says a skill is out of date, before a pull request, or to add a new feature skill.
 ---
 
 # skill-sync: keep feature skills true
