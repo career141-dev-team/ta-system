@@ -59,3 +59,50 @@ export function chipReadLine(a: ChipAnswer): string {
   if (a.industry.length) parts.push(a.industry.slice(0, 3).join(", "));
   return parts.join(" · ");
 }
+
+/** Which gender the request asks for, if any ("female candidates only", "ladies", "male only"). */
+export function genderAsked(text: string): "female" | "male" | null {
+  const t = text.toLowerCase();
+  const f = /\b(female|females|women|woman|ladies|lady|girls?)\b/.test(t);
+  const m = /\b(male|males|men|gentlemen|boys?)\b/.test(t.replace(/\bfe(male)/g, ""));
+  return f && !m ? "female" : m && !f ? "male" : null;
+}
+
+/**
+ * Gender read from first names (26 Nov 2026). Only ~12% of records say male or
+ * female, so "female candidates only" let through nearly every man as "not
+ * known". Haiku reads only the first names (nothing else about the person) and
+ * answers f, m or ? for each; any failure answers nothing and no one is dropped.
+ */
+export const firstNames = (n: string) =>
+  (n || "").replace(/[^A-Za-z .'-]/g, " ").trim().split(/\s+/).filter((w) => w.length > 2 && !/^[A-Z]\.?$/.test(w)).slice(0, 2).join(" ");
+
+export async function genderByName(names: string[]): Promise<("f" | "m" | "?")[] | null> {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key || !names.length) return null;
+  // Blank names are never sent (a blank in a plain list shifted every answer after it);
+  // each answer comes back under its own number, so a skipped one only leaves that person "?".
+  const asked = names.map((n, i) => ({ i, n: firstNames(n) })).filter((x) => x.n);
+  if (!asked.length) return names.map(() => "?");
+  try {
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-haiku-5-5",
+        max_tokens: 1500,
+        thinking: { type: "disabled" },
+        system: "For each numbered name (mostly Sri Lankan, also Indian and Muslim names), say if it is a woman's name (f), a man's name (m), or not clear (?). Answer only a JSON object from each number to f, m or ?, for example {\"1\":\"f\",\"2\":\"m\"}, nothing else.",
+        messages: [{ role: "user", content: asked.map((x) => `${x.i + 1}. ${x.n}`).join("\n") }],
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!r.ok) return null;
+    const j = (await r.json()) as { content?: { type: string; text?: string }[] };
+    const text = (j.content ?? []).map((c) => c.text ?? "").join("");
+    const o = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)) as Record<string, unknown>;
+    return names.map((_, i) => (o[String(i + 1)] === "f" || o[String(i + 1)] === "m" ? (o[String(i + 1)] as "f" | "m") : "?"));
+  } catch {
+    return null;
+  }
+}

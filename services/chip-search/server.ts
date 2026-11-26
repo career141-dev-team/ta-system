@@ -45,7 +45,7 @@ async function ask(system: string, user: string): Promise<string | null> {
       const r = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "x-api-key": KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-        body: JSON.stringify({ model: MODEL, max_tokens: 3000, thinking: { type: "disabled" }, system, messages: [{ role: "user", content: user }] }),
+        body: JSON.stringify({ model: MODEL, max_tokens: 6000, thinking: { type: "disabled" }, system, messages: [{ role: "user", content: user }] }),
         signal: AbortSignal.timeout(25_000),
       });
       if (r.status === 429 || r.status >= 500) throw new Error(String(r.status));

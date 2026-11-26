@@ -21,7 +21,7 @@ import { primeStore } from "@/data/prime";
 import { repo } from "@/data/store";
 import { EMPTY_CRITERIA } from "@/data/types";
 import { can } from "@/lib/auth";
-import { chipReadLine, chipScore, chipSearch, type ChipHit } from "@/lib/chipSearchClient";
+import { chipReadLine, chipScore, chipSearch, genderAsked, genderByName, type ChipHit } from "@/lib/chipSearchClient";
 import { booleanScore, booleanTerms } from "@/lib/booleanScore";
 import { cachedEngineSearch, deskCriteria, engineSearch, incompleteProblem, quickEngineSearch, type EngineSearch } from "@/lib/engineSearch";
 import { conversationText, describe, parseBoolean, parseConversation } from "@/lib/query";
@@ -80,12 +80,31 @@ export async function POST(req: NextRequest) {
   const chip = await chipSearch(q.split("\n"));
   if (chip && chip.hits.length) {
     try {
-      await primeStore({ candidateIds: chip.hits.slice(0, ROWS * 2).map((h) => h.id) });
-      const rows = chip.hits
+      const want = genderAsked(q);
+      // A gender ask drops many by name, so read further down the list for it.
+      const pool = chip.hits.slice(0, want ? ROWS * 3 : ROWS * 2);
+      await primeStore({ candidateIds: pool.map((h) => h.id) });
+      let found = pool
         .map((h) => ({ h, c: repo.candidate(h.id) }))
-        .filter((x): x is { h: ChipHit; c: NonNullable<typeof x.c> } => !!x.c)
-        .slice(0, ROWS)
-        .map(({ h, c }) => personOf(c, chipScore(h.score), h.aiWhy || h.why.join(" · ")));
+        .filter((x): x is { h: ChipHit; c: NonNullable<typeof x.c> } => !!x.c);
+      if (want) {
+        // Only the opposite gender leaves: the record's own gender first, else the first name.
+        const byName = await genderByName(found.map((x) => x.c.fullName ?? ""));
+        const mine = want === "female" ? "f" : "m";
+        // sure: the record says so or the name clearly does; maybe: nobody can tell; the rest leave.
+        const sure: typeof found = [], maybe: typeof found = [];
+        found.forEach((x, i) => {
+          const rec = String(x.c.gender ?? "").toLowerCase();
+          const g = rec === "male" ? "m" : rec === "female" ? "f" : byName?.[i] ?? "?";
+          if (g === mine) sure.push(x);
+          else if (g === "?") maybe.push(x);
+        });
+        found = [...sure, ...maybe];
+      }
+      // 26 Nov 2026: records with no name (a CV read, no name saved) go to the end, never on top.
+      const named = (x: (typeof found)[number]) => !!x.c.fullName?.trim();
+      found = [...found.filter(named), ...found.filter((x) => !named(x))];
+      const rows = found.slice(0, ROWS).map(({ h, c }) => personOf(c, chipScore(h.score), h.aiWhy || h.why.join(" · ")));
       if (rows.length) {
         return answer(req, { ok: true, total: chip.total, rows, read: chipReadLine(chip) || null, chips: [], refining: false, problem: null });
       }
