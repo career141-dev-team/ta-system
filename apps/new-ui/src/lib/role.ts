@@ -12,6 +12,7 @@ const subs = new Set<() => void>();
 /** The signed-in person (src/lib/backend.tsx), who wins over "View as" (18 Nov). */
 type Signed = { role: Role; name: string; title: string; email: string };
 let signed: Signed | null = null;
+const LIVE_BUILD = Boolean(process.env.NEXT_PUBLIC_CONVEX_URL && process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 export function setSignedIn(p: Signed | null) {
   if (JSON.stringify(p) === JSON.stringify(signed)) return;
   signed = p;
@@ -32,7 +33,10 @@ export const useSignedInPerson = () =>
  *  every admin account was offered it). It only changes what is drawn; the backend still
  *  judges every call by the real account. Remove before the switch-over (Track E step E9). */
 const VIEWERS = ["sanjeev@career141.com", "binath@career141.com"];
-export const canViewAs = () => !signed || (signed.role === "Admin" && VIEWERS.includes(signed.email.toLowerCase()));
+// On the live site nobody is "signed out" with a menu: until whoAmI answers (or if it never
+// does) View as stays hidden, or everyone briefly got it as a sample TA (26 Nov 2026).
+export const canViewAs = () =>
+  signed ? signed.role === "Admin" && VIEWERS.includes(signed.email.toLowerCase()) : !LIVE_BUILD;
 /** The admin tools (People & roles, quick access) are for admin accounts only (25 Nov); the sample, signed out, shows them as before. */
 export const useIsAdmin = () => {
   const me = useSignedInPerson();
@@ -94,7 +98,6 @@ export const PERSON: Record<Role, { name: string; title: string }> = {
 /** Who the top bar names: the signed-in person, else the sample one for the role. */
 // A live build only draws its screens signed in, so until whoAmI answers there is no
 // name yet - never the sample person's (20 Nov 2026: "Good evening, Rashmi" for the admin).
-const LIVE_BUILD = Boolean(process.env.NEXT_PUBLIC_CONVEX_URL && process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 export const personOf = (role: Role): { name: string; title: string } =>
   !signed
     ? LIVE_BUILD ? { name: "", title: "" } : PERSON[role]

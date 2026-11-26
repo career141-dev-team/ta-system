@@ -117,6 +117,9 @@ export function useWorkdayGate(): string {
   const role = useRole();
   const signed = useSignedInPerson();
   if (LIVE_BUILD && !signed) return "";
-  if (!worksADay(role)) return "";
+  // Signed in, the gate is the real account's: an admin who picked "View as TA" was held by
+  // their own workday, which an admin never starts (26 Nov 2026). The backend judges every
+  // write by the real account too; viewing a real person is read only anyway.
+  if (!worksADay(signed ? signed.role : role)) return "";
   return day === "none" ? "Your workday has not started today." : "";
 }
