@@ -10,7 +10,7 @@ export const ROLES: Role[] = ["TA", "TA Support", "Lead", "Admin", "Director", "
 const KEY = "ta-ui:role";
 const subs = new Set<() => void>();
 /** The signed-in person (src/lib/backend.tsx), who wins over "View as" (18 Nov). */
-type Signed = { role: Role; name: string; title: string };
+type Signed = { role: Role; name: string; title: string; email: string };
 let signed: Signed | null = null;
 export function setSignedIn(p: Signed | null) {
   if (JSON.stringify(p) === JSON.stringify(signed)) return;
@@ -27,11 +27,12 @@ export const useSignedInPerson = () =>
     () => signed,
     () => null,
   );
-/** TEMPORARY (owner 19 Nov 2026, while the new UI is built): a signed-in admin may
- *  still "View as" any role, to check each role's screens on the live site. It only
- *  changes what is drawn; the backend still judges every call by the real account.
- *  Remove before the switch-over (Track E step E9). */
-export const canViewAs = () => !signed || signed.role === "Admin";
+/** TEMPORARY (owner 19 Nov 2026, while the new UI is built): "View as" any role, to check
+ *  each role's screens on the live site - for these two admin accounts only (owner 26 Nov:
+ *  every admin account was offered it). It only changes what is drawn; the backend still
+ *  judges every call by the real account. Remove before the switch-over (Track E step E9). */
+const VIEWERS = ["sanjeev@career141.com", "binath@career141.com"];
+export const canViewAs = () => !signed || (signed.role === "Admin" && VIEWERS.includes(signed.email.toLowerCase()));
 /** The admin tools (People & roles, quick access) are for admin accounts only (25 Nov); the sample, signed out, shows them as before. */
 export const useIsAdmin = () => {
   const me = useSignedInPerson();
@@ -52,7 +53,7 @@ const stored = (): Role | null => {
   }
 };
 const read = (): Role => {
-  if (signed && signed.role !== "Admin") return signed.role;
+  if (signed && !canViewAs()) return signed.role;
   return stored() ?? (signed ? "Admin" : "TA");
 };
 export const useRole = () =>

@@ -12,7 +12,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { door, ROLE_OF, useDoorAction, useDoorClient, useDoorQuery, type AuraReply } from "@/lib/backend";
 import { setViewed, useViewed } from "@/lib/viewAs";
-import { useSignedInPerson } from "@/lib/role";
+import { canViewAs, useSignedInPerson } from "@/lib/role";
 import { petSay } from "@/lib/pet";
 import { dayAnswer, readAdminAsk, readAsk, SAMPLE_DAY, type MyDay, type Row } from "@/lib/askAura";
 
@@ -61,7 +61,7 @@ export function useAsk(onLeave?: () => void) {
     onLeave?.();
     router.push(path);
   };
-  const openRows = (p: Who, positions: { jobId: string; title: string }[] = []): Row[] => [
+  const openRows = (p: Who, positions: { jobId: string; title: string }[] = []): Row[] => !canViewAs() ? [] : [
     { main: `Open ${p.name}'s Today`, meta: "Read only", go: () => goAs(p, "/today") },
     ...positions.slice(0, 4).map((x) => ({ main: `Open pipeline: ${x.title}`, meta: "Read only", go: () => goAs(p, `/openings/demo?job=${x.jobId}&view=pipeline`) })),
   ];
@@ -75,6 +75,10 @@ export function useAsk(onLeave?: () => void) {
       if (adm.kind === "stop") {
         setViewed(null);
         setAnswer({ asked: t, say: "Back on your own view." });
+        return;
+      }
+      if (adm.kind === "view" && !canViewAs()) {
+        setAnswer({ asked: t, say: "Viewing as another person is not open to this account." });
         return;
       }
       setAnswer({ asked: t, busy: true });

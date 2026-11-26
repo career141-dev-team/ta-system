@@ -34,7 +34,6 @@ const ROLES: { value: RoleKey; label: string; note: string }[] = [
   { value: "client", label: "Client", note: "Sees their own openings only." },
 ];
 const ROLE_LABEL = Object.fromEntries(ROLES.map((r) => [r.value, r.label])) as Record<RoleKey, string>;
-const ROLE_MENU: MenuOption[] = ROLES.map((r) => ({ value: r.value, label: r.label, hint: r.note }));
 /** The filter on the right of the title: roles grouped the way the desk talks about them. */
 type Group = "all" | "tas" | "leads" | "director" | "ops";
 const GROUPS: [Group, string][] = [
@@ -117,6 +116,31 @@ function Stat({ dot, big, small }: { dot: string; big: number; small: string }) 
         <span className="text-caption text-ink-3">{small}</span>
       </span>
     </li>
+  );
+}
+
+/** Every role on the page at once (26 Nov 2026): as a menu of eight it was taller than the
+ *  card, so Admin and others were cut off at the top and could not be picked. */
+function RolePick({ value, onChange }: { value: RoleKey; onChange: (r: RoleKey) => void }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div role="radiogroup" aria-label="Role" className="flex flex-wrap gap-1.5">
+        {ROLES.map((r) => (
+          <button
+            key={r.value}
+            type="button"
+            role="radio"
+            aria-checked={value === r.value}
+            title={r.note}
+            onClick={() => onChange(r.value)}
+            className={"rounded-full px-3 py-1.5 text-caption transition-colors " + (value === r.value ? "bg-ink text-white" : "border border-border bg-surface text-ink-2 hover:text-ink")}
+          >
+            {r.label}
+          </button>
+        ))}
+      </div>
+      <p className="text-caption text-ink-3">{ROLES.find((r) => r.value === value)?.note}</p>
+    </div>
   );
 }
 
@@ -252,9 +276,13 @@ export default function People() {
           <input value={p.phone} onChange={(e) => set({ ...p, phone: e.target.value })} placeholder="+94 77 000 0000" className={FIELD} />
         </Field>
       )}
-      <Field label="Role">
-        <PillMenu options={ROLE_MENU} initial={p.role} title="Role" pillClass={MENU} onChange={(v) => set({ ...p, role: v as RoleKey })} />
-      </Field>
+      <div className="flex flex-col gap-1.5 sm:col-span-2 xl:col-span-3">
+        <span className="text-caption font-medium text-ink-3">Role</span>
+        <RolePick value={p.role} onChange={(role) => set({ ...p, role })} />
+        {mode === "edit" && p.id === meId && p.role !== "admin" && (
+          <p role="alert" className="text-caption font-medium text-danger">Saving this takes your own Admin away: only another admin can give it back. To just see another role, use View as in your menu.</p>
+        )}
+      </div>
       {mode !== "invite" && (
         <>
           <Field label="Works in">
@@ -436,10 +464,8 @@ export default function People() {
                         </span>
                         <span className={"shrink-0 rounded-full px-2.5 py-0.5 text-caption font-medium " + (a.canSignIn ? "bg-success-soft text-success" : "bg-surface-2 text-ink-3")}>{a.canSignIn ? "Can sign in" : "No login"}</span>
                       </span>
-                      <span className="flex items-center gap-2">
-                        <span className="min-w-0 flex-1">
-                          <PillMenu options={ROLE_MENU} initial="ta" title="Role" pillClass="flex w-full items-center justify-between gap-2 rounded-full bg-surface-2 px-4 py-2 text-small text-ink" onChange={(v) => setOtherRole((r) => ({ ...r, [a.email]: v as RoleKey }))} />
-                        </span>
+                      <span className="flex flex-col items-start gap-2.5">
+                        <RolePick value={otherRole[a.email] ?? "ta"} onChange={(v) => setOtherRole((r) => ({ ...r, [a.email]: v }))} />
                         <button
                           type="button"
                           onClick={() => {
