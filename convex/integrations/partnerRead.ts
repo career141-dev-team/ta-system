@@ -12,7 +12,7 @@ import { internal } from "../_generated/api";
 // integration's business, and the capacity planner has none in them (5 Nov).
 // The contact discovery tables (9 Nov) belong to the Brevo clone's own token, like Extras.
 // AURA's day plans (19 Nov) are a TA's own day, read by the TA and their lead only.
-export const PARTNER_PRIVATE_TABLES = ["taTrackingDevices", "taTrackingRows", "demoTemplateSends", "salesContacts", "salesContactRuns", "automobileContacts", "automobileContactRuns", "opsApiWrites", "opsEvents", "contactSearches", "contactSearchRows", "aiRuns", "auraDayPlans", "auraPlanTasks"] as const;
+export const PARTNER_PRIVATE_TABLES = ["taTrackingDevices", "taTrackingRows", "demoTemplateSends", "salesContacts", "salesContactRuns", "automobileContacts", "automobileContactRuns", "opsApiWrites", "opsEvents", "contactSearches", "contactSearchRows", "aiRuns", "auraDayPlans", "auraPlanTasks", "liProfiles", "liSearches", "liSeen", "liSpend", "liPools", "liCache", "liGate", "liRuns"] as const;
 export const PARTNER_READ_TABLES = [
   "dailyEmailPolicy", "dailyEmails", "dailyEmailAttachments",
   "users", "teams", "teamMembers", "jobAssignments", "openingAccessRequests", "roleAuditLog",

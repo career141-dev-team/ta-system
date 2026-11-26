@@ -8,7 +8,7 @@ description: LinkedIn Search engine (Crustdata Agent Search) - request / JD -> s
 ## Scope and boundaries
 
 In this skill: everything under `convex/linkedinSearch/` (engine only, no UI) and its tests `tests/linkedinSearch-*.test.ts`, `tests/linkedinSearchFake.ts`, `tests/fixtures/linkedinSearch/`.
-Not built yet (the TA System team wires them): the page `src/app/linkedin-search/`, Convex tables (`liSearches`, `liProfiles`, `liResults`, `liSpend`, `liFeedback`, `liPools`, `liSettings`), permissions `linkedin.search` / `linkedin.admin`, the contact step, purge jobs.
+Wired 26 Nov (see "Wiring" below). Not built: the contact step, purge jobs, an opt-out screen, the spend report screen, the Qdrant saved match.
 Neighbouring skills: /excel-tables - adding a found person to the opening's Excel Table (source "LinkedIn Search"), `heldBy` / `addedToOpening` read its rows by LinkedIn URL. /database-search - the 77,000-CV search; LinkedIn Search is NOT connected to it. /openings - the opening a search belongs to.
 Design source: owner's Full Plan v1.2 (25 Nov 2026) and `convex/linkedinSearch/README.md` (decisions section 4). Code is the source of truth.
 
@@ -60,16 +60,27 @@ Planned capabilities `linkedin.search` (run searches) and `linkedin.admin` (sett
 
 Run `node tests/run.mjs linkedinSearch` (fake Crustdata, no spend), `npx tsc --noEmit -p .` and `npx tsc --noEmit -p convex`. Add a test for every rule change; keep the 11 real TA requests in `tests/fixtures/linkedinSearch/requests/` passing. Paid checks are run by the owner only.
 
+## Wiring (26 Nov 2026)
+
+- Page `apps/new-ui/src/app/linkedin-search/`: `SearchSwitch.tsx` shows `RecruiterSearch.tsx` only when `ui/linkedinSearch:status` says the key is set; otherwise the older web search (`LinkedInSearch.tsx`). Opening picker; "Add to Excel Table" posts the old table's `add` through `/api/ui/links`.
+- Door `convex/ui/linkedinSearch.ts`: `start` (signed in, not client / viewer, one run each, 4 for the desk, daily limit) inserts a `liRuns` row and schedules `convex/ui/linkedinRun.ts:run`; the page watches `run`; `cancel` flags the row. TAs get no `usd` / `credits` (`linkedinRules.ts:forViewer`).
+- Tables `liProfiles, liSearches, liSeen, liSpend, liPools, liCache, liGate, liRuns`, all private to the partner API; functions in `convex/linkedinSearch/db.ts`. Engine objects are stored as JSON text.
+- TA feedback reaches searches from the Excel Tables: rows of the opening are hidden, a person held elsewhere shows "held by", a row marked declined shows as declined. Director / client rejections are not read yet; marks are not stored.
+- Backend settings: `CRUSTDATA_API_KEY` (switches it on), `LINKEDIN_SEARCH_DAILY_USD` (default 10), `CRUSTDATA_RESERVE_CREDITS` (default 0). Haiku calls are logged in `aiRuns` as "linkedin".
+- Test `tests/linkedinSearch-wiring.test.ts` runs start -> run -> read on an in-memory database with the fake Crustdata. Never run against the real backend or real Crustdata.
+
 ## History
 
 - 25-26 Nov 2026: engine built outside the repo by the owner with Claude; 2 rounds of adversarial checks (31 defects fixed); 4 paid Crustdata tests; owner decisions recorded in the README section 4. Moved into the repo in this pull request.
+- 26 Nov 2026: wired to tables, background runs and the new UI page.
 
 <!-- skill-meta
-verified-commit: 147a2af1
-verified-hash: 5a421e380680872d3a0dc2258297196ca4b48939
+verified-commit: 5efc0944
+verified-hash: 3e899710fc540f059d7e8ed5abe011135b6aec23
 verified-date: 2026-11-26
 sources:
   convex/linkedinSearch/**
+  convex/ui/linkedin*.ts
   tests/linkedinSearch*.ts
   tests/fixtures/linkedinSearch/**
 -->
