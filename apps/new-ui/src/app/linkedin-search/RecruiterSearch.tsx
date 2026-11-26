@@ -133,8 +133,10 @@ function Search({ store }: { store: string }) {
   const turns = chat?.turns.length ?? 0;
   // A new message brings its turn to the top, so a long list of people is read from its start.
   useEffect(() => {
-    const all = scroller.current?.querySelectorAll<HTMLElement>("[data-turn]");
-    all?.[all.length - 1]?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const box = scroller.current;
+    const last = [...(box?.querySelectorAll<HTMLElement>("[data-turn]") ?? [])].pop();
+    // Only this box moves: scrollIntoView also pushed the whole board up, out of reach.
+    if (box && last) box.scrollTo({ top: box.scrollTop + last.getBoundingClientRect().top - box.getBoundingClientRect().top - 48, behavior: "smooth" });
   }, [openId, turns]);
   useSwap(scroller, openId);
 
@@ -322,8 +324,12 @@ function Search({ store }: { store: string }) {
       </aside>
 
       <section className="relative isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        {/* The glows sit behind everything here, so they never wash out the people listed. */}
+        {chat && <AuraBarGlow className="bottom-[max(1.2rem,8px)]" />}
         {!chat && <Glow src="/aurora-start.svg" inset="-31.82% -14.29%" className="top-1/2 h-[27.5rem] w-[61.25rem] max-w-full -translate-y-1/2" />}
-        <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-[max(1.5rem,12px)] pb-6 pt-[max(2.25rem,20px)]">
+        {/* Words fade out under the board's tab instead of being cut by it. */}
+        {chat && <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[max(4rem,48px)] bg-gradient-to-b from-surface to-transparent" />}
+        <div ref={scroller} className={"min-h-0 flex-1 overflow-y-auto px-[max(1.5rem,12px)] pb-6 " + (chat ? "pt-[max(3.5rem,48px)]" : "pt-[max(2.25rem,20px)]")}>
           {!chat ? (
             <div className="flex min-h-full flex-col items-center justify-center gap-3 text-center">
               <Image src="/aura-mark.png" alt="AURA" width={56} height={56} className="size-[max(3.5rem,44px)] rounded-full" />
@@ -343,7 +349,7 @@ function Search({ store }: { store: string }) {
               {chat.turns.map((t, i) => (
                 <div key={t.run} data-turn className="flex flex-col gap-[max(1.2rem,12px)]">
                   <div className="flex justify-end">
-                    <p className="max-h-48 max-w-[80%] overflow-y-auto whitespace-pre-line rounded-lg rounded-br-xs bg-surface-2 px-[max(1.25rem,14px)] py-[max(0.75rem,9px)] text-body text-ink">{t.said}</p>
+                    <Said text={t.said} />
                   </div>
                   <Answer id={t.run} latest={i === chat.turns.length - 1 && !sending} go={(args, words) => void go(args, words)} newSearch={newSearch} job={job} add={add} said={said} inTable={inTable} />
                 </div>
@@ -354,11 +360,26 @@ function Search({ store }: { store: string }) {
 
         {chat && (
           <div className="relative isolate px-[max(1.5rem,12px)] pb-[max(2.4rem,14px)]">
-            <AuraBarGlow className="bottom-[max(1.2rem,8px)]" />
             {composer}
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+/** What the TA said. A pasted JD starts short, so there is one scroll on the page, not two. */
+function Said({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const long = text.length > 300 || text.split("\n").length > 5;
+  return (
+    <div className="flex max-w-[80%] flex-col items-end gap-1 rounded-lg rounded-br-xs bg-surface-2 px-[max(1.25rem,14px)] py-[max(0.75rem,9px)]">
+      <p className={"self-stretch whitespace-pre-line break-words text-body text-ink " + (long && !open ? "line-clamp-5" : "")}>{text}</p>
+      {long && (
+        <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="text-small font-medium text-brand hover:underline">
+          {open ? "Show less" : "Show all"}
+        </button>
+      )}
     </div>
   );
 }
@@ -431,7 +452,8 @@ function Answer({ id, latest, go, newSearch, job, add, said, inTable }: { id: st
               <legend className="sr-only">{q.question}</legend>
               <p className="text-body font-medium text-ink">{q.question}</p>
               <div className="flex flex-wrap gap-2">
-                {q.options?.map((o) => (
+                {/* One search is one place; "both" is not run for you, so it is not offered. */}
+                {q.options?.filter((o) => !o.startsWith("Both —")).map((o) => (
                   <button key={o} type="button" aria-pressed={answers[q.code] === o} onClick={() => setAnswers({ ...answers, [q.code]: o })} className={answers[q.code] === o ? PRIMARY : CHIP}>
                     {answers[q.code] === o && <Icon name="check" />}
                     {o}

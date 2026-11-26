@@ -136,6 +136,33 @@ test("a search runs end to end, a TA sees people and no prices, show more repeat
   }
 });
 
+test("two places named: answering once is enough, the question never comes back", async () => {
+  const real = { fetch: globalThis.fetch, timer: globalThis.setTimeout };
+  const fake = fakeCrustdata(fakeClock(Date.now()), { agentReadsUntilDone: 1 });
+  process.env.CRUSTDATA_API_KEY = "test-key";
+  globalThis.fetch = fake.fetch as unknown as typeof fetch;
+  globalThis.setTimeout = ((f: () => void) => real.timer(f, 0)) as unknown as typeof setTimeout;
+  try {
+    const { ctx, fn } = await setup();
+    let run = await fn(door.start, { kind: "search", text: "Accounts Manager, Sri Lanka or overseas, 8-10 years" });
+    await (runAction as any)._handler(ctx, { runId: run.runId });
+    let out = JSON.parse((await fn(door.run, { id: run.runId })).run.out);
+    assert.equal(out.status, "questions");
+    assert.ok(out.check.questions.some((q: Row) => q.code === "overseas_where" || q.code === "clash_two_locations"));
+    // Answer whatever is asked, once: the next result must not ask it again.
+    const answers = out.check.questions.map((q: Row) => ({ code: q.code, answer: q.options?.[0] ?? "Manager" }));
+    run = await fn(door.start, { kind: "answer", from: run.runId, answers });
+    await (runAction as any)._handler(ctx, { runId: run.runId });
+    out = JSON.parse((await fn(door.run, { id: run.runId })).run.out);
+    assert.notEqual(out.status, "questions", JSON.stringify(out.check?.questions));
+    assert.ok(answers.every((a: Row) => out.accepted.includes(a.code)));
+  } finally {
+    globalThis.fetch = real.fetch;
+    globalThis.setTimeout = real.timer;
+    delete process.env.CRUSTDATA_API_KEY;
+  }
+});
+
 test("a request with a question stops before any money, and the answer carries it on", async () => {
   const real = { fetch: globalThis.fetch, timer: globalThis.setTimeout };
   const clock = fakeClock(Date.now());
