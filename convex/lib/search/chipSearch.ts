@@ -179,7 +179,27 @@ export function createSearch(cards: any[], ask: Ask) {
     };
   };
 
-  return async function search(turns: string[], opts: { inspect?: boolean } = {}) {
+  /**
+   * The final AI check over a ranked list. 26 Nov 2026: a strict request ("female",
+   * "healthcare only") can lose most of the first 60; the people after them were then
+   * shown unchecked. So it checks the next 60 too, up to 180, until 30 are kept.
+   * Also called on its own (checkAll) after the caller has removed people the
+   * search cannot see, such as men by name for "female only".
+   */
+  async function checkAll(request: string, hits: any[]) {
+    const kept: any[] = [], removed: any[] = [];
+    let checked = 0;
+    while (checked < Math.min(hits.length, 180) && kept.length < 30) {
+      // One failed read (time-out, cut answer) is tried once more before the check stops.
+      const ins = (await inspect(request, hits.slice(checked))) ?? (await inspect(request, hits.slice(checked)));
+      if (!ins) break;
+      kept.push(...ins.kept); removed.push(...ins.removed); checked += ins.checked;
+    }
+    const final = checked ? [...kept.filter((h) => h.ai === 2), ...kept.filter((h) => h.ai !== 2), ...hits.slice(checked)] : hits;
+    return { final, removed, checked };
+  }
+
+  const search = async function search(turns: string[], opts: { inspect?: boolean } = {}) {
     const all = turns.join("\n");
     const [read, jobRaw] = await Promise.all([readAi(turns), ask(JOB_SYSTEM, all)]);
     const jo = parseJson(jobRaw) ?? {};
@@ -272,22 +292,12 @@ export function createSearch(cards: any[], ask: Ask) {
     }
     // Final layer: the AI inspector reads the request again and removes the misfits from the top 40.
     let final = hits, removed: any[] = [], checked = 0;
-    if (opts.inspect !== false) {
-      // 26 Nov 2026: a strict request ("female", "healthcare only") can lose most of the first 60;
-      // the people after them were then shown unchecked. Check the next 60 too, up to 180,
-      // until 30 are kept.
-      const kept: any[] = [];
-      while (checked < Math.min(hits.length, 180) && kept.length < 30) {
-        const ins = await inspect(all, hits.slice(checked));
-        if (!ins) break;
-        kept.push(...ins.kept); removed.push(...ins.removed); checked += ins.checked;
-      }
-      if (checked) final = [...kept.filter((h) => h.ai === 2), ...kept.filter((h) => h.ai !== 2), ...hits.slice(checked)];
-    }
+    if (opts.inspect !== false) ({ final, removed, checked } = await checkAll(all, hits));
     return {
       hits: final, removed, checked, all: hits, dups, ms, ai: read.ai && jobRaw != null, holders, missing,
       job: names, not: job.not, industry: [...job.industry, ...job.types], level: job.level, years: yc ? [yc.min, yc.max] : null,
       chips: chips.filter((c: any) => c.field !== "years"), roles: rolesKept,
     };
   };
+  return Object.assign(search, { checkAll });
 }

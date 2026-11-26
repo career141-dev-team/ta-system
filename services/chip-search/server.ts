@@ -66,6 +66,8 @@ let search: Search | null = null;
 let cards = 0;
 let loadedAt = "";
 let loading: Promise<void> | null = null;
+// Ranked lists waiting for their AI check (/check), by the search words.
+const ranked = new Map<string, any>();
 
 /** Reads the cards line by line (the file is ~400 MB); the model's raw answer is dropped to save memory. */
 async function load(): Promise<void> {
@@ -88,12 +90,12 @@ async function load(): Promise<void> {
 const reload = () => (loading ??= load().catch((e) => log("load failed", String(e))).finally(() => { loading = null; }));
 
 /** What the Database chat needs: ids and the reasons, never a name, email or phone (cards hold none). */
-function answer(r: any) {
+function answer(r: any, max = 200) {
   return {
     ok: true,
     total: r.hits.length,
     removed: r.removed.length,
-    hits: r.hits.slice(0, 200).map((h: any) => ({ id: h.card.id, score: h.score, why: h.why, ai: h.ai ?? null, aiWhy: h.aiWhy ?? "" })),
+    hits: r.hits.slice(0, max).map((h: any) => ({ id: h.card.id, score: h.score, why: h.why, ai: h.ai ?? null, aiWhy: h.aiWhy ?? "" })),
     job: r.job,
     not: r.not,
     industry: r.industry,
@@ -115,13 +117,31 @@ const server = http.createServer(async (req, res) => {
   try {
     if (req.method === "GET" && req.url === "/health") return send(res, 200, { ok: !!search, cards, loadedAt, spendUsd: spend.day === today() ? Number(spend.usd.toFixed(3)) : 0 });
     if (req.method === "POST" && req.url === "/reload") { reload(); return send(res, 202, { ok: true }); }
-    if (req.method !== "POST" || req.url !== "/search") return send(res, 404, { ok: false, message: "Not found." });
+    if (req.method !== "POST" || (req.url !== "/search" && req.url !== "/check")) return send(res, 404, { ok: false, message: "Not found." });
     let raw = "";
-    for await (const chunk of req) { raw += chunk; if (raw.length > MAX_CHARS * 2) return send(res, 413, { ok: false, message: "That search is too long." }); }
+    for await (const chunk of req) { raw += chunk; if (raw.length > MAX_CHARS * 8) return send(res, 413, { ok: false, message: "That search is too long." }); }
     const body = JSON.parse(raw || "{}");
     const turns = (Array.isArray(body.turns) ? body.turns : []).map((t: unknown) => String(t ?? "").trim()).filter(Boolean).slice(-MAX_TURNS);
     if (!turns.length) return send(res, 400, { ok: false, message: "Say who you are looking for." });
     if (!search) return send(res, 503, { ok: false, message: "The cards are still loading." });
+    const key = turns.join("\n");
+    if (req.url === "/check") {
+      // The AI check over the people the caller kept (26 Nov 2026: men removed by name for
+      // "female only" before the check, so the check is spent on the right people).
+      const held = ranked.get(key);
+      if (!held) return send(res, 409, { ok: false, message: "Search first." });
+      const byId = new Map(held.all.map((h: any) => [h.card.id, h]));
+      const list = (Array.isArray(body.ids) ? body.ids : []).map((id: unknown) => byId.get(String(id))).filter(Boolean);
+      const c = await search.checkAll(key, list);
+      return send(res, 200, answer({ ...held, hits: c.final, removed: c.removed }));
+    }
+    if (body.inspect === false) {
+      // Ranked, no AI check yet: the caller narrows the list and asks /check.
+      const r = await search(turns, { inspect: false });
+      if (ranked.size > 50) ranked.clear();
+      ranked.set(key, r);
+      return send(res, 200, answer({ ...r, hits: r.all }, 400));
+    }
     return send(res, 200, answer(await search(turns)));
   } catch (e) {
     log("search failed", String(e));

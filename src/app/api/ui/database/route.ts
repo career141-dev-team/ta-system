@@ -77,31 +77,41 @@ export async function POST(req: NextRequest) {
 
   // 26 Nov 2026: the chip search answers first (one final answer, no quick pass);
   // the old engine below runs only when it cannot answer.
-  const chip = await chipSearch(q.split("\n"));
+  // "Female/male only": the other gender is removed by name BEFORE the search's AI check, so the
+  // check is spent on people who can be shown (records rarely say male or female; cards hold no names).
+  const want = genderAsked(q);
+  const narrow = want
+    ? async (ids: string[]) => {
+        const pool = ids.slice(0, 300);
+        await primeStore({ candidateIds: pool });
+        const people = pool.map((id) => ({ id, c: repo.candidate(id) }));
+        const byName = await genderByName(people.map((x) => x.c?.fullName ?? ""));
+        const mine = want === "female" ? "f" : "m";
+        // sure: the record says so or the name clearly does; maybe: nobody can tell; the rest leave.
+        const sure: string[] = [], maybe: string[] = [];
+        people.forEach((x, i) => {
+          if (!x.c) return;
+          const rec = String(x.c.gender ?? "").toLowerCase();
+          const g = rec === "male" ? "m" : rec === "female" ? "f" : byName?.[i] ?? "?";
+          if (g === mine) sure.push(x.id);
+          else if (g === "?") maybe.push(x.id);
+        });
+        return byName ? [...sure, ...maybe] : null;
+      }
+    : undefined;
+  const chip = await chipSearch(q.split("\n"), narrow);
   if (chip && chip.hits.length) {
     try {
-      const want = genderAsked(q);
-      // A gender ask drops many by name, so read further down the list for it.
-      const pool = chip.hits.slice(0, want ? ROWS * 3 : ROWS * 2);
+      const pool = chip.hits.slice(0, ROWS * 2);
       await primeStore({ candidateIds: pool.map((h) => h.id) });
       let found = pool
         .map((h) => ({ h, c: repo.candidate(h.id) }))
         .filter((x): x is { h: ChipHit; c: NonNullable<typeof x.c> } => !!x.c);
-      if (want) {
-        // Only the opposite gender leaves: the record's own gender first, else the first name.
-        const byName = await genderByName(found.map((x) => x.c.fullName ?? ""));
-        const mine = want === "female" ? "f" : "m";
-        // sure: the record says so or the name clearly does; maybe: nobody can tell; the rest leave.
-        const sure: typeof found = [], maybe: typeof found = [];
-        found.forEach((x, i) => {
-          const rec = String(x.c.gender ?? "").toLowerCase();
-          const g = rec === "male" ? "m" : rec === "female" ? "f" : byName?.[i] ?? "?";
-          if (g === mine) sure.push(x);
-          else if (g === "?") maybe.push(x);
-        });
-        found = [...sure, ...maybe];
-      }
-      // 26 Nov 2026: records with no name (a CV read, no name saved) go to the end, never on top.
+      // 26 Nov 2026: when the AI check passed 5 or more, only checked people are shown - the
+      // unchecked ones after them were weak (cement, tea, seafood for a hospital brief).
+      const checked = found.filter((x) => x.h.ai != null);
+      if (checked.length >= 5) found = checked;
+      // Records with no name (a CV read, no name saved) go to the end, never on top.
       const named = (x: (typeof found)[number]) => !!x.c.fullName?.trim();
       found = [...found.filter(named), ...found.filter((x) => !named(x))];
       const rows = found.slice(0, ROWS).map(({ h, c }) => personOf(c, chipScore(h.score), h.aiWhy || h.why.join(" · ")));

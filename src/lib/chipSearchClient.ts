@@ -25,27 +25,39 @@ const WAIT_MS = 45_000;
 const held = new Map<string, { at: number; a: ChipAnswer }>();
 const HOLD_MS = 10 * 60_000;
 
-export async function chipSearch(turns: string[]): Promise<ChipAnswer | null> {
+async function post(path: "/search" | "/check", body: unknown): Promise<ChipAnswer | null> {
+  try {
+    const url = (process.env.C141_CHIP_SEARCH_URL || URL_DEFAULT).replace(/\/search$/, path);
+    const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(WAIT_MS) });
+    if (!r.ok) return null;
+    const a = (await r.json()) as ChipAnswer;
+    return a?.ok && Array.isArray(a.hits) ? a : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The search with its AI check. `narrow` (26 Nov 2026) removes people the search cannot
+ * see - men by name for "female only" - BEFORE the AI check, so the check is spent on the
+ * people who can be shown: ranked list first, narrowed here, then /check on what is left.
+ */
+export async function chipSearch(turns: string[], narrow?: (ids: string[]) => Promise<string[] | null>): Promise<ChipAnswer | null> {
   if (process.env.C141_CHIP_SEARCH === "off") return null;
   const key = turns.join("\n");
   const h = held.get(key);
   if (h && Date.now() - h.at < HOLD_MS) return h.a;
-  try {
-    const r = await fetch(process.env.C141_CHIP_SEARCH_URL || URL_DEFAULT, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ turns }),
-      signal: AbortSignal.timeout(WAIT_MS),
-    });
-    if (!r.ok) return null;
-    const a = (await r.json()) as ChipAnswer;
-    if (!a?.ok || !Array.isArray(a.hits)) return null;
-    if (held.size > 200) held.clear();
-    held.set(key, { at: Date.now(), a });
-    return a;
-  } catch {
-    return null;
+  let a: ChipAnswer | null = null;
+  if (narrow) {
+    const ranked = await post("/search", { turns, inspect: false });
+    const ids = ranked && (await narrow(ranked.hits.map((x) => x.id)));
+    if (ranked && ids) a = await post("/check", { turns, ids });
   }
+  a ??= await post("/search", { turns });
+  if (!a) return null;
+  if (held.size > 200) held.clear();
+  held.set(key, { at: Date.now(), a });
+  return a;
 }
 
 /** The search's own 0-450 rank as the chat's 0-99 match figure. */
@@ -90,12 +102,12 @@ export async function genderByName(names: string[]): Promise<("f" | "m" | "?")[]
       headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
       body: JSON.stringify({
         model: "claude-haiku-5-5",
-        max_tokens: 1500,
+        max_tokens: 4000,
         thinking: { type: "disabled" },
         system: "For each numbered name (mostly Sri Lankan, also Indian and Muslim names), say if it is a woman's name (f), a man's name (m), or not clear (?). Answer only a JSON object from each number to f, m or ?, for example {\"1\":\"f\",\"2\":\"m\"}, nothing else.",
         messages: [{ role: "user", content: asked.map((x) => `${x.i + 1}. ${x.n}`).join("\n") }],
       }),
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(25_000),
     });
     if (!r.ok) return null;
     const j = (await r.json()) as { content?: { type: string; text?: string }[] };
