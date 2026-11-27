@@ -22,7 +22,7 @@ import {
 import { POOL, filterReply, panelOf } from "./aura";
 import FilterBar from "./FilterBar";
 import { petSay } from "@/lib/pet";
-import { candidateCall, cvHeaders, cvUrl, door, OLD_SERVER, saveLiveFile, useDoorMutation, useDoorQuery, useLive } from "@/lib/backend";
+import { candidateCall, cvHeaders, cvUrl, door, OLD_SERVER, queryOnce, saveLiveFile, useDoorMutation, useDoorQuery, useLive } from "@/lib/backend";
 import { useSignedInPerson } from "@/lib/role";
 import { useSpeech } from "@/lib/useSpeech";
 import type { MyDay } from "@/lib/askAura";
@@ -58,6 +58,8 @@ type Thread = {
   turns: Turn[];
   /** A past search (signed in): run again when the chat is opened. */
   q?: string;
+  /** Its conversation is saved in the backend and is read when the chat is opened (27 Nov 2026). */
+  saved?: boolean;
 };
 
 // Signed in, the chat searches the real database through old AURA's own search
@@ -84,6 +86,18 @@ const foundLine = (a: LiveAnswer, what = "") =>
     : a.total
       ? `${a.total} ${a.total === 1 ? "person matches" : "people match"}${what}${a.read ? ` - ${a.read}` : ""}.${a.problem ? ` ${a.problem}` : ""}`
       : (a.problem ?? "Nothing in the database matched that search.");
+
+/** A past chat with no saved turns: its words and a button to run it again. */
+const olderChat = (id: string, query: string): Turn[] => [
+  { id: `${id}-m`, from: "me", text: query.split("\n").join(" · ") },
+  {
+    id: `${id}-a`,
+    from: "aura",
+    text: "This older chat was saved before full results were cached. Run it again if you want fresh matches.",
+    ran: query,
+    actions: [{ label: "Run search again", prompt: query }],
+  },
+];
 
 let seq = 0;
 const nid = () => `t${++seq}`;
@@ -195,7 +209,7 @@ export default function DatabaseView() {
   const [threads, setThreads] = useState<typeof START>(liveSite ? [] : START);
   const [openId, setOpenId] = useState(liveSite ? "" : "sap");
   const recent = useDoorQuery(door.searchRecent, live ? {} : "skip") as
-    | { ok: true; searches: { id: string; chatId?: string | null; title?: string | null; query: string; count: number; at: number; turnsJson?: string | null }[] }
+    | { ok: true; searches: { id: string; chatId?: string | null; title?: string | null; query: string; count: number; at: number; saved?: boolean }[] }
     | { ok: false }
     | undefined;
   const day = useDoorQuery(door.myDay, live ? {} : "skip") as ({ ok: true } & MyDay) | { ok: false } | undefined;
@@ -228,26 +242,16 @@ export default function DatabaseView() {
         const restored = pastChats(recent.searches)
           .map((r) => {
             const id = r.chatId || `s${r.id}`;
-            const savedTurns = parseSavedTurns<Turn>(r.turnsJson);
+            // A saved chat's turns are read when it is opened (27 Nov 2026: the list no longer carries them).
             // Older rows saved before persistent turns show the original prompt with a manual re-run button — never auto-searching on click.
-            const turns: Turn[] = savedTurns.length
-              ? savedTurns
-              : [
-                  { id: `${id}-m`, from: "me", text: r.query.split("\n").join(" · ") },
-                  {
-                    id: `${id}-a`,
-                    from: "aura",
-                    text: "This older chat was saved before full results were cached. Run it again if you want fresh matches.",
-                    ran: r.query,
-                    actions: [{ label: "Run search again", prompt: r.query }],
-                  },
-                ];
+            const turns: Turn[] = r.saved ? [] : olderChat(id, r.query);
             return {
               id,
               title: r.title || titleOf(r.query.split("\n")[0]),
               when: (new Date(r.at).toDateString() === today ? "today" : "earlier") as Thread["when"],
               turns,
               q: r.query,
+              ...(r.saved ? { saved: true } : {}),
             };
           })
           .filter((t) => !existingIds.has(t.id));
@@ -635,6 +639,13 @@ export default function DatabaseView() {
                       // Reopening a past chat loads its persisted turns & cached results instantly (never re-runs a search).
                       setOpenId(t.id);
                       setShowHistory(false);
+                      if (live && t.saved && !t.turns.length) {
+                        void queryOnce(door.searchTurns, { chatId: t.id }).then((got) => {
+                          const saved = parseSavedTurns<Turn>((got as { turnsJson?: string | null } | undefined)?.turnsJson);
+                          const turns = saved.length ? saved : olderChat(t.id, t.q ?? t.title);
+                          setThreads((all) => all.map((x) => (x.id === t.id && !x.turns.length ? { ...x, turns, saved: false } : x)));
+                        });
+                      }
                     }}
                     onRename={(title) => {
                       setThreads((all) =>

@@ -44,7 +44,7 @@ ok("the route: sign-in and database.read first, the old engine and desk rules", 
 });
 
 ok("searches: own rows only, and today's count in my day", () => {
-  assert.equal((searches.match(/await who\(ctx\)/g) ?? []).length, 3); // record, remove, recent
+  assert.equal((searches.match(/await who\(ctx\)/g) ?? []).length, 4); // record, remove, recent, turns
   assert.ok(searches.includes('q.eq("userId", w.user._id)'));
   assert.ok(myDay.includes('withIndex("by_user", (q) => q.eq("userId", me).gte("_creationTime", dayStart))'));
   assert.ok(myDay.includes("searchesToday: searches.length"));

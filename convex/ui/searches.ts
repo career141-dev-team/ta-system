@@ -67,6 +67,8 @@ export const record = mutation({
 /**
  * Delete one chat from the person's own history (25 Nov). A chat is a search and the ones it was continued
  * from (the list shows them once), so every own row whose words start the chat's words goes. Only own rows.
+ * 27 Nov 2026: a row with its own chat id is a chat of its own and goes only by that id - matching it by
+ * words deleted "accountant" when "accountant colombo" was deleted. Words still match the older rows.
  */
 export const remove = mutation({
   args: { query: v.string(), chatId: v.optional(v.string()) },
@@ -79,7 +81,7 @@ export const remove = mutation({
     const rows = await ctx.db.query("searchHistory").withIndex("by_user", (x) => x.eq("userId", w.user._id)).order("desc").take(200);
     let n = 0;
     for (const r of rows) {
-      if ((chatId && r.chatId === chatId) || (q && q.startsWith(r.query))) {
+      if (r.chatId ? r.chatId === chatId : !!q && q.startsWith(r.query)) {
         await ctx.db.delete(r._id);
         n++;
       }
@@ -88,7 +90,10 @@ export const remove = mutation({
   },
 });
 
-/** The person's last 40 searches, newest first. */
+/**
+ * The person's last 40 searches, newest first. 27 Nov 2026: without the saved turns (up to 250 KB each) -
+ * the list re-sent every chat's whole conversation after each search; `turns` reads one chat when opened.
+ */
 export const recent = query({
   args: {},
   handler: async (ctx) => {
@@ -104,8 +109,21 @@ export const recent = query({
         query: r.query,
         count: r.resultCount,
         at: r._creationTime,
-        turnsJson: r.turnsJson ?? null,
+        saved: !!r.turnsJson,
       })),
     };
+  },
+});
+
+/** One chat's saved conversation, read when the chat is opened. Own rows only. */
+export const turns = query({
+  args: { chatId: v.string() },
+  handler: async (ctx, a) => {
+    const w = await who(ctx);
+    if (!w.ok) return w;
+    const chatId = a.chatId.trim().slice(0, 80);
+    const rows = await ctx.db.query("searchHistory").withIndex("by_user", (q) => q.eq("userId", w.user._id)).order("desc").take(80);
+    const row = chatId ? rows.find((r) => r.chatId === chatId) : undefined;
+    return { ok: true as const, turnsJson: row?.turnsJson ?? null };
   },
 });

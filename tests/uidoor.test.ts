@@ -81,6 +81,8 @@ eq("upload fault: a timeout is ours", uploadFault("timed out after 90 s").who, "
 eq("upload fault: nothing recorded is ours", uploadFault(undefined).who, "us");
 eq("scoops: the old definition (scoopReceivedAt or sent-by), never the database-match label", (() => { const b = read("convex/ui/opening.ts").split("export const scoops = query")[1].split("export const postApplicants")[0]; return b.includes("a.scoopReceivedAt || a.scoopFromUserId") && !b.includes("taSourcingChannel") && !b.includes("a.scoopAt"); })(), true);
 eq("search history: delete takes own rows only", (() => { const b = read("convex/ui/searches.ts").split("export const remove")[1].split("export const recent")[0]; return b.includes("by_user") && b.includes("w.user._id") && b.includes("startsWith"); })(), true);
+eq("search history: a chat with its own id is deleted only by that id", read("convex/ui/searches.ts").split("export const remove")[1].split("export const recent")[0].includes("r.chatId ? r.chatId === chatId"), true);
+eq("search history: the list sends no saved turns", read("convex/ui/searches.ts").split("export const recent")[1].split("export const turns")[0].includes("turnsJson:"), false);
 eq("recent jobs: the running job first, then the latest end year, three at most", recentJobs([
   { startDate: "2010", endDate: "2014" }, { startDate: "2019", endDate: "Present" }, { startDate: "2014", endDate: "2019" }, { startDate: "2005", endDate: "2009" },
 ]).map((j) => j.startDate), ["2019", "2014", "2010"]);
