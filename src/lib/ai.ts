@@ -324,7 +324,12 @@ export async function gemini(
   prompt: string,
   opts: { maxTokens?: number; temperature?: number } = {},
 ): Promise<AiResult & { usage?: Usage }> {
-  if (viaAnthropic()) return callAnthropicTask(task, prompt, { maxTokens: opts.maxTokens });
+  if (viaAnthropic()) {
+    const r = await callAnthropicTask(task, prompt, { maxTokens: opts.maxTokens });
+    if (r.ok || r.reason === "spend_cap" || !viaOpenRouter()) return r;
+    console.warn(`[ai] Anthropic failed for ${task} (${r.reason}), falling back to OpenRouter DeepSeek`);
+    return callOpenRouter(task, prompt, opts);
+  }
   if (viaOpenRouter()) return callOpenRouter(task, prompt, opts);
   if (capActive()) return { ok: false, reason: "spend_cap", detail: "The capped test only spends through OpenRouter, where every call is metered." };
   const key = googleKey();
@@ -805,7 +810,12 @@ async function callOpenAIWebSearch(args: { system: string; prompt: string; maxTo
 
 /** Writing, from material the caller supplies. No claims about the world. */
 export async function write(system: string, prompt: string, maxTokens = 2000, task: Task = "jd"): Promise<AiResult> {
-  if (viaAnthropic()) return callAnthropicTask(task, prompt, { system, maxTokens });
+  if (viaAnthropic()) {
+    const r = await callAnthropicTask(task, prompt, { system, maxTokens });
+    if (r.ok || r.reason === "spend_cap" || !viaOpenRouter()) return r;
+    console.warn(`[ai] Anthropic failed for ${task} (${r.reason}), falling back to OpenRouter DeepSeek`);
+    return callOpenRouter(task, `${system}\n\n${prompt}`, { maxTokens });
+  }
   if (viaOpenRouter()) return callOpenRouter(task, `${system}\n\n${prompt}`, { maxTokens });
   if (capActive()) return { ok: false, reason: "spend_cap", detail: "The capped test only spends through OpenRouter, where every call is metered." };
   if (anthropicKey()) return callAnthropic({ system, prompt, maxTokens, search: false, maxSearches: 0 });
@@ -823,7 +833,12 @@ export async function research(system: string, prompt: string, maxTokens = 3000,
   // web search), "openrouter" or "anthropic". Unset, OpenRouter wins when its
   // key is present, as before.
   const chosen = (process.env.C141_RESEARCH_PROVIDER ?? "").trim().toLowerCase();
-  if (viaAnthropic()) return researchGrounded(system, prompt, maxTokens, maxSearches); // Haiku-only: C141_RESEARCH_PROVIDER does not apply
+  if (viaAnthropic()) {
+    const r = await researchGrounded(system, prompt, maxTokens, maxSearches);
+    if (r.ok || r.reason === "spend_cap" || !viaOpenRouter()) return r;
+    console.warn(`[ai] Anthropic grounded research failed (${r.reason}), falling back to OpenRouter DeepSeek`);
+    return callOpenRouter("research", `${system}\n\n${prompt}`, { maxTokens, search: true });
+  }
   if (chosen === "openai" || (!chosen && !viaOpenRouter() && !anthropicKey() && openaiKey())) {
     if (capActive()) return { ok: false, reason: "spend_cap", detail: "The capped test only spends through OpenRouter, where every call is metered." };
     const r = await callOpenAIWebSearch({ system, prompt, maxTokens });

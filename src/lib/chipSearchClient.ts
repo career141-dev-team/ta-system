@@ -138,32 +138,83 @@ export function genderAsked(text: string): "female" | "male" | null {
 export const firstNames = (n: string) =>
   (n || "").replace(/[^A-Za-z .'-]/g, " ").trim().split(/\s+/).filter((w) => w.length > 2 && !/^[A-Z]\.?$/.test(w)).slice(0, 2).join(" ");
 
+const GENDER_SYSTEM =
+  'For each numbered name (mostly Sri Lankan, also Indian and Muslim names), say if it is a woman\'s name (f), a man\'s name (m), or not clear (?). Answer only a JSON object from each number to f, m or ?, for example {"1":"f","2":"m"}, nothing else.';
+
+function parseGenderReply(text: string, count: number): ("f" | "m" | "?")[] | null {
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  const o = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>;
+  return Array.from({ length: count }, (_, i) => (o[String(i + 1)] === "f" || o[String(i + 1)] === "m" ? (o[String(i + 1)] as "f" | "m") : "?"));
+}
+
 export async function genderByName(names: string[]): Promise<("f" | "m" | "?")[] | null> {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key || !names.length) return null;
+  const anthropicKey = (process.env.ANTHROPIC_API_KEY ?? "").trim();
+  const openRouterKey = (process.env.OPENROUTER_API_KEY ?? "").trim();
+  const preferOpenRouter = (process.env.C141_LLM_PROVIDER ?? "").trim().toLowerCase() === "openrouter";
+  if ((!anthropicKey && !openRouterKey) || !names.length) return null;
   // Blank names are never sent (a blank in a plain list shifted every answer after it);
   // each answer comes back under its own number, so a skipped one only leaves that person "?".
   const asked = names.map((n, i) => ({ i, n: firstNames(n) })).filter((x) => x.n);
   if (!asked.length) return names.map(() => "?");
-  try {
-    const r = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({
-        model: "claude-haiku-5-5",
-        max_tokens: 4000,
-        thinking: { type: "disabled" },
-        system: "For each numbered name (mostly Sri Lankan, also Indian and Muslim names), say if it is a woman's name (f), a man's name (m), or not clear (?). Answer only a JSON object from each number to f, m or ?, for example {\"1\":\"f\",\"2\":\"m\"}, nothing else.",
-        messages: [{ role: "user", content: asked.map((x) => `${x.i + 1}. ${x.n}`).join("\n") }],
-      }),
-      signal: AbortSignal.timeout(25_000),
-    });
-    if (!r.ok) return null;
-    const j = (await r.json()) as { content?: { type: string; text?: string }[] };
-    const text = (j.content ?? []).map((c) => c.text ?? "").join("");
-    const o = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)) as Record<string, unknown>;
-    return names.map((_, i) => (o[String(i + 1)] === "f" || o[String(i + 1)] === "m" ? (o[String(i + 1)] as "f" | "m") : "?"));
-  } catch {
-    return null;
+  const listText = asked.map((x) => `${x.i + 1}. ${x.n}`).join("\n");
+
+  // Primary: Anthropic Haiku 5.5 (unless C141_LLM_PROVIDER=openrouter).
+  if (anthropicKey && !preferOpenRouter) {
+    try {
+      const r = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-haiku-5-5",
+          max_tokens: 4000,
+          thinking: { type: "disabled" },
+          system: GENDER_SYSTEM,
+          messages: [{ role: "user", content: listText }],
+        }),
+        signal: AbortSignal.timeout(25_000),
+      });
+      if (r.ok) {
+        const j = (await r.json()) as { content?: { type: string; text?: string }[] };
+        const text = (j.content ?? []).map((c) => c.text ?? "").join("");
+        const parsed = parseGenderReply(text, names.length);
+        if (parsed) return parsed;
+      }
+    } catch {
+      // Fall through to OpenRouter DeepSeek below.
+    }
   }
+
+  // Automatic fallback: OpenRouter DeepSeek V4 Flash.
+  if (openRouterKey) {
+    try {
+      const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: { authorization: `Bearer ${openRouterKey}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          model: "deepseek/deepseek-v4-flash",
+          max_tokens: 4000,
+          temperature: 0,
+          reasoning: { enabled: false },
+          provider: { zdr: true, data_collection: "deny" },
+          messages: [
+            { role: "system", content: GENDER_SYSTEM },
+            { role: "user", content: listText },
+          ],
+        }),
+        signal: AbortSignal.timeout(25_000),
+      });
+      if (r.ok) {
+        const j = (await r.json()) as { choices?: { message?: { content?: string } }[] };
+        const text = j.choices?.[0]?.message?.content ?? "";
+        const parsed = parseGenderReply(text, names.length);
+        if (parsed) return parsed;
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
 }

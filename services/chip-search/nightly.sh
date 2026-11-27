@@ -10,7 +10,8 @@ docker cp "$PG:/tmp/chip-cand.jsonl" "$D/data/cand.jsonl"
 docker cp "$PG:/tmp/chip-res.jsonl" "$D/data/res.jsonl"
 docker exec "$PG" rm -f /tmp/chip-cand.jsonl /tmp/chip-res.jsonl
 docker run --rm --cpus 2 -v "$D/data:/data" -v "$D/code:/app" -w /app/services/chip-search \
-  -e ANTHROPIC_API_KEY="$(grep '^ANTHROPIC_API_KEY=' /opt/ta-prod/.env.production | cut -d= -f2-)" \
+  -e ANTHROPIC_API_KEY="$(grep '^ANTHROPIC_API_KEY=' /opt/ta-prod/.env.production | cut -d= -f2- || true)" \
+  -e OPENROUTER_API_KEY="$(grep '^OPENROUTER_API_KEY=' /opt/ta-prod/.env.production | cut -d= -f2- || true)" \
   node:22-alpine node --experimental-strip-types --no-warnings --import ./reg.mjs build.ts
 rm -f "$D/data/cand.jsonl" "$D/data/res.jsonl"
 docker exec chip-search wget -qO- --post-data= http://127.0.0.1:3311/reload
