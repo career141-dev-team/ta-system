@@ -124,6 +124,15 @@ eq("posts: a rename keeps the old title", posts.includes("previousTitles"), true
 eq("posts: workday checks refreshed like the old save", (posts.match(/refreshWorkdayChecks\(/g) ?? []).length >= 4, true);
 eq("posts: a new link re-reads the mailbox", posts.includes("queueRescanForLink"), true);
 eq("posts: moving CVs stays inside one opening", posts.includes("That record belongs to a different opening."), true);
+const moveOut = posts.split("export const moveToOpening")[1].split("export const list")[0];
+eq("posts: moving to another opening needs the right to manage both", moveOut.includes("postFor(ctx, args.fromPostId)") && moveOut.includes("postFor(ctx, args.toPostId)"), true);
+eq("posts: someone already worked on never changes opening", moveOut.includes("a.ownerTaId || !MOVABLE.has(a.currentStage)"), true);
+eq("posts: nobody is put on an opening twice", moveOut.includes("by_candidate_job"), true);
+eq("posts: a moved CV says where it came from", moveOut.includes("movedFrom:"), true);
+
+const addLink = read("convex/ui/manage.ts").split("export const addLinkedin")[1].split("export const notForJob")[0];
+eq("linkedin: needs opening.act and respects another TA's claim", addLink.includes('"opening.act"') && addLink.includes("app.ownerTaId !== o.user._id"), true);
+eq("linkedin: only a profile link, never over one already there", addLink.includes("if (!slug) return refused") && addLink.includes("if (profileSlug(c.linkedinUrl)) return refused"), true);
 
 // The Openings list (ui/openings:list).
 const oc = openingCard.of({ id: "j", client: "C", title: "T", status: "cancelled", priorityTier: "P1", days: 3, team: ["Ann"], made: 1, website: true });

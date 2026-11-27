@@ -5,7 +5,9 @@ import { door, jobFromAddress, useDoorMutation, useDoorQuery, useLive, type Answ
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { DUR, EASE, gsap, useExit, useGSAP, swapIn, useSwap } from "@/lib/gsap";
-import { BackButton } from "./PipelineBoard";
+import { BackButton, LinkedInIcon } from "./PipelineBoard";
+import { Ring } from "./DatabaseCvsView";
+import { xlsx } from "@/lib/xlsx";
 import CvPages, { warmPdf } from "./CvPages";
 import PillMenu, { type MenuOption } from "./PillMenu";
 import { useFilters } from "@/lib/filters";
@@ -39,6 +41,14 @@ type Scoop = {
   skills?: string[];
   /** Notice period in days; 0 = can start now. */
   notice: number;
+  gender?: string;
+  education?: string;
+  /** The match against the job description, 0-100; absent until scored. */
+  score?: number;
+  linkedin?: string;
+  /** Contact details, for the Excel export; not sent for another TA's claim. */
+  phone?: string;
+  email?: string;
   /** I shortlisted this person: the row stays, marked "Shortlisted by you". */
   mine?: boolean;
   /** Another TA shortlisted this person first (the collision lock): their first name. */
@@ -46,12 +56,12 @@ type Scoop = {
 };
 
 const SCOOPS: Scoop[] = [
-  { id: "s1", cv: "/cvs/s1.pdf", name: "Nadeeka Dilshan", title: "Assistant Manager, Production", location: "Colombo", company: "Croydon Kowloon Designs", sentBy: "Shehan", sentDay: "today", years: 6, skills: ["Production planning","Lean","Apparel"], notice: 30 },
-  { id: "s2", cv: "/cvs/s2.pdf", name: "Kasun Perera", title: "Production Supervisor", location: "Gampaha", company: "Brandix Lanka Ltd", sentBy: "Shehan", sentDay: "today", years: 9, skills: ["Line balancing","Team leadership","Apparel"], notice: 60 },
-  { id: "s3", cv: "/cvs/s3.pdf", name: "Ishara Fernando", title: "Assistant Manager, Production", location: "Colombo", company: "MAS Holdings", sentBy: "Rashmi", sentDay: "yesterday", years: 11, skills: ["Production","Costing","SAP"], notice: 90, mine: true },
-  { id: "s4", cv: "/cvs/s4.pdf", name: "Tharindu Silva", title: "Planning Executive", location: "Kandy", company: "Hirdaramani Group", sentBy: "Rashmi", sentDay: "yesterday", years: 4, skills: ["Planning","Merchandising","Excel"], notice: 30 },
-  { id: "s5", cv: "/cvs/s5.pdf", name: "Dilani Jayasinghe", title: "Quality Assurance Lead", location: "Negombo", company: "Teejay Lanka PLC", sentBy: "Dinesh", sentDay: "2 days ago", years: 5, skills: ["Quality assurance","Textiles","ISO 9001"], notice: 0, lockedBy: "Hasini" },
-  { id: "s6", cv: "/cvs/s6.pdf", name: "Ruwan Bandara", title: "Assistant Manager, Production", location: "Colombo", company: "Croydon Kowloon Designs", sentDay: "2 days ago", years: 2, skills: ["Production","Training","Apparel"], notice: 0 },
+  { id: "s1", cv: "/cvs/s1.pdf", score: 88, gender: "Female", education: "BSc Engineering", linkedin: "linkedin.com/in/sample-nadeeka", phone: "+94 70 000 0001", email: "nadeeka@example.com", name: "Nadeeka Dilshan", title: "Assistant Manager, Production", location: "Colombo", company: "Croydon Kowloon Designs", sentBy: "Shehan", sentDay: "today", years: 6, skills: ["Production planning","Lean","Apparel"], notice: 30 },
+  { id: "s2", cv: "/cvs/s2.pdf", score: 81, gender: "Male", education: "BSc Management", linkedin: "linkedin.com/in/sample-kasun", phone: "+94 70 000 0002", email: "kasun@example.com", name: "Kasun Perera", title: "Production Supervisor", location: "Gampaha", company: "Brandix Lanka Ltd", sentBy: "Shehan", sentDay: "today", years: 9, skills: ["Line balancing","Team leadership","Apparel"], notice: 60 },
+  { id: "s3", cv: "/cvs/s3.pdf", score: 92, gender: "Female", education: "MBA", linkedin: "linkedin.com/in/sample-ishara", phone: "+94 70 000 0003", email: "ishara@example.com", name: "Ishara Fernando", title: "Assistant Manager, Production", location: "Colombo", company: "MAS Holdings", sentBy: "Rashmi", sentDay: "yesterday", years: 11, skills: ["Production","Costing","SAP"], notice: 90, mine: true },
+  { id: "s4", cv: "/cvs/s4.pdf", score: 67, gender: "Male", education: "Diploma in Planning", linkedin: "linkedin.com/in/sample-tharindu", phone: "+94 70 000 0004", email: "tharindu@example.com", name: "Tharindu Silva", title: "Planning Executive", location: "Kandy", company: "Hirdaramani Group", sentBy: "Rashmi", sentDay: "yesterday", years: 4, skills: ["Planning","Merchandising","Excel"], notice: 30 },
+  { id: "s5", cv: "/cvs/s5.pdf", score: 74, gender: "Female", education: "BSc Engineering", linkedin: "linkedin.com/in/sample-dilani", phone: "+94 70 000 0005", email: "dilani@example.com", name: "Dilani Jayasinghe", title: "Quality Assurance Lead", location: "Negombo", company: "Teejay Lanka PLC", sentBy: "Dinesh", sentDay: "2 days ago", years: 5, skills: ["Quality assurance","Textiles","ISO 9001"], notice: 0, lockedBy: "Hasini" },
+  { id: "s6", cv: "/cvs/s6.pdf", score: 59, gender: "Male", education: "BSc Management", linkedin: "linkedin.com/in/sample-ruwan", phone: "+94 70 000 0006", email: "ruwan@example.com", name: "Ruwan Bandara", title: "Assistant Manager, Production", location: "Colombo", company: "Croydon Kowloon Designs", sentDay: "2 days ago", years: 2, skills: ["Production","Training","Apparel"], notice: 0 },
 ];
 
 // Placeholder: who may have sent a scoop - the TA System lists the active Directors,
@@ -82,13 +92,33 @@ const WHO: MenuOption[] = [
   { value: "today", label: "Sent today" },
 ];
 
-type Filters = { q: string; exp: string; who: string };
-const NO_FILTERS: Filters = { q: "", exp: "", who: "" };
+type Filters = { q: string; exp: string; who: string; gender: string; education: string; location: string };
+const NO_FILTERS: Filters = { q: "", exp: "", who: "", gender: "", education: "", location: "" };
+const GENDERS: MenuOption[] = [
+  { value: "", label: "Any gender" },
+  { value: "Female", label: "Female" },
+  { value: "Male", label: "Male" },
+];
+/** "Any ..." and each value the list holds; a kept filter stays listed. */
+const choices = (any: string, values: (string | undefined)[], kept: string): MenuOption[] => [
+  { value: "", label: any },
+  ...[...new Set([...values, kept].filter((v): v is string => !!v))].sort().map((v) => ({ value: v, label: v })),
+];
+/** A link from a CV is only followed when it really is LinkedIn's. */
+const profileUrl = (link?: string) => {
+  const t = link?.trim();
+  if (!t) return undefined;
+  const url = /^https?:\/\//i.test(t) ? t : "https://" + t;
+  return /^https?:\/\/([a-z]{2,3}\.)?linkedin\.com\//i.test(url) ? url : undefined;
+};
 
 function matches(s: Scoop, f: Filters) {
   const q = f.q.trim().toLowerCase();
   if (q && ![s.name, s.title, s.company].some((t) => t.toLowerCase().includes(q))) return false;
   if (!inRange(s.years, f.exp)) return false;
+  if (f.gender && s.gender?.toLowerCase() !== f.gender.toLowerCase()) return false;
+  if (f.education && s.education !== f.education) return false;
+  if (f.location && s.location !== f.location) return false;
   if (f.who === "open") return !s.mine && !s.lockedBy;
   if (f.who === "mine") return !!s.mine;
   if (f.who === "today") return s.sentDay === "today";
@@ -119,7 +149,7 @@ type DoorStatus = Answer<{ uploads: { id: string; state: "reading" | "done" | "h
 type DoorScoops = Answer<{
   me: string;
   names: Record<string, string>;
-  people: { id: string; name: string; title: string | null; company: string | null; location: string | null; years: number | null; noticeDays: number | null; ownerId: string | null; addedAt: number; sentBy: string | null }[];
+  people: { id: string; name: string; title: string | null; company: string | null; location: string | null; years: number | null; noticeDays: number | null; ownerId: string | null; addedAt: number; sentBy: string | null; gender: string | null; qualification: string | null; education: string | null; score: number | null; linkedinUrl: string | null; phone: string | null; email: string | null }[];
 }>;
 const first = (n?: string) => n?.split(" ")[0];
 const dayWords = (t: number) => {
@@ -156,6 +186,9 @@ export default function ScoopsView() {
           id: p.id, cv: cvUrl({ app: p.id }), name: p.name, title: p.title ?? "", company: p.company ?? "", location: p.location ?? "",
           years: p.years ?? 0, notice: p.noticeDays ?? 0, sentDay: dayWords(p.addedAt),
           sentBy: p.sentBy ? first(real.names[p.sentBy]) : undefined,
+          gender: p.gender ?? undefined, education: p.qualification ?? p.education ?? undefined,
+          score: p.score == null ? undefined : Math.round(p.score),
+          linkedin: p.linkedinUrl ?? undefined, phone: p.phone ?? undefined, email: p.email ?? undefined,
           mine: !!p.ownerId && p.ownerId === real.me,
           lockedBy: p.ownerId && p.ownerId !== real.me ? first(real.names[p.ownerId]) ?? "another TA" : undefined,
         })),
@@ -166,6 +199,24 @@ export default function ScoopsView() {
   const uploadUrl = useDoorMutation(door.scoopUploadUrl);
   const queueScoop = useDoorMutation(door.queueScoop);
   const retryScoop = useDoorMutation(door.retryScoop);
+  const addLinkedin = useDoorMutation(door.addLinkedin);
+  // The row where a missing LinkedIn link is being typed in.
+  const [linking, setLinking] = useState<string | null>(null);
+  const saveLink = (s: Scoop, link: string) => {
+    if (!/linkedin\.com\/in\/[^/?#\s]+/i.test(link)) return say("Paste a LinkedIn profile link, like linkedin.com/in/name.", undefined, true);
+    if (job)
+      return void (addLinkedin({ applicationId: s.id, url: link }) as Promise<DoorDone | undefined>).then(
+        (d) => {
+          if (d && !d.ok) return say(d.message, undefined, true);
+          setLinking(null);
+          say(" LinkedIn link saved", s.name);
+        },
+        () => say("The link could not be saved. Try again.", undefined, true),
+      );
+    setList((l) => l.map((x) => (x.id === s.id ? { ...x, linkedin: link.trim() } : x)));
+    setLinking(null);
+    say(" LinkedIn link saved", s.name);
+  };
   // Signed in: each CV goes to the backend's file store, then into the scoop reading
   // queue (ui/opening:queueScoop re-checks size and type); it joins the list once read.
   const sendScoops = async (files: File[]) => {
@@ -289,6 +340,21 @@ export default function ScoopsView() {
     setNotice((n) => ({ bold, rest, warn, n: (n?.n ?? 0) + 1 }));
   };
   const shown = list.filter((s) => matches(s, applied));
+  // The ticked scoops that may be exported (never another TA's claim).
+  const exporting = list.filter((s) => picked.includes(s.id) && !s.lockedBy);
+  const exportExcel = () => {
+    if (!exporting.length) return;
+    const rows = exporting.map((s) => [s.name, s.phone ?? "", s.email ?? "", profileUrl(s.linkedin) ?? ""]);
+    const url = URL.createObjectURL(
+      new Blob([xlsx("Scoops", ["Name", "Phone", "Email", "LinkedIn link"], rows)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+    );
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Scoops - ${new Date().toISOString().slice(0, 10)}.xlsx`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    say(" exported to Excel", `${rows.length} candidate${rows.length === 1 ? "" : "s"}`);
+  };
   const current = shown.find((s) => s.id === chosen) ?? shown[0];
   const open = list.filter((s) => !s.mine && !s.lockedBy).length;
 
@@ -398,7 +464,7 @@ export default function ScoopsView() {
     }
     setList((l) => l.map((s) => (take.includes(s) ? { ...s, mine: true } : s)));
     // They show on the Pipeline board, in TA Follow-Up.
-    take.forEach((s) => sendToPipeline({ name: s.name, title: s.title, company: s.company, location: s.location, years: s.years, notice: s.notice, cv: s.cv }));
+    take.forEach((s) => sendToPipeline({ name: s.name, title: s.title, company: s.company, location: s.location, years: s.years, notice: s.notice, cv: s.cv, channel: "SCOOPS" }));
     setPicked((p) => p.filter((x) => !ids.includes(x)));
     const rest = ` shortlisted as set ${OPEN_SET} - moved to TA Follow-Up`;
     if (take.length === 1) say(rest, take[0].name);
@@ -678,6 +744,8 @@ export default function ScoopsView() {
                 setSelecting(k);
               }}
               onDelete={() => remove(current ? [current.id] : [])}
+              exportCount={exporting.length}
+              onExport={exportExcel}
             />
           </div>
         )}
@@ -816,6 +884,9 @@ export default function ScoopsView() {
             </label>
             <PillMenu options={EXPERIENCE} initial={applied.exp} onChange={(exp) => setFilters({ exp })} mark="tick" pillClass={FIELD_PILL + " text-ink-2"} />
             <PillMenu options={WHO} initial={applied.who} onChange={(who) => setFilters({ who })} mark="tick" pillClass={FIELD_PILL + " text-ink-2"} />
+            <PillMenu options={GENDERS} initial={applied.gender} onChange={(gender) => setFilters({ gender })} mark="tick" pillClass={FIELD_PILL + " text-ink-2"} />
+            <PillMenu options={choices("Any education", list.map((s) => s.education), applied.education)} initial={applied.education} onChange={(education) => setFilters({ education })} mark="tick" pillClass={FIELD_PILL + " text-ink-2"} />
+            <PillMenu options={choices("Any location", list.map((s) => s.location), applied.location)} initial={applied.location} onChange={(location) => setFilters({ location })} mark="tick" pillClass={FIELD_PILL + " text-ink-2"} />
             {nFilters > 0 && (
               <button type="button" onClick={resetFilters} className="h-[max(2.6rem,34px)] rounded-full px-3 text-[max(0.9625rem,13.5px)] font-medium text-brand-strong hover:bg-surface-2">
                 Reset{nFilters > 1 ? ` (${nFilters})` : ""}
@@ -844,7 +915,11 @@ export default function ScoopsView() {
                     className={"size-[max(1.15rem,16px)] shrink-0 cursor-pointer disabled:cursor-default disabled:opacity-30 " + (selecting === "delete" ? "accent-danger" : "accent-brand")}
                   />
                 )}
-                <span className="flex size-[max(3rem,34px)] shrink-0 items-center justify-center rounded-full bg-info-soft text-[max(1rem,12px)] font-medium text-info">{initials(s.name)}</span>
+                {s.score != null ? (
+                  <Ring score={s.score} />
+                ) : (
+                  <span title="Not scored yet" className="flex size-[max(3rem,34px)] shrink-0 items-center justify-center rounded-full bg-info-soft text-[max(1rem,12px)] font-medium text-info">{initials(s.name)}</span>
+                )}
                 <button type="button" onClick={() => openRow(s.id)} className="flex min-w-0 flex-1 items-center gap-x-[max(1.1rem,10px)] text-left" aria-label={`Read ${s.name}'s CV`}>
                   <span className="w-[max(17rem,130px)] min-w-0 shrink-0 max-md:flex-1">
                     <span className="block truncate text-[max(1.2rem,14px)] font-medium text-ink">{s.name}</span>
@@ -867,6 +942,34 @@ export default function ScoopsView() {
                 </button>
                 <div className="ml-auto flex items-center gap-[max(1.1rem,8px)]">
                   <span className={CHIP + " bg-violet-soft text-violet"}>{s.sentBy ? `Sent by ${s.sentBy} · ${s.sentDay}` : `Uploaded ${s.sentDay}`}</span>
+                  {profileUrl(s.linkedin) ? (
+                    <a
+                      href={profileUrl(s.linkedin)}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={`Open ${s.name}'s LinkedIn profile`}
+                      title="Open the LinkedIn profile"
+                      className="flex size-[max(2.6rem,34px)] items-center justify-center rounded-full hover:bg-surface-2"
+                    >
+                      <LinkedInIcon className="size-[max(1.5rem,20px)]" />
+                    </a>
+                  ) : CAN_ACT && !s.lockedBy ? (
+                    <button
+                      type="button"
+                      onClick={() => setLinking((id) => (id === s.id ? null : s.id))}
+                      aria-expanded={linking === s.id}
+                      aria-label={`Add ${s.name}'s LinkedIn link`}
+                      title="No LinkedIn link - add it"
+                      className="relative flex size-[max(2.6rem,34px)] items-center justify-center rounded-full hover:bg-surface-2"
+                    >
+                      <LinkedInIcon className="size-[max(1.5rem,20px)] opacity-30 grayscale" />
+                      <span aria-hidden="true" className="absolute right-0 top-0 flex size-4 items-center justify-center rounded-full bg-brand text-caption font-medium text-white">+</span>
+                    </button>
+                  ) : (
+                    <span title="No LinkedIn link on record" className="flex size-[max(2.6rem,34px)] items-center justify-center opacity-25 grayscale">
+                      <LinkedInIcon className="size-[max(1.5rem,20px)]" />
+                    </span>
+                  )}
                   <RowAction s={s} onShortlist={() => shortlist([s.id])} />
                   {CAN_ACT && !s.lockedBy && (
                     // Delete asks once more on the row itself; the second press takes it off the job.
@@ -890,6 +993,30 @@ export default function ScoopsView() {
                     </button>
                   )}
                 </div>
+                {linking === s.id && !profileUrl(s.linkedin) && (
+                  <form
+                    className="flex w-full flex-wrap items-center justify-end gap-2"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      saveLink(s, String(new FormData(e.currentTarget).get("link") ?? ""));
+                    }}
+                    onKeyDown={(e) => e.key === "Escape" && setLinking(null)}
+                  >
+                    <input
+                      autoFocus
+                      name="link"
+                      aria-label={`${s.name}'s LinkedIn profile link`}
+                      placeholder="https://www.linkedin.com/in/name"
+                      className={FIELD_PILL + " w-[max(26rem,200px)] min-w-0 text-ink outline-none placeholder:text-ink-3 focus:border-brand max-md:w-full"}
+                    />
+                    <button type="button" onClick={() => setLinking(null)} className="h-[max(2.6rem,34px)] rounded-full px-3 text-small text-ink-2 hover:bg-surface-2 hover:text-ink">
+                      Cancel
+                    </button>
+                    <button type="submit" className="h-[max(2.6rem,34px)] rounded-full bg-brand px-[max(1.3rem,14px)] text-small font-medium text-white hover:bg-brand-strong">
+                      Save link
+                    </button>
+                  </form>
+                )}
               </li>
             ))}
             {list.length === 0 && <li className="pt-8 text-center text-[max(0.9625rem,13px)] text-ink-2">No scoops on this job yet.</li>}
@@ -1047,7 +1174,7 @@ function ShortlistedChip({ s }: { s: Scoop }) {
  *  one being read), which asks once more before it goes. `what` names what Delete
  *  takes; empty = nothing to take yet. `refused` = another TA's scoop: Delete says
  *  why straight away instead of asking. */
-function MoreMenu({ listMode, what, refused, onSelect, onDelete }: { listMode: boolean; what: string; refused: boolean; onSelect: (k: "shortlist" | "delete") => void; onDelete: () => void }) {
+function MoreMenu({ listMode, what, refused, onSelect, onDelete, exportCount, onExport }: { listMode: boolean; what: string; refused: boolean; onSelect: (k: "shortlist" | "delete") => void; onDelete: () => void; exportCount: number; onExport: () => void }) {
   const { open, setOpen, root, panel, shown } = useLiftMenu();
   const [sure, setSure] = useState(false);
   const pick = (fn: () => void) => () => {
@@ -1074,7 +1201,24 @@ function MoreMenu({ listMode, what, refused, onSelect, onDelete }: { listMode: b
         </svg>
       </button>
       {shown && (
-        <div ref={panel} role="menu" className="absolute right-0 top-full z-30 mt-2 w-[max(16rem,200px)] rounded-md border border-border bg-surface p-1.5 shadow-float">
+        <div ref={panel} role="menu" className="absolute right-0 top-full z-30 mt-2 w-[max(17rem,230px)] rounded-md border border-border bg-surface p-1.5 shadow-float">
+          <button
+            type="button"
+            role="menuitem"
+            disabled={!exportCount}
+            onClick={pick(onExport)}
+            className={MENU_ITEM + " mb-1 border-b border-border pb-2.5 enabled:hover:bg-success-soft disabled:cursor-default"}
+          >
+            <span className={"flex size-[max(2.25rem,30px)] shrink-0 items-center justify-center rounded-sm " + (exportCount ? "bg-success-soft text-success" : "bg-surface-2 text-ink-3")}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-[60%]" aria-hidden="true">
+                <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6ZM14 3v6h6M9 12l6 6M15 12l-6 6" />
+              </svg>
+            </span>
+            <span className="min-w-0">
+              <span className={"block font-medium " + (exportCount ? "text-ink" : "text-ink-3")}>Export to Excel{exportCount ? ` · ${exportCount}` : ""}</span>
+              <span className="block text-caption text-ink-3">{exportCount ? "Phone, email and LinkedIn link" : "Tick candidates first"}</span>
+            </span>
+          </button>
           {listMode ? (
             <>
               <button type="button" role="menuitem" onClick={pick(() => onSelect("shortlist"))} className={MENU_ITEM + " text-ink hover:bg-surface-2"}>

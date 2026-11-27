@@ -35,6 +35,7 @@ export async function clerkEmails(): Promise<string[]> {
     if (/clerkMiddleware/.test((e as Error).message ?? "")) return [];
     throw e;
   }
+  console.log("[debug-signin] clerk userId found:", !!userId); // TEMP local debug
   if (!userId) return [];
   const held = emailCache.get(userId);
   if (held && Date.now() - held.at < EMAIL_TTL_MS) return held.emails;
@@ -81,6 +82,7 @@ export async function currentUser(): Promise<User | null> {
     await refreshUsers();
     user = match();
   }
+  console.log("[debug-signin] emails:", emails.length, "desk users:", repo.users().length, "matched:", !!user, "active:", !!user?.isActive); // TEMP local debug
   if (!user || !user.isActive) return null;
   return user;
 }

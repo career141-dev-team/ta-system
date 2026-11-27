@@ -110,7 +110,7 @@ export interface CandidateLike {
 
 /** One card on the board: only what the card draws, never the CV text or a score paragraph. */
 export function toCard(
-  app: { id: string; stage: string; ownerTaId: string | null; isAddOn: boolean; backupForApplicationId: string | null; sourcingChannel: string | null; setNumber: number | null; lastStageChangedAt?: number },
+  app: { id: string; stage: string; ownerTaId: string | null; isAddOn: boolean; backupForApplicationId: string | null; sourcingChannel: string | null; setNumber: number | null; lastStageChangedAt?: number; lastCandidateReplyAt?: number | null },
   candidate: CandidateLike | null,
   missing: string[],
   me: string,
@@ -128,6 +128,8 @@ export function toCard(
     phone: candidate?.phone ?? null,
     email: candidate?.email ?? null,
     channel: app.sourcingChannel,
+    /** Whether the candidate has replied to the desk at all (the pipeline's stats). */
+    replied: !!app.lastCandidateReplyAt,
     setNumber: app.setNumber,
     addOn: app.isAddOn,
     backup: app.backupForApplicationId !== null,

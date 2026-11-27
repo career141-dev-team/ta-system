@@ -30,6 +30,16 @@ Naming trap: web vocabulary is "opening" (`Opening` in `src/data/types.ts`), Con
 
 Candidate rows can add a candidate to another active or draft job assigned to the actor. The original application stays in place; the destination is checked again by `ta/applications:addToAssignedJob`.
 
+## AURA's Job Description view
+
+The header shows the "Confidential" badge (`ConfidentialBadge`, `ui/opening:summary` `confidential`) on a confidential opening. The JD chat box has a mic (`useSpeech`, the browser's speech-to-text): words fill the box and nothing is sent until the TA presses Send.
+
+## Moving CVs (AURA's LinkedIn Job, `apps/new-ui/.../LinkedInJobView.tsx` + `MoveDialog.tsx`)
+
+"Move to" on a post header offers two moves; each turns on tickboxes first. Both need `opening.manage`.
+- Another post (`ui/posts:moveCvs` with `applicationIds`; omitted = all): same opening, from a paused post into a live one, stage kept.
+- Another opening (`ui/posts:moveToOpening`): needs manage on both openings, an active destination and a live post (asked only when there are several). The application itself moves (same row), arrives as `new_cvs` with `movedFrom` {opening and post titles, by, at} shown on its row, and opening-specific scores, answers and rejection are cleared. Only unowned rows in new_cvs / matched_candidates / rejected move; someone already on the destination is left where they are. Pause is not required.
+
 ## How it works now
 
 ### 0. Data path (read this before touching any write)

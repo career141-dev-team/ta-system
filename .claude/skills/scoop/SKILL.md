@@ -25,6 +25,10 @@ Neighbours (do not duplicate, link):
 
 Candidate rows, including scoop rows, can add a candidate to another assigned job via `ta/applications:addToAssignedJob`; the original application is retained.
 
+## AURA's Scoops view (`apps/new-ui/.../ScoopsView.tsx`)
+
+A scored row shows a score ring in place of the initials (`aiMatchScore`, else `taMatchScore`; initials until the JD is approved and the CV scored - the view never triggers scoring). Each row also has a LinkedIn icon (only a linkedin.com link is followed). With no link, a TA can type one in (`ui/manage:addLinkedin`: `opening.act`, not on another TA's claim, a `/in/` profile only, never over a profile already on the candidate). Filters add gender, education and location. The ⋮ menu's "Export to Excel" writes the ticked scoops (name, phone, email, LinkedIn link) in the browser (`apps/new-ui/src/lib/xlsx.ts`). `ui/opening:scoops` sends phone and email only when nobody else has claimed the row.
+
 ## Removing a scoop (3 Nov)
 
 A TA on the opening (`opening.act`, with the collision lock) can tick scoops on the Scoops tab and press "Remove from this job" (`removeScoops` -> `removeScoop` in `src/app/actions.ts`; `CandidateList` prop `removeScoopsOn`). Only flagged scoops; it is the same reversible move to Dropped out as `removeApplication`, not a delete - the CV and candidate stay in the database. The Scoops page hides `dropped_out` rows; a lead brings one back from Dropped out.

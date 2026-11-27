@@ -7,12 +7,15 @@ import type { Instrumentation } from "next";
  * and a failure only logs (the first request then loads it, as before).
  */
 export async function register() {
-  if (process.env.NEXT_RUNTIME !== "nodejs" || process.env.NODE_ENV !== "production") return;
-  setTimeout(() => {
-    void import("@/data/prime")
-      .then(({ primeStore }) => primeStore({}))
-      .then(() => console.log("[warm] desk loaded at start"), (e) => console.warn("[warm] desk did not load at start:", e instanceof Error ? e.message : e));
-  }, 3000);
+  // The import must sit inside this `if`, not after an early return: webpack only drops it
+  // from the edge build that way, and the store needs node:worker_threads (26 Nov).
+  if (process.env.NEXT_RUNTIME === "nodejs" && process.env.NODE_ENV === "production") {
+    setTimeout(() => {
+      void import("@/data/prime")
+        .then(({ primeStore }) => primeStore({}))
+        .then(() => console.log("[warm] desk loaded at start"), (e) => console.warn("[warm] desk did not load at start:", e instanceof Error ? e.message : e));
+    }, 3000);
+  }
 }
 
 /**

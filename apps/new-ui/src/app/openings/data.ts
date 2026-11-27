@@ -31,6 +31,8 @@ export type Opening = {
   note?: string;
   /** Hire from the referee table (the referees / people who applied) for this role. */
   referee?: boolean;
+  /** The client's name is hidden from candidates (the old system's isConfidential). */
+  confidential?: boolean;
   /** Posted on the Career141 website's job vacancies page. */
   website?: boolean;
 };
@@ -125,6 +127,7 @@ export type Read = {
   gender: string;
   autoFollowUp: boolean;
   referee: boolean;
+  confidential: boolean;
   website: boolean;
   /** Which fields AURA filled from the words (marked ✦). */
   read: string[];
@@ -145,6 +148,7 @@ export const EMPTY: Read = {
   // Off until someone switches it on, as in the TA System.
   autoFollowUp: false,
   referee: false,
+  confidential: false,
   website: false,
   read: [],
 };

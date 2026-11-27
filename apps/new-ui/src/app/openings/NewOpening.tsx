@@ -146,6 +146,7 @@ export default function NewOpening({
       team: r.team,
       made: 0,
       referee: r.referee,
+      confidential: r.confidential,
       website: r.website,
     }, r, text);
   };
@@ -237,7 +238,7 @@ export default function NewOpening({
         aria-modal="true"
         aria-labelledby="new-opening-title"
         className={
-          "relative max-h-[calc(100dvh-32px)] max-w-full overflow-y-auto rounded-xl bg-surface shadow-float " +
+          "relative max-h-[calc(100dvh-32px)] max-w-full overflow-y-auto rounded-xl bg-surface shadow-float [&::-webkit-scrollbar-track]:my-4 " +
           (step === "write" ? "w-[max(62.5rem,320px)]" : "w-[max(77.5rem,320px)]")
         }
       >
@@ -443,20 +444,19 @@ export default function NewOpening({
                     {r.autoFollowUp ? "On — AURA chases for CV, salary and notice" : "Off — a TA sends each message"}
                   </label>
                 </Field>
-                <Field label="Referee opening">
-                  
+                <Field label="Confidential">
                   <label className="mt-1 flex cursor-pointer items-center gap-3 text-body text-ink">
-                    <input type="checkbox" checked={r.referee} onChange={(e) => set({ referee: e.target.checked })} className="peer sr-only" />
+                    <input type="checkbox" checked={r.confidential} onChange={(e) => set({ confidential: e.target.checked })} className="peer sr-only" />
                     <span
                       aria-hidden="true"
                       className={
                         "relative h-7 w-12 shrink-0 rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-brand peer-focus-visible:ring-offset-2 " +
-                        (r.referee ? "bg-brand" : "bg-border-strong")
+                        (r.confidential ? "bg-brand" : "bg-border-strong")
                       }
                     >
-                      <span className={"absolute top-1 size-5 rounded-full bg-white transition-[left] " + (r.referee ? "left-6" : "left-1")} />
+                      <span className={"absolute top-1 size-5 rounded-full bg-white transition-[left] " + (r.confidential ? "left-6" : "left-1")} />
                     </span>
-                    {r.referee ? "On — hire a referee for this role" : "Off — find candidates as usual"}
+                    {r.confidential ? "On — the client is not named to candidates" : "Off — the client is named as usual"}
                   </label>
                 </Field>
                 {/* Old TA System: only a lead, Director or Ops lists a job on career141.com,

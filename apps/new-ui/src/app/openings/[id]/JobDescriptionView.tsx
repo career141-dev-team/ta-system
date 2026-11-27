@@ -13,6 +13,9 @@ import { candidateCall, door, jobFromAddress, useDoorMutation, useDoorQuery, use
 import { jdCall, useJdChat } from "./jdChatLive";
 import { matchChips, parseJd, type Requirements } from "./jdLive";
 import { ViewSkeleton } from "@/app/Skeleton";
+import { useSpeech } from "@/lib/useSpeech";
+import ListenPulse from "../../ListenPulse";
+import ConfidentialBadge from "./ConfidentialBadge";
 
 // The Job Description view (shane123-tech's branch, Figma): the draft on the left; on
 // the right the approval bar, a chat to change the draft, and what candidates are
@@ -134,6 +137,8 @@ function JdScreen({ live }: { live?: LiveJdData }) {
   const shown = live ? liveTurns : turns;
   const canWrite = live ? !!(jdChat.got?.ok && jdChat.got.canWrite) : CAN_WRITE;
   const [ask, setAsk] = useState("");
+  // Speak the change instead of typing it: the words land in the box to be checked, then sent.
+  const mic = useSpeech((t) => setAsk((x) => ((x ? x + " " : "") + t).slice(0, ASK_MAX)));
   const [reading, setReading] = useState(false);
   const [readAt, setReadAt] = useState("");
   const [busy, setBusy] = useState(false);
@@ -186,6 +191,8 @@ function JdScreen({ live }: { live?: LiveJdData }) {
   const send = async () => {
     const t = ask.trim();
     if (!t) return;
+    // Otherwise what is said next would fill the emptied box.
+    if (mic.on) mic.toggle();
     setAsk("");
     if (live) {
       if (busy) return;
@@ -244,6 +251,7 @@ function JdScreen({ live }: { live?: LiveJdData }) {
               <span className={CHIP + (approved ? " bg-success-soft text-success" : " bg-warn-soft text-warn")}>
                 {live ? (approved ? "Approved" : "Not approved yet") : approved ? `Approved · version ${version}` : `Draft · version ${version}`}
               </span>
+              <ConfidentialBadge />
               <span className="truncate text-caption text-ink-3" title={approved ? approvedBy : undefined}>
                 {live ? "" : approved ? approvedBy || "Approved" : `Saved ${savedAt || (VERSIONS.find((v) => v.n === version)?.when ?? "")}`}
               </span>
@@ -465,6 +473,21 @@ function JdScreen({ live }: { live?: LiveJdData }) {
                     {ask.length}/{ASK_MAX}
                   </span>
                 )}
+                <button
+                  type="button"
+                  disabled={!mic.ok}
+                  onClick={mic.toggle}
+                  aria-pressed={mic.on}
+                  aria-label={mic.on ? "Stop listening" : "Speak"}
+                  title={mic.ok ? (mic.on ? "Stop listening" : "Speak") : "Speaking is not available in this browser"}
+                  className={"relative flex size-[max(2.125rem,28px)] shrink-0 items-center justify-center rounded-full disabled:opacity-40 " + (mic.on ? "text-danger" : "text-ink-2 enabled:hover:bg-surface-2 enabled:hover:text-ink")}
+                >
+                  {mic.on && <ListenPulse />}
+                  <svg viewBox="0 0 20 20" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+                    <rect x="7.5" y="2.5" width="5" height="10" rx="2.5" />
+                    <path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5" />
+                  </svg>
+                </button>
                 <button
                   type="submit"
                   disabled={!ask.trim()}

@@ -31,6 +31,8 @@ export interface NewOpeningInput {
   hiringFor: string;
   targetGender: string | null;
   autoFollowUp: boolean;
+  /** Confidential search: the client is not named to candidates. */
+  isConfidential?: boolean;
   /** Already checked with validateWorkLocations; undefined when the form sent none. */
   workLocations: WorkLocation[] | undefined;
   /** Only a lead's are kept, and only active TAs among them. */
@@ -94,6 +96,7 @@ export async function saveNewOpening(
         briefKind: isLead ? "management_to_lead" : "lead_to_ta",
         briefExtracted: notes.trim() ? { ...extractFromText(notes), title } : undefined,
         autoFollowUp,
+        isConfidential: input.isConfidential ?? false,
       },
     );
     resetStore();

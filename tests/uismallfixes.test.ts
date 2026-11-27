@@ -22,7 +22,7 @@ ok("only the new UI's door asks for it, and only on add", () => {
 });
 ok("the desk warms at start, in the background, production node only", () => {
   assert.ok(boot.includes("export async function register()"));
-  assert.ok(boot.includes('process.env.NEXT_RUNTIME !== "nodejs"'));
+  assert.ok(boot.includes('if (process.env.NEXT_RUNTIME === "nodejs" && process.env.NODE_ENV === "production")'));
   assert.ok(boot.includes("setTimeout(") && boot.includes("primeStore({})"));
 });
 

@@ -22,6 +22,7 @@ import { useWorkdayGate } from "@/lib/workday";
 import { useFilters } from "@/lib/filters";
 import { NoResults } from "@/app/FilterBits";
 import { LIVE, door, jobFromAddress, STAGE_KEYS, useDoorMutation, useDoorQuery, useLive, type DoorBoard, type DoorCard, type DoorDone, type DoorOpenings, cvUrl, candidateCall, candidateOffers } from "@/lib/backend";
+import ConfidentialBadge from "./ConfidentialBadge";
 
 // The CV preview is its own download, fetched while the screen is idle (OpeningView).
 const CvPreview = dynamic(() => import("./CvPreview"), { ssr: false });
@@ -43,7 +44,8 @@ type Person = {
 // The filters, filled with what the TA System really has (read from its code,
 // 12 Nov 2026), not made-up choices:
 // - Source = the application's sourcing channel (`SourcingChannel` + `CHANNEL_LABEL`,
-//   the Guidelines tab's codes).
+//   the Guidelines tab's codes), plus Scoops: a lead's CV reads as Email there, so
+//   the board gives it its own code to filter on.
 // - All jobs = this opening only, or every opening you work on.
 const JOBS: MenuOption[] = [
   { value: "all", label: "All my jobs", pillLabel: "All jobs" },
@@ -58,6 +60,7 @@ const SOURCES: MenuOption[] = [
   { value: "L", label: "LinkedIn" },
   { value: "HH", label: "Direct hunt" },
   { value: "SCOOP", label: "Database", hint: "Shortlisted and reviewed" },
+  { value: "SCOOPS", label: "Scoops", hint: "CVs sent by a lead or Director" },
 ];
 const CHANNELS = SOURCES.slice(1).map((o) => o.value);
 const NOTICE: MenuOption[] = [
@@ -77,6 +80,8 @@ type Card = Person & {
   mine: boolean;
   owned: boolean;
   channel: string;
+  /** The candidate has replied to the desk (the pipeline's reply stats). */
+  replied: boolean;
   /** Still needed before Director Review: "CV", "Salary", "Notice Period". */
   missing: string[];
   addOn?: boolean;
@@ -111,6 +116,7 @@ const fromArrival = (a: Arrival, n: number): Card => ({
   mine: true,
   owned: true,
   channel: a.channel ?? "",
+  replied: false,
   missing: [...(a.cv ? [] : ["CV"]), "Salary", "Notice Period"],
   yearsN: a.years ?? 0,
   noticeDays: a.notice ?? 0,
@@ -138,6 +144,7 @@ const fromDoor = (c: DoorCard): Card => ({
   mine: c.mine,
   owned: c.owned,
   channel: c.channel ?? "",
+  replied: c.replied ?? false,
   missing: c.missing.map((m) => MISSING[m] ?? m),
   addOn: c.addOn,
   backup: c.backup,
@@ -243,6 +250,7 @@ const cardsFor = (i: number): Card[] =>
     owned: i >= 2 || n % 3 !== 2,
     missing: i < 2 && n % 2 === 0 ? ["Notice Period"] : [],
     channel: CHANNELS[(i + n) % CHANNELS.length],
+    replied: n % 2 === 0,
     yearsN: [5, 3, 8, 12, 16, 6][n],
     years: [5, 3, 8, 12, 16, 6][n] + " years",
     noticeDays: [30, 60, 90, 30, 45, 60][n],
@@ -377,6 +385,13 @@ export default function PipelineBoard() {
     () => new Map(realBoard?.ok ? realBoard.columns.map((c) => [c.stage, c] as const) : []),
     [realBoard],
   );
+  // Reply stats come with the board (counted off the same rows); the sample board
+  // counts its own cards until a backend answer arrives.
+  const replyStats = useMemo(() => {
+    if (realBoard?.ok && realBoard.stats) return realBoard.stats;
+    const all = STAGES.flatMap((s) => board[s.name]);
+    return { replied: all.filter((c) => c.replied).length, noReply: all.filter((c) => !c.replied).length };
+  }, [realBoard, board]);
   const saveMove = useDoorMutation(door.move);
   // Add to another job, signed in: the TA's other open jobs.
   const myJobs = useDoorQuery(door.openings, live ? {} : "skip") as DoorOpenings | undefined;
@@ -822,6 +837,7 @@ export default function PipelineBoard() {
           of the view's name notch, and row two wraps (13 Nov 2026). */}
       <div data-intro className="flex items-center px-[max(1.5rem,14px)] pt-[max(1.4rem,14px)] max-md:pt-11">
         <BackButton />
+        <ConfidentialBadge />
         <div className="ml-auto flex items-center gap-[max(0.6rem,8px)]">
           <Automations pillClass={TOOL_PILL} icon={<SlidersIcon />} />
           <button
@@ -833,6 +849,21 @@ export default function PipelineBoard() {
             Add candidate
           </button>
         </div>
+      </div>
+
+      {/* Reply stats: how many candidates answered the desk, and how many are
+          still waiting — the two numbers before a round of follow-ups. */}
+      <div data-intro className="flex flex-wrap items-center gap-2 px-[max(1.5rem,14px)] pt-[max(0.7rem,7px)]">
+        <span className="flex items-center gap-2 rounded-md border border-border bg-white px-3 py-1.5 text-small text-ink-2">
+          <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-success" />
+          Replied
+          <strong className="tabular-nums text-body font-semibold text-ink">{replyStats.replied}</strong>
+        </span>
+        <span className="flex items-center gap-2 rounded-md border border-border bg-white px-3 py-1.5 text-small text-ink-2">
+          <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-warn" />
+          No reply yet
+          <strong className="tabular-nums text-body font-semibold text-ink">{replyStats.noReply}</strong>
+        </span>
       </div>
 
       {/* Row two: search, filters, and Board / List. It sits above the board

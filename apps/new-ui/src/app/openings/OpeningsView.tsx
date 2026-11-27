@@ -327,6 +327,10 @@ function Card({
   const ask = useRef<HTMLDivElement>(null);
   const binBtn = useRef<HTMLButtonElement>(null);
   const asking = useExit(armed, ask, LIFT_OUT);
+  // In the sample build the opening page has no store to read the flag from, so the
+  // card carries it in the address (the same way the Referee badge is carried).
+  const marks = [o.referee ? "referee=1" : "", o.confidential ? "confidential=1" : ""].filter(Boolean);
+  const sampleHref = "/openings/demo" + (marks.length ? `?${marks.join("&")}` : "");
   // The box lifts in over the card (lift, like a menu), and the safe choice takes focus.
   useEffect(() => {
     if (!armed || !ask.current) return;
@@ -347,7 +351,7 @@ function Card({
   return (
     <Link
       // ponytail: every card opens the one opening built so far.
-      href={live ? `/openings/demo?job=${o.id}` : o.referee ? "/openings/demo?referee=1" : "/openings/demo"}
+      href={live ? `/openings/demo?job=${o.id}` : sampleHref}
       // The page's files come ahead by themselves; pointing at a card also starts the
       // opening's first reads, so it opens on answers already here (25 Nov 2026).
       onPointerEnter={live ? () => prewarmOpening(o.id) : undefined}
@@ -358,6 +362,7 @@ function Card({
       <div className="flex items-center gap-2 text-small text-ink-3">
         <span className="truncate">{o.client}</span>
         {o.referee && <span className="shrink-0 rounded-full bg-violet-soft px-2.5 py-0.5 text-caption font-medium text-violet">Referee</span>}
+        {o.confidential && <span className="shrink-0 rounded-full bg-warn-soft px-2.5 py-0.5 text-caption font-medium text-warn">Confidential</span>}
         <span className="ml-auto shrink-0 text-caption">P{o.priority}</span>
       </div>
       <p className="line-clamp-2 text-h3 font-medium text-ink">{o.title}</p>

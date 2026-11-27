@@ -74,6 +74,7 @@ export const summary = query({
         id: o.jobId as string,
         title: pick("title"),
         client: pick("clientName"),
+        confidential: pick("isConfidential") ?? false,
         status: pick("status"),
         positionStatus: pick("positionStatus"),
         priorityTier: pick("priorityTier"),
@@ -127,7 +128,14 @@ const card = (a: Doc<"applications">, c: Doc<"candidates"> | null) => ({
   location: c?.location ?? null,
   years: c?.totalExperienceYears ?? null,
   noticeDays: c?.noticePeriodDays ?? null,
+  // The applicant filters: only what the CV or the desk actually holds.
+  gender: c?.gender ?? null,
+  age: c?.age ?? null,
+  qualification: c?.educationDegree ?? null,
+  education: c?.educationInstitution ?? null,
+  certifications: c?.certifications ?? [],
   ownerId: (a.ownerTaId ?? null) as string | null,
+  movedFrom: a.movedFrom ? { opening: a.movedFrom.jobTitle, post: a.movedFrom.postTitle } : null,
   addedAt: a._creationTime,
 });
 
@@ -146,7 +154,27 @@ export const scoops = query({
       // opening showed 17 matched people as scoops).
       .filter((a) => (a.scoopReceivedAt || a.scoopFromUserId) && a.currentStage !== "unresponsive")
       .slice(0, Math.min(args.limit ?? 50, 200));
-    const people = await Promise.all(rows.map(async (a) => ({ ...card(a, await ctx.db.get(a.candidateId)), sentBy: (a.scoopFromUserId ?? a.scoopByUserId ?? null) as string | null })));
+    const people = await Promise.all(
+      rows.map(async (a) => {
+        const c = await ctx.db.get(a.candidateId);
+        // The dated job history is on candidateResumes (see matches below).
+        const resume = c ? await ctx.db.query("candidateResumes").withIndex("by_candidateId", (q) => q.eq("candidateId", c._id)).first() : null;
+        const jobs = recentJobs((resume?.jobHistory?.length ? resume.jobHistory : c?.jobHistory) ?? []);
+        const base = card(a, c);
+        return {
+          ...base,
+          title: base.title ?? jobs[0]?.title ?? null,
+          company: base.company ?? jobs[0]?.company ?? null,
+          // The JD match (cvs/cvScoringActions); absent until the JD is approved.
+          score: a.aiMatchScore ?? a.taMatchScore ?? null,
+          linkedinUrl: c?.linkedinUrl ?? null,
+          // Another recruiter's claim locks contact, so it is not sent to export either.
+          phone: a.ownerTaId && a.ownerTaId !== o.user._id ? null : c?.phone ?? null,
+          email: a.ownerTaId && a.ownerTaId !== o.user._id ? null : c?.email ?? null,
+          sentBy: (a.scoopFromUserId ?? a.scoopByUserId ?? null) as string | null,
+        };
+      }),
+    );
     const who = await names(ctx, people.flatMap((p) => [p.ownerId, p.sentBy].filter((x): x is string => !!x)));
     return { ok: true as const, me: o.user._id as string, people, names: who };
   },

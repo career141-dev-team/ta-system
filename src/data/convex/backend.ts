@@ -135,6 +135,7 @@ export async function createOpening(
     briefExtracted?: unknown;
     priorityTier?: string;
     autoFollowUp?: boolean;
+    isConfidential?: boolean;
   },
 ): Promise<string> {
   const res = await convexMutation<{ id: string }>("ta/openings:create", {
