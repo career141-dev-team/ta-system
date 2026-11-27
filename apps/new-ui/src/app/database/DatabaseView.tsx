@@ -633,7 +633,7 @@ export default function DatabaseView() {
           ref={scroller}
           className="min-h-0 flex-1 overflow-y-auto px-[max(1.5rem,12px)] pb-6 pt-[max(2.25rem,20px)]"
         >
-          <div className={(picked ? "mx-auto" : "ml-[7.7rem] mr-auto") + " flex max-w-[62.5rem] max-lg:ml-0 flex-col gap-[max(2.1rem,18px)]"}>
+          <div className="mx-auto flex w-full max-w-[56rem] flex-col gap-[max(2.1rem,18px)]">
             {!thread ? (
               <Welcome mode={mode} live={live} onTry={send} />
             ) : (
@@ -681,7 +681,6 @@ export default function DatabaseView() {
           busy={thinking}
           box={box}
           mode={mode}
-          centred={!!picked}
           onFile={(name) => send(`Find people for this JD: ${name}`)}
           suggestions={thinking ? undefined : thread?.turns.find((t) => t.id === lastAura && t.from === "aura" && t.actions?.length) ? (thread.turns.find((t) => t.id === lastAura) as Extract<Turn, { from: "aura" }>).actions : undefined}
           onSuggest={send}
@@ -1228,7 +1227,6 @@ function Composer({
   busy,
   box,
   mode,
-  centred,
   onFile,
   panel,
   hasPeople,
@@ -1243,7 +1241,6 @@ function Composer({
   busy: boolean;
   box: React.RefObject<HTMLTextAreaElement | null>;
   mode: Mode;
-  centred: boolean;
   onFile: (name: string) => void;
   suggestions?: { label: string; prompt: string }[];
   onSuggest: (text: string) => void;
@@ -1262,7 +1259,7 @@ function Composer({
       <AuraBarGlow className="bottom-[max(1.2rem,8px)]" />
       {/* One row above the typing bar: the filters at the left, AURA's next steps at the right. */}
       {(hasPeople || (suggestions && suggestions.length > 0)) && (
-        <div className={(centred ? "mx-auto" : "ml-[7.7rem] mr-auto") + " mb-3 flex max-w-[62.5rem] max-lg:ml-0 flex-wrap items-center justify-between gap-x-4 gap-y-3"}>
+        <div className="mx-auto mb-3 flex w-full max-w-[56rem] flex-wrap items-center justify-between gap-x-4 gap-y-3">
           {hasPeople ? <FilterBar panel={panel} busy={busy} className="" onApply={onPanel} /> : <span />}
           {suggestions && suggestions.length > 0 && (
             <div className="flex flex-wrap justify-end gap-2">
@@ -1281,7 +1278,7 @@ function Composer({
           )}
         </div>
       )}
-      <div className={(centred ? "mx-auto" : "ml-[7.7rem] mr-auto") + " flex max-w-[62.5rem] max-lg:ml-0 items-end gap-[max(0.9rem,8px)] rounded-xl bg-surface p-2.5 shadow-float ring-1 ring-border/60 transition-shadow focus-within:ring-2 focus-within:ring-brand/30"}>
+      <div className="mx-auto flex w-full max-w-[56rem] items-end gap-[max(0.9rem,8px)] rounded-xl bg-surface p-2.5 shadow-float ring-1 ring-border/60 transition-shadow focus-within:ring-2 focus-within:ring-brand/30">
         <button
           type="button"
           onClick={() => file.current?.click()}
