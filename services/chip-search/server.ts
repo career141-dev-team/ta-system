@@ -21,9 +21,12 @@ import { createAgent, type AgentModelCaller, type AgentModelResponse, type Agent
 
 const FILE = process.env.CHIP_CARDS || "/data/cards.jsonl";
 const PORT = Number(process.env.CHIP_PORT || 3311);
-const KEY = process.env.ANTHROPIC_API_KEY || "";
+const KEY = (process.env.ANTHROPIC_API_KEY || "").trim();
+const OPENROUTER_KEY = (process.env.OPENROUTER_API_KEY || "").trim();
+const PREFER_OPENROUTER = (process.env.C141_LLM_PROVIDER || "").trim().toLowerCase() === "openrouter";
 const MODEL = process.env.CHIP_MODEL || "claude-haiku-5-5";
 const AGENT_MODEL = process.env.CHIP_AGENT_MODEL || "claude-sonnet-5-5";
+const DEEPSEEK_MODEL = process.env.CHIP_FALLBACK_MODEL || "deepseek/deepseek-v4-flash";
 // A day's AI spend stops at this; the search then runs on the word rules alone.
 const DAILY_USD = Number(process.env.CHIP_DAILY_USD || 10);
 const MAX_TURNS = 8;
@@ -33,63 +36,178 @@ const log = (...a: unknown[]) => console.log(new Date().toISOString(), ...a);
 
 let spend = { day: "", usd: 0 };
 const today = () => new Date().toISOString().slice(0, 10);
-const addSpend = (u: { input_tokens?: number; output_tokens?: number } | undefined, model = MODEL) => {
+const addSpend = (u: { input_tokens?: number; output_tokens?: number; prompt_tokens?: number; completion_tokens?: number } | undefined, model = MODEL) => {
   if (spend.day !== today()) spend = { day: today(), usd: 0 };
+  const inTok = u?.input_tokens ?? u?.prompt_tokens ?? 0;
+  const outTok = u?.output_tokens ?? u?.completion_tokens ?? 0;
   const sonnet = /sonnet/i.test(model);
-  spend.usd += ((u?.input_tokens ?? 0) * (sonnet ? 2 : 1) + (u?.output_tokens ?? 0) * (sonnet ? 10 : 5)) / 1e6;
+  const deepseek = /deepseek/i.test(model);
+  const inRate = sonnet ? 2 : deepseek ? 0.3 : 1;
+  const outRate = sonnet ? 10 : deepseek ? 1.2 : 5;
+  spend.usd += (inTok * inRate + outTok * outRate) / 1e6;
 };
 
-/** One Haiku read; null when there is no key, the day's limit is reached, or it fails. */
+/** One text read: Anthropic primary, automatic fallback to OpenRouter DeepSeek V4 Flash. */
 async function ask(system: string, user: string): Promise<string | null> {
-  if (!KEY) return null;
+  if (!KEY && !OPENROUTER_KEY) return null;
   if (spend.day === today() && spend.usd >= DAILY_USD) return null;
-  for (let t = 0; t < 2; t++) {
+
+  if (KEY && !PREFER_OPENROUTER) {
+    for (let t = 0; t < 2; t++) {
+      try {
+        const r = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "x-api-key": KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+          // No temperature: the API refuses it for this model (26 Nov 2026), and a refused call is a lost check.
+          body: JSON.stringify({ model: MODEL, max_tokens: 6000, thinking: { type: "disabled" }, system, messages: [{ role: "user", content: user }] }),
+          signal: AbortSignal.timeout(25_000),
+        });
+        if (r.status === 429 || r.status >= 500) throw new Error(String(r.status));
+        const j = (await r.json()) as { content?: { type: string; text?: string }[]; usage?: { input_tokens?: number; output_tokens?: number }; error?: { message?: string } };
+        addSpend(j.usage, MODEL);
+        if (!r.ok) {
+          log("ask refused", r.status, j?.error?.message ?? "");
+          break; // Immediately fall back to OpenRouter DeepSeek on 4xx (e.g. billing/auth).
+        }
+        const text = (j.content ?? []).filter((c) => c.type === "text").map((c) => c.text ?? "").join("");
+        if (text) return text;
+        break;
+      } catch (e) {
+        if (t === 1) { log("ask failed", String(e)); break; }
+        await new Promise((s) => setTimeout(s, 1500));
+      }
+    }
+  }
+
+  if (OPENROUTER_KEY) {
+    try {
+      const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: { authorization: `Bearer ${OPENROUTER_KEY}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          model: DEEPSEEK_MODEL,
+          max_tokens: 6000,
+          temperature: 0,
+          reasoning: { enabled: false },
+          provider: { zdr: true, data_collection: "deny" },
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: user },
+          ],
+        }),
+        signal: AbortSignal.timeout(25_000),
+      });
+      const j = (await r.json()) as { choices?: { message?: { content?: string } }[]; usage?: { prompt_tokens?: number; completion_tokens?: number }; error?: { message?: string } };
+      addSpend(j.usage, DEEPSEEK_MODEL);
+      if (!r.ok) {
+        log("ask openrouter refused", r.status, j?.error?.message ?? "");
+        return null;
+      }
+      return j.choices?.[0]?.message?.content ?? null;
+    } catch (e) {
+      log("ask openrouter failed", String(e));
+    }
+  }
+
+  return null;
+}
+
+/** Translates Anthropic-style tool-use messages to OpenRouter/OpenAI chat-completions format for DeepSeek fallback. */
+async function callAgentOpenRouter(
+  system: string,
+  messages: { role: string; content: unknown }[],
+  tools: unknown[],
+): Promise<AgentModelResponse | null> {
+  if (!OPENROUTER_KEY) return null;
+  const oaMessages: Record<string, unknown>[] = [{ role: "system", content: system }];
+  for (const m of messages) {
+    if (typeof m.content === "string") {
+      oaMessages.push({ role: m.role, content: m.content });
+      continue;
+    }
+    const blocks = Array.isArray(m.content) ? (m.content as Record<string, unknown>[]) : [];
+    if (m.role === "assistant") {
+      const text = blocks.filter((b) => b.type === "text").map((b) => String(b.text ?? "")).join("\n");
+      const toolCalls = blocks
+        .filter((b) => b.type === "tool_use")
+        .map((b) => ({ id: String(b.id), type: "function", function: { name: String(b.name), arguments: JSON.stringify(b.input ?? {}) } }));
+      oaMessages.push({ role: "assistant", content: text || null, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) });
+    } else {
+      const results = blocks.filter((b) => b.type === "tool_result");
+      const texts = blocks.filter((b) => b.type === "text").map((b) => String(b.text ?? "")).join("\n");
+      for (const r of results) {
+        oaMessages.push({ role: "tool", tool_call_id: String(r.tool_use_id), content: String(r.content ?? "") });
+      }
+      if (texts) oaMessages.push({ role: "user", content: texts });
+    }
+  }
+  const oaTools = (tools as { name: string; description: string; input_schema: unknown }[]).map((t) => ({
+    type: "function",
+    function: { name: t.name, description: t.description, parameters: t.input_schema },
+  }));
+
+  try {
+    const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: { authorization: `Bearer ${OPENROUTER_KEY}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        model: DEEPSEEK_MODEL,
+        max_tokens: 4096,
+        temperature: 0,
+        reasoning: { enabled: false },
+        provider: { zdr: true, data_collection: "deny" },
+        messages: oaMessages,
+        tools: oaTools,
+      }),
+      signal: AbortSignal.timeout(25_000),
+    });
+    const j = (await r.json()) as {
+      choices?: { message?: { content?: string | null; tool_calls?: { id: string; function: { name: string; arguments: string } }[] } }[];
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
+      error?: { message?: string };
+    };
+    addSpend(j.usage, DEEPSEEK_MODEL);
+    if (!r.ok) {
+      log("agent openrouter refused", r.status, j?.error?.message ?? "");
+      return null;
+    }
+    const msg = j.choices?.[0]?.message;
+    if (!msg) return null;
+    const content: AgentModelResponse["content"] = [];
+    if (msg.content) content.push({ type: "text", text: msg.content });
+    for (const tc of msg.tool_calls ?? []) {
+      let input: Record<string, unknown> = {};
+      try { input = JSON.parse(tc.function.arguments || "{}"); } catch { /* empty */ }
+      content.push({ type: "tool_use", id: tc.id, name: tc.function.name, input });
+    }
+    return { content };
+  } catch (e) {
+    log("agent openrouter failed", String(e));
+    return null;
+  }
+}
+
+/** One tool-calling turn for the Database chat agent: Anthropic primary, automatic fallback to OpenRouter DeepSeek. */
+const callAgentModel: AgentModelCaller = async ({ system, messages, tools }) => {
+  if (!KEY && !OPENROUTER_KEY) return null;
+  if (spend.day === today() && spend.usd >= DAILY_USD) return null;
+  if (KEY && !PREFER_OPENROUTER) {
     try {
       const r = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "x-api-key": KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-        // No temperature: the API refuses it for this model (26 Nov 2026), and a refused call is a lost check.
-        body: JSON.stringify({ model: MODEL, max_tokens: 6000, thinking: { type: "disabled" }, system, messages: [{ role: "user", content: user }] }),
+        body: JSON.stringify({ model: AGENT_MODEL, max_tokens: 4096, system, messages, tools }),
         signal: AbortSignal.timeout(25_000),
       });
-      if (r.status === 429 || r.status >= 500) throw new Error(String(r.status));
-      const j = (await r.json()) as { content?: { type: string; text?: string }[]; usage?: { input_tokens?: number; output_tokens?: number }; error?: { message?: string } };
-      addSpend(j.usage, MODEL);
-      if (!r.ok) {
-        log("ask refused", r.status, j?.error?.message ?? "");
-        return null;
-      }
-      return (j.content ?? []).filter((c) => c.type === "text").map((c) => c.text ?? "").join("");
-    } catch (e) {
-      if (t === 1) { log("ask failed", String(e)); return null; }
-      await new Promise((s) => setTimeout(s, 1500));
-    }
-  }
-  return null;
-}
-
-/** One tool-calling turn for the Database chat agent (Sonnet by default, falls back cleanly on any refusal). */
-const callAgentModel: AgentModelCaller = async ({ system, messages, tools }) => {
-  if (!KEY) return null;
-  if (spend.day === today() && spend.usd >= DAILY_USD) return null;
-  try {
-    const r = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "x-api-key": KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({ model: AGENT_MODEL, max_tokens: 4096, system, messages, tools }),
-      signal: AbortSignal.timeout(25_000),
-    });
-    const j = (await r.json()) as AgentModelResponse & { error?: { message?: string } };
-    addSpend(j.usage, AGENT_MODEL);
-    if (!r.ok) {
+      const j = (await r.json()) as AgentModelResponse & { error?: { message?: string } };
+      addSpend(j.usage, AGENT_MODEL);
+      if (r.ok) return j;
       log("agent refused", r.status, j?.error?.message ?? "");
-      return null;
+    } catch (e) {
+      log("agent failed", String(e));
     }
-    return j;
-  } catch (e) {
-    log("agent failed", String(e));
-    return null;
   }
+  return callAgentOpenRouter(system, messages, tools);
 };
 
 type Search = ReturnType<typeof createSearch>;

@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { createAgent, type AgentModelCaller } from "../services/chip-search/agent";
 import { createSearch } from "../convex/lib/search/chipSearch";
-import { limitAsked } from "../src/lib/chipSearchClient";
+import { genderByName, limitAsked } from "../src/lib/chipSearchClient";
 import { readSearchBody } from "../src/lib/uiDatabase";
 
 let pass = 0;
@@ -247,6 +247,29 @@ await ok("agent returns null cleanly on model failure (triggers fallback)", asyn
   const agent = createAgent(cards, stubSearch, async () => null);
   const res = await agent({ turns: ["Head of Finance"] });
   assert.equal(res, null);
+});
+
+await ok("genderByName falls back to OpenRouter DeepSeek when Anthropic fails", async () => {
+  const origFetch = globalThis.fetch;
+  const origAnt = process.env.ANTHROPIC_API_KEY;
+  const origOr = process.env.OPENROUTER_API_KEY;
+  const hosts: string[] = [];
+  process.env.ANTHROPIC_API_KEY = "ant-test-key-0123456789";
+  process.env.OPENROUTER_API_KEY = "or-test-key-0123456789";
+  globalThis.fetch = (async (url: string) => {
+    hosts.push(new URL(String(url)).host);
+    if (String(url).includes("api.anthropic.com")) return new Response("out of credits", { status: 400 });
+    return new Response(JSON.stringify({ choices: [{ message: { content: '{"1":"f","2":"m"}' } }] }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    const res = await genderByName(["Nimali Perera", "Aruna Dharshana"]);
+    assert.deepEqual(res, ["f", "m"]);
+    assert.deepEqual(hosts, ["api.anthropic.com", "openrouter.ai"]);
+  } finally {
+    globalThis.fetch = origFetch;
+    if (origAnt === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = origAnt;
+    if (origOr === undefined) delete process.env.OPENROUTER_API_KEY; else process.env.OPENROUTER_API_KEY = origOr;
+  }
 });
 
 console.log(`\n${pass} passed, 0 failed`);

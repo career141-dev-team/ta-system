@@ -158,5 +158,19 @@ process.env.C141_LLM_PROVIDER = "openrouter";
 eq("the switch back restores the old route", [haikuOnly(), hasToken(), ai.viaAnthropic()], [false, true, false]);
 delete process.env.C141_LLM_PROVIDER;
 
+// ── app ai.write / ai.gemini automatic fallback to OpenRouter DeepSeek ──
+process.env.OPENROUTER_API_KEY = "or-key-0123456789";
+const n3 = sent.length;
+globalThis.fetch = (async (url: string, init?: { headers?: Record<string, string>; body?: string }) => {
+  sent.push({ url: String(url), headers: init?.headers ?? {}, body: init?.body ? JSON.parse(init.body) : null });
+  if (String(url).includes("api.anthropic.com")) return new Response("credit balance too low", { status: 400 });
+  return new Response(JSON.stringify({ choices: [{ message: { content: "from deepseek" } }], usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.0001 } }), { status: 200 });
+}) as typeof fetch;
+const wf = await ai.write("sys", "prompt", 200, "jd");
+const gf = await ai.gemini("rank", "prompt");
+eq("ai.write falls back to OpenRouter DeepSeek on Anthropic failure", [wf.ok, wf.ok && wf.text, wf.ok && wf.provider], [true, "from deepseek", "deepseek/deepseek-v4-flash"]);
+eq("ai.gemini falls back to OpenRouter DeepSeek on Anthropic failure", [gf.ok, gf.ok && gf.text, gf.ok && gf.provider], [true, "from deepseek", "deepseek/deepseek-v4-flash"]);
+eq("both tried Anthropic first then OpenRouter", [...new Set(sent.slice(n3).map((x) => new URL(x.url).host))], ["api.anthropic.com", "openrouter.ai"]);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
