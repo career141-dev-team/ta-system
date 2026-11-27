@@ -138,6 +138,7 @@ const reopenedRound = await db.get("reviewRounds:1");
 const reopenedDay = await db.get("taWorkdays:1");
 const reopenedLead = await db.get("taWorkdayLeads:1");
 const restoredReq = await db.get("taWorkdayRequests:1");
+assert.ok(reopenedEmail && reopenedReceipt && reopenedRound && reopenedDay && reopenedLead && restoredReq);
 assert.ok(reopenedEmail.recoveryReopenedAt > 0);
 assert.equal(reopenedEmail.acceptedAt, 1000); // sent history preserved
 assert.ok(reopenedReceipt.recoveryReopenedAt > 0);
