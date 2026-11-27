@@ -89,6 +89,7 @@ const foundLine = (a: LiveAnswer, what = "") =>
 
 let seq = 0;
 const nid = () => `t${++seq}`;
+const newChatId = () => `c_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 
 /** The chips and the people of the last answer that had them: what a new message refines. */
 function contextOf(turns: Turn[]) {
@@ -322,7 +323,7 @@ export default function DatabaseView() {
     let turns = cur?.turns ?? [];
     // No chat open: this message starts one, named by its first words.
     if (!cur) {
-      id = `c_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+      id = newChatId();
       turns = [];
       setThreads((all) => [
         { id, title: titleOf(t), when: "today", turns: [], q: t },
