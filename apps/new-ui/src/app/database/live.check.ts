@@ -1,5 +1,5 @@
 // Run: node src/app/database/live.check.ts
-import { jobIn, noticeMonths, pastChats, personOf, readLive, whoIn } from "./live.ts";
+import { jobIn, noticeMonths, parseSavedTurns, pastChats, personOf, readLive, serializeTurns, whoIn } from "./live.ts";
 const eq = (l: string, a: unknown, b: unknown) => {
   if (JSON.stringify(a) !== JSON.stringify(b)) {
     console.error("FAIL", l, JSON.stringify(a), JSON.stringify(b));
@@ -33,3 +33,17 @@ const brief = "We are looking for a Head of Finance for a leading hospital in Sr
 eq("a brief with OR is plain words", readLive(brief, ""), { kind: "search", mode: "natural", q: brief });
 eq("a bracketed formula in a sentence stays boolean", readLive("Find (SAP OR ERP) AND Colombo.", ""), { kind: "search", mode: "boolean", q: "Find (SAP OR ERP) AND Colombo." });
 eq("a short formula stays boolean", readLive("(SAP OR ERP) AND Colombo NOT Accenture", ""), { kind: "search", mode: "boolean", q: "(SAP OR ERP) AND Colombo NOT Accenture" });
+
+// 27 Nov 2026: persistent chats stay independent by chatId and round-trip saved turns safely.
+eq(
+  "past chats keep distinct chatIds independent",
+  pastChats([
+    { id: "1", chatId: "c_a", query: "SAP", at: 2 },
+    { id: "2", chatId: "c_b", query: "SAP", at: 1 },
+    { id: "3", chatId: "c_a", query: "SAP\n8 years", at: 3 },
+  ]).map((r) => r.id),
+  ["1", "2"],
+);
+const saved = serializeTurns([{ id: "t1", from: "me", text: "hi" }, { id: "t2", from: "aura", text: "found 2" }]);
+eq("saved turns round-trip", parseSavedTurns<{ id: string }>(saved).map((t) => t.id), ["t1", "t2"]);
+eq("corrupt turnsJson returns empty", parseSavedTurns("not-json"), []);
