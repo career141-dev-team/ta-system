@@ -5,7 +5,7 @@
  * null and the chat falls back to the old engine, so the chat never breaks
  * because of it. C141_CHIP_SEARCH=off switches it off without a release.
  */
-export type ChipHit = { id: string; score: number; why: string[]; ai: number | null; aiWhy: string };
+export type ChipHit = { id: string; score: number; why: string[]; ai: number | null; aiWhy: string; gender?: "male" | "female" | null };
 export type ChipAnswer = {
   ok: true;
   total: number;
@@ -42,7 +42,8 @@ async function post(path: "/search" | "/check", body: unknown): Promise<ChipAnsw
  * see - men by name for "female only" - BEFORE the AI check, so the check is spent on the
  * people who can be shown: ranked list first, narrowed here, then /check on what is left.
  */
-export async function chipSearch(turns: string[], narrow?: (ids: string[]) => Promise<string[] | null>): Promise<ChipAnswer | null> {
+export type Narrowed = { ids: string[]; genders: Record<string, "f" | "m"> };
+export async function chipSearch(turns: string[], narrow?: (hits: ChipHit[]) => Promise<Narrowed | null>): Promise<ChipAnswer | null> {
   if (process.env.C141_CHIP_SEARCH === "off") return null;
   const key = turns.join("\n");
   const h = held.get(key);
@@ -50,8 +51,8 @@ export async function chipSearch(turns: string[], narrow?: (ids: string[]) => Pr
   let a: ChipAnswer | null = null;
   if (narrow) {
     const ranked = await post("/search", { turns, inspect: false });
-    const ids = ranked && (await narrow(ranked.hits.map((x) => x.id)));
-    if (ranked && ids) a = await post("/check", { turns, ids });
+    const n = ranked && (await narrow(ranked.hits));
+    if (ranked && n) a = await post("/check", { turns, ids: n.ids, genders: n.genders });
   }
   a ??= await post("/search", { turns });
   if (!a) return null;

@@ -88,22 +88,27 @@ export async function POST(req: NextRequest) {
     !!(realName(c.fullName) || c.email?.trim() || c.phone?.trim());
   const want = genderAsked(q);
   const narrow = want
-    ? async (ids: string[]) => {
-        const pool = ids.slice(0, 300);
-        await primeStore({ candidateIds: pool });
-        const people = pool.map((id) => ({ id, c: repo.candidate(id) }));
-        const byName = await genderByName(people.map((x) => x.c?.fullName ?? ""));
+    ? async (hits: ChipHit[]) => {
+        const pool = hits.slice(0, 300);
+        await primeStore({ candidateIds: pool.map((h) => h.id) });
+        const people = pool.map((h) => ({ h, c: repo.candidate(h.id) }));
+        const fm = (g: unknown) => (g === "female" || g === "f" ? "f" : g === "male" || g === "m" ? "m" : null);
+        // The search card first (NIC, "Mrs", "Gender:" lines in the CV: 14,849 known), then the AURA record.
+        const known = people.map((x) => fm(x.h.gender) ?? fm(String(x.c?.gender ?? "").toLowerCase()));
+        // The name only for the rest, so fewer names go to the model.
+        const ask = people.map((x, i) => (known[i] || !x.c ? "" : x.c.fullName ?? ""));
+        const byName = ask.some(Boolean) ? await genderByName(ask) : [];
         const mine = want === "female" ? "f" : "m";
-        // sure: the record says so or the name clearly does; maybe: nobody can tell; the rest leave.
-        const sure: string[] = [], maybe: string[] = [];
+        // sure: known or the name clearly says; maybe: nobody can tell; the rest leave.
+        const sure: string[] = [], maybe: string[] = [], genders: Record<string, "f" | "m"> = {};
         people.forEach((x, i) => {
           if (!x.c || !reachable(x.c)) return;
-          const rec = String(x.c.gender ?? "").toLowerCase();
-          const g = rec === "male" ? "m" : rec === "female" ? "f" : byName?.[i] ?? "?";
-          if (g === mine) sure.push(x.id);
-          else if (g === "?") maybe.push(x.id);
+          const g = known[i] ?? byName?.[i] ?? "?";
+          if (g === "f" || g === "m") genders[x.h.id] = g;
+          if (g === mine) sure.push(x.h.id);
+          else if (g === "?") maybe.push(x.h.id);
         });
-        return byName ? [...sure, ...maybe] : null;
+        return byName ? { ids: [...sure, ...maybe], genders } : null;
       }
     : undefined;
   const chip = await chipSearch(q.split("\n"), narrow);

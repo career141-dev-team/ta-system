@@ -45,6 +45,7 @@ async function ask(system: string, user: string): Promise<string | null> {
       const r = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "x-api-key": KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+        // No temperature: the API refuses it for this model (26 Nov 2026), and a refused call is a lost check.
         body: JSON.stringify({ model: MODEL, max_tokens: 6000, thinking: { type: "disabled" }, system, messages: [{ role: "user", content: user }] }),
         signal: AbortSignal.timeout(25_000),
       });
@@ -95,11 +96,12 @@ function answer(r: any, max = 200) {
     ok: true,
     total: r.hits.length,
     removed: r.removed.length,
-    hits: r.hits.slice(0, max).map((h: any) => ({ id: h.card.id, score: h.score, why: h.why, ai: h.ai ?? null, aiWhy: h.aiWhy ?? "" })),
+    hits: r.hits.slice(0, max).map((h: any) => ({ id: h.card.id, score: h.score, why: h.why, ai: h.ai ?? null, aiWhy: h.aiWhy ?? "", gender: h.card.gender ?? null })),
     job: r.job,
     not: r.not,
     industry: r.industry,
     level: r.level,
+    mustQuals: r.mustQuals ?? [],
     years: r.years,
     holders: r.holders,
     missing: r.missing,
@@ -132,7 +134,8 @@ const server = http.createServer(async (req, res) => {
       if (!held) return send(res, 409, { ok: false, message: "Search first." });
       const byId = new Map(held.all.map((h: any) => [h.card.id, h]));
       const list = (Array.isArray(body.ids) ? body.ids : []).map((id: unknown) => byId.get(String(id))).filter(Boolean);
-      const c = await search.checkAll(key, list);
+      const genders = body.genders && typeof body.genders === "object" ? body.genders : {};
+      const c = await search.checkAll(key, list, genders);
       return send(res, 200, answer({ ...held, hits: c.final, removed: c.removed }));
     }
     if (body.inspect === false) {
