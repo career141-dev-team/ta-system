@@ -36,7 +36,7 @@ export type ChipAgentAnswer = {
 };
 
 const URL_DEFAULT = "http://chip-search:3311/search";
-const WAIT_MS = 45_000;
+const WAIT_MS = 60_000;
 
 // The chat sends the same words again (re-opening a past chat, the full pass after the quick one).
 const held = new Map<string, { at: number; a: ChipAnswer }>();

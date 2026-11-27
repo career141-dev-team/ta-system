@@ -155,11 +155,13 @@ async function callAgentOpenRouter(
         max_tokens: 4096,
         temperature: 0,
         reasoning: { enabled: false },
-        provider: { zdr: true, data_collection: "deny" },
+        // Do not set zdr:true on tool-calling requests — OpenRouter often returns 404
+        // ("No endpoints found that support tool use") when ZDR is combined with `tools`.
+        provider: { data_collection: "deny" },
         messages: oaMessages,
         tools: oaTools,
       }),
-      signal: AbortSignal.timeout(25_000),
+      signal: AbortSignal.timeout(30_000),
     });
     const j = (await r.json()) as {
       choices?: { message?: { content?: string | null; tool_calls?: { id: string; function: { name: string; arguments: string } }[] } }[];
