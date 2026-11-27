@@ -231,7 +231,7 @@ export function createAgent(cards: any[], search: ReturnType<typeof createSearch
     }
 
     const messages: AgentMessage[] = [{ role: "user", content: userParts.join("\n\n") }];
-    const MAX_STEPS = 6;
+    const MAX_STEPS = 4;
 
     for (let step = 1; step <= MAX_STEPS; step++) {
       const res = await callModel({ system: AGENT_SYSTEM, messages, tools: TOOLS });

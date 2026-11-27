@@ -59,7 +59,7 @@ Rules: names are the same work only, never a wider or nearby job; when the bare 
 /** The final layer: a recruiter's read of the shortlist against the request. */
 const INSPECT_SYSTEM = `You are a senior recruiter in Sri Lanka checking a shortlist before you call anyone. The client's request comes first, then numbered people: title now @ company | place | years of experience | level | gender | earlier titles | qualifications.
 Score every person: 2 = call them (the right job or a very close one, the right level, years and place fit; a job abroad may take people in Sri Lanka or there), 1 = maybe (close but one thing is off or unclear), 0 = remove (a different job, clearly the wrong level, years far outside the range, the wrong industry when the request needs one, or abroad when the job is in a Sri Lankan town and the request wants locals).
-Judge only what is written. Missing years or place alone is never a 0. Gender was checked before this list: "gender not on file" is never a reason for a lower score. When the request says the person must or should hold a qualification, a person whose listed qualifications do not include it or an equal one is a 0 (CA Sri Lanka equals ACA; CMA is not); no qualifications listed at all is not a 0. Do not reward a long CV; reward fit.
+Judge only what is written. Missing years or place alone is never a 0. Gender was checked before this list: "gender not on file" is never a reason for a lower score. When the request says the person must come from specific industries ("only", "must be from"), a person whose employers are NOT in those industries MUST be scored 0 (remove), NEVER 1. When the request says the person must or should hold a qualification, a person whose listed qualifications do not include it or an equal one is a 0 (CA Sri Lanka equals ACA; CMA is not); no qualifications listed at all is not a 0. Do not reward a long CV; reward fit.
 Answer JSON only: {"r":[[number,score,"reason in under 8 words"],...]} with one entry for every person.`;
 const gWord = (g: unknown) => (g === "f" || g === "female" ? "female" : g === "m" || g === "male" ? "male" : "gender not on file");
 const LEVEL_WORD = ["trainee", "executive", "senior executive", "assistant manager", "manager", "senior manager", "head", "director", "C-level"];
@@ -272,8 +272,12 @@ export function createSearch(cards: any[], ask: Ask) {
       const kf = !job.key.length ? 0 : hasKey(nowText) ? 50 : hasKey(`${(p.skills ?? []).join(" | ")} ${cvText}`.toLowerCase()) ? 25 : -40;
       return { h, p, th, len, rh, other, ind, indOff, pl, lf, kf, yf: yfit(p.years), qf: qfit(p.quals), ex: exactNow(h.id, jobExact), here: pl > 0 };
     }).filter((x: any) => !x.other && x.yf >= 0 && x.qf >= 0 && ((!roleChip && !nameWords.length) || x.th || x.rh));
-    // 26 Nov 2026: "from healthcare or hospitality only" kept telecom and drinks people (industry only scored).
-    if (job.industryOnly && scored.filter((x: any) => x.ind).length >= 10) scored = scored.filter((x: any) => !x.indOff);
+    // 27 Nov 2026: "from healthcare or hospitality only" let unknown-industry companies through
+    // because indOff was only true when nowTypes was non-empty. Require x.ind strictly when any match.
+    if (job.industryOnly) {
+      const inIndustry = scored.filter((x: any) => x.ind);
+      if (inIndustry.length > 0) scored = inIndustry;
+    }
     // The job title decides the tier (exact job > job title now > did it before > related role); town, industry, level and years order people inside it.
     const rank = (x: any) => (x.ex ? 200 : x.th === 2 ? 150 + 5 * Math.min(x.len, 3) : x.th === 1 ? 60 : 0) + (x.rh ? 10 : 0) + x.pl + (x.ind ? 40 : x.indOff ? -15 : 0) + x.lf + x.kf + x.yf + x.qf + 0.3 * x.h.score;
     for (const x of scored) x.rank = rank(x);
