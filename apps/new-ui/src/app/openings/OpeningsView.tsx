@@ -362,7 +362,7 @@ function Card({
       <div className="flex items-center gap-2 text-small text-ink-3">
         <span className="truncate">{o.client}</span>
         {o.referee && <span className="shrink-0 rounded-full bg-violet-soft px-2.5 py-0.5 text-caption font-medium text-violet">Referee</span>}
-        {o.confidential && <span className="shrink-0 rounded-full bg-warn-soft px-2.5 py-0.5 text-caption font-medium text-warn">Confidential</span>}
+        {o.confidential && <span className="shrink-0 rounded-full bg-surface-2 px-2.5 py-0.5 text-caption font-medium text-ink-2">Confidential</span>}
         <span className="ml-auto shrink-0 text-caption">P{o.priority}</span>
       </div>
       <p className="line-clamp-2 text-h3 font-medium text-ink">{o.title}</p>

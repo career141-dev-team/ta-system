@@ -10,7 +10,7 @@ import { uiOnly } from "@/lib/uiOnly";
  * and cron routes under /api, which authenticate with their own secrets, keep
  * working without a Clerk session.
  */
-const clerk = clerkMiddleware({ debug: true }); // TEMP local debug
+const clerk = clerkMiddleware();
 
 // UI-only laptop mode has no sign-in service to hand the request to (lib/uiOnly.ts).
 export default function proxy(req: NextRequest, event: NextFetchEvent) {

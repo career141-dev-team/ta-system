@@ -386,10 +386,11 @@ export default function PipelineBoard() {
     [realBoard],
   );
   // Reply stats come with the board (counted off the same rows); the sample board
-  // counts its own cards until a backend answer arrives.
+  // counts its own cards until a backend answer arrives. Only the follow-up columns:
+  // nobody in New, Placed or Rejected is waiting on a reply.
   const replyStats = useMemo(() => {
     if (realBoard?.ok && realBoard.stats) return realBoard.stats;
-    const all = STAGES.flatMap((s) => board[s.name]);
+    const all = ["TA Follow-Up", "AI Follow-Up"].flatMap((s) => board[s] ?? []);
     return { replied: all.filter((c) => c.replied).length, noReply: all.filter((c) => !c.replied).length };
   }, [realBoard, board]);
   const saveMove = useDoorMutation(door.move);
@@ -838,6 +839,19 @@ export default function PipelineBoard() {
       <div data-intro className="flex items-center px-[max(1.5rem,14px)] pt-[max(1.4rem,14px)] max-md:pt-11">
         <BackButton />
         <ConfidentialBadge />
+        {/* Reply stats for the follow-up columns: who answered, who is still waiting.
+            In this row, not one of its own, so the board keeps its height on a laptop. */}
+        <span className="ml-[max(0.9rem,8px)] flex items-center gap-[max(0.5rem,6px)] text-small text-ink-2 max-md:hidden">
+          <span className="text-ink-3">In follow-up</span>
+          <span className="flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1">
+            <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-success" />
+            Replied <strong className="font-medium tabular-nums text-ink">{replyStats.replied}</strong>
+          </span>
+          <span className="flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1">
+            <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-warn" />
+            No reply yet <strong className="font-medium tabular-nums text-ink">{replyStats.noReply}</strong>
+          </span>
+        </span>
         <div className="ml-auto flex items-center gap-[max(0.6rem,8px)]">
           <Automations pillClass={TOOL_PILL} icon={<SlidersIcon />} />
           <button
@@ -849,21 +863,6 @@ export default function PipelineBoard() {
             Add candidate
           </button>
         </div>
-      </div>
-
-      {/* Reply stats: how many candidates answered the desk, and how many are
-          still waiting — the two numbers before a round of follow-ups. */}
-      <div data-intro className="flex flex-wrap items-center gap-2 px-[max(1.5rem,14px)] pt-[max(0.7rem,7px)]">
-        <span className="flex items-center gap-2 rounded-md border border-border bg-white px-3 py-1.5 text-small text-ink-2">
-          <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-success" />
-          Replied
-          <strong className="tabular-nums text-body font-semibold text-ink">{replyStats.replied}</strong>
-        </span>
-        <span className="flex items-center gap-2 rounded-md border border-border bg-white px-3 py-1.5 text-small text-ink-2">
-          <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-warn" />
-          No reply yet
-          <strong className="tabular-nums text-body font-semibold text-ink">{replyStats.noReply}</strong>
-        </span>
       </div>
 
       {/* Row two: search, filters, and Board / List. It sits above the board

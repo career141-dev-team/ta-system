@@ -41,10 +41,21 @@ export default function MoveDialog({ ref: root, count, openingId, posts, onClose
     { scope: root },
   );
   useEffect(() => {
-    const key = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape") return onClose();
+      // Tab stays inside the window: the page behind the veil is not usable.
+      if (e.key !== "Tab") return;
+      const all = [...(root.current?.querySelectorAll<HTMLElement>("[data-box] button:not(:disabled), [data-box] input") ?? [])];
+      if (!all.length) return;
+      const at = all.indexOf(document.activeElement as HTMLElement);
+      if (e.shiftKey ? at <= 0 : at === all.length - 1 || at < 0) {
+        e.preventDefault();
+        all[e.shiftKey ? all.length - 1 : 0].focus();
+      }
+    };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [onClose]);
+  }, [onClose, root]);
 
   const openings = !openingId ? SAMPLE : list?.ok ? list.openings.filter((o) => o.status === "active" && o.id !== openingId) : undefined;
   const found = openings?.filter((o) => `${o.title} ${o.client}`.toLowerCase().includes(q.trim().toLowerCase()));

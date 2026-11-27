@@ -20,6 +20,9 @@ import { isGone } from "../../src/lib/bin";
 import { mayReadOpening, NotSignedIn, uiUser } from "./me";
 import { BACKEND_STAGES, BOARD_STAGES, cardLimit, columnCount, COUNT_CAP, inWords, moveRefusal, toCard, type BoardStage } from "./rules";
 
+/** The columns where a candidate is being messaged and a reply is awaited. */
+const FOLLOW_UP_STAGES = new Set<BoardStage>(["ta_follow_up", "ai_follow_up"]);
+
 const LABEL: Record<BoardStage, string> = {
   ta_follow_up: "TA Follow-Up",
   ai_follow_up: "AI Follow-Up",
@@ -124,9 +127,12 @@ export const board = query({
 
     // The pipeline's reply stats: counted off the same rows as the columns, so
     // they follow a move or a reply without a second read of every application.
+    // Only the follow-up columns: New CVs, Rejected or Placed were never waiting on a
+    // reply, and counting them read as hundreds "not replied" (review of #121, 27 Nov).
+    const chased = columns.filter((c) => FOLLOW_UP_STAGES.has(c.stage));
     const stats = {
-      replied: columns.reduce((n, c) => n + c.replied, 0),
-      noReply: columns.reduce((n, c) => n + c.noReply, 0),
+      replied: chased.reduce((n, c) => n + c.replied, 0),
+      noReply: chased.reduce((n, c) => n + c.noReply, 0),
     };
     return { ok: true as const, opening: { id: jobId as string, title: job.title }, columns: out, stats };
   },

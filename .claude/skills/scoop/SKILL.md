@@ -27,7 +27,7 @@ Candidate rows, including scoop rows, can add a candidate to another assigned jo
 
 ## AURA's Scoops view (`apps/new-ui/.../ScoopsView.tsx`)
 
-A scored row shows a score ring in place of the initials (`aiMatchScore`, else `taMatchScore`; initials until the JD is approved and the CV scored - the view never triggers scoring). Each row also has a LinkedIn icon (only a linkedin.com link is followed). With no link, a TA can type one in (`ui/manage:addLinkedin`: `opening.act`, not on another TA's claim, a `/in/` profile only, never over a profile already on the candidate). Filters add gender, education and location. The ⋮ menu's "Export to Excel" writes the ticked scoops (name, phone, email, LinkedIn link) in the browser (`apps/new-ui/src/lib/xlsx.ts`). `ui/opening:scoops` sends phone and email only when nobody else has claimed the row.
+A scored row shows a score ring in place of the initials (`aiMatchScore`, else `taMatchScore`; initials until the JD is approved and the CV scored - the view never triggers scoring). Each row also has a LinkedIn icon (only a linkedin.com link is followed). With no link, a TA can type one in (`ui/manage:addLinkedin`: `opening.act`, not on another TA's claim, a `/in/` profile only, never over a profile already on the candidate). Filters add gender, education and location; a person with no gender on file stays in a gender filter, location matches by word ("Colombo" finds "Colombo 03") and education values are listed once whatever their case. "Export to Excel" (beside Shortlist / Delete when rows are ticked, and in the ⋮ menu) writes the ticked scoops (name, phone, email, LinkedIn link) in the browser (`apps/new-ui/src/lib/xlsx.ts`). `ui/opening:scoops` sends phone and email only when nobody else has claimed the row.
 
 ## Removing a scoop (3 Nov)
 
@@ -245,9 +245,9 @@ Repo hard rules that apply: never run `convex deploy`/`convex run`/`convex impor
 - 2026-10-28 `d34d9a6` a scoop moved to Follow-up or Director Shortlist gets the opening's only active work location (`placeInOnlyLocation` in `ta/applications.ts`); Try again / Remove on failed scoop cards (`ta/hhUpload:retry`).
 
 <!-- skill-meta
-verified-commit: 99acaa73
-verified-hash: 384cd9cd8ddb2730dd6d8c5b1ff7b9ee3d45467f
-verified-date: 2026-11-19
+verified-commit: 4eed6a8c
+verified-hash: a8ae31512c30f7fa9a0bff857a1c66d4f4b4ca6b
+verified-date: 2026-11-27
 sources:
   convex/ta/scoopUpload.ts
   convex/lib/scoopMail.ts

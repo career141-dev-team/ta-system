@@ -13,6 +13,7 @@ import { BackButton, LinkedInIcon } from "./PipelineBoard";
 import { FitTick, Ring } from "./DatabaseCvsView";
 import MoveForm from "./MoveForm";
 import MoveDialog from "./MoveDialog";
+import PillMenu from "./PillMenu";
 import { STAGES } from "./pipelineRules";
 import Toast from "./Toast";
 import { sendToPipeline } from "./pipelineInbox";
@@ -62,6 +63,9 @@ type Applicant = {
   skills?: string[];
   /** Notice period in days; 0 = can start now. */
   notice: number;
+  /** False when the record holds no notice period / no years (the 0 above is then not a fact). */
+  noticeOnFile?: boolean;
+  yearsOnFile?: boolean;
   /** The CV file (a demo PDF; made-up people). */
   cv?: string;
   lockedBy?: string;
@@ -118,11 +122,22 @@ const NOTICES = [
   { value: "", label: "Any notice" }, { value: "0-1", label: "Can start now" },
   { value: "2-30", label: "Within 30 days" }, { value: "31-60", label: "Within 60 days" },
 ];
+// Nothing on file passes: most records hold no age or gender, and a filter that drops
+// them empties the list without saying why (the search fault fixed 25 Nov).
 const inBand = (v: number | null | undefined, band: string) => {
   if (!band) return true;
-  if (v == null) return false;
+  if (v == null) return true;
   const [lo, hi] = band.split("-").map(Number);
   return v >= lo && v <= hi;
+};
+/** Each value once, however a CV spelled its case or spaces, in order. */
+const distinct = (values: (string | null | undefined)[]) => {
+  const seen = new Map<string, string>();
+  for (const v of values) {
+    const t = v?.trim().replace(/\s+/g, " ");
+    if (t && !seen.has(t.toLowerCase())) seen.set(t.toLowerCase(), t);
+  }
+  return [...seen.values()].sort((a, b) => a.localeCompare(b));
 };
 const has = (value: string | null | undefined, word: string) => (value ?? "").toLowerCase().includes(word.toLowerCase());
 
@@ -302,7 +317,8 @@ export default function LinkedInJobView() {
       for (const x of realApps.people)
         by[tabOf(x.stage)].push({
           id: x.id, cv: cvUrl({ app: x.id }), name: x.name, title: x.title ?? "", location: x.location ?? "", company: x.company ?? "", applied: ago(x.addedAt),
-          fit: 0, years: x.years ?? 0, notice: x.noticeDays ?? 0,
+          // fit 0 = not scored yet (posts carry no JD score); the row and filters treat it so.
+          fit: 0, years: x.years ?? 0, notice: x.noticeDays ?? 0, yearsOnFile: x.years != null, noticeOnFile: x.noticeDays != null,
           age: x.age, gender: x.gender, qualification: x.qualification, education: x.education,
           industry: x.company ?? undefined,
           lockedBy: x.ownerId && x.ownerId !== realApps.me ? firstName(realApps.names[x.ownerId]) ?? "another TA" : undefined,
@@ -323,19 +339,21 @@ export default function LinkedInJobView() {
   const rows: { a: Applicant; postId: string; postTitle: string }[] = (all ? posts : post ? [post] : []).flatMap((p) =>
     p.applicants[tab].map((a) => ({ a, postId: p.id, postTitle: p.title })),
   );
+  // Real applicants carry no fit score yet: the Fit filter and tick then stay away.
+  const scored = rows.some(({ a }) => a.fit > 0);
   const q = draft.q.trim().toLowerCase();
   const shown = rows.filter(
     ({ a }) =>
       (!q || [a.name, a.title, a.company].some((t) => t.toLowerCase().includes(q))) &&
       inRange(a.years, draft.exp) &&
-      a.fit >= Number(draft.fit || 0) &&
-      (!draft.gender || has(a.gender, draft.gender)) &&
+      (!scored || a.fit >= Number(draft.fit || 0)) &&
+      (!draft.gender || !a.gender || has(a.gender, draft.gender)) &&
       (!draft.location || has(a.location, draft.location)) &&
       inBand(a.age, draft.age) &&
       (!draft.industry || [a.industry, a.company, a.title].some((t) => has(t, draft.industry))) &&
       (!draft.qualification || has(a.qualification, draft.qualification)) &&
       (!draft.education || has(a.education, draft.education)) &&
-      inBand(a.notice, draft.notice),
+      inBand(a.noticeOnFile === false ? null : a.notice, draft.notice),
   );
   const keyOf = (postId: string, a: Applicant) => postId + ":" + a.id;
   const free = (a: Applicant) => tab === "new" && !a.lockedBy && !gate;
@@ -351,6 +369,13 @@ export default function LinkedInJobView() {
     setMoving(null);
     setPicked([]);
   };
+  // Escape leaves tick mode, as Cancel does (the Move window handles its own Escape).
+  useEffect(() => {
+    if (!moving || moveOpen) return;
+    const key = (e: KeyboardEvent) => e.key === "Escape" && (setMoving(null), setPicked([]));
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [moving, moveOpen]);
 
   const patch = (id: string, fn: (p: Post) => Post) => setPosts((list) => list.map((p) => (p.id === id ? fn(p) : p)));
   const choose = (id: string) => {
@@ -618,7 +643,8 @@ export default function LinkedInJobView() {
                 </button>
                 <button
                   type="button"
-                  disabled={!toMove.length}
+                  disabled={!toMove.length || !!gate}
+                  title={gate || undefined}
                   onClick={() => setMoveOpen(true)}
                   className="h-[max(2.6rem,34px)] rounded-full bg-brand px-[max(1.2rem,13px)] text-small font-medium text-white hover:bg-brand-strong disabled:pointer-events-none disabled:opacity-50"
                 >
@@ -676,15 +702,16 @@ export default function LinkedInJobView() {
           <ul className="min-h-0 min-w-0 flex-1 overflow-y-auto pb-2 [scrollbar-width:none] short:flex-none short:overflow-visible">
             {(fullKey === listKey ? shown : shown.slice(0, 8)).map(({ a, postId, postTitle }) => {
               // The same row as Database CVs: score, who, career, why (owner's Figma 1515:7533).
-              const career = a.career ?? [{ period: "Now", title: a.title, company: a.company }];
+              // No dated history on an applicant yet: the title alone, never a made-up "Now".
+              const career = a.career ?? [{ period: "", title: a.title, company: a.company }];
               const fit = [
-                { ok: true, t: `${a.years} years of experience` },
-                { ok: a.notice <= 1, t: a.notice <= 1 ? "can start now" : `notice ${a.notice} days` },
-                { ok: a.fit >= 80, t: `${a.fit} fit for this role` },
+                a.yearsOnFile === false || !a.years ? { ok: false, t: "years not on file" } : { ok: true, t: `${a.years} years of experience` },
+                a.noticeOnFile === false ? { ok: false, t: "notice not on file" } : { ok: a.notice <= 1, t: a.notice <= 1 ? "can start now" : `notice ${a.notice} days` },
+                ...(a.fit > 0 ? [{ ok: a.fit >= 80, t: `${a.fit} fit for this role` }] : []),
               ];
               return (
                 <li key={postId + a.id} className="group relative border-b border-border last:border-0">
-                  <div className="grid w-full grid-cols-[minmax(0,1.2fr)_minmax(0,0.3fr)_minmax(0,1fr)_minmax(0,1fr)] items-center gap-x-[max(1rem,10px)] rounded-md py-4 pl-4 pr-[max(11rem,120px)] text-left max-xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] max-xl:[&>:nth-child(2)]:hidden max-xl:[&>:nth-child(4)]:hidden max-md:grid-cols-1">
+                  <div className="grid w-full grid-cols-[minmax(0,1.2fr)_minmax(0,0.3fr)_minmax(0,1fr)_minmax(0,1fr)] items-center gap-x-[max(1rem,10px)] rounded-md py-4 pl-4 pr-[max(16rem,190px)] text-left max-xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] max-xl:[&>:nth-child(2)]:hidden max-xl:[&>:nth-child(4)]:hidden max-md:grid-cols-1">
                     <span className="flex min-w-0 items-center gap-4">
                       {(selecting || moving) && (
                         <input
@@ -715,7 +742,7 @@ export default function LinkedInJobView() {
                       >
                         <span className="flex items-center gap-2">
                           <span className="truncate text-h3 font-medium text-ink hover:text-brand">{a.name}</span>
-                          {a.lockedBy && <span className="shrink-0 rounded-full bg-surface-3 px-2 py-0.5 text-caption text-ink-2">{a.lockedBy}&apos;s</span>}
+                          {a.lockedBy && <span className="shrink-0 rounded-full bg-warn-soft px-2 py-0.5 text-caption font-medium text-warn">Shortlisted by {a.lockedBy}</span>}
                         </span>
                         <span className="truncate text-small text-ink-3">{a.years} years · {a.location}</span>
                         {a.movedFrom && (
@@ -763,13 +790,9 @@ export default function LinkedInJobView() {
                           setAsk({ a, postId });
                           setAskOpen(true);
                         }}
-                        aria-label="Not a fit"
-                        title="Not a fit (X)"
-                        className="flex size-[max(2.6rem,34px)] items-center justify-center rounded-full border border-border-strong bg-surface text-ink-2 hover:bg-surface-2 disabled:opacity-40"
+                        className={GHOST}
                       >
-                        <svg viewBox="0 0 16 16" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.33" strokeLinecap="round" aria-hidden="true">
-                          <path d="M12 4 4 12M4 4l8 8" />
-                        </svg>
+                        Not a fit
                       </button>
                       <button type="button" disabled={!!gate} onClick={() => send(a, postId, "shortlisted")} className={BTN + " bg-brand text-white hover:bg-brand-strong disabled:opacity-40"}>
                         Shortlist
@@ -790,14 +813,14 @@ export default function LinkedInJobView() {
           </ul>
           {filtersOpen && (
             <FilterDrawer
+              scored={scored}
               value={draft}
               onChange={setFilters}
               onClose={() => setFiltersOpen(false)}
               options={{
-                locations: [...new Set(rows.map(({ a }) => a.location).filter((v): v is string => !!v))].sort(),
-                industries: [...new Set(rows.map(({ a }) => a.industry).filter((v): v is string => !!v))].sort(),
-                qualifications: [...new Set(rows.map(({ a }) => a.qualification).filter((v): v is string => !!v))].sort(),
-                educations: [...new Set(rows.map(({ a }) => a.education).filter((v): v is string => !!v))].sort(),
+                locations: distinct(rows.map(({ a }) => a.location)),
+                qualifications: distinct(rows.map(({ a }) => a.qualification)),
+                educations: distinct(rows.map(({ a }) => a.education)),
               }}
             />
           )}
@@ -1051,6 +1074,9 @@ function PostDialog({ ref: root, post, titles, onClose, onSave }: { ref: RefObje
   const JD_APPROVED = useJdApproved();
   const [title, setTitle] = useState(post?.title ?? "");
   const [referee, setReferee] = useState(post?.referee ?? false);
+  // ponytail: the backend's posts do not keep a referee flag yet, so on a real opening
+  // the switch would look saved and be lost. Sample build only until it is stored.
+  const showReferee = !useLive();
   const channel: Channel = post?.channel ?? "linkedin";
   const liveNow = JD_APPROVED;
   useGSAP(
@@ -1151,6 +1177,7 @@ function PostDialog({ ref: root, post, titles, onClose, onSave }: { ref: RefObje
               {channel === "facebook" ? "Put it in the ad's pre-filled WhatsApp message." : "Ask applicants to put it in the email subject."}
             </p>
           )}
+          {showReferee && (
           <label className="mt-1 flex cursor-pointer items-center gap-3 rounded-md bg-surface-2 px-3 py-2.5 text-body text-ink">
             <input type="checkbox" checked={referee} onChange={(e) => setReferee(e.target.checked)} className="peer sr-only" />
             <span
@@ -1167,6 +1194,7 @@ function PostDialog({ ref: root, post, titles, onClose, onSave }: { ref: RefObje
               <span className="text-small">{referee ? "On — hire a referee for this role" : "Off — find candidates as usual"}</span>
             </span>
           </label>
+          )}
           {!isNew && (
             <>
               {field("aliases", "Also known as · old or boosted titles, comma between", post?.aliases.join(", "), "SAP Lead, S/4 Lead")}
@@ -1214,11 +1242,13 @@ const MenuIcon = ({ d }: { d: string }) => (
 
 /** The applicant filters, opening from the right side of the list: the list gives way
  *  and gets narrower. Filters take effect as they are chosen. */
-function FilterDrawer({ value, onChange, onClose, options }: {
+function FilterDrawer({ value, onChange, onClose, options, scored }: {
   value: Filters;
   onChange: (v: Partial<Filters>) => void;
   onClose: () => void;
-  options: { locations: string[]; industries: string[]; qualifications: string[]; educations: string[] };
+  options: { locations: string[]; qualifications: string[]; educations: string[] };
+  /** Some applicant has a fit score; without one the Fit group is left out. */
+  scored: boolean;
 }) {
   const box = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
@@ -1238,10 +1268,14 @@ function FilterDrawer({ value, onChange, onClose, options }: {
   const pick = (label: string, name: "location" | "qualification" | "education", vals: string[]) => (
     <label className="block">
       <span className={CAPTION + " mb-1 block text-ink-3"}>{label}</span>
-      <select value={value[name]} onChange={(e) => onChange({ [name]: e.target.value })} className={FIELD + " cursor-pointer"}>
-        <option value="">Any {label.toLowerCase()}</option>
-        {vals.map((v) => <option key={v} value={v}>{v}</option>)}
-      </select>
+      {/* The app's own pill menu, as every other filter (not the browser's dropdown). */}
+      <PillMenu
+        options={[{ value: "", label: `Any ${label.toLowerCase()}` }, ...vals.map((v) => ({ value: v, label: v }))]}
+        initial={value[name]}
+        onChange={(v) => onChange({ [name]: v })}
+        mark="tick"
+        pillClass={FIELD_PILL + " w-full justify-between text-ink-2"}
+      />
     </label>
   );
   const clear = () => onChange(Object.fromEntries(FILTER_KEYS.map((k) => [k, ""])) as Partial<Filters>);
@@ -1258,19 +1292,20 @@ function FilterDrawer({ value, onChange, onClose, options }: {
           </svg>
         </button>
       </div>
+      <p className="text-caption text-ink-3">People with nothing on file for a filter stay in the list.</p>
       {group("Experience", "exp", EXPERIENCE.map((o) => ({ value: o.value, label: o.label })))}
-      {group("Fit", "fit", [
-        { value: "", label: "Any fit" },
-        { value: "80", label: "Strong fit · 80 or more" },
-        { value: "60", label: "60 or more" },
-      ])}
+      {scored &&
+        group("Fit", "fit", [
+          { value: "", label: "Any fit" },
+          { value: "80", label: "Strong fit · 80 or more" },
+          { value: "60", label: "60 or more" },
+        ])}
       {group("Gender", "gender", GENDERS)}
       {group("Age", "age", AGES)}
       {group("Notice", "notice", NOTICES)}
       <label className="block">
         <span className={CAPTION + " mb-1 block text-ink-3"}>Industry or employer</span>
-        <input list="linkedin-industries" value={value.industry} onChange={(e) => onChange({ industry: e.target.value })} placeholder="e.g. Manufacturing" className={FIELD} />
-        <datalist id="linkedin-industries">{options.industries.map((v) => <option key={v} value={v} />)}</datalist>
+        <input value={value.industry} onChange={(e) => onChange({ industry: e.target.value })} placeholder="e.g. Manufacturing" className={FIELD} />
       </label>
       {pick("Location", "location", options.locations)}
       {pick("Qualification", "qualification", options.qualifications)}

@@ -15,7 +15,7 @@ function Badge() {
   const got = useDoorQuery(door.summary, job ? { openingId: job } : "skip") as Summary | undefined;
   const on = live ? !!got?.ok && got.opening.confidential : sample;
   if (!on) return null;
-  return <span className="rounded-full bg-warn-soft px-3.5 py-1 text-small font-medium text-warn">Confidential</span>;
+  return <span className="rounded-full bg-surface-2 px-3.5 py-1 text-small font-medium text-ink-2">Confidential</span>;
 }
 
 export default function ConfidentialBadge() {

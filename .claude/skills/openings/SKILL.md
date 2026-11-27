@@ -38,7 +38,13 @@ The header shows the "Confidential" badge (`ConfidentialBadge`, `ui/opening:summ
 
 "Move to" on a post header offers two moves; each turns on tickboxes first. Both need `opening.manage`.
 - Another post (`ui/posts:moveCvs` with `applicationIds`; omitted = all): same opening, from a paused post into a live one, stage kept.
-- Another opening (`ui/posts:moveToOpening`): needs manage on both openings, an active destination and a live post (asked only when there are several). The application itself moves (same row), arrives as `new_cvs` with `movedFrom` {opening and post titles, by, at} shown on its row, and opening-specific scores, answers and rejection are cleared. Only unowned rows in new_cvs / matched_candidates / rejected move; someone already on the destination is left where they are. Pause is not required.
+- Another opening (`ui/posts:moveToOpening`): needs manage on both openings, an active destination and a live post (asked only when there are several). The application itself moves (same row), arrives as `new_cvs` with `movedFrom` {opening and post titles, by, at} shown on its row, and opening-specific scores, answers and rejection are cleared. Only unowned rows in new_cvs / matched_candidates / rejected move; someone already on the destination is left where they are. Pause is not required. The Move button waits for Start workday like Shortlist; Escape leaves tick mode.
+
+The LinkedIn Job filters (gender, age, notice, industry or employer, location, qualification, education) keep people with nothing on file for that filter, and the Fit filter shows only once some applicant has a score (posts carry none yet, so real rows show "years / notice not on file" instead of made-up ticks). The post form's Referee switch shows only in the sample build: the backend does not store it yet.
+
+## AURA's Pipeline reply counts
+
+`ui/pipeline:board` `stats` counts replied / no reply yet over the two follow-up columns only (TA Follow-Up, AI Follow-Up), from the same capped rows as the columns; it shows in the board's first row as "In follow-up".
 
 ## How it works now
 
@@ -264,9 +270,9 @@ Capabilities from `src/lib/auth.ts` (`can`); seat from `seatFor` (`src/lib/visib
 - 2026-11-10 `publicJd`: the website JD without the client or the pay.
 
 <!-- skill-meta
-verified-commit: afba39bc
-verified-hash: c9f1e6d050c1bca1a853f2b11683529269f72ed8
-verified-date: 2026-11-09
+verified-commit: 4eed6a8c
+verified-hash: 376cc8476e298934e9133769dc8ebdb1b247aef2
+verified-date: 2026-11-27
 sources:
   convex/ta/openings.ts
   convex/ta/openingAccess.ts

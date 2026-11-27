@@ -96,14 +96,18 @@ type Filters = { q: string; exp: string; who: string; gender: string; education:
 const NO_FILTERS: Filters = { q: "", exp: "", who: "", gender: "", education: "", location: "" };
 const GENDERS: MenuOption[] = [
   { value: "", label: "Any gender" },
-  { value: "Female", label: "Female" },
-  { value: "Male", label: "Male" },
+  { value: "Female", label: "Female", hint: "and anyone with no gender on file" },
+  { value: "Male", label: "Male", hint: "and anyone with no gender on file" },
 ];
-/** "Any ..." and each value the list holds; a kept filter stays listed. */
-const choices = (any: string, values: (string | undefined)[], kept: string): MenuOption[] => [
-  { value: "", label: any },
-  ...[...new Set([...values, kept].filter((v): v is string => !!v))].sort().map((v) => ({ value: v, label: v })),
-];
+const tidy = (v?: string) => v?.trim().replace(/\s+/g, " ") ?? "";
+const same = (a: string | undefined, b: string) => tidy(a).toLowerCase() === tidy(b).toLowerCase();
+/** "Any ..." and each value the list holds once, however a CV spelled its case or
+ *  spaces; a kept filter stays listed. */
+const choices = (any: string, values: (string | undefined)[], kept: string): MenuOption[] => {
+  const seen = new Map<string, string>();
+  for (const v of [...values, kept].map(tidy)) if (v && !seen.has(v.toLowerCase())) seen.set(v.toLowerCase(), v);
+  return [{ value: "", label: any }, ...[...seen.values()].sort((a, b) => a.localeCompare(b)).map((v) => ({ value: v, label: v }))];
+};
 /** A link from a CV is only followed when it really is LinkedIn's. */
 const profileUrl = (link?: string) => {
   const t = link?.trim();
@@ -116,9 +120,11 @@ function matches(s: Scoop, f: Filters) {
   const q = f.q.trim().toLowerCase();
   if (q && ![s.name, s.title, s.company].some((t) => t.toLowerCase().includes(q))) return false;
   if (!inRange(s.years, f.exp)) return false;
-  if (f.gender && s.gender?.toLowerCase() !== f.gender.toLowerCase()) return false;
-  if (f.education && s.education !== f.education) return false;
-  if (f.location && s.location !== f.location) return false;
+  // Nothing on file passes: most records hold no gender (the search fault fixed 25 Nov).
+  if (f.gender && s.gender && s.gender.toLowerCase() !== f.gender.toLowerCase()) return false;
+  if (f.education && !same(s.education, f.education)) return false;
+  // "Colombo" also finds "Colombo 03".
+  if (f.location && !(s.location ?? "").toLowerCase().includes(f.location.toLowerCase())) return false;
   if (f.who === "open") return !s.mine && !s.lockedBy;
   if (f.who === "mine") return !!s.mine;
   if (f.who === "today") return s.sentDay === "today";
@@ -680,6 +686,15 @@ export default function ScoopsView() {
                 >
                   Shortlist · {pickable.length}
                 </button>
+                {/* The same export as the ⋮ menu, where the ticks are. */}
+                <button
+                  type="button"
+                  disabled={!exporting.length}
+                  onClick={exportExcel}
+                  className="h-[max(2.6rem,34px)] rounded-full border border-border-strong bg-surface px-[max(1.3rem,14px)] text-[max(0.9625rem,13.5px)] font-medium text-ink hover:bg-surface-2 disabled:pointer-events-none disabled:opacity-50"
+                >
+                  Export · {exporting.length}
+                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -918,7 +933,7 @@ export default function ScoopsView() {
                 {s.score != null ? (
                   <Ring score={s.score} />
                 ) : (
-                  <span title="Not scored yet" className="flex size-[max(3rem,34px)] shrink-0 items-center justify-center rounded-full bg-info-soft text-[max(1rem,12px)] font-medium text-info">{initials(s.name)}</span>
+                  <span title="Not scored yet" className="flex size-[max(3.25rem,40px)] shrink-0 items-center justify-center rounded-full bg-info-soft text-[max(1rem,12px)] font-medium text-info">{initials(s.name)}</span>
                 )}
                 <button type="button" onClick={() => openRow(s.id)} className="flex min-w-0 flex-1 items-center gap-x-[max(1.1rem,10px)] text-left" aria-label={`Read ${s.name}'s CV`}>
                   <span className="w-[max(17rem,130px)] min-w-0 shrink-0 max-md:flex-1">
