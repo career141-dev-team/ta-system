@@ -18,6 +18,23 @@ export type ChipAnswer = {
   years: [number | null, number | null] | null;
 };
 
+export type ChipAgentCandidate = {
+  id: string;
+  tier: "confirmed" | "unconfirmed";
+  fit: number;
+  reason: string;
+  gender: "male" | "female" | null;
+};
+export type ChipAgentAnswer = {
+  ok: true;
+  reply: string;
+  read: string;
+  total: number;
+  candidates: ChipAgentCandidate[];
+  steps: number;
+  ms: number;
+};
+
 const URL_DEFAULT = "http://chip-search:3311/search";
 const WAIT_MS = 45_000;
 
@@ -25,16 +42,47 @@ const WAIT_MS = 45_000;
 const held = new Map<string, { at: number; a: ChipAnswer }>();
 const HOLD_MS = 10 * 60_000;
 
-async function post(path: "/search" | "/check", body: unknown): Promise<ChipAnswer | null> {
+async function postJson<T>(path: "/search" | "/check" | "/agent", body: unknown): Promise<T | null> {
   try {
     const url = (process.env.C141_CHIP_SEARCH_URL || URL_DEFAULT).replace(/\/search$/, path);
     const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(WAIT_MS) });
     if (!r.ok) return null;
-    const a = (await r.json()) as ChipAnswer;
-    return a?.ok && Array.isArray(a.hits) ? a : null;
+    return (await r.json()) as T;
   } catch {
     return null;
   }
+}
+
+async function post(path: "/search" | "/check", body: unknown): Promise<ChipAnswer | null> {
+  const a = await postJson<ChipAnswer>(path, body);
+  return a?.ok && Array.isArray(a.hits) ? a : null;
+}
+
+/**
+ * Tool-calling agent over the 94,830-card chip search engine (27 Nov 2026).
+ * Returns null if disabled, unreachable, or refused so the caller falls back cleanly.
+ */
+export async function chipAgent(body: {
+  turns: string[];
+  currentIds?: string[];
+  genders?: Record<string, "f" | "m">;
+  wantGender?: "female" | "male" | null;
+  limit?: number | null;
+}): Promise<ChipAgentAnswer | null> {
+  if (process.env.C141_CHIP_SEARCH === "off" || process.env.C141_CHIP_AGENT === "off") return null;
+  const a = await postJson<ChipAgentAnswer>("/agent", body);
+  return a?.ok && Array.isArray(a.candidates) ? a : null;
+}
+
+/** Explicit result count asked in a prompt ("show top 10", "first 5", "give me 15"), clamped 1..max. */
+export function limitAsked(text: string, max = 60): number | null {
+  const t = text.toLowerCase();
+  const m =
+    t.match(/\b(?:show|give(?:\s+me)?|list|return|send|get|only)\s+(?:the\s+)?(?:top|first|best)?\s*(\d{1,2})\b/) ??
+    t.match(/\b(?:top|first|best)\s+(\d{1,2})\b/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) && n >= 1 ? Math.min(max, n) : null;
 }
 
 /**

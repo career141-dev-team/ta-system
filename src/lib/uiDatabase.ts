@@ -11,7 +11,7 @@ export const MAX_CHARS = 2000;
 /** People sent back per answer; the chat shows four and "see all". */
 export const ROWS = 60;
 
-export type SearchBody = { q: string; mode: "natural" | "boolean"; full: boolean };
+export type SearchBody = { q: string; mode: "natural" | "boolean"; full: boolean; currentIds?: string[] };
 
 export function readSearchBody(body: unknown): { ok: true; body: SearchBody } | { ok: false; message: string } {
   const b = (body ?? {}) as Record<string, unknown>;
@@ -21,7 +21,12 @@ export function readSearchBody(body: unknown): { ok: true; body: SearchBody } | 
   if (!q) return { ok: false, message: "Say who you are looking for." };
   if (q.length > MAX_CHARS) return { ok: false, message: "That search is too long. Start a new chat." };
   if (b.mode !== undefined && b.mode !== "natural" && b.mode !== "boolean") return { ok: false, message: "Unknown search mode." };
-  return { ok: true, body: { q, mode: b.mode === "boolean" ? "boolean" : "natural", full: b.full === true } };
+  const currentIds = Array.isArray(b.currentIds)
+    ? b.currentIds.map((x) => (typeof x === "string" ? x.trim() : "")).filter(Boolean).slice(0, 40)
+    : [];
+  const parsed: SearchBody = { q, mode: b.mode === "boolean" ? "boolean" : "natural", full: b.full === true };
+  if (currentIds.length) parsed.currentIds = currentIds;
+  return { ok: true, body: parsed };
 }
 
 export type UiPerson = {
