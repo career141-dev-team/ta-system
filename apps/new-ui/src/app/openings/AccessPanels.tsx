@@ -203,7 +203,11 @@ export function RequestOpening({ rows, tell }: { rows: Opening[]; tell: (rest: s
       </button>
       {shown && (
         <div ref={panel} role="dialog" aria-label="Request an opening" className="absolute right-0 top-full z-30 mt-2 w-[min(26rem,92vw)] max-md:fixed max-md:inset-x-3 max-md:top-[18dvh] max-md:mt-0 max-md:w-auto rounded-md border border-border bg-surface p-3 shadow-float">
-          <p className="px-1 pb-2 text-small text-ink-2">Pick an opening to join. Your TA Lead gets the request and answers it.</p>
+          <p className="px-1 pb-2 text-small text-ink-2">
+            {live && got?.ok && !got.canRequest
+              ? "Only a TA asks to join an opening. You are signed in as a lead or admin, so you put people on openings instead."
+              : `Pick an opening to join${list.length ? ` - ${list.length} open` : ""}. Its TA Lead gets the request and answers it.`}
+          </p>
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -212,12 +216,16 @@ export function RequestOpening({ rows, tell }: { rows: Opening[]; tell: (rest: s
             className="mb-2 w-full rounded-full bg-surface-2 px-4 py-2 text-small text-ink outline-none placeholder:text-ink-3 focus-visible:ring-2 focus-visible:ring-brand/30"
           />
           <ul className="grid max-h-[min(22rem,50dvh)] grid-cols-1 gap-1 overflow-y-auto overflow-x-hidden">
-            {hits.length === 0 && <li className="px-1 py-3 text-small text-ink-3">{list.length === 0 ? "No open roles to request right now." : "Nothing matches."}</li>}
+            {hits.length === 0 && (
+              <li className="px-1 py-3 text-small text-ink-3">
+                {list.length === 0 ? "You are already on every open role." : `Nothing matches "${q.trim()}". Try part of the role or the client's name.`}
+              </li>
+            )}
             {hits.map((o) => (
               <li key={o.id} className="flex items-center gap-3 rounded-sm px-2 py-2 hover:bg-surface-2">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-small font-medium text-ink">{o.title}</p>
-                  <p className="truncate text-caption text-ink-3">{o.clientName}{o.leadName && ` · TA Lead ${o.leadName}`}</p>
+                  <p className="truncate text-caption text-ink-3">{o.clientName} · {o.leadName ? `TA Lead ${o.leadName}` : "No TA Lead - an admin answers"}</p>
                 </div>
                 {o.status === "pending" ? (
                   <span className="shrink-0 rounded-full bg-surface-2 px-3 py-1 text-caption text-ink-2">Asked · waiting</span>
