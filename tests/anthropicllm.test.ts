@@ -121,7 +121,7 @@ eq("claude-first returns null without calling anything", [await askClaudeFirst("
 const { callHaikuVisionOCR, executeLLMWithNvidiaFallback } = await import("../convex/lib/llm");
 eq("the CLI vision bridge is not asked", [await callHaikuVisionOCR({ kind: "pdf", mime: "application/pdf", base64: "x" }), sent.length], ["", n0]);
 
-process.env.OPENROUTER_API_KEY = "or-key-0123456789";
+delete process.env.OPENROUTER_API_KEY;
 process.env.NVIDIA_API_KEY = "nv-key-0123456789";
 process.env.OPENAI_API_KEY = "oa-key-0123456789";
 const n1 = sent.length;
@@ -129,8 +129,25 @@ reply = () => new Response("down", { status: 500 });
 let threw = false;
 try { await executeLLMWithNvidiaFallback({} as any, "cv_structuring", { messages: [{ role: "user", content: "cv" }], response_format: { type: "json_object" } }); } catch { threw = true; }
 const hosts = sent.slice(n1).map((x) => new URL(x.url).host);
-eq("a Haiku failure is an error, never another model's answer", threw, true);
-eq("only api.anthropic.com was called (no OpenRouter, NVIDIA or OpenAI)", [...new Set(hosts)], ["api.anthropic.com"]);
+eq("without an OpenRouter key, a Haiku failure throws", threw, true);
+eq("without an OpenRouter key, only api.anthropic.com was called", [...new Set(hosts)], ["api.anthropic.com"]);
+
+process.env.OPENROUTER_API_KEY = "or-key-0123456789";
+const n1b = sent.length;
+const fallbackJson = JSON.stringify({ fullName: "Jane Doe", email: "jane@example.com" });
+globalThis.fetch = (async (url: string, init?: { headers?: Record<string, string>; body?: string }) => {
+  sent.push({ url: String(url), headers: init?.headers ?? {}, body: init?.body ? JSON.parse(init.body) : null });
+  if (String(url).includes("api.anthropic.com")) return new Response("auth failed", { status: 401 });
+  return new Response(JSON.stringify({ choices: [{ message: { content: fallbackJson }, finish_reason: "stop" }], usage: { prompt_tokens: 10, completion_tokens: 5 } }), { status: 200, headers: { "content-type": "application/json" } });
+}) as typeof fetch;
+const fb = await executeLLMWithNvidiaFallback({} as any, "cv_structuring", { messages: [{ role: "user", content: "cv" }], response_format: { type: "json_object" } });
+const fbHosts = sent.slice(n1b).map((x) => new URL(x.url).host);
+eq("with OpenRouter key set, Anthropic failure falls back to OpenRouter DeepSeek", [fb.provider, fb.model, fb.content], ["openrouter", "deepseek/deepseek-v4-flash", fallbackJson]);
+eq("fallback called Anthropic then OpenRouter (no NVIDIA)", [...new Set(fbHosts)], ["api.anthropic.com", "openrouter.ai"]);
+globalThis.fetch = (async (url: string, init?: { headers?: Record<string, string>; body?: string }) => {
+  sent.push({ url: String(url), headers: init?.headers ?? {}, body: init?.body ? JSON.parse(init.body) : null });
+  return reply();
+}) as typeof fetch;
 reply = ok("fine");
 fs.writeFileSync(path.join(process.env.C141_DATA_DIR!, "spend.json"), JSON.stringify({ spent: 0, entries: [] })); // the cap test above filled it
 const n2 = sent.length;

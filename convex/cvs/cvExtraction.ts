@@ -1001,7 +1001,7 @@ export async function callOpenRouterLLM(
    * back as the same null, and the TA saw "API timeout or invalid response"
    * for an out-of-credits answer, a cut-off reply and a wrong field alike.
    */
-  failure?: { reason?: string },
+  failure?: { reason?: string; model?: string },
 ): Promise<CvExtractionResult | null> {
   const fail = (reason: string) => {
     if (failure) failure.reason = reason;
@@ -1072,6 +1072,7 @@ JSON Target Schema:
       cvUploadId,
       sourceChannel,
     });
+    if (failure) failure.model = model;
 
     const after = primaryError ? `DeepSeek failed (${primaryError.slice(0, 160)}), then ${model} ` : `${model} `;
     if (!content) return fail(`${after}gave an empty answer`);
@@ -1452,11 +1453,12 @@ async function runCvExtractionLocked(
       // LLM structuring only — embedding is deferred to background scheduler below
       checkDeadline("pre_llm");
       const tLlmStart = Date.now();
-      const failure: { reason?: string } = {};
+      const failure: { reason?: string; model?: string } = {};
       let extractedData = await callOpenRouterLLM(ctx, cappedRawText, cvUploadId, sourceChannel, failure).catch((err) => {
         console.warn("[CvExtraction] First call to OpenRouter LLM failed:", err.message || err);
         return null;
       });
+      if (failure.model) extractionModel = failure.model;
       t_llm = Date.now() - tLlmStart;
       checkDeadline("post_llm");
 
