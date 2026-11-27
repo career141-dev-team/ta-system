@@ -4682,6 +4682,17 @@ export async function reconcileDailyEmail(formData: FormData) {
   return back("Email result reconciled.");
 }
 
+export async function reopenDailyEmail(formData: FormData) {
+  const openingId = String(formData.get("openingId") ?? "");
+  await primeStore({ openingId });
+  const user = await authorize(formData, "opening.act", { opening: "openingId" });
+  try {
+    await convexMutation("ta/dailyEmails:reopenEarlyEod", { actorId: user.id, id: String(formData.get("dailyEmailId")) });
+  } catch (e) { return fail(backendMessage(e, "Could not reopen this end-of-day email.")); }
+  revalidatePath(`/openings/${openingId}`, "layout");
+  return back("End-of-day email reopened. The TA can continue working on this position today and send Midday or End of day again.");
+}
+
 /** Both daily submissions share the same durable reservation and transport. */
 export async function sendDailyEmail(formData: FormData) {
   const openingId = String(formData.get("openingId") ?? "");

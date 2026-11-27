@@ -376,7 +376,7 @@ export default async function EodPage({
         <SubmitButton disabled={eodClosed} pendingLabel="Adding…" className="rounded-lg bg-brand px-4 py-2 text-white disabled:opacity-40">Add midday email</SubmitButton>
       </form>}
       {eodClosed && !correction && <p className="mb-5 text-sm">End of day has been sent. You can read your sent emails or correct the original EOD email. New submissions resume tomorrow.</p>}
-      {selectedDaily && !draft && !correction && <DailyEmailView email={selectedDaily} openingId={id} canCorrect={selectedDaily.userId === user.id} canReconcile={["ta_lead", "admin"].includes(user.role)} />}
+      {selectedDaily && !draft && !correction && <DailyEmailView email={selectedDaily} openingId={id} canCorrect={selectedDaily.userId === user.id} canReconcile={["ta_lead", "admin", "director"].includes(user.role)} />}
       {!midday && copies.length > 0 && (
         <SentHistory copies={copies} user={user} openingId={id} openId={resendCopy?.id} viewId={viewCopy?.id} />
       )}

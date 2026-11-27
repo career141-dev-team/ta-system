@@ -11,7 +11,7 @@ export const MAX_CHARS = 2000;
 /** People sent back per answer; the chat shows four and "see all". */
 export const ROWS = 60;
 
-export type SearchBody = { q: string; mode: "natural" | "boolean"; full: boolean };
+export type SearchBody = { q: string; mode: "natural" | "boolean"; full: boolean; currentIds?: string[] };
 
 export function readSearchBody(body: unknown): { ok: true; body: SearchBody } | { ok: false; message: string } {
   const b = (body ?? {}) as Record<string, unknown>;
@@ -21,8 +21,15 @@ export function readSearchBody(body: unknown): { ok: true; body: SearchBody } | 
   if (!q) return { ok: false, message: "Say who you are looking for." };
   if (q.length > MAX_CHARS) return { ok: false, message: "That search is too long. Start a new chat." };
   if (b.mode !== undefined && b.mode !== "natural" && b.mode !== "boolean") return { ok: false, message: "Unknown search mode." };
-  return { ok: true, body: { q, mode: b.mode === "boolean" ? "boolean" : "natural", full: b.full === true } };
+  const currentIds = Array.isArray(b.currentIds)
+    ? b.currentIds.map((x) => (typeof x === "string" ? x.trim() : "")).filter(Boolean).slice(0, 40)
+    : [];
+  const parsed: SearchBody = { q, mode: b.mode === "boolean" ? "boolean" : "natural", full: b.full === true };
+  if (currentIds.length) parsed.currentIds = currentIds;
+  return { ok: true, body: parsed };
 }
+
+export type UiCareerRole = { period: string; title: string; company: string };
 
 export type UiPerson = {
   id: string;
@@ -35,12 +42,29 @@ export type UiPerson = {
   score: number | null;
   why: string;
   hasCv: boolean;
+  career?: UiCareerRole[];
 };
 
 const noticeOf = (c: Candidate) =>
   c.noticePeriod?.trim() || (c.noticePeriodDays == null ? null : c.noticePeriodDays === 0 ? "Immediate" : `${c.noticePeriodDays} days`);
 
+function careerOf(c: Candidate): UiCareerRole[] | undefined {
+  const hist = Array.isArray(c.workHistory) ? c.workHistory : [];
+  if (!hist.length) return undefined;
+  const rows = hist
+    .slice(0, 3)
+    .map((w) => {
+      const from = w.fromYear ? String(w.fromYear) : "";
+      const to = w.toYear ? String(w.toYear) : "";
+      const period = from && to ? (from === to ? from : `${from} – ${to}`) : from ? `${from} – Now` : to || "Now";
+      return { period, title: (w.title ?? "").trim(), company: (w.employer ?? "").trim() };
+    })
+    .filter((r) => r.title || r.company);
+  return rows.length ? rows : undefined;
+}
+
 export function personOf(c: Candidate, score: number | null, why: string): UiPerson {
+  const career = careerOf(c);
   return {
     id: c.id,
     name: c.fullName,
@@ -52,5 +76,6 @@ export function personOf(c: Candidate, score: number | null, why: string): UiPer
     score: score == null ? null : Math.round(score),
     why,
     hasCv: !!c.cvFileName && !c.cvFileMissing,
+    ...(career ? { career } : {}),
   };
 }

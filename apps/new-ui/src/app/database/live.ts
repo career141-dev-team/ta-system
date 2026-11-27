@@ -17,8 +17,9 @@ export type LivePerson = {
   score: number | null;
   why: string;
   hasCv: boolean;
+  career?: { period: string; title: string; company: string }[];
 };
-export type LiveAnswer = { ok: true; total: number; rows: LivePerson[]; read: string | null; chips: string[]; refining: boolean; problem: string | null };
+export type LiveAnswer = { ok: true; total: number; rows: LivePerson[]; read: string | null; reply?: string | null; chips: string[]; refining: boolean; problem: string | null };
 
 /** What a live message asks for. */
 export type LiveAsk =
@@ -89,6 +90,7 @@ export function personOf(p: LivePerson, cv?: string): Person {
     score: p.score ?? 0,
     why: [p.why, p.years != null ? `${p.years} yrs` : "", p.notice ? `notice ${p.notice}` : ""].filter(Boolean).join(" · "),
     ...(cv ? { cv } : {}),
+    ...(p.career?.length ? { career: p.career } : {}),
   };
 }
 
@@ -111,9 +113,41 @@ export function jobIn<J extends { id: string; title: string; client: string }>(p
   return hits.length === 1 ? hits[0] : null;
 }
 
-/** Past searches as chats: a search continued later (its words start the same) shows once. */
-export function pastChats(rows: { id: string; query: string; at: number }[]): { id: string; query: string; at: number }[] {
-  const out: { id: string; query: string; at: number }[] = [];
-  for (const r of rows) if (!out.some((o) => o.query.startsWith(r.query))) out.push(r);
+/** Past searches as chats: independent chatIds stay separate; legacy prefix-continued searches show once. */
+export function pastChats<T extends { id: string; query: string; at: number; chatId?: string | null }>(rows: T[]): T[] {
+  const out: T[] = [];
+  const seenChat = new Set<string>();
+  for (const r of rows) {
+    if (r.chatId) {
+      if (seenChat.has(r.chatId)) continue;
+      seenChat.add(r.chatId);
+      out.push(r);
+      continue;
+    }
+    if (!out.some((o) => !o.chatId && o.query.startsWith(r.query))) out.push(r);
+  }
   return out;
+}
+
+/** Safe parse of saved conversation turns from Convex searchHistory.turnsJson. */
+export function parseSavedTurns<T>(raw?: string | null): T[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Serialize conversation turns within Convex document limits (~200 KB cap). */
+export function serializeTurns(turns: unknown[], maxBytes = 200_000): string {
+  const json = JSON.stringify(turns);
+  if (json.length <= maxBytes) return json;
+  // Keep the most recent turns if a very long chat exceeds the cap.
+  for (let keep = turns.length - 1; keep >= 2; keep--) {
+    const trimmed = JSON.stringify(turns.slice(-keep));
+    if (trimmed.length <= maxBytes) return trimmed;
+  }
+  return JSON.stringify(turns.slice(-2));
 }

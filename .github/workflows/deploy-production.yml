@@ -30,7 +30,7 @@ on:
       components:
         description: What to deploy
         type: choice
-        options: [all, app, convex, new-ui]
+        options: [all, app, convex, new-ui, chip-search]
         default: all
       run_function:
         description: Convex function to run after deploying (optional, e.g. migrations/foo:run)
@@ -62,6 +62,7 @@ jobs:
       sha: ${{ steps.check.outputs.sha }}
       backup: ${{ steps.backup.outputs.need }}
       new_ui: ${{ steps.parts.outputs.new_ui }}
+      chip_search: ${{ steps.parts.outputs.chip_search }}
       rest: ${{ steps.parts.outputs.rest }}
     steps:
       - name: Production enabled
@@ -100,23 +101,26 @@ jobs:
           BEFORE: ${{ github.event.before }}
           COMPONENTS: ${{ inputs.components }}
         run: |
-          new_ui=false; rest=false
+          new_ui=false; rest=false; chip_search=false
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
             case "$COMPONENTS" in
               new-ui) new_ui=true ;;
-              all|"") new_ui=true; rest=true ;;
+              chip-search) chip_search=true ;;
+              all|"") new_ui=true; rest=true; chip_search=true ;;
               *) rest=true ;;
             esac
           elif [ -z "$BEFORE" ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
-            new_ui=true; rest=true
+            new_ui=true; rest=true; chip_search=true
           else
             changed=$(git diff --name-only "$BEFORE" HEAD)
             echo "$changed" | grep -q '^apps/new-ui/' && new_ui=true
-            echo "$changed" | grep -v '^apps/new-ui/' | grep -q . && rest=true
+            echo "$changed" | grep -Eq '^(services/chip-search/|convex/lib/search/|\.github/workflows/deploy-production\.yml$)' && chip_search=true
+            echo "$changed" | grep -Ev '^(apps/new-ui/|services/chip-search/)' | grep -q . && rest=true
           fi
           echo "new_ui=$new_ui" >> "$GITHUB_OUTPUT"
+          echo "chip_search=$chip_search" >> "$GITHUB_OUTPUT"
           echo "rest=$rest" >> "$GITHUB_OUTPUT"
-          echo "This release deploys - new UI: $new_ui, backend + old app: $rest"
+          echo "This release deploys - new UI: $new_ui, chip-search: $chip_search, backend + old app: $rest"
 
       # A full dump of the 15 GB database takes about 15 minutes. The owner
       # takes a backup each morning, so a release takes one only when it runs
@@ -267,3 +271,59 @@ jobs:
             sleep 5
           done
           echo "::error::new.career141.com/today did not answer 200 on the server (last: $code)"; exit 1
+
+  # The chip-search service (services/chip-search + convex/lib/search) runs on the
+  # VPS as the `chip-search` container reading /opt/chip-search/data/cards.jsonl.
+  # Syncing its code tarball and running start.sh keeps POST /agent and OpenRouter
+  # DeepSeek fallback in lockstep with production releases without touching cards.jsonl.
+  chip-search:
+    name: Chip Search
+    needs: [gate, ci]
+    if: ${{ always() && needs.gate.outputs.chip_search == 'true' && needs.gate.result == 'success' && needs.ci.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+
+      - name: Package chip-search
+        env:
+          SHA: ${{ needs.gate.outputs.sha }}
+        run: tar -czf "/tmp/chip-search-$SHA.tgz" services/chip-search convex/lib/search
+
+      - name: SSH access
+        env:
+          KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ vars.VPS_KNOWN_HOSTS }}
+          HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" >> ~/.ssh/known_hosts
+          cat >> ~/.ssh/config <<EOF
+          Host deploy-target
+            HostName $HOST
+            User ${{ secrets.VPS_USERNAME }}
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+          EOF
+
+      - name: Upload and restart chip-search
+        env:
+          SHA: ${{ needs.gate.outputs.sha }}
+        run: |
+          scp -q "/tmp/chip-search-$SHA.tgz" deploy-target:/tmp/
+          ssh deploy-target "mkdir -p /opt/chip-search/code && tar -xzf /tmp/chip-search-$SHA.tgz -C /opt/chip-search/code && rm -f /tmp/chip-search-$SHA.tgz && sh /opt/chip-search/code/services/chip-search/start.sh"
+
+      - name: Chip-search health check
+        run: |
+          for i in $(seq 1 15); do
+            health=$(ssh deploy-target "docker exec chip-search wget -qO- http://127.0.0.1:3311/health 2>/dev/null || true")
+            echo "health ($i): $health"
+            echo "$health" | grep -q '"ok":true' && exit 0
+            sleep 3
+          done
+          echo "::error::chip-search did not become healthy in time"; exit 1

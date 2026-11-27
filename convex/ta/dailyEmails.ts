@@ -8,6 +8,7 @@ import { workSessionStart } from "../../src/lib/workdayRequirements";
 import { dailySendProblem, sameCandidateList, EMAIL_RETENTION_MS, MISSED_EOD_DAYS, type DailyEmailSnapshot } from "../../src/lib/dailyEmail";
 import { validateResearchLink, checkResearchSubmission, scoopsOnly } from "../../src/lib/eod-format";
 import { dailyEmailsFor, finalizeDailyEmail, middayRequired } from "../lib/dailyEmail";
+import { reopenEarlyEodEmail } from "../lib/reopenEarlyEod";
 import { defaultRecipients, defaultSubject, effortRow, eligibleApplications, shortlistRows } from "../lib/eodCompose";
 import { requiredChecks } from "../lib/workdayChecks";
 import { refreshWorkdayChecks } from "./workdays";
@@ -300,6 +301,24 @@ export const reconcile = internalMutation({
     if (email.receiptId) await ctx.db.patch(email.receiptId, { status: patch.status, reconciledAt: Date.now(), reconciledBy: lead._id, reconciliationReason: args.reason.trim() });
     if (args.accepted) await finalizeDailyEmail(ctx, { ...email, ...patch });
     await refreshWorkdayChecks(ctx, email.jobId, lead._id);
+    return { ok: true };
+  },
+});
+
+export const reopenEarlyEod = internalMutation({
+  args: { actorId: v.string(), id: v.id("dailyEmails") },
+  handler: async (ctx, args) => {
+    const email = await ctx.db.get(args.id);
+    if (!email) throw new Error("That email no longer exists.");
+    const lead = await access(ctx, args.actorId, email.jobId);
+    if (!["admin", "ta_lead", "director"].includes(mapUser(lead).role)) {
+      throw new Error("Only a TA Lead, Director or admin can reopen an end-of-day email.");
+    }
+    if (email.date !== workdayDate(Date.now())) {
+      throw new Error("Only today's end-of-day email can be reopened.");
+    }
+    const res = await reopenEarlyEodEmail(ctx, { email, dryRun: false });
+    await refreshWorkdayChecks(ctx, email.jobId, email.userId, res.summary.workdayId ?? undefined);
     return { ok: true };
   },
 });

@@ -12,8 +12,6 @@ import { SearchSteps, useSteps } from "../SearchSteps";
 import { refereeReply, toCsv, type Referee } from "./referees";
 import {
   JOBS,
-  fitOf,
-  reasonOf,
   reply,
   titleOf,
   type Chip,
@@ -24,11 +22,11 @@ import {
 import { POOL, filterReply, panelOf } from "./aura";
 import FilterBar from "./FilterBar";
 import { petSay } from "@/lib/pet";
-import { candidateCall, cvHeaders, cvUrl, door, OLD_SERVER, saveLiveFile, useDoorMutation, useDoorQuery, useLive } from "@/lib/backend";
+import { candidateCall, cvHeaders, cvUrl, door, OLD_SERVER, queryOnce, saveLiveFile, useDoorMutation, useDoorQuery, useLive } from "@/lib/backend";
 import { useSignedInPerson } from "@/lib/role";
 import { useSpeech } from "@/lib/useSpeech";
 import type { MyDay } from "@/lib/askAura";
-import { chipsOf, jobIn, pastChats, personOf, readLive, whoIn, type LiveAnswer } from "./live";
+import { chipsOf, jobIn, parseSavedTurns, pastChats, personOf, readLive, serializeTurns, whoIn, type LiveAnswer } from "./live";
 
 // D1 · Database - search by chatting with AURA (owner's design, 14 Nov 2026).
 // Left: the chats (Today / Earlier) and New search - the history IS the chats, so
@@ -60,13 +58,15 @@ type Thread = {
   turns: Turn[];
   /** A past search (signed in): run again when the chat is opened. */
   q?: string;
+  /** Its conversation is saved in the backend and is read when the chat is opened (27 Nov 2026). */
+  saved?: boolean;
 };
 
 // Signed in, the chat searches the real database through old AURA's own search
 // (ta-system #42, /api/ui/database): the engine and the desk rules.
 const DB_URL = `${OLD_SERVER}/api/ui/database`;
 const NO_LINE = "Could not reach the TA System. Check your connection and try again.";
-async function searchLive(body: { q: string; mode: "natural" | "boolean"; full?: boolean }): Promise<LiveAnswer | { ok: false; message: string }> {
+async function searchLive(body: { q: string; mode: "natural" | "boolean"; full?: boolean; currentIds?: string[] }): Promise<LiveAnswer | { ok: false; message: string }> {
   const res = await fetch(DB_URL, { method: "POST", headers: { "Content-Type": "application/json", ...(await cvHeaders(DB_URL)) }, body: JSON.stringify(body) }).catch(() => null);
   const got = (await res?.json().catch(() => null)) as (LiveAnswer | { ok: false; message: string }) | null;
   return got ?? { ok: false, message: NO_LINE };
@@ -81,12 +81,27 @@ const liveNext = (people: Person[]) =>
       ]
     : [{ label: "Start over", prompt: "Start over" }];
 const foundLine = (a: LiveAnswer, what = "") =>
-  a.total
-    ? `${a.total} ${a.total === 1 ? "person matches" : "people match"}${what}${a.read ? ` - ${a.read}` : ""}.${a.problem ? ` ${a.problem}` : ""}`
-    : (a.problem ?? "Nothing in the database matched that search.");
+  a.reply?.trim()
+    ? a.reply.trim()
+    : a.total
+      ? `${a.total} ${a.total === 1 ? "person matches" : "people match"}${what}${a.read ? ` - ${a.read}` : ""}.${a.problem ? ` ${a.problem}` : ""}`
+      : (a.problem ?? "Nothing in the database matched that search.");
+
+/** A past chat with no saved turns: its words and a button to run it again. */
+const olderChat = (id: string, query: string): Turn[] => [
+  { id: `${id}-m`, from: "me", text: query.split("\n").join(" · ") },
+  {
+    id: `${id}-a`,
+    from: "aura",
+    text: "This older chat was saved before full results were cached. Run it again if you want fresh matches.",
+    ran: query,
+    actions: [{ label: "Run search again", prompt: query }],
+  },
+];
 
 let seq = 0;
 const nid = () => `t${++seq}`;
+const newChatId = () => `c_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 
 /** The chips and the people of the last answer that had them: what a new message refines. */
 function contextOf(turns: Turn[]) {
@@ -153,12 +168,6 @@ const START: Thread[] = [
   },
 ];
 
-const AVATAR = [
-  "bg-info-soft text-info",
-  "bg-violet-soft text-violet",
-  "bg-warn-soft text-warn",
-  "bg-brand-soft text-brand",
-];
 const initials = (n: string) =>
   n
     .split(" ")
@@ -199,11 +208,15 @@ export default function DatabaseView() {
   const liveSite = useLive();
   const [threads, setThreads] = useState<typeof START>(liveSite ? [] : START);
   const [openId, setOpenId] = useState(liveSite ? "" : "sap");
-  const recent = useDoorQuery(door.searchRecent, live ? {} : "skip") as { ok: true; searches: { id: string; query: string; count: number; at: number }[] } | { ok: false } | undefined;
+  const recent = useDoorQuery(door.searchRecent, live ? {} : "skip") as
+    | { ok: true; searches: { id: string; chatId?: string | null; title?: string | null; query: string; count: number; at: number; saved?: boolean }[] }
+    | { ok: false }
+    | undefined;
   const day = useDoorQuery(door.myDay, live ? {} : "skip") as ({ ok: true } & MyDay) | { ok: false } | undefined;
   const positions = day?.ok ? day.positions : [];
   const record = useDoorMutation(door.searchRecord);
   // Signed in: the chats are this person's own past searches, never the samples.
+  // Reopening a past chat loads its persisted turns & cached results instantly (27 Nov 2026).
   const loaded = useRef<string | false>(false);
   useEffect(() => {
     if (!live) return;
@@ -223,10 +236,27 @@ export default function DatabaseView() {
     loaded.current = personKey;
     const today = new Date().toDateString();
     queueMicrotask(() => {
-      setThreads((all) => [
-        ...(all === START ? [] : all),
-        ...pastChats(recent.searches).map((r) => ({ id: `s${r.id}`, title: titleOf(r.query.split("\n")[0]), when: (new Date(r.at).toDateString() === today ? "today" : "earlier") as Thread["when"], turns: [], q: r.query })),
-      ]);
+      setThreads((all) => {
+        const existing = all === START ? [] : all;
+        const existingIds = new Set(existing.map((x) => x.id));
+        const restored = pastChats(recent.searches)
+          .map((r) => {
+            const id = r.chatId || `s${r.id}`;
+            // A saved chat's turns are read when it is opened (27 Nov 2026: the list no longer carries them).
+            // Older rows saved before persistent turns show the original prompt with a manual re-run button — never auto-searching on click.
+            const turns: Turn[] = r.saved ? [] : olderChat(id, r.query);
+            return {
+              id,
+              title: r.title || titleOf(r.query.split("\n")[0]),
+              when: (new Date(r.at).toDateString() === today ? "today" : "earlier") as Thread["when"],
+              turns,
+              q: r.query,
+              ...(r.saved ? { saved: true } : {}),
+            };
+          })
+          .filter((t) => !existingIds.has(t.id));
+        return [...existing, ...restored];
+      });
       setOpenId((o) => (o === "sap" ? "" : o));
     });
   }, [live, recent, personKey]);
@@ -289,10 +319,10 @@ export default function DatabaseView() {
     let turns = cur?.turns ?? [];
     // No chat open: this message starts one, named by its first words.
     if (!cur) {
-      id = nid();
+      id = newChatId();
       turns = [];
       setThreads((all) => [
-        { id, title: titleOf(t), when: "today", turns: [] },
+        { id, title: titleOf(t), when: "today", turns: [], q: t },
         ...all,
       ]);
       setOpenId(id);
@@ -359,12 +389,23 @@ export default function DatabaseView() {
     const { last } = contextOf(turns);
     const ask = readLive(t, lastRan?.ran ?? "");
     const turnId = nid();
-    const put = (r: Reply & { ran?: string }) =>
+    const put = (r: Reply & { ran?: string }, persist?: { query: string; count: number }) =>
       setThreads((all) =>
         all.map((x) => {
           if (x.id !== id) return x;
           const turn = { id: turnId, from: "aura" as const, ...r };
-          return { ...x, turns: x.turns.some((y) => y.id === turnId) ? x.turns.map((y) => (y.id === turnId ? turn : y)) : [...x.turns, turn] };
+          const nextTurns = x.turns.some((y) => y.id === turnId) ? x.turns.map((y) => (y.id === turnId ? turn : y)) : [...x.turns, turn];
+          const nextQ = persist?.query ?? r.ran ?? x.q ?? t;
+          if (live && persist) {
+            void record({
+              chatId: id,
+              title: x.title,
+              query: nextQ,
+              count: persist.count,
+              turnsJson: serializeTurns(nextTurns),
+            });
+          }
+          return { ...x, q: nextQ, turns: nextTurns };
         }),
       );
     const keep = lastRan?.ran;
@@ -374,13 +415,16 @@ export default function DatabaseView() {
     if (kind) setLook({ id: nid(), kind, real: 0 });
     petSay("working", "Looking through the database…");
     const search = async (q: string, mode: "natural" | "boolean", what = "", skip = "") => {
-      const a = await searchLive({ q, mode });
+      const currentIds = last.length ? last.map((p) => p.id) : undefined;
+      const a = await searchLive({ q, mode, ...(currentIds ? { currentIds } : {}) });
       if (!a.ok) return put({ text: a.message, warn: true, ran: keep });
-      void record({ query: q, count: a.total });
       const ran = mode === "natural" ? q : undefined;
       const show = (x: LiveAnswer) => {
         const people = cardsOf(x, skip);
-        put({ text: foundLine(x, what), chips: chipsOf(x.chips), people, actions: liveNext(people), warn: !x.total, ran, ...(mode === "boolean" ? { boolean: q } : {}) });
+        put(
+          { text: foundLine(x, what), chips: chipsOf(x.chips), people, actions: liveNext(people), warn: !x.total && !x.reply, ran, ...(mode === "boolean" ? { boolean: q } : {}) },
+          { query: q, count: x.total },
+        );
       };
       show(a);
       if (!a.refining) return;
@@ -388,7 +432,7 @@ export default function DatabaseView() {
       // and the steps (one line now, under the quick list) say so.
       setThinking(false);
       setLook((l) => l && { ...l, real: 3 });
-      const full = await searchLive({ q, mode, full: true });
+      const full = await searchLive({ q, mode, full: true, ...(currentIds ? { currentIds } : {}) });
       if (full.ok) show(full);
     };
     try {
@@ -592,23 +636,34 @@ export default function DatabaseView() {
                     title={t.title}
                     on={openId === t.id}
                     onOpen={() => {
+                      // Reopening a past chat loads its persisted turns & cached results instantly (never re-runs a search).
                       setOpenId(t.id);
                       setShowHistory(false);
-                      // A past search runs again, as the database reads today.
-                      if (t.q && !t.turns.length && !thinking) {
-                        const q = t.q;
-                        setThreads((all) => all.map((x) => (x.id === t.id ? { ...x, turns: [{ id: nid(), from: "me", text: q.split("\n").join(" · ") }] } : x)));
-                        void answerLive(t.id, q, []);
+                      if (live && t.saved && !t.turns.length) {
+                        void queryOnce(door.searchTurns, { chatId: t.id }).then((got) => {
+                          const saved = parseSavedTurns<Turn>((got as { turnsJson?: string | null } | undefined)?.turnsJson);
+                          const turns = saved.length ? saved : olderChat(t.id, t.q ?? t.title);
+                          setThreads((all) => all.map((x) => (x.id === t.id && !x.turns.length ? { ...x, turns, saved: false } : x)));
+                        });
                       }
                     }}
-                    onRename={(title) =>
+                    onRename={(title) => {
                       setThreads((all) =>
                         all.map((x) => (x.id === t.id ? { ...x, title } : x)),
-                      )
-                    }
+                      );
+                      if (live) {
+                        void record({
+                          chatId: t.id,
+                          title,
+                          query: t.q ?? title,
+                          count: contextOf(t.turns).last.length,
+                          turnsJson: serializeTurns(t.turns),
+                        });
+                      }
+                    }}
                     onDelete={() => {
                       // Signed in the past search is deleted from the person's own history too.
-                      if (live && t.q) void removeChat({ query: t.q });
+                      if (live) void removeChat({ query: t.q ?? "", chatId: t.id });
                       setThreads((all) => all.filter((x) => x.id !== t.id));
                       if (openId === t.id) setOpenId("");
                     }}
@@ -630,7 +685,7 @@ export default function DatabaseView() {
           ref={scroller}
           className="min-h-0 flex-1 overflow-y-auto px-[max(1.5rem,12px)] pb-6 pt-[max(2.25rem,20px)]"
         >
-          <div className={(picked ? "mx-auto" : "ml-[7.7rem] mr-auto") + " flex max-w-[62.5rem] max-lg:ml-0 flex-col gap-[max(2.1rem,18px)]"}>
+          <div className={(picked ? "max-w-[56rem]" : "max-w-[70rem]") + " mx-auto flex w-full flex-col gap-[max(2.1rem,18px)]"}>
             {!thread ? (
               <Welcome mode={mode} live={live} onTry={send} />
             ) : (
@@ -678,7 +733,6 @@ export default function DatabaseView() {
           busy={thinking}
           box={box}
           mode={mode}
-          centred={!!picked}
           onFile={(name) => send(`Find people for this JD: ${name}`)}
           suggestions={thinking ? undefined : thread?.turns.find((t) => t.id === lastAura && t.from === "aura" && t.actions?.length) ? (thread.turns.find((t) => t.id === lastAura) as Extract<Turn, { from: "aura" }>).actions : undefined}
           onSuggest={send}
@@ -963,8 +1017,10 @@ function Answer({
             people={t.people}
             open={open}
             picked={picked}
+            busy={busy}
             onAll={onAll}
             onPick={onPick}
+            onShortlist={(p) => onSend(`Add ${p.name} to a job`)}
           />
         )}
       </div>
@@ -972,68 +1028,143 @@ function Answer({
   );
 }
 
-/** The closest four, then "see all" opens every match under them. Each card says
- *  why the person came up and how strong the fit is; a click opens the CV. */
+/** Circular fit-score ring matching the Opening's Database CVs rows. */
+function ScoreRing({ score }: { score: number }) {
+  const r = 24;
+  const c = 2 * Math.PI * r;
+  return (
+    <span className="relative flex size-[max(3.25rem,40px)] shrink-0 items-center justify-center text-small font-medium text-ink" title={`${score} match`}>
+      <svg viewBox="0 0 52 52" fill="none" strokeWidth="4" className="absolute inset-0 size-full -rotate-90" aria-hidden="true">
+        <circle cx="26" cy="26" r={r} className="stroke-surface-2" />
+        <circle cx="26" cy="26" r={r} strokeDasharray={`${(c * score) / 100} ${c}`} className={score >= 85 ? "stroke-brand" : "stroke-brand-leaf"} />
+      </svg>
+      {score}
+    </span>
+  );
+}
+
+/** The closest four, then "see all" opens every match under them. Uses the same
+ *  horizontal layout as Database CVs: score ring, name + years/city, 3 recent roles
+ *  with date ranges, green-tick highlights, and a Shortlist action on hover/selection. */
 function Results({
   people,
   open,
   picked,
+  busy,
   onAll,
   onPick,
+  onShortlist,
 }: {
   people: Person[];
   open: boolean;
   picked?: string;
+  busy: boolean;
   onAll: () => void;
   onPick: (p: Person) => void;
+  onShortlist: (p: Person) => void;
 }) {
-  // The Scoops reading view's compact rows (owner, 25 Nov 2026): avatar, name, "title · company ·
-  // place", "years · skills", the fit score at the right; the chosen one outlined in green.
-  // The first four, "See all" for the rest.
   const shown = open ? people : people.slice(0, 4);
+  const compact = !!picked;
+  const tick = (ok: boolean) => (
+    <span aria-hidden="true" className={"flex size-[1.05rem] shrink-0 items-center justify-center rounded-full " + (ok ? "bg-success-soft text-success" : "bg-warn-soft text-warn")}>
+      <svg viewBox="0 0 12 12" className="size-2.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <path d={ok ? "m2.5 6.2 2.3 2.3 4.7-4.9" : "M3 6h6"} />
+      </svg>
+    </span>
+  );
   return (
     <div className="flex flex-col gap-[max(0.6rem,6px)]">
-      <ul className="flex flex-col gap-[max(0.6rem,6px)]" aria-label="People found">
-        {shown.map((p, i) => (
-          <li key={p.id}>
-            <button
-              type="button"
-              data-card
-              onClick={() => onPick(p)}
-              aria-current={picked === p.id || undefined}
-              title={p.cv ? "Open the CV" : "No CV file on record"}
-              className={
-                "flex w-full items-center gap-[max(0.9rem,9px)] rounded-md border px-[max(1rem,10px)] py-[max(0.75rem,8px)] text-left transition-colors " +
-                (picked === p.id ? "border-brand bg-brand-tint" : "border-border bg-surface hover:border-border-strong hover:bg-surface-2")
-              }
-            >
-              <span
+      <ul className="overflow-hidden rounded-lg border border-border bg-surface divide-y divide-border" aria-label="People found">
+        {shown.map((p) => {
+          const on = picked === p.id;
+          const career = p.career?.length
+            ? p.career.slice(0, 3)
+            : p.title || p.company
+              ? [{ period: "Now", title: p.title, company: p.company }]
+              : [];
+          const rawReason = (p.why ?? "").split(" · ").filter((s) => s && !/^\d+(\.\d+)?\s*yrs?$/i.test(s) && !/^notice\s+/i.test(s));
+          const highlights: { ok: boolean; t: string }[] = [];
+          if (p.years > 0) highlights.push({ ok: true, t: `${p.years} years of experience` });
+          if (p.notice === 0) highlights.push({ ok: true, t: "can start now" });
+          else if (p.notice > 0 && p.notice < 99) highlights.push({ ok: p.notice <= 1, t: `${p.notice} month${p.notice === 1 ? "" : "s"} notice` });
+          if (rawReason[0] && highlights.length < 3) highlights.push({ ok: !/^not\b|missing|unclear/i.test(rawReason[0]), t: rawReason[0] });
+          if (!highlights.length && p.tags.length) highlights.push({ ok: true, t: p.tags.slice(0, 3).join(", ") });
+
+          return (
+            <li key={p.id} className="group relative">
+              <button
+                type="button"
+                data-card
+                onClick={() => onPick(p)}
+                aria-current={on ? "true" : undefined}
+                title={p.cv ? "Open the CV" : "No CV file on record"}
                 className={
-                  "flex size-[max(2.5rem,30px)] shrink-0 items-center justify-center rounded-full text-[max(0.9125rem,12px)] font-medium " +
-                  (picked === p.id ? "bg-brand-soft text-brand" : AVATAR[i % 4])
+                  "grid w-full items-center gap-x-[max(1rem,10px)] py-3.5 pl-5 pr-[max(8.5rem,104px)] text-left transition-colors " +
+                  (compact
+                    ? "grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] max-md:grid-cols-1"
+                    : "grid-cols-[minmax(0,1.25fr)_minmax(0,0.38fr)_minmax(0,1.1fr)_minmax(0,0.95fr)] max-xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] max-xl:[&>:nth-child(2)]:hidden max-xl:[&>:nth-child(4)]:hidden max-md:grid-cols-1") +
+                  " " +
+                  (on ? "bg-brand-tint" : "bg-surface hover:bg-canvas/60")
                 }
               >
-                {initials(p.name)}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="flex items-center gap-2">
-                  <span className="min-w-0 truncate text-[max(1.05rem,13.5px)] font-medium text-ink">{p.name}</span>
-                  <span
-                    title={fitOf(p.score)}
-                    className={"ml-auto shrink-0 rounded-full px-2.5 py-0.5 text-caption font-medium " + (p.score >= 80 ? "bg-brand-soft text-brand" : "bg-surface-2 text-ink-2")}
-                  >
-                    {p.score}
+                <span className="flex min-w-0 items-center gap-3.5">
+                  <ScoreRing score={p.score} />
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate text-[max(1.05rem,14px)] font-medium text-ink">{p.name}</span>
+                    <span className="truncate text-small text-ink-3">
+                      {[p.years > 0 ? `${p.years} years` : "", p.city].filter(Boolean).join(" · ") || p.title}
+                    </span>
                   </span>
                 </span>
-                <span className="block truncate text-[max(0.9125rem,12.5px)] text-ink-2">{[p.title, p.company, p.city].filter(Boolean).join(" · ")}</span>
-                <span className="block truncate text-[max(0.9125rem,12.5px)] text-ink-3" title={reasonOf(p)}>
-                  {p.years > 0 ? `${p.years} years · ` : ""}
-                  {p.tags.length ? p.tags.slice(0, 3).join(", ") : reasonOf(p)}
+
+                {!compact && (
+                  <span className="flex flex-col gap-1 text-small max-md:hidden">
+                    {career.map((c, idx) => (
+                      <span key={idx} className={"truncate " + (idx === 0 ? "font-medium text-brand" : "text-ink-3")}>
+                        {c.period}
+                      </span>
+                    ))}
+                  </span>
+                )}
+
+                <span className="flex min-w-0 flex-col gap-1 text-small max-md:mt-2">
+                  {career.map((c, idx) => (
+                    <span key={idx} className="truncate text-ink">
+                      {c.title}
+                      {c.company && <span className="ml-1.5 text-ink-3">{c.company}</span>}
+                    </span>
+                  ))}
                 </span>
-              </span>
-            </button>
-          </li>
-        ))}
+
+                {!compact && (
+                  <span className="flex min-w-0 flex-col gap-1 text-small text-ink-2 max-md:hidden">
+                    {highlights.slice(0, 3).map((x, idx) => (
+                      <span key={idx} className="flex items-center gap-2" title={x.t}>
+                        {tick(x.ok)}
+                        <span className="truncate">{x.t}</span>
+                      </span>
+                    ))}
+                  </span>
+                )}
+              </button>
+
+              <div className={"absolute right-4 top-1/2 flex -translate-y-1/2 items-center gap-2 " + (on ? "" : "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100")}>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onShortlist(p);
+                  }}
+                  title={`Add ${p.name} to a job`}
+                  className="flex h-[max(2.35rem,32px)] items-center rounded-full bg-brand px-4 text-small font-medium text-white hover:bg-brand-strong disabled:opacity-40"
+                >
+                  Shortlist
+                </button>
+              </div>
+            </li>
+          );
+        })}
       </ul>
       {people.length > 4 && (
         <button
@@ -1225,7 +1356,6 @@ function Composer({
   busy,
   box,
   mode,
-  centred,
   onFile,
   panel,
   hasPeople,
@@ -1240,7 +1370,6 @@ function Composer({
   busy: boolean;
   box: React.RefObject<HTMLTextAreaElement | null>;
   mode: Mode;
-  centred: boolean;
   onFile: (name: string) => void;
   suggestions?: { label: string; prompt: string }[];
   onSuggest: (text: string) => void;
@@ -1259,7 +1388,7 @@ function Composer({
       <AuraBarGlow className="bottom-[max(1.2rem,8px)]" />
       {/* One row above the typing bar: the filters at the left, AURA's next steps at the right. */}
       {(hasPeople || (suggestions && suggestions.length > 0)) && (
-        <div className={(centred ? "mx-auto" : "ml-[7.7rem] mr-auto") + " mb-3 flex max-w-[62.5rem] max-lg:ml-0 flex-wrap items-center justify-between gap-x-4 gap-y-3"}>
+        <div className="mx-auto mb-3 flex w-full max-w-[56rem] flex-wrap items-center justify-between gap-x-4 gap-y-3">
           {hasPeople ? <FilterBar panel={panel} busy={busy} className="" onApply={onPanel} /> : <span />}
           {suggestions && suggestions.length > 0 && (
             <div className="flex flex-wrap justify-end gap-2">
@@ -1278,7 +1407,7 @@ function Composer({
           )}
         </div>
       )}
-      <div className={(centred ? "mx-auto" : "ml-[7.7rem] mr-auto") + " flex max-w-[62.5rem] max-lg:ml-0 items-end gap-[max(0.9rem,8px)] rounded-xl bg-surface p-2.5 shadow-float ring-1 ring-border/60 transition-shadow focus-within:ring-2 focus-within:ring-brand/30"}>
+      <div className="mx-auto flex w-full max-w-[56rem] items-end gap-[max(0.9rem,8px)] rounded-xl bg-surface p-2.5 shadow-float ring-1 ring-border/60 transition-shadow focus-within:ring-2 focus-within:ring-brand/30">
         <button
           type="button"
           onClick={() => file.current?.click()}

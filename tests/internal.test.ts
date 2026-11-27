@@ -33,6 +33,7 @@ const ALLOWED_PUBLIC = new Set<string>([
   // identity (convex/ui/me.ts uiUser), and every write calls the internal
   // rule with that person's id. tests/uidoor.test.ts holds both.
   "ui/adminAsk:ask",
+  "ui/adminHome:today",
   "ui/adminView:people",
   "ui/adminView:report",
   "ui/me:whoAmI",
@@ -101,6 +102,7 @@ const ALLOWED_PUBLIC = new Set<string>([
   "ui/searches:record",
   "ui/searches:recent",
   "ui/searches:remove",
+  "ui/searches:turns",
   "ui/linkedinSearch:status",
   "ui/linkedinSearch:start",
   "ui/linkedinSearch:run",

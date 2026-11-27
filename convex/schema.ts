@@ -2435,6 +2435,10 @@ export default defineSchema({
     query: v.string(),
     type: v.union(v.literal("natural_language"), v.literal("job_description")),
     resultCount: v.number(),
+    // Persistent ChatGPT-style conversation state for the new UI Database chat (27 Nov 2026).
+    chatId: v.optional(v.string()),
+    title: v.optional(v.string()),
+    turnsJson: v.optional(v.string()),
     results: v.optional(v.array(v.object({
       cvId: v.string(),
       score: v.number(),

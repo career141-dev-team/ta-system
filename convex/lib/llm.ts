@@ -47,9 +47,23 @@ export function anthropicOn(): boolean {
   return (process.env.ANTHROPIC_API_KEY ?? "").trim().length > 10;
 }
 
+function getOpenRouterKeys(): string[] {
+  return [
+    process.env.OPENROUTER_API_KEY,
+    process.env.OPENROUTER_API_KEY_1,
+    process.env.OPENROUTER_API_KEY_2,
+    process.env.OPENROUTER_API_KEY_3,
+    process.env.OPENROUTER_API_KEY_4,
+    process.env.OPENROUTER_API_KEYS, // Comma-separated list option
+  ]
+    .filter(Boolean)
+    .flatMap((val) => (val ? val.split(",") : []))
+    .map((k) => k.trim())
+    .filter((k) => k.length > 10);
+}
+
 function openRouterKeyPresent(): boolean {
-  return [process.env.OPENROUTER_API_KEY, process.env.OPENROUTER_API_KEY_1, process.env.OPENROUTER_API_KEYS]
-    .some((k) => (k ?? "").trim().length > 10);
+  return getOpenRouterKeys().length > 0;
 }
 
 // The names stay (many callers import them); the value is the model that is answering.
@@ -163,18 +177,7 @@ export function getOpenAI(_taskType?: TaskType | string, timeoutMs = 30000): Ope
 
 export function getOpenRouterClient(timeoutMs = 30000): OpenAI {
   // Collect all available OpenRouter API keys from environment variables for round-robin rotation
-  const keysFromEnv = [
-    process.env.OPENROUTER_API_KEY,
-    process.env.OPENROUTER_API_KEY_1,
-    process.env.OPENROUTER_API_KEY_2,
-    process.env.OPENROUTER_API_KEY_3,
-    process.env.OPENROUTER_API_KEY_4,
-    process.env.OPENROUTER_API_KEYS, // Comma-separated list option
-  ]
-    .filter(Boolean)
-    .flatMap((val) => (val ? val.split(",") : []))
-    .map((k) => k.trim())
-    .filter((k) => k.length > 10);
+  const keysFromEnv = getOpenRouterKeys();
 
   if (keysFromEnv.length === 0) {
     console.warn("[getOpenAI] OPENROUTER_API_KEY is not set in environment variables, falling back to NVIDIA NIM API");
@@ -328,7 +331,8 @@ export async function callHaikuVisionOCR(file: { kind: "pdf" | "image"; mime: st
  * Opt-in: only with C141_PDF_OCR=on (it sends the whole PDF to OpenRouter); needs an OpenRouter key, else returns "".
  */
 export async function callOpenRouterPdfOCR(base64: string, fileName = "cv.pdf"): Promise<string> {
-  // With the Anthropic key the PDF goes to Claude as a document block (no flag: it replaces the NVIDIA step).
+  // With the Anthropic key the PDF goes to Claude as a document block; if that fails or returns empty,
+  // fall through to OpenRouter PDF OCR when enabled.
   if (anthropicOn()) {
     try {
       const response = await getAnthropicClient(90_000).chat.completions.create({
@@ -342,10 +346,10 @@ export async function callOpenRouterPdfOCR(base64: string, fileName = "cv.pdf"):
         }],
         max_tokens: 8000,
       } as any);
-      return response.choices?.[0]?.message?.content?.trim() ?? "";
+      const text = response.choices?.[0]?.message?.content?.trim() ?? "";
+      if (text) return text;
     } catch (err: any) {
-      console.warn(`[callOpenRouterPdfOCR] Anthropic PDF read failed: ${err?.message || "error"}`);
-      return "";
+      console.warn(`[callOpenRouterPdfOCR] Anthropic PDF read failed, trying OpenRouter fallback: ${err?.message || "error"}`);
     }
   }
   if ((process.env.C141_PDF_OCR ?? "").trim().toLowerCase() !== "on") return "";
@@ -494,9 +498,11 @@ export async function executeLLMWithNvidiaFallback(
   // Every task takes the full chain once the Anthropic key is set; before, only the CV tasks did
   // and the rest went to NVIDIA alone.
   if (IS_CV_EXTRACTION_TASK(taskType) || anthropicOn()) {
-    // Claude Haiku 5.5 and nothing else when the Anthropic key is set: no DeepSeek or NVIDIA behind it,
-    // so a failure is a visible error, never a different model's answer. Unset, the old chain.
-    const candidateModels = anthropicOn() ? [ANTHROPIC_MODEL] : [DEEPSEEK_MODEL, NVIDIA_PRIMARY_MODEL];
+    // When Anthropic is on, try Claude Haiku 5.5 first and automatically fall back to OpenRouter
+    // DeepSeek if an OpenRouter key is configured. Otherwise use DeepSeek -> NVIDIA.
+    const candidateModels = anthropicOn()
+      ? (openRouterKeyPresent() ? [ANTHROPIC_MODEL, DEEPSEEK_MODEL] : [ANTHROPIC_MODEL])
+      : [DEEPSEEK_MODEL, NVIDIA_PRIMARY_MODEL];
 
     let lastError: any = null;
     // Why DeepSeek gave no answer, when the fallback is the one that answers.
