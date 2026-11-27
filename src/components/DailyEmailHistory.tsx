@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { DAILY_EMAIL_LABEL, type DailyEmail } from "@/lib/dailyEmail";
 import { timeAt } from "@/lib/format";
-import { reconcileDailyEmail } from "@/app/actions";
+import { workdayDate } from "@/lib/workday";
+import { reconcileDailyEmail, reopenDailyEmail } from "@/app/actions";
 import { SubmitButton } from "./Submit";
 
 export function DailyEmailHistory({ emails, openingId }: { emails: DailyEmail[]; openingId: string }) {
@@ -43,5 +44,15 @@ export function DailyEmailView({ email, openingId, canCorrect, canReconcile }: {
     {email.status === "failed" && email.submissionType === "eod" && <Link className="mt-4 inline-block text-brand underline" href={`/openings/${openingId}/eod`}>Return to the composer to retry</Link>}
     {canCorrect && copy && email.status === "accepted" && email.submissionType === "eod" &&
       <Link className="mt-4 inline-block text-brand underline" href={`/openings/${openingId}/eod?mail=${email._id}&revise=yes`}>Edit and resend</Link>}
+    {email.recoveryReopenedAt ? (
+      <p className="mt-4 text-sm text-ink-soft">This end-of-day email was reopened so the TA can continue working today. The sent copy remains in history.</p>
+    ) : canReconcile && email.status === "accepted" && email.submissionType === "eod" && !email.parentId && !email.forDate && email.date === workdayDate(Date.now()) ? (
+      <form action={reopenDailyEmail} className="mt-4 rounded-lg border border-rule bg-surface-2 p-3">
+        <input type="hidden" name="openingId" value={openingId} />
+        <input type="hidden" name="dailyEmailId" value={email._id} />
+        <p className="text-sm text-ink-soft">Sent by mistake before finishing today’s work? Reopen today’s EOD lock while keeping this sent email in history.</p>
+        <SubmitButton className="mt-2 text-sm font-medium text-brand underline">Reopen EOD for today</SubmitButton>
+      </form>
+    ) : null}
   </section>;
 }
