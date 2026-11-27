@@ -359,10 +359,30 @@ export default function CvPreview({
   useEffect(() => {
     closeNow.current = close;
   });
+  // The open CV is one step in history, so Back closes it and stays on the view
+  // (26 Nov: Back switched the page underneath and left the CV stuck over it).
+  // The step carries this preview's own number: the view switcher and a refresh copy
+  // history state along, and a bare flag then sent a close back to the job page.
+  const step = useRef(0);
+  // Back is asked once: a double click on the background otherwise went back two steps.
+  const asked = useRef(false);
+  const leave = () => {
+    if (!step.current || window.history.state?.cv !== step.current) return closeNow.current();
+    if (asked.current) return;
+    asked.current = true;
+    window.history.back();
+  };
   useEffect(() => {
-    const key = (e: KeyboardEvent) => e.key === "Escape" && closeNow.current();
+    step.current ||= Date.now();
+    if (window.history.state?.cv !== step.current) window.history.pushState({ ...window.history.state, cv: step.current }, "");
+    const pop = () => closeNow.current();
+    const key = (e: KeyboardEvent) => e.key === "Escape" && leave();
+    window.addEventListener("popstate", pop);
     window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
+    return () => {
+      window.removeEventListener("popstate", pop);
+      window.removeEventListener("keydown", key);
+    };
   }, []);
 
   return createPortal(
@@ -377,7 +397,7 @@ export default function CvPreview({
               "bg-white/35 [background-image:radial-gradient(circle,var(--board-dot)_1px,transparent_1.5px)] [background-size:var(--board-gap)_var(--board-gap)]"
             : "bg-white/20 backdrop-blur-[6px]")
         }
-        onClick={close}
+        onClick={leave}
       />
       <section
         data-frame
