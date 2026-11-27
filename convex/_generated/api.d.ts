@@ -298,6 +298,7 @@ import type * as ta_workdays from "../ta/workdays.js";
 import type * as templates_messageTemplates from "../templates/messageTemplates.js";
 import type * as ui_manage from "../ui/manage.js";
 import type * as ui_adminAsk from "../ui/adminAsk.js";
+import type * as ui_adminHome from "../ui/adminHome.js";
 import type * as ui_adminView from "../ui/adminView.js";
 import type * as ui_aura from "../ui/aura.js";
 import type * as ui_auraLedger from "../ui/auraLedger.js";
@@ -644,6 +645,7 @@ declare const fullApi: ApiFromModules<{
   "templates/messageTemplates": typeof templates_messageTemplates;
   "ui/manage": typeof ui_manage;
   "ui/adminAsk": typeof ui_adminAsk;
+  "ui/adminHome": typeof ui_adminHome;
   "ui/adminView": typeof ui_adminView;
   "ui/aura": typeof ui_aura;
   "ui/auraLedger": typeof ui_auraLedger;
@@ -924,6 +926,7 @@ declare const fullApi: ApiFromModules<{
   "templates/messageTemplates": typeof templates_messageTemplates;
   "ui/manage": typeof ui_manage;
   "ui/adminAsk": typeof ui_adminAsk;
+  "ui/adminHome": typeof ui_adminHome;
   "ui/adminView": typeof ui_adminView;
   "ui/aura": typeof ui_aura;
   "ui/auraLedger": typeof ui_auraLedger;
