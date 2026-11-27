@@ -29,6 +29,8 @@ export function readSearchBody(body: unknown): { ok: true; body: SearchBody } | 
   return { ok: true, body: parsed };
 }
 
+export type UiCareerRole = { period: string; title: string; company: string };
+
 export type UiPerson = {
   id: string;
   name: string;
@@ -40,12 +42,29 @@ export type UiPerson = {
   score: number | null;
   why: string;
   hasCv: boolean;
+  career?: UiCareerRole[];
 };
 
 const noticeOf = (c: Candidate) =>
   c.noticePeriod?.trim() || (c.noticePeriodDays == null ? null : c.noticePeriodDays === 0 ? "Immediate" : `${c.noticePeriodDays} days`);
 
+function careerOf(c: Candidate): UiCareerRole[] | undefined {
+  const hist = Array.isArray(c.workHistory) ? c.workHistory : [];
+  if (!hist.length) return undefined;
+  const rows = hist
+    .slice(0, 3)
+    .map((w) => {
+      const from = w.fromYear ? String(w.fromYear) : "";
+      const to = w.toYear ? String(w.toYear) : "";
+      const period = from && to ? (from === to ? from : `${from} – ${to}`) : from ? `${from} – Now` : to || "Now";
+      return { period, title: (w.title ?? "").trim(), company: (w.employer ?? "").trim() };
+    })
+    .filter((r) => r.title || r.company);
+  return rows.length ? rows : undefined;
+}
+
 export function personOf(c: Candidate, score: number | null, why: string): UiPerson {
+  const career = careerOf(c);
   return {
     id: c.id,
     name: c.fullName,
@@ -57,5 +76,6 @@ export function personOf(c: Candidate, score: number | null, why: string): UiPer
     score: score == null ? null : Math.round(score),
     why,
     hasCv: !!c.cvFileName && !c.cvFileMissing,
+    ...(career ? { career } : {}),
   };
 }

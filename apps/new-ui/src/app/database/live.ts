@@ -17,6 +17,7 @@ export type LivePerson = {
   score: number | null;
   why: string;
   hasCv: boolean;
+  career?: { period: string; title: string; company: string }[];
 };
 export type LiveAnswer = { ok: true; total: number; rows: LivePerson[]; read: string | null; reply?: string | null; chips: string[]; refining: boolean; problem: string | null };
 
@@ -89,6 +90,7 @@ export function personOf(p: LivePerson, cv?: string): Person {
     score: p.score ?? 0,
     why: [p.why, p.years != null ? `${p.years} yrs` : "", p.notice ? `notice ${p.notice}` : ""].filter(Boolean).join(" · "),
     ...(cv ? { cv } : {}),
+    ...(p.career?.length ? { career: p.career } : {}),
   };
 }
 

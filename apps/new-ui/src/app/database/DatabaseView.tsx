@@ -12,8 +12,6 @@ import { SearchSteps, useSteps } from "../SearchSteps";
 import { refereeReply, toCsv, type Referee } from "./referees";
 import {
   JOBS,
-  fitOf,
-  reasonOf,
   reply,
   titleOf,
   type Chip,
@@ -156,12 +154,6 @@ const START: Thread[] = [
   },
 ];
 
-const AVATAR = [
-  "bg-info-soft text-info",
-  "bg-violet-soft text-violet",
-  "bg-warn-soft text-warn",
-  "bg-brand-soft text-brand",
-];
 const initials = (n: string) =>
   n
     .split(" ")
@@ -682,7 +674,7 @@ export default function DatabaseView() {
           ref={scroller}
           className="min-h-0 flex-1 overflow-y-auto px-[max(1.5rem,12px)] pb-6 pt-[max(2.25rem,20px)]"
         >
-          <div className="mx-auto flex w-full max-w-[56rem] flex-col gap-[max(2.1rem,18px)]">
+          <div className={(picked ? "max-w-[56rem]" : "max-w-[70rem]") + " mx-auto flex w-full flex-col gap-[max(2.1rem,18px)]"}>
             {!thread ? (
               <Welcome mode={mode} live={live} onTry={send} />
             ) : (
@@ -1014,8 +1006,10 @@ function Answer({
             people={t.people}
             open={open}
             picked={picked}
+            busy={busy}
             onAll={onAll}
             onPick={onPick}
+            onShortlist={(p) => onSend(`Add ${p.name} to a job`)}
           />
         )}
       </div>
@@ -1023,68 +1017,143 @@ function Answer({
   );
 }
 
-/** The closest four, then "see all" opens every match under them. Each card says
- *  why the person came up and how strong the fit is; a click opens the CV. */
+/** Circular fit-score ring matching the Opening's Database CVs rows. */
+function ScoreRing({ score }: { score: number }) {
+  const r = 24;
+  const c = 2 * Math.PI * r;
+  return (
+    <span className="relative flex size-[max(3.25rem,40px)] shrink-0 items-center justify-center text-small font-medium text-ink" title={`${score} match`}>
+      <svg viewBox="0 0 52 52" fill="none" strokeWidth="4" className="absolute inset-0 size-full -rotate-90" aria-hidden="true">
+        <circle cx="26" cy="26" r={r} className="stroke-surface-2" />
+        <circle cx="26" cy="26" r={r} strokeDasharray={`${(c * score) / 100} ${c}`} className={score >= 85 ? "stroke-brand" : "stroke-brand-leaf"} />
+      </svg>
+      {score}
+    </span>
+  );
+}
+
+/** The closest four, then "see all" opens every match under them. Uses the same
+ *  horizontal layout as Database CVs: score ring, name + years/city, 3 recent roles
+ *  with date ranges, green-tick highlights, and a Shortlist action on hover/selection. */
 function Results({
   people,
   open,
   picked,
+  busy,
   onAll,
   onPick,
+  onShortlist,
 }: {
   people: Person[];
   open: boolean;
   picked?: string;
+  busy: boolean;
   onAll: () => void;
   onPick: (p: Person) => void;
+  onShortlist: (p: Person) => void;
 }) {
-  // The Scoops reading view's compact rows (owner, 25 Nov 2026): avatar, name, "title · company ·
-  // place", "years · skills", the fit score at the right; the chosen one outlined in green.
-  // The first four, "See all" for the rest.
   const shown = open ? people : people.slice(0, 4);
+  const compact = !!picked;
+  const tick = (ok: boolean) => (
+    <span aria-hidden="true" className={"flex size-[1.05rem] shrink-0 items-center justify-center rounded-full " + (ok ? "bg-success-soft text-success" : "bg-warn-soft text-warn")}>
+      <svg viewBox="0 0 12 12" className="size-2.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <path d={ok ? "m2.5 6.2 2.3 2.3 4.7-4.9" : "M3 6h6"} />
+      </svg>
+    </span>
+  );
   return (
     <div className="flex flex-col gap-[max(0.6rem,6px)]">
-      <ul className="flex flex-col gap-[max(0.6rem,6px)]" aria-label="People found">
-        {shown.map((p, i) => (
-          <li key={p.id}>
-            <button
-              type="button"
-              data-card
-              onClick={() => onPick(p)}
-              aria-current={picked === p.id || undefined}
-              title={p.cv ? "Open the CV" : "No CV file on record"}
-              className={
-                "flex w-full items-center gap-[max(0.9rem,9px)] rounded-md border px-[max(1rem,10px)] py-[max(0.75rem,8px)] text-left transition-colors " +
-                (picked === p.id ? "border-brand bg-brand-tint" : "border-border bg-surface hover:border-border-strong hover:bg-surface-2")
-              }
-            >
-              <span
+      <ul className="overflow-hidden rounded-lg border border-border bg-surface divide-y divide-border" aria-label="People found">
+        {shown.map((p) => {
+          const on = picked === p.id;
+          const career = p.career?.length
+            ? p.career.slice(0, 3)
+            : p.title || p.company
+              ? [{ period: "Now", title: p.title, company: p.company }]
+              : [];
+          const rawReason = (p.why ?? "").split(" · ").filter((s) => s && !/^\d+(\.\d+)?\s*yrs?$/i.test(s) && !/^notice\s+/i.test(s));
+          const highlights: { ok: boolean; t: string }[] = [];
+          if (p.years > 0) highlights.push({ ok: true, t: `${p.years} years of experience` });
+          if (p.notice === 0) highlights.push({ ok: true, t: "can start now" });
+          else if (p.notice > 0 && p.notice < 99) highlights.push({ ok: p.notice <= 1, t: `${p.notice} month${p.notice === 1 ? "" : "s"} notice` });
+          if (rawReason[0] && highlights.length < 3) highlights.push({ ok: !/^not\b|missing|unclear/i.test(rawReason[0]), t: rawReason[0] });
+          if (!highlights.length && p.tags.length) highlights.push({ ok: true, t: p.tags.slice(0, 3).join(", ") });
+
+          return (
+            <li key={p.id} className="group relative">
+              <button
+                type="button"
+                data-card
+                onClick={() => onPick(p)}
+                aria-current={on ? "true" : undefined}
+                title={p.cv ? "Open the CV" : "No CV file on record"}
                 className={
-                  "flex size-[max(2.5rem,30px)] shrink-0 items-center justify-center rounded-full text-[max(0.9125rem,12px)] font-medium " +
-                  (picked === p.id ? "bg-brand-soft text-brand" : AVATAR[i % 4])
+                  "grid w-full items-center gap-x-[max(1rem,10px)] py-3.5 pl-5 pr-[max(8.5rem,104px)] text-left transition-colors " +
+                  (compact
+                    ? "grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] max-md:grid-cols-1"
+                    : "grid-cols-[minmax(0,1.25fr)_minmax(0,0.38fr)_minmax(0,1.1fr)_minmax(0,0.95fr)] max-xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] max-xl:[&>:nth-child(2)]:hidden max-xl:[&>:nth-child(4)]:hidden max-md:grid-cols-1") +
+                  " " +
+                  (on ? "bg-brand-tint" : "bg-surface hover:bg-canvas/60")
                 }
               >
-                {initials(p.name)}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="flex items-center gap-2">
-                  <span className="min-w-0 truncate text-[max(1.05rem,13.5px)] font-medium text-ink">{p.name}</span>
-                  <span
-                    title={fitOf(p.score)}
-                    className={"ml-auto shrink-0 rounded-full px-2.5 py-0.5 text-caption font-medium " + (p.score >= 80 ? "bg-brand-soft text-brand" : "bg-surface-2 text-ink-2")}
-                  >
-                    {p.score}
+                <span className="flex min-w-0 items-center gap-3.5">
+                  <ScoreRing score={p.score} />
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate text-[max(1.05rem,14px)] font-medium text-ink">{p.name}</span>
+                    <span className="truncate text-small text-ink-3">
+                      {[p.years > 0 ? `${p.years} years` : "", p.city].filter(Boolean).join(" · ") || p.title}
+                    </span>
                   </span>
                 </span>
-                <span className="block truncate text-[max(0.9125rem,12.5px)] text-ink-2">{[p.title, p.company, p.city].filter(Boolean).join(" · ")}</span>
-                <span className="block truncate text-[max(0.9125rem,12.5px)] text-ink-3" title={reasonOf(p)}>
-                  {p.years > 0 ? `${p.years} years · ` : ""}
-                  {p.tags.length ? p.tags.slice(0, 3).join(", ") : reasonOf(p)}
+
+                {!compact && (
+                  <span className="flex flex-col gap-1 text-small max-md:hidden">
+                    {career.map((c, idx) => (
+                      <span key={idx} className={"truncate " + (idx === 0 ? "font-medium text-brand" : "text-ink-3")}>
+                        {c.period}
+                      </span>
+                    ))}
+                  </span>
+                )}
+
+                <span className="flex min-w-0 flex-col gap-1 text-small max-md:mt-2">
+                  {career.map((c, idx) => (
+                    <span key={idx} className="truncate text-ink">
+                      {c.title}
+                      {c.company && <span className="ml-1.5 text-ink-3">{c.company}</span>}
+                    </span>
+                  ))}
                 </span>
-              </span>
-            </button>
-          </li>
-        ))}
+
+                {!compact && (
+                  <span className="flex min-w-0 flex-col gap-1 text-small text-ink-2 max-md:hidden">
+                    {highlights.slice(0, 3).map((x, idx) => (
+                      <span key={idx} className="flex items-center gap-2" title={x.t}>
+                        {tick(x.ok)}
+                        <span className="truncate">{x.t}</span>
+                      </span>
+                    ))}
+                  </span>
+                )}
+              </button>
+
+              <div className={"absolute right-4 top-1/2 flex -translate-y-1/2 items-center gap-2 " + (on ? "" : "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100")}>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onShortlist(p);
+                  }}
+                  title={`Add ${p.name} to a job`}
+                  className="flex h-[max(2.35rem,32px)] items-center rounded-full bg-brand px-4 text-small font-medium text-white hover:bg-brand-strong disabled:opacity-40"
+                >
+                  Shortlist
+                </button>
+              </div>
+            </li>
+          );
+        })}
       </ul>
       {people.length > 4 && (
         <button
