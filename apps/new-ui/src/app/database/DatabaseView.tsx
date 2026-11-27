@@ -28,7 +28,7 @@ import { candidateCall, cvHeaders, cvUrl, door, OLD_SERVER, saveLiveFile, useDoo
 import { useSignedInPerson } from "@/lib/role";
 import { useSpeech } from "@/lib/useSpeech";
 import type { MyDay } from "@/lib/askAura";
-import { chipsOf, jobIn, pastChats, personOf, readLive, whoIn, type LiveAnswer } from "./live";
+import { chipsOf, jobIn, parseSavedTurns, pastChats, personOf, readLive, serializeTurns, whoIn, type LiveAnswer } from "./live";
 
 // D1 · Database - search by chatting with AURA (owner's design, 14 Nov 2026).
 // Left: the chats (Today / Earlier) and New search - the history IS the chats, so
@@ -89,6 +89,7 @@ const foundLine = (a: LiveAnswer, what = "") =>
 
 let seq = 0;
 const nid = () => `t${++seq}`;
+const newChatId = () => `c_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 
 /** The chips and the people of the last answer that had them: what a new message refines. */
 function contextOf(turns: Turn[]) {
@@ -201,11 +202,15 @@ export default function DatabaseView() {
   const liveSite = useLive();
   const [threads, setThreads] = useState<typeof START>(liveSite ? [] : START);
   const [openId, setOpenId] = useState(liveSite ? "" : "sap");
-  const recent = useDoorQuery(door.searchRecent, live ? {} : "skip") as { ok: true; searches: { id: string; query: string; count: number; at: number }[] } | { ok: false } | undefined;
+  const recent = useDoorQuery(door.searchRecent, live ? {} : "skip") as
+    | { ok: true; searches: { id: string; chatId?: string | null; title?: string | null; query: string; count: number; at: number; turnsJson?: string | null }[] }
+    | { ok: false }
+    | undefined;
   const day = useDoorQuery(door.myDay, live ? {} : "skip") as ({ ok: true } & MyDay) | { ok: false } | undefined;
   const positions = day?.ok ? day.positions : [];
   const record = useDoorMutation(door.searchRecord);
   // Signed in: the chats are this person's own past searches, never the samples.
+  // Reopening a past chat loads its persisted turns & cached results instantly (27 Nov 2026).
   const loaded = useRef<string | false>(false);
   useEffect(() => {
     if (!live) return;
@@ -225,10 +230,37 @@ export default function DatabaseView() {
     loaded.current = personKey;
     const today = new Date().toDateString();
     queueMicrotask(() => {
-      setThreads((all) => [
-        ...(all === START ? [] : all),
-        ...pastChats(recent.searches).map((r) => ({ id: `s${r.id}`, title: titleOf(r.query.split("\n")[0]), when: (new Date(r.at).toDateString() === today ? "today" : "earlier") as Thread["when"], turns: [], q: r.query })),
-      ]);
+      setThreads((all) => {
+        const existing = all === START ? [] : all;
+        const existingIds = new Set(existing.map((x) => x.id));
+        const restored = pastChats(recent.searches)
+          .map((r) => {
+            const id = r.chatId || `s${r.id}`;
+            const savedTurns = parseSavedTurns<Turn>(r.turnsJson);
+            // Older rows saved before persistent turns show the original prompt with a manual re-run button — never auto-searching on click.
+            const turns: Turn[] = savedTurns.length
+              ? savedTurns
+              : [
+                  { id: `${id}-m`, from: "me", text: r.query.split("\n").join(" · ") },
+                  {
+                    id: `${id}-a`,
+                    from: "aura",
+                    text: "This older chat was saved before full results were cached. Run it again if you want fresh matches.",
+                    ran: r.query,
+                    actions: [{ label: "Run search again", prompt: r.query }],
+                  },
+                ];
+            return {
+              id,
+              title: r.title || titleOf(r.query.split("\n")[0]),
+              when: (new Date(r.at).toDateString() === today ? "today" : "earlier") as Thread["when"],
+              turns,
+              q: r.query,
+            };
+          })
+          .filter((t) => !existingIds.has(t.id));
+        return [...existing, ...restored];
+      });
       setOpenId((o) => (o === "sap" ? "" : o));
     });
   }, [live, recent, personKey]);
@@ -291,10 +323,10 @@ export default function DatabaseView() {
     let turns = cur?.turns ?? [];
     // No chat open: this message starts one, named by its first words.
     if (!cur) {
-      id = nid();
+      id = newChatId();
       turns = [];
       setThreads((all) => [
-        { id, title: titleOf(t), when: "today", turns: [] },
+        { id, title: titleOf(t), when: "today", turns: [], q: t },
         ...all,
       ]);
       setOpenId(id);
@@ -361,12 +393,23 @@ export default function DatabaseView() {
     const { last } = contextOf(turns);
     const ask = readLive(t, lastRan?.ran ?? "");
     const turnId = nid();
-    const put = (r: Reply & { ran?: string }) =>
+    const put = (r: Reply & { ran?: string }, persist?: { query: string; count: number }) =>
       setThreads((all) =>
         all.map((x) => {
           if (x.id !== id) return x;
           const turn = { id: turnId, from: "aura" as const, ...r };
-          return { ...x, turns: x.turns.some((y) => y.id === turnId) ? x.turns.map((y) => (y.id === turnId ? turn : y)) : [...x.turns, turn] };
+          const nextTurns = x.turns.some((y) => y.id === turnId) ? x.turns.map((y) => (y.id === turnId ? turn : y)) : [...x.turns, turn];
+          const nextQ = persist?.query ?? r.ran ?? x.q ?? t;
+          if (live && persist) {
+            void record({
+              chatId: id,
+              title: x.title,
+              query: nextQ,
+              count: persist.count,
+              turnsJson: serializeTurns(nextTurns),
+            });
+          }
+          return { ...x, q: nextQ, turns: nextTurns };
         }),
       );
     const keep = lastRan?.ran;
@@ -379,11 +422,13 @@ export default function DatabaseView() {
       const currentIds = last.length ? last.map((p) => p.id) : undefined;
       const a = await searchLive({ q, mode, ...(currentIds ? { currentIds } : {}) });
       if (!a.ok) return put({ text: a.message, warn: true, ran: keep });
-      void record({ query: q, count: a.total });
       const ran = mode === "natural" ? q : undefined;
       const show = (x: LiveAnswer) => {
         const people = cardsOf(x, skip);
-        put({ text: foundLine(x, what), chips: chipsOf(x.chips), people, actions: liveNext(people), warn: !x.total && !x.reply, ran, ...(mode === "boolean" ? { boolean: q } : {}) });
+        put(
+          { text: foundLine(x, what), chips: chipsOf(x.chips), people, actions: liveNext(people), warn: !x.total && !x.reply, ran, ...(mode === "boolean" ? { boolean: q } : {}) },
+          { query: q, count: x.total },
+        );
       };
       show(a);
       if (!a.refining) return;
@@ -595,23 +640,27 @@ export default function DatabaseView() {
                     title={t.title}
                     on={openId === t.id}
                     onOpen={() => {
+                      // Reopening a past chat loads its persisted turns & cached results instantly (never re-runs a search).
                       setOpenId(t.id);
                       setShowHistory(false);
-                      // A past search runs again, as the database reads today.
-                      if (t.q && !t.turns.length && !thinking) {
-                        const q = t.q;
-                        setThreads((all) => all.map((x) => (x.id === t.id ? { ...x, turns: [{ id: nid(), from: "me", text: q.split("\n").join(" · ") }] } : x)));
-                        void answerLive(t.id, q, []);
-                      }
                     }}
-                    onRename={(title) =>
+                    onRename={(title) => {
                       setThreads((all) =>
                         all.map((x) => (x.id === t.id ? { ...x, title } : x)),
-                      )
-                    }
+                      );
+                      if (live) {
+                        void record({
+                          chatId: t.id,
+                          title,
+                          query: t.q ?? title,
+                          count: contextOf(t.turns).last.length,
+                          turnsJson: serializeTurns(t.turns),
+                        });
+                      }
+                    }}
                     onDelete={() => {
                       // Signed in the past search is deleted from the person's own history too.
-                      if (live && t.q) void removeChat({ query: t.q });
+                      if (live) void removeChat({ query: t.q ?? "", chatId: t.id });
                       setThreads((all) => all.filter((x) => x.id !== t.id));
                       if (openId === t.id) setOpenId("");
                     }}
