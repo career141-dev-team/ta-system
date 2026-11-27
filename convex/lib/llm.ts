@@ -62,7 +62,7 @@ function getOpenRouterKeys(): string[] {
     .filter((k) => k.length > 10);
 }
 
-function openRouterKeyPresent(): boolean {
+export function openRouterKeyPresent(): boolean {
   return getOpenRouterKeys().length > 0;
 }
 
