@@ -221,9 +221,12 @@ export default function Board({ children }: { children: ReactNode }) {
   );
 
   if (i < 0) return children;
+  // Database and LinkedIn Search have a 23.4% left chat sidebar on desktop; centering the
+  // top notch over the chat workspace aligns it directly above the AURA orb and search bar.
+  const hasChatRail = path === "/database" || path === "/linkedin-search";
   return (
     <main className="enter-board relative mx-11 mb-[max(2.125rem,14px)] mt-[max(1rem,12px)] flex min-h-0 flex-1 flex-col rounded-lg bg-white shadow-card max-md:mx-3 max-md:mt-3">
-      <div ref={tab} className="pointer-events-none absolute inset-x-0 top-0 z-20 h-0 [&>h2]:pointer-events-auto">
+      <div ref={tab} className={"pointer-events-none absolute right-0 top-0 z-20 h-0 [&>h2]:pointer-events-auto " + (hasChatRail ? "left-[max(23.4%,15rem,200px)] max-md:left-0" : "left-0")}>
         <Notch big label={path === "/strategy/submissions" && unread ? `${PAGES[i][1]} · ${unread}` : PAGES[i][1]} labelRef={label}>
           {/* The loading bar lives inside the tab, shown while the next page loads. */}
           <LoadingBar on={turning || waiting} className="inset-x-[22%] bottom-[max(0.55rem,6px)]" />
