@@ -56,7 +56,7 @@ function careerOf(c: Candidate): UiCareerRole[] | undefined {
     .map((w) => {
       const from = w.fromYear ? String(w.fromYear) : "";
       const to = w.toYear ? String(w.toYear) : "";
-      const period = from && to ? (from === to ? from : `${from} – ${to}`) : from ? `${from} – Now` : to || "Now";
+      const period = from && to ? (from === to ? from : `${from} – ${to}`) : from ? `${from} – Now` : to; // 28 Nov 2026: no years on record = no period (a bare "Now" read as wrong)
       return { period, title: (w.title ?? "").trim(), company: (w.employer ?? "").trim() };
     })
     .filter((r) => r.title || r.company);

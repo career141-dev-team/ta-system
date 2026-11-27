@@ -72,14 +72,25 @@ async function searchLive(body: { q: string; mode: "natural" | "boolean"; full?:
   return got ?? { ok: false, message: NO_LINE };
 }
 const cardsOf = (a: LiveAnswer, skip = "") => a.rows.filter((r) => r.id !== skip).map((r) => personOf(r, r.hasCv ? cvUrl({ candidate: r.id }) : undefined));
-const liveNext = (people: Person[]) =>
-  people.length
-    ? [
-        { label: `People like ${people[0].name.split(" ")[0]}`, prompt: `Find people like ${people[0].name}` },
-        { label: people.length > 1 ? `Add the top ${Math.min(3, people.length)} to a job` : `Add ${people[0].name.split(" ")[0]} to a job`, prompt: people.length > 1 ? `Add the top ${Math.min(3, people.length)} to a job` : `Add ${people[0].name} to a job` },
-        { label: "Download their CVs", prompt: "Download their CVs" },
-      ]
-    : [{ label: "Start over", prompt: "Start over" }];
+/** What to ask next, read from this answer (owner, 28 Nov 2026: the same three were always shown):
+ *  narrow by what varies among these people (their town, notice, fit), then act on them. */
+const liveNext = (people: Person[], asked = "") => {
+  if (!people.length) return [{ label: "Start over", prompt: "Start over" }];
+  const said = asked.toLowerCase();
+  const town = (p: Person) => p.city.split(",")[0].trim();
+  const towns = new Map<string, number>();
+  for (const p of people) if (town(p)) towns.set(town(p), (towns.get(town(p)) ?? 0) + 1);
+  const [topTown, inTop] = [...towns].sort((a, b) => b[1] - a[1])[0] ?? ["", 0];
+  const first = people[0].name.split(" ")[0];
+  const out: { label: string; prompt: string }[] = [];
+  if (topTown && inTop < people.length && !said.includes(topTown.toLowerCase())) out.push({ label: `Only in ${topTown}`, prompt: `Only people in ${topTown}` });
+  if (people.some((p) => p.notice > 1) && !/notice/.test(said)) out.push({ label: "Notice 1 month or less", prompt: "Only notice period 1 month or less" });
+  if (people.some((p) => p.score < 70) && people.some((p) => p.score >= 85) && !/strong/.test(said)) out.push({ label: "Only strong fits", prompt: "Only the strongest fits" });
+  if (!/people like/.test(said)) out.push({ label: `People like ${first}`, prompt: `Find people like ${people[0].name}` });
+  out.push(people.length > 1 ? { label: `Add the top ${Math.min(3, people.length)} to a job`, prompt: `Add the top ${Math.min(3, people.length)} to a job` } : { label: `Add ${first} to a job`, prompt: `Add ${people[0].name} to a job` });
+  out.push({ label: "Download their CVs", prompt: "Download their CVs" });
+  return out.slice(0, 4);
+};
 const foundLine = (a: LiveAnswer, what = "") =>
   a.reply?.trim()
     ? a.reply.trim()
@@ -422,7 +433,7 @@ export default function DatabaseView() {
       const show = (x: LiveAnswer) => {
         const people = cardsOf(x, skip);
         put(
-          { text: foundLine(x, what), chips: chipsOf(x.chips), people, actions: liveNext(people), warn: !x.total && !x.reply, ran, ...(mode === "boolean" ? { boolean: q } : {}) },
+          { text: foundLine(x, what), chips: chipsOf(x.chips), people, actions: liveNext(people, q), warn: !x.total && !x.reply, ran, ...(mode === "boolean" ? { boolean: q } : {}) },
           { query: q, count: x.total },
         );
       };
@@ -734,7 +745,14 @@ export default function DatabaseView() {
           box={box}
           mode={mode}
           onFile={(name) => send(`Find people for this JD: ${name}`)}
-          suggestions={thinking ? undefined : thread?.turns.find((t) => t.id === lastAura && t.from === "aura" && t.actions?.length) ? (thread.turns.find((t) => t.id === lastAura) as Extract<Turn, { from: "aura" }>).actions : undefined}
+          suggestions={(() => {
+            // Only under AURA's latest answer, never while a message waits for one, and never what was already asked.
+            const last = thread?.turns.at(-1);
+            if (thinking || !thread || !last || last.from !== "aura" || last.id !== lastAura || !last.actions?.length) return undefined;
+            const asked = new Set(thread.turns.filter((t) => t.from === "me").map((t) => t.text.trim().toLowerCase()));
+            const left = last.actions.filter((a) => !asked.has(a.prompt.trim().toLowerCase()));
+            return left.length ? left : undefined;
+          })()}
           onSuggest={send}
           panel={panelOf(contextOf(thread?.turns ?? []).chips)}
           hasPeople={mode === "people"}
@@ -1074,13 +1092,13 @@ function Results({
   );
   return (
     <div className="flex flex-col gap-[max(0.6rem,6px)]">
-      <ul className="overflow-hidden rounded-lg border border-border bg-surface divide-y divide-border" aria-label="People found">
+      <ul className="@container overflow-hidden rounded-lg border border-border bg-surface divide-y divide-border" aria-label="People found">
         {shown.map((p) => {
           const on = picked === p.id;
           const career = p.career?.length
             ? p.career.slice(0, 3)
             : p.title || p.company
-              ? [{ period: "Now", title: p.title, company: p.company }]
+              ? [{ period: "", title: p.title, company: p.company }]
               : [];
           const rawReason = (p.why ?? "").split(" · ").filter((s) => s && !/^\d+(\.\d+)?\s*yrs?$/i.test(s) && !/^notice\s+/i.test(s));
           const highlights: { ok: boolean; t: string }[] = [];
@@ -1099,10 +1117,12 @@ function Results({
                 aria-current={on ? "true" : undefined}
                 title={p.cv ? "Open the CV" : "No CV file on record"}
                 className={
-                  "grid w-full items-center gap-x-[max(1rem,10px)] py-3.5 pl-5 pr-[max(8.5rem,104px)] text-left transition-colors " +
+                  // Laid out by the list's own width (a container query), so the rows fit the chat
+                  // beside the history, a CV panel or a phone (owner, 28 Nov 2026: "not responsive").
+                  "grid w-full grid-cols-1 items-center gap-x-[max(1rem,10px)] gap-y-2 py-3.5 pl-5 pr-5 text-left transition-colors @min-[560px]:pr-[max(7.5rem,96px)] " +
                   (compact
-                    ? "grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] max-md:grid-cols-1"
-                    : "grid-cols-[minmax(0,1.25fr)_minmax(0,0.38fr)_minmax(0,1.1fr)_minmax(0,0.95fr)] max-xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] max-xl:[&>:nth-child(2)]:hidden max-xl:[&>:nth-child(4)]:hidden max-md:grid-cols-1") +
+                    ? "@min-[520px]:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]"
+                    : "@min-[560px]:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] @min-[880px]:grid-cols-[minmax(0,1.2fr)_minmax(0,0.42fr)_minmax(0,1.1fr)_minmax(0,1fr)]") +
                   " " +
                   (on ? "bg-brand-tint" : "bg-surface hover:bg-canvas/60")
                 }
@@ -1118,30 +1138,35 @@ function Results({
                 </span>
 
                 {!compact && (
-                  <span className="flex flex-col gap-1 text-small max-md:hidden">
+                  <span className="hidden flex-col gap-1 text-small @min-[880px]:flex">
                     {career.map((c, idx) => (
-                      <span key={idx} className={"truncate " + (idx === 0 ? "font-medium text-brand" : "text-ink-3")}>
+                      <span key={idx} className={"min-h-[1lh] truncate " + (idx === 0 ? "font-medium text-brand" : "text-ink-3")}>
                         {c.period}
                       </span>
                     ))}
                   </span>
                 )}
 
-                <span className="flex min-w-0 flex-col gap-1 text-small max-md:mt-2">
-                  {career.map((c, idx) => (
-                    <span key={idx} className="truncate text-ink">
-                      {c.title}
-                      {c.company && <span className="ml-1.5 text-ink-3">{c.company}</span>}
-                    </span>
-                  ))}
+                <span className="flex min-w-0 flex-col gap-1 text-small">
+                  {career.length ? (
+                    career.map((c, idx) => (
+                      <span key={idx} className="truncate text-ink" title={[c.period, c.title, c.company].filter(Boolean).join(" · ")}>
+                        {c.title}
+                        {c.company && <span className="ml-1.5 text-ink-3">{c.company}</span>}
+                        {c.period && <span className="ml-1.5 text-ink-3 @min-[880px]:hidden">· {c.period}</span>}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-ink-3">No job history on file</span>
+                  )}
                 </span>
 
                 {!compact && (
-                  <span className="flex min-w-0 flex-col gap-1 text-small text-ink-2 max-md:hidden">
+                  <span className="flex min-w-0 flex-col gap-1 text-small text-ink-2 @min-[560px]:col-span-2 @min-[880px]:col-span-1">
                     {highlights.slice(0, 3).map((x, idx) => (
-                      <span key={idx} className="flex items-center gap-2" title={x.t}>
-                        {tick(x.ok)}
-                        <span className="truncate">{x.t}</span>
+                      <span key={idx} className="flex items-start gap-2" title={x.t}>
+                        <span className="mt-[0.2rem]">{tick(x.ok)}</span>
+                        <span className="line-clamp-2">{x.t}</span>
                       </span>
                     ))}
                   </span>
