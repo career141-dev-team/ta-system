@@ -275,6 +275,7 @@ export const door = {
   searchRecord: makeFunctionReference<"mutation">("ui/searches:record"),
   searchRecent: makeFunctionReference<"query">("ui/searches:recent"),
   searchRemove: makeFunctionReference<"mutation">("ui/searches:remove"),
+  searchTurns: makeFunctionReference<"query">("ui/searches:turns"),
   liStatus: makeFunctionReference<"query">("ui/linkedinSearch:status"),
   liStart: makeFunctionReference<"mutation">("ui/linkedinSearch:start"),
   liRun: makeFunctionReference<"query">("ui/linkedinSearch:run"),

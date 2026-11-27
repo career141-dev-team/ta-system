@@ -100,6 +100,7 @@ const ALLOWED_PUBLIC = new Set<string>([
   "ui/searches:record",
   "ui/searches:recent",
   "ui/searches:remove",
+  "ui/searches:turns",
   "ui/linkedinSearch:status",
   "ui/linkedinSearch:start",
   "ui/linkedinSearch:run",
