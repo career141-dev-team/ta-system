@@ -4,8 +4,8 @@ import { useState } from "react";
 import { startWorkday, useLiveDesk, useWorkday } from "@/lib/workday";
 import Today from "./Today";
 import Workday from "./Workday";
-import Home from "./Homes";
 import AuraHome from "./AuraHome";
+import AdminHome from "./AdminHome";
 import { useRole, useSignedInPerson, worksADay } from "@/lib/role";
 import { door, useDoorQuery } from "@/lib/backend";
 import type { MyDay } from "@/lib/askAura";
@@ -42,7 +42,7 @@ export default function TodayScreen() {
     : signed
       ? { line: "Reading your day…", stats: [] as [string, string][] }
       : {};
-  if (role === "Admin") return <Home key={role} role="Lead" />;
+  if (role === "Admin") return <AdminHome key={role} />;
   if (!worksADay(role)) return <AuraHome key={role} role={role as "Lead" | "Director" | "Ops"} />;
 
   if (started === "pending") return <div className="flex-1" />;

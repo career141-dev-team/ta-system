@@ -40,7 +40,9 @@ const kept: Partial<Record<HomeRole, { open: boolean; msgs: Msg[] }>> = {};
 
 type Read = ({ ok: true } & Partial<Desk>) | { ok: false; message: string } | undefined;
 
-export default function AuraHome({ role }: { role: HomeRole }) {
+// `first` (27 Nov 2026): the admin's home asks AURA from its own bar and opens the chat with that
+// question; `onBack` returns to that home instead of the team board.
+export default function AuraHome({ role, first, onBack }: { role: HomeRole; first?: string; onBack?: () => void }) {
   // Signed in, the lead reads the real desk; until it arrives, nothing is invented.
   const signed = useSignedInPerson() !== null;
   // Each role reads its own desk (ui/lead:desk, ui/homes:director, ui/homes:ops);
@@ -53,7 +55,7 @@ export default function AuraHome({ role }: { role: HomeRole }) {
   const read = role === "Lead" ? lead : role === "Director" ? director : ops;
   const desk: Desk | null = !signed ? SAMPLE_DESK : read?.ok ? { ...EMPTY, ...read, ...(plans?.ok ? { plans: plans.team } : {}) } : null;
   const failed = read && !read.ok ? read.message : null;
-  const [open, setOpen] = useState(() => kept[role]?.open ?? false);
+  const [open, setOpen] = useState(() => !!first || (kept[role]?.open ?? false));
   const [board, setBoard] = useState(false);
   useEffect(() => {
     kept[role] = { open, msgs: kept[role]?.msgs ?? [] };
@@ -78,7 +80,7 @@ export default function AuraHome({ role }: { role: HomeRole }) {
         stats={desk ? startStats(role, desk) : []}
       />
     );
-  return <Chat role={role} desk={desk} failed={failed} signed={signed} onBoard={() => setBoard(true)} />;
+  return <Chat role={role} desk={desk} failed={failed} signed={signed} first={first} back={onBack ? "Back to your desk" : undefined} onBoard={onBack ?? (() => setBoard(true))} />;
 }
 
 const TONE: Record<Tone, string> = {
@@ -93,7 +95,7 @@ const ASK =
 
 type HomeReply = { ok: true; reply: { say: string; chips: string[]; warn: string[]; rows: { main: string; meta?: string }[] } } | { ok: false; message: string };
 
-function Chat({ role, desk, failed, signed, onBoard }: { role: HomeRole; desk: Desk | null; failed: string | null; signed: boolean; onBoard: () => void }) {
+function Chat({ role, desk, failed, signed, first: ask, back, onBoard }: { role: HomeRole; desk: Desk | null; failed: string | null; signed: boolean; first?: string; back?: string; onBoard: () => void }) {
   const askHome = useDoorAction(door.homeAsk);
   const { first } = useMe();
   const [msgs, setMsgs] = useState<Msg[]>(() => kept[role]?.msgs ?? []);
@@ -101,6 +103,7 @@ function Chat({ role, desk, failed, signed, onBoard }: { role: HomeRole; desk: D
   const root = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const seq = useRef(msgs.length);
+  const asked = useRef(false);
 
   useEffect(() => {
     kept[role] = { open: true, msgs };
@@ -143,9 +146,17 @@ function Chat({ role, desk, failed, signed, onBoard }: { role: HomeRole; desk: D
     }, 450);
   };
 
+  // A question asked from the admin's home is the chat's first message, once.
+  useEffect(() => {
+    if (!ask || asked.current) return;
+    asked.current = true;
+    send(ask);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ask]);
+
   return (
     <div ref={root} className="flex min-h-0 flex-1 max-md:flex-col">
-      <Rail role={role} desk={desk ?? EMPTY} loading={!desk && !failed} onAsk={send} onBoard={onBoard} />
+      <Rail role={role} desk={desk ?? EMPTY} loading={!desk && !failed} onAsk={send} onBoard={onBoard} back={back} />
 
       <section className="flex min-h-0 flex-1 flex-col">
         <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
@@ -200,7 +211,7 @@ function Chat({ role, desk, failed, signed, onBoard }: { role: HomeRole; desk: D
 /** How many rows the rail shows before "Show more" (owner, 20 Nov 2026: 16 TAs in a row was too long). */
 const RAIL_FIRST = 5;
 
-function Rail({ role, desk, loading, onAsk, onBoard }: { role: HomeRole; desk: Desk; loading: boolean; onAsk: (q: string) => void; onBoard: () => void }) {
+function Rail({ role, desk, loading, onAsk, onBoard, back }: { role: HomeRole; desk: Desk; loading: boolean; onAsk: (q: string) => void; onBoard: () => void; back?: string }) {
   const { team, waiting, withClient } = desk;
   const [all, setAll] = useState(false);
   const started = team.filter((t) => t.day.started).length;
@@ -264,8 +275,8 @@ function Rail({ role, desk, loading, onAsk, onBoard }: { role: HomeRole; desk: D
       )}
       <button type="button" onClick={onBoard} className="mt-auto flex items-center justify-between rounded-md bg-surface-2 px-4 py-3 text-left transition-colors hover:bg-surface-3 max-md:mt-0">
         <span>
-          <span className="block text-[max(0.875rem,12px)] font-medium text-ink">Team board</span>
-          <span className="block text-[max(0.8125rem,11.5px)] text-ink-3">Everything on one page</span>
+          <span className="block text-[max(0.875rem,12px)] font-medium text-ink">{back ?? "Team board"}</span>
+          <span className="block text-[max(0.8125rem,11.5px)] text-ink-3">{back ? "Activity, workdays and what needs attention" : "Everything on one page"}</span>
         </span>
         <svg data-nudge viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-4 text-ink-3" aria-hidden="true">
           <path d="M5 12h14M13 6l6 6-6 6" />

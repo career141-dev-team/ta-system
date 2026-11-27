@@ -260,6 +260,7 @@ export const door = {
   planAsk: makeFunctionReference<"action">("ui/homeAsk:plan"),
   // The lead's AURA home (19 Nov): every TA's day, decisions and open roles.
   leadDesk: makeFunctionReference<"query">("ui/lead:desk"),
+  adminHome: makeFunctionReference<"query">("ui/adminHome:today"),
   // The Director's and Ops's AURA homes (19 Nov).
   directorDesk: makeFunctionReference<"query">("ui/homes:director"),
   opsDesk: makeFunctionReference<"query">("ui/homes:ops"),
