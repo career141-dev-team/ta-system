@@ -66,7 +66,7 @@ type Thread = {
 // (ta-system #42, /api/ui/database): the engine and the desk rules.
 const DB_URL = `${OLD_SERVER}/api/ui/database`;
 const NO_LINE = "Could not reach the TA System. Check your connection and try again.";
-async function searchLive(body: { q: string; mode: "natural" | "boolean"; full?: boolean }): Promise<LiveAnswer | { ok: false; message: string }> {
+async function searchLive(body: { q: string; mode: "natural" | "boolean"; full?: boolean; currentIds?: string[] }): Promise<LiveAnswer | { ok: false; message: string }> {
   const res = await fetch(DB_URL, { method: "POST", headers: { "Content-Type": "application/json", ...(await cvHeaders(DB_URL)) }, body: JSON.stringify(body) }).catch(() => null);
   const got = (await res?.json().catch(() => null)) as (LiveAnswer | { ok: false; message: string }) | null;
   return got ?? { ok: false, message: NO_LINE };
@@ -81,9 +81,11 @@ const liveNext = (people: Person[]) =>
       ]
     : [{ label: "Start over", prompt: "Start over" }];
 const foundLine = (a: LiveAnswer, what = "") =>
-  a.total
-    ? `${a.total} ${a.total === 1 ? "person matches" : "people match"}${what}${a.read ? ` - ${a.read}` : ""}.${a.problem ? ` ${a.problem}` : ""}`
-    : (a.problem ?? "Nothing in the database matched that search.");
+  a.reply?.trim()
+    ? a.reply.trim()
+    : a.total
+      ? `${a.total} ${a.total === 1 ? "person matches" : "people match"}${what}${a.read ? ` - ${a.read}` : ""}.${a.problem ? ` ${a.problem}` : ""}`
+      : (a.problem ?? "Nothing in the database matched that search.");
 
 let seq = 0;
 const nid = () => `t${++seq}`;
@@ -374,13 +376,14 @@ export default function DatabaseView() {
     if (kind) setLook({ id: nid(), kind, real: 0 });
     petSay("working", "Looking through the database…");
     const search = async (q: string, mode: "natural" | "boolean", what = "", skip = "") => {
-      const a = await searchLive({ q, mode });
+      const currentIds = last.length ? last.map((p) => p.id) : undefined;
+      const a = await searchLive({ q, mode, ...(currentIds ? { currentIds } : {}) });
       if (!a.ok) return put({ text: a.message, warn: true, ran: keep });
       void record({ query: q, count: a.total });
       const ran = mode === "natural" ? q : undefined;
       const show = (x: LiveAnswer) => {
         const people = cardsOf(x, skip);
-        put({ text: foundLine(x, what), chips: chipsOf(x.chips), people, actions: liveNext(people), warn: !x.total, ran, ...(mode === "boolean" ? { boolean: q } : {}) });
+        put({ text: foundLine(x, what), chips: chipsOf(x.chips), people, actions: liveNext(people), warn: !x.total && !x.reply, ran, ...(mode === "boolean" ? { boolean: q } : {}) });
       };
       show(a);
       if (!a.refining) return;
@@ -388,7 +391,7 @@ export default function DatabaseView() {
       // and the steps (one line now, under the quick list) say so.
       setThinking(false);
       setLook((l) => l && { ...l, real: 3 });
-      const full = await searchLive({ q, mode, full: true });
+      const full = await searchLive({ q, mode, full: true, ...(currentIds ? { currentIds } : {}) });
       if (full.ok) show(full);
     };
     try {

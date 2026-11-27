@@ -21,7 +21,7 @@ import { primeStore } from "@/data/prime";
 import { repo } from "@/data/store";
 import { EMPTY_CRITERIA } from "@/data/types";
 import { can } from "@/lib/auth";
-import { chipReadLine, chipScore, chipSearch, genderAsked, genderByName, type ChipHit } from "@/lib/chipSearchClient";
+import { chipAgent, chipReadLine, chipScore, chipSearch, genderAsked, genderByName, limitAsked, type ChipHit } from "@/lib/chipSearchClient";
 import { booleanScore, booleanTerms } from "@/lib/booleanScore";
 import { cachedEngineSearch, deskCriteria, engineSearch, incompleteProblem, quickEngineSearch, type EngineSearch } from "@/lib/engineSearch";
 import { conversationText, describe, parseBoolean, parseConversation } from "@/lib/query";
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
   if (!may.ok) return answer(req, { ok: false, message: may.message }, 403);
   const read = readSearchBody(await req.json().catch(() => null));
   if (!read.ok) return answer(req, read, 400);
-  const { q, mode, full } = read.body;
+  const { q, mode, full, currentIds } = read.body;
   // 23 Nov: the tables (vocabulary, openings) only. This route reads applications for one thing, the
   // availability rule (free / in a pipeline / placed before) in searchDatabase, and its rows carry no
   // pipeline markers, so the ~10k applications are loaded below only when the search asks for that rule.
@@ -87,12 +87,77 @@ export async function POST(req: NextRequest) {
   const reachable = (c: { fullName?: string | null; email?: string | null; phone?: string | null }) =>
     !!(realName(c.fullName) || c.email?.trim() || c.phone?.trim());
   const want = genderAsked(q);
+  const askedLimit = limitAsked(q, ROWS);
+  const cap = askedLimit ?? ROWS;
+  const turns = q.split("\n");
+
+  // 27 Nov 2026: try the tool-calling agent over the 94,830-card chip search engine first.
+  // It handles arbitrary constraints ("Healthcare or Hospitality only", "show top 10",
+  // follow-up comparisons/refinements) and falls back cleanly to chipSearch below if unavailable.
+  const fm = (g: unknown): "f" | "m" | null => (g === "female" || g === "f" ? "f" : g === "male" || g === "m" ? "m" : null);
+  const knownGenders: Record<string, "f" | "m"> = {};
+  if (want && currentIds?.length) {
+    await primeStore({ candidateIds: currentIds });
+    for (const id of currentIds) {
+      const g = fm(String(repo.candidate(id)?.gender ?? "").toLowerCase());
+      if (g) knownGenders[id] = g;
+    }
+  }
+  const agentAns = await chipAgent({
+    turns,
+    currentIds,
+    genders: knownGenders,
+    wantGender: want,
+    limit: askedLimit,
+  });
+  if (agentAns) {
+    try {
+      const ids = agentAns.candidates.map((c) => c.id);
+      if (ids.length) await primeStore({ candidateIds: ids });
+      let found = agentAns.candidates
+        .map((a) => ({ a, c: repo.candidate(a.id) }))
+        .filter((x): x is { a: (typeof agentAns.candidates)[number]; c: NonNullable<typeof x.c> } => !!x.c && reachable(x.c));
+      if (want && found.length) {
+        const mine = want === "female" ? "f" : "m";
+        const resolved = found.map((x) => fm(x.a.gender) ?? fm(String(x.c.gender ?? "").toLowerCase()));
+        const askNames = found.map((x, i) => (resolved[i] ? "" : x.c.fullName ?? ""));
+        const byName = askNames.some(Boolean) ? await genderByName(askNames) : [];
+        const withG = found.map((x, i) => ({ ...x, g: resolved[i] ?? byName?.[i] ?? "?" }));
+        found = withG
+          .filter((x) => x.g === mine || x.g === "?")
+          .sort((x, y) => {
+            const tierDiff = (y.a.tier === "confirmed" ? 1 : 0) - (x.a.tier === "confirmed" ? 1 : 0);
+            if (tierDiff !== 0) return tierDiff;
+            const gDiff = (y.g === mine ? 1 : 0) - (x.g === mine ? 1 : 0);
+            if (gDiff !== 0) return gDiff;
+            return y.a.fit - x.a.fit;
+          });
+      }
+      const named = (x: (typeof found)[number]) => realName(x.c.fullName);
+      found = [...found.filter(named), ...found.filter((x) => !named(x))];
+      const rows = found.slice(0, cap).map(({ a, c }) => personOf(c, a.fit, a.reason));
+      if (rows.length || agentAns.reply) {
+        return answer(req, {
+          ok: true,
+          total: askedLimit ? rows.length : Math.max(rows.length, agentAns.total),
+          rows,
+          read: agentAns.read || null,
+          reply: agentAns.reply || null,
+          chips: [],
+          refining: false,
+          problem: null,
+        });
+      }
+    } catch {
+      // Fall through to standard chipSearch below.
+    }
+  }
+
   const narrow = want
     ? async (hits: ChipHit[]) => {
         const pool = hits.slice(0, 300);
         await primeStore({ candidateIds: pool.map((h) => h.id) });
         const people = pool.map((h) => ({ h, c: repo.candidate(h.id) }));
-        const fm = (g: unknown) => (g === "female" || g === "f" ? "f" : g === "male" || g === "m" ? "m" : null);
         // The search card first (NIC, "Mrs", "Gender:" lines in the CV: 14,849 known), then the AURA record.
         const known = people.map((x) => fm(x.h.gender) ?? fm(String(x.c?.gender ?? "").toLowerCase()));
         // The name only for the rest, so fewer names go to the model.
@@ -111,7 +176,7 @@ export async function POST(req: NextRequest) {
         return byName ? { ids: [...sure, ...maybe], genders } : null;
       }
     : undefined;
-  const chip = await chipSearch(q.split("\n"), narrow);
+  const chip = await chipSearch(turns, narrow);
   if (chip && chip.hits.length) {
     try {
       const pool = chip.hits.slice(0, ROWS * 3);
@@ -126,9 +191,9 @@ export async function POST(req: NextRequest) {
       // Records with no name (a CV read, no name saved) go to the end, never on top.
       const named = (x: (typeof found)[number]) => realName(x.c.fullName);
       found = [...found.filter(named), ...found.filter((x) => !named(x))];
-      const rows = found.slice(0, ROWS).map(({ h, c }) => personOf(c, chipScore(h.score), h.aiWhy || h.why.join(" · ")));
+      const rows = found.slice(0, cap).map(({ h, c }) => personOf(c, chipScore(h.score), h.aiWhy || h.why.join(" · ")));
       if (rows.length) {
-        return answer(req, { ok: true, total: chip.total, rows, read: chipReadLine(chip) || null, chips: [], refining: false, problem: null });
+        return answer(req, { ok: true, total: askedLimit ? rows.length : chip.total, rows, read: chipReadLine(chip) || null, chips: [], refining: false, problem: null });
       }
     } catch {
       // The records could not be read: the old engine below answers instead.
