@@ -6,7 +6,7 @@ import { can } from "@/lib/auth";
 import { seatFor } from "@/lib/visibility";
 import { referralSearch } from "@/lib/referralSearch";
 import { findByNames } from "@/lib/nameCheck";
-import { referralWorkbook, REFERRAL_EXPORT_MAX } from "@/lib/referralExport";
+import { referralWorkbook, picksBySearch } from "@/lib/referralExport";
 import { excelFilename, excelDownloadDisposition } from "@/lib/excelFilename";
 
 export const dynamic = "force-dynamic";
@@ -25,11 +25,12 @@ export async function POST(req: Request) {
   if (!isConvex()) return new Response("Referral Search needs the backend.", { status: 503 });
 
   const form = await req.formData();
-  const q = String(form.get("q") ?? "").trim().slice(0, 500);
-  const drop = form.getAll("x").map(String).slice(0, 30);
-  const ids = new Set(form.getAll("id").map(String).slice(0, REFERRAL_EXPORT_MAX));
   const openingId = String(form.get("for") ?? "");
-  if (!q || !ids.size) return new Response("Nothing selected.", { status: 400 });
+  // 28 Nov: ticks from several searches come as `picks` (each id with the search
+  // that showed it); a tab opened before that still sends one q + ids.
+  const searches = picksBySearch(form);
+  const q = searches[0]?.q ?? "";
+  if (!searches.length) return new Response("Nothing selected.", { status: 400 });
 
   let label = "Database";
   if (openingId) {
@@ -50,8 +51,12 @@ export async function POST(req: Request) {
     } catch {
       // Reads go without an actor, as on the page.
     }
-    const a = await referralSearch(q, drop, actorId);
-    const people = a.people.filter((p) => ids.has(p.id));
+    const seen = new Set<string>();
+    const people = [];
+    for (const s of searches) {
+      const a = await referralSearch(s.q, s.x, actorId);
+      for (const p of a.people) if (s.ids.has(p.id) && !seen.has(p.id)) (seen.add(p.id), people.push(p));
+    }
     if (!people.length) return new Response("None of the selected people are in this search any more. Search again.", { status: 409 });
 
     const held = new Map<string, string>();
@@ -63,7 +68,7 @@ export async function POST(req: Request) {
       console.warn("[referral-export] CV lookup failed:", (e as Error)?.message);
     }
 
-    console.info(`[referral-export] ${user.id} exported ${people.length} referee(s) for "${q.slice(0, 80)}"${openingId ? ` on ${openingId}` : ""}`);
+    console.info(`[referral-export] ${user.id} exported ${people.length} referee(s) from ${searches.length} search(es), first "${q.slice(0, 80)}"${openingId ? ` on ${openingId}` : ""}`);
     const file = excelFilename("Referees", label);
     return new Response(new Uint8Array(referralWorkbook(people, held)), {
       headers: {
@@ -77,3 +82,4 @@ export async function POST(req: Request) {
     return new Response("Could not export just now. Try again in a moment.", { status: 500 });
   }
 }
+
