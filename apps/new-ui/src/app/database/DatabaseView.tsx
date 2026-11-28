@@ -23,7 +23,7 @@ import { POOL, filterReply, panelOf } from "./aura";
 import FilterBar, { PILL } from "./FilterBar";
 import { petSay } from "@/lib/pet";
 import { zip } from "@/lib/zip";
-import { candidateCall, cvHeaders, cvUrl, door, OLD_SERVER, queryOnce, saveLiveFile, useDoorMutation, useDoorQuery, useLive } from "@/lib/backend";
+import { candidateCall, cvHeaders, cvUrl, door, OLD_SERVER, queryOnce, useDoorMutation, useDoorQuery, useLive } from "@/lib/backend";
 import { useSignedInPerson } from "@/lib/role";
 import { useSpeech } from "@/lib/useSpeech";
 import type { MyDay } from "@/lib/askAura";
@@ -600,30 +600,42 @@ export default function DatabaseView() {
   }, [live, liveSite]);
   // One CV downloads as its PDF; two or more as ONE zip (28 Nov 2026: checked live - Chrome let the
   // first of two downloads through and silently blocked the second as an "automatic download").
+  // A file waiting for the person's own click: Chrome blocks a save that starts too long after the
+  // click (checked live 28 Nov 2026: six CVs took ~9 s one by one and the zip save came "not active").
+  const [ready, setReady] = useState<{ url: string; name: string; label: string } | null>(null);
+  const deliver = (blob: Blob, name: string, label: string) => {
+    const url = URL.createObjectURL(blob);
+    if (navigator.userActivation && !navigator.userActivation.isActive) {
+      setReady({ url, name, label });
+      petSay("done", `${label} ready. Press Save to download.`);
+      return;
+    }
+    saveBlob(url, name);
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    petSay("done", `Downloaded ${label}.`);
+  };
+  // One CV downloads as its own file; two or more as ONE zip (Chrome lets one download through per click).
+  // All fetched at once, each named by its real type (a Word CV was saved as ".pdf" and would not open).
   const downloadCvs = async (files: CvFile[]) => {
     if (!files.length) return;
     petSay("working", `Downloading ${files.length} CV${files.length === 1 ? "" : "s"}…`);
-    if (files.length === 1) {
-      const f = files[0];
-      let ok = true;
-      if (live) ok = await saveLiveFile(f.url, f.name);
-      else saveBlob(f.url, f.name);
-      petSay(ok ? "done" : "failed", ok ? "Downloaded 1 CV." : "That CV could not be fetched. Try again.");
-      return;
-    }
-    const got: { name: string; data: Uint8Array }[] = [];
-    for (const f of files) {
-      const res = await fetch(f.url, live ? { headers: await cvHeaders(f.url) } : undefined).catch(() => null);
-      if (res?.ok) got.push({ name: f.name, data: new Uint8Array(await res.arrayBuffer()) });
-    }
+    const got = (
+      await Promise.all(
+        files.map(async (f) => {
+          const res = await fetch(f.url, live ? { headers: await cvHeaders(f.url) } : undefined).catch(() => null);
+          if (!res?.ok) return null;
+          const name = f.name.replace(/\.pdf$/i, extOf(res.headers.get("content-type")));
+          return { name, data: new Uint8Array(await res.arrayBuffer()), type: res.headers.get("content-type") ?? "application/pdf" };
+        }),
+      )
+    ).filter((x): x is NonNullable<typeof x> => !!x);
     if (!got.length) {
-      petSay("failed", "None of those CVs could be fetched. Try again.");
+      petSay("failed", files.length === 1 ? "That CV could not be fetched. Try again." : "None of those CVs could be fetched. Try again.");
       return;
     }
-    const url = URL.createObjectURL(new Blob([zip(got)], { type: "application/zip" }));
-    saveBlob(url, `CVs (${got.length}).zip`);
-    setTimeout(() => URL.revokeObjectURL(url), 10_000);
-    petSay("done", got.length === files.length ? `Downloaded ${got.length} CVs in one zip.` : `Downloaded ${got.length} of ${files.length} CVs in one zip. The rest could not be fetched.`);
+    const short = got.length < files.length ? ` ${files.length - got.length} could not be fetched.` : "";
+    if (got.length === 1) deliver(new Blob([got[0].data], { type: got[0].type }), got[0].name, `1 CV${short}`);
+    else deliver(new Blob([zip(got)], { type: "application/zip" }), `CVs (${got.length}).zip`, `${got.length} CVs in one zip${short}`);
   };
   const newSearch = () => {
     setOpenId("");
@@ -843,6 +855,25 @@ export default function DatabaseView() {
           </div>
         </div>
 
+        {ready && (
+          <div className="mx-auto mb-2 flex w-full max-w-[56rem] items-center gap-3 rounded-md border border-brand/30 bg-brand-tint px-4 py-2.5 text-small text-ink">
+            <span className="min-w-0 flex-1">{ready.label} ready.</span>
+            <button
+              type="button"
+              onClick={() => {
+                saveBlob(ready.url, ready.name);
+                setTimeout(() => URL.revokeObjectURL(ready.url), 10_000);
+                setReady(null);
+              }}
+              className="flex h-[max(2.4rem,33px)] items-center rounded-full bg-brand px-4 text-small font-medium text-white transition-colors hover:bg-brand-strong"
+            >
+              Save
+            </button>
+            <button type="button" onClick={() => setReady(null)} aria-label="Close" className="rounded-full p-1.5 text-ink-3 hover:bg-surface hover:text-ink">
+              <XIcon />
+            </button>
+          </div>
+        )}
         <Composer
           value={text}
           onChange={setText}
@@ -1377,6 +1408,9 @@ function Answer({
 }
 
 type CvFile = { name: string; url: string };
+/** The file ending for what the server sent: CVs are PDFs or Word files. */
+const extOf = (type: string | null) =>
+  /wordprocessingml/i.test(type ?? "") ? ".docx" : /msword/i.test(type ?? "") ? ".doc" : /rtf/i.test(type ?? "") ? ".rtf" : ".pdf";
 /** Hand a file address to the browser to save. */
 const saveBlob = (url: string, name: string) => {
   const a = document.createElement("a");
