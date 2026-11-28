@@ -126,6 +126,25 @@ console.log("the first live run's fault: people described in the reply, none han
   ok("the agent is told how many have an email, and how many are not known yet", /Has an email: .*not known yet \(3\)/.test(describeTable(fdb)), describeTable(fdb).split("\n").find((l) => l.startsWith("Has an email")));
 }
 
+console.log("the second live run's faults: a meaning search with people in the reply only; a long list in the query's order");
+{
+  const similar = async () => ({ ok: true as const, hits: [{ id: "batti-f", similarity: 0.6 }, { id: "kandy-f", similarity: 0.4 }] });
+  const m = scripted([
+    () => ({ content: [tool("similar", { text: "has run a hospital finance team" })] }),
+    () => ({ content: [tool("finish", { reply: "The strongest is the first one.", searched: "By meaning: hospital finance team", candidates: [] })] }),
+  ]);
+  const r = await createQueryAgent(cards, direct, "", m.call, { similar })({ turns: ["someone who has run a hospital finance team"] });
+  ok("the people the meaning search found are shown, nearest first", r?.candidates.map((c) => c.id).join() === "batti-f,kandy-f" && r.candidates[0].fit > r.candidates[1].fit, JSON.stringify(r?.candidates));
+  const many = Array.from({ length: 20 }, (_, i) => person("p" + i, "Kandy"));
+  const mdb = buildTable(many);
+  const mq: Query = async (sql, maxRows) => runQuery(mdb, sql, maxRows);
+  const m2 = scripted([() => ({ content: [tool("finish", { reply: "Twenty accountants in Kandy.", searched: "Accountants · Kandy: 20", final_sql: "select id from people", candidates: [] })] })]);
+  const r2 = await createQueryAgent(many, mq, "", m2.call, { rank: async () => ({ placed: 2, hits: [{ id: "p7", score: 200, why: [] }, { id: "p3", score: 150, why: [] }] }) })({ turns: ["accountants in kandy"] });
+  ok("a long list with none handed over is put in the tested order, the rest after", r2?.candidates.length === 20 && r2.candidates[0].id === "p7" && r2.candidates[1].id === "p3" && r2.candidates[0].fit > r2.candidates[5].fit, JSON.stringify(r2?.candidates.slice(0, 3)));
+  const m3 = scripted([() => ({ content: [tool("finish", { reply: "There are 5 people.", searched: "Count", candidates: [] })] })]);
+  ok("a plain count still lists nobody", (await createQueryAgent(cards, direct, "", m3.call)({ turns: ["how many people"] }))?.candidates.length === 0);
+}
+
 console.log("honest when it goes wrong");
 {
   let err: any;
