@@ -60,6 +60,8 @@ type Thread = {
   q?: string;
   /** Its conversation is saved in the backend and is read when the chat is opened (27 Nov 2026). */
   saved?: boolean;
+  /** Which history list it sits in (owner 28 Nov 2026: Candidates and Referees keep separate lists). */
+  mode?: Mode;
 };
 
 // Signed in, the chat searches the real database through old AURA's own search
@@ -99,9 +101,16 @@ const olderChat = (id: string, query: string): Turn[] => [
   },
 ];
 
+// Turn ids must never repeat across page loads (28 Nov 2026): they restarted at "t1", so a
+// reopened saved chat (turns t1..t6) got its new answer as "t3" - `put` replaced the old middle
+// answer with it and React dropped the duplicate keys: only the first and last answers showed.
 let seq = 0;
-const nid = () => `t${++seq}`;
-const newChatId = () => `c_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+const nid = () => `t${Date.now().toString(36)}${(++seq).toString(36)}`;
+// The chat id carries its mode, so a saved chat comes back into the right history list.
+const newChatId = (mode: Mode = "people") => `${mode === "referees" ? "r" : "c"}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+const modeOf = (t: Thread): Mode => t.mode ?? (t.id.startsWith("r_") ? "referees" : "people");
+/** Saved turns get fresh ids when a chat is opened: older saves may hold repeated ids. */
+const freshIds = (turns: Turn[]): Turn[] => turns.map((t) => ({ ...t, id: nid() }));
 
 /** The chips and the people of the last answer that had them: what a new message refines. */
 function contextOf(turns: Turn[]) {
@@ -319,10 +328,10 @@ export default function DatabaseView() {
     let turns = cur?.turns ?? [];
     // No chat open: this message starts one, named by its first words.
     if (!cur) {
-      id = newChatId();
+      id = newChatId(mode_);
       turns = [];
       setThreads((all) => [
-        { id, title: titleOf(t), when: "today", turns: [], q: t },
+        { id, title: titleOf(t), when: "today", turns: [], q: t, mode: mode_ },
         ...all,
       ]);
       setOpenId(id);
@@ -586,26 +595,13 @@ export default function DatabaseView() {
               front of the New search button, like a toggle, only icons"). Two icons in one
               soft pill; the one in use is lifted white. The words live in the tooltip and the
               screen-reader label. Picking one starts a fresh search in that mode. */}
-          <div role="radiogroup" aria-label="What to search" className="flex shrink-0 items-center gap-0.5 rounded-full bg-surface-2 p-[3px] md:ml-auto">
-            {MODES.map(([k, label, icon, hint]) => (
-              <button
-                key={k}
-                type="button"
-                role="radio"
-                aria-checked={mode === k}
-                aria-label={label}
-                title={`${label} - ${hint}`}
-                onClick={() => {
-                  if (mode === k) return;
-                  setMode(k);
-                  newSearch();
-                }}
-                className={"flex size-[max(2.4rem,32px)] items-center justify-center rounded-full transition-colors " + (mode === k ? "bg-white text-brand shadow-sm" : "text-ink-3 hover:text-ink")}
-              >
-                {icon}
-              </button>
-            ))}
-          </div>
+          <ModeSwitch
+            mode={mode}
+            onPick={(k) => {
+              setMode(k);
+              newSearch();
+            }}
+          />
 
           <button
             type="button"
@@ -623,13 +619,16 @@ export default function DatabaseView() {
             (showHistory ? "" : "max-md:hidden")
           }
         >
-          {(["today", "earlier"] as const).map((when) => (
+          {!threads.some((t) => modeOf(t) === mode) && (
+            <p className="px-[max(0.9rem,10px)] text-small text-ink-3">{mode === "referees" ? "No referee searches yet." : "No candidate searches yet."}</p>
+          )}
+          {(["today", "earlier"] as const).filter((when) => threads.some((t) => t.when === when && modeOf(t) === mode)).map((when) => (
             <div key={when} className="mb-2 flex flex-col gap-1">
               <p className="mb-1 px-[max(0.9rem,10px)] text-[max(0.8125rem,11.5px)] font-medium uppercase tracking-wide text-ink-3">
                 {when}
               </p>
               {threads
-                .filter((t) => t.when === when)
+                .filter((t) => t.when === when && modeOf(t) === mode)
                 .map((t) => (
                   <ChatItem
                     key={t.id}
@@ -642,7 +641,7 @@ export default function DatabaseView() {
                       if (live && t.saved && !t.turns.length) {
                         void queryOnce(door.searchTurns, { chatId: t.id }).then((got) => {
                           const saved = parseSavedTurns<Turn>((got as { turnsJson?: string | null } | undefined)?.turnsJson);
-                          const turns = saved.length ? saved : olderChat(t.id, t.q ?? t.title);
+                          const turns = saved.length ? freshIds(saved) : olderChat(t.id, t.q ?? t.title);
                           setThreads((all) => all.map((x) => (x.id === t.id && !x.turns.length ? { ...x, turns, saved: false } : x)));
                         });
                       }
@@ -1521,7 +1520,7 @@ const PeopleIcon = (): ReactNode => (
   <svg
     viewBox="0 0 16 16"
     fill="currentColor"
-    className="size-[max(1rem,14px)]"
+    className="size-[max(1.2rem,16px)]"
     aria-hidden="true"
   >
     <path d="M7 14s-1 0-1-1 1-4 5-4 5 3 5 4-1 1-1 1H7Zm4-6a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-5.784 6A2.24 2.24 0 0 1 5 13c0-1.355.68-2.75 1.936-3.72A6.3 6.3 0 0 0 5 9c-4 0-5 3-5 4s1 1 1 1h4.216ZM4.5 8a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" />
@@ -1551,7 +1550,7 @@ const SidebarIcon = () => (
 );
 
 const RefIcon = (): ReactNode => (
-  <svg {...ico} className="size-[max(1rem,14px)]">
+  <svg {...ico} className="size-[max(1.2rem,16px)]">
     <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM19 8v6M22 11h-6" />
   </svg>
 );
@@ -1560,6 +1559,54 @@ const MODES: [Mode, string, ReactNode, string][] = [
   ["people", "Candidates", <PeopleIcon key="p" />, "People we hold — by skills, title, place or any word in their CV"],
   ["referees", "Referees", <RefIcon key="r" />, "References named on CVs, with numbers"],
 ];
+
+/** Candidates | Referees (owner 28 Nov 2026: "a little bigger", and a switch you can feel). The white
+ *  thumb slides to the picked side, stretching as it goes and settling with a small overshoot;
+ *  the picked icon pops. Each side keeps its own history list. */
+function ModeSwitch({ mode, onPick }: { mode: Mode; onPick: (m: Mode) => void }) {
+  const row = useRef<HTMLDivElement>(null);
+  const thumb = useRef<HTMLSpanElement>(null);
+  const placed = useRef(false);
+  useGSAP(
+    () => {
+      const on = row.current?.querySelector<HTMLElement>('[aria-checked="true"]');
+      if (!on || !thumb.current) return;
+      const box = { x: on.offsetLeft, width: on.offsetWidth };
+      if (!placed.current) {
+        placed.current = true;
+        gsap.set(thumb.current, box);
+        return;
+      }
+      const from = Number(gsap.getProperty(thumb.current, "x"));
+      gsap
+        .timeline({ defaults: { overwrite: "auto" } })
+        // Lean into the move: stretch towards the new side, then catch up and settle past it.
+        .to(thumb.current, { x: Math.min(from, box.x), width: box.width + Math.abs(box.x - from), duration: 0.16, ease: "power2.in" })
+        .to(thumb.current, { x: box.x, width: box.width, duration: 0.5, ease: "back.out(2.2)" })
+        .fromTo(on.querySelector("svg"), { scale: 0.7, rotate: box.x > from ? -12 : 12 }, { scale: 1, rotate: 0, duration: 0.5, ease: "back.out(3)", clearProps: "transform" }, 0.12);
+    },
+    { dependencies: [mode], scope: row, revertOnUpdate: false },
+  );
+  return (
+    <div ref={row} role="radiogroup" aria-label="What to search" className="relative flex shrink-0 items-center gap-1 rounded-full bg-surface-2 p-1 md:ml-auto">
+      <span ref={thumb} aria-hidden="true" data-still className="absolute bottom-1 left-0 top-1 rounded-full bg-surface shadow-float" />
+      {MODES.map(([k, label, icon, hint]) => (
+        <button
+          key={k}
+          type="button"
+          role="radio"
+          aria-checked={mode === k}
+          aria-label={label}
+          title={`${label} - ${hint}`}
+          onClick={() => mode !== k && onPick(k)}
+          className={"relative flex size-[max(2.9rem,38px)] items-center justify-center rounded-full transition-colors duration-200 " + (mode === k ? "text-brand" : "text-ink-3 hover:text-ink")}
+        >
+          {icon}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 /** Referees named on our CVs: what the CV said (title at company, and when it was
  *  read), phone and email with copy, who named them, a CV we may hold under the same
