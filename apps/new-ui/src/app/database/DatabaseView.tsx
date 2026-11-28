@@ -472,14 +472,16 @@ export default function DatabaseView() {
     if (kind) setLook({ id: nid(), kind, real: 0 });
     petSay("working", "Looking through the database…");
     const search = async (q: string, mode: "natural" | "boolean", what = "", skip = "") => {
-      const currentIds = last.length ? last.map((p) => p.id) : undefined;
+      // The person open beside the chat goes first: "where is he based" is about them, and only the first 40 are sent.
+      const onScreen = [...new Set([...(picked ? [picked.id] : []), ...last.map((p) => p.id)])];
+      const currentIds = onScreen.length ? onScreen : undefined;
       const a = await searchLive({ q, mode, ...(currentIds ? { currentIds } : {}), ...(guide ? { guide } : {}) });
       if (!a.ok) return put({ text: a.message, warn: true, ran: keep });
       const ran = mode === "natural" ? q : undefined;
       const show = (x: LiveAnswer) => {
         const people = cardsOf(x, skip);
         put(
-          { text: foundLine(x, what, people.length), chips: chipsOf(x.chips), people, actions: liveNext(people), warn: !people.length && !x.reply, ran, ...(mode === "boolean" ? { boolean: q } : {}) },
+          { text: foundLine(x, what, people.length), chips: chipsOf(x.chips), people, actions: liveNext(people), warn: !people.length && !x.reply, ran, ...(x.reply && x.read ? { searched: x.read } : {}), ...(x.trail?.length ? { trail: x.trail } : {}), ...(mode === "boolean" ? { boolean: q } : {}) },
           { query: q, count: people.length },
         );
       };
@@ -1325,6 +1327,17 @@ function Answer({
         </p>
       </div>
       <div className="flex flex-col gap-[max(0.55rem,6px)] pl-[max(3.4rem,46px)] max-md:pl-0">
+        {t.searched && <p className="text-small text-ink-2">Searched: {t.searched}</p>}
+        {t.trail && t.trail.length > 0 && (
+          <details className="text-small text-ink-3">
+            <summary className="cursor-pointer select-none">How I searched</summary>
+            <ol className="mt-1 flex list-decimal flex-col gap-0.5 pl-5">
+              {t.trail.map((s, i) => (
+                <li key={i}>{s}</li>
+              ))}
+            </ol>
+          </details>
+        )}
         {t.boolean && (
           <code className="self-start rounded-sm bg-surface-2 px-2.5 py-1 font-mono text-mono text-ink-2">
             {t.boolean}
@@ -1538,8 +1551,10 @@ function Results({
         </div>
       )}
       <ul ref={list} className="divide-y divide-border overflow-hidden rounded-md border border-border bg-surface" aria-label="People found">
-        {shown.map((p) => {
+        {shown.map((p, i) => {
           const on = picked === p.id;
+          // People the search could not fully confirm come after the rest whatever their score: say so once, above the first.
+          const unsureStarts = !!p.unsure && !shown[i - 1]?.unsure;
           const career = p.career?.length
             ? p.career.slice(0, 3)
             : p.title || p.company
@@ -1555,6 +1570,11 @@ function Results({
 
           return (
             <li key={p.id} className="group relative">
+              {unsureStarts && (
+                <p className="border-b border-border bg-surface-2 px-5 py-1.5 text-caption text-ink-3">
+                  Not everything you asked is on file for the people below
+                </p>
+              )}
               <input
                 type="checkbox"
                 checked={ticked.includes(p.id)}

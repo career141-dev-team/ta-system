@@ -33,6 +33,10 @@ export type ChipAgentAnswer = {
   candidates: ChipAgentCandidate[];
   steps: number;
   ms: number;
+  /** 2 = the query agent (services/chip-search/agent2.ts): it filtered by its own query, so the caller must not filter again by its own rules. */
+  agent?: number;
+  /** Each query the agent ran, in its own plain words, with what it found. */
+  trail?: string[];
 };
 
 const URL_DEFAULT = "http://chip-search:3311/search";
@@ -66,8 +70,12 @@ export async function chipAgent(body: {
   turns: string[];
   currentIds?: string[];
   genders?: Record<string, "f" | "m">;
+  /** The names of the people on screen, by id, so a name in the message can be matched to them. */
+  names?: Record<string, string>;
   wantGender?: "female" | "male" | null;
   limit?: number | null;
+  /** Ask for the query agent (the service gives it in "test" mode only to calls that ask). */
+  v2?: boolean;
 }): Promise<ChipAgentAnswer | null> {
   if (process.env.C141_CHIP_SEARCH === "off" || process.env.C141_CHIP_AGENT === "off") return null;
   const a = await postJson<ChipAgentAnswer>("/agent", body);

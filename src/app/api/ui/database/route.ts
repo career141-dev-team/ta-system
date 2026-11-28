@@ -99,10 +99,16 @@ export async function POST(req: NextRequest) {
   // follow-up comparisons/refinements) and falls back cleanly to chipSearch below if unavailable.
   const fm = (g: unknown): "f" | "m" | null => (g === "female" || g === "f" ? "f" : g === "male" || g === "m" ? "m" : null);
   const knownGenders: Record<string, "f" | "m"> = {};
-  if (want && currentIds?.length) {
+  // 28 Nov 2026: "Manish Mittal where is his location" got "not found" with his CV open beside the
+  // chat. The cards hold no names, so the agent could not tell that the name was someone on screen.
+  // The names of the people on screen (only those) now go with the question.
+  const screenNames: Record<string, string> = {};
+  if (currentIds?.length) {
     await primeStore({ candidateIds: currentIds });
     for (const id of currentIds) {
-      const g = fm(String(repo.candidate(id)?.gender ?? "").toLowerCase());
+      const c = repo.candidate(id);
+      if (realName(c?.fullName)) screenNames[id] = c!.fullName!.trim().slice(0, 80);
+      const g = want ? fm(String(c?.gender ?? "").toLowerCase()) : null;
       if (g) knownGenders[id] = g;
     }
   }
@@ -110,8 +116,12 @@ export async function POST(req: NextRequest) {
     turns,
     currentIds,
     genders: knownGenders,
+    names: screenNames,
     wantGender: want,
     limit: askedLimit,
+    // 28 Nov 2026, the trial: the query agent has never met real people's prompts, so only an
+    // admin's chat asks for it. The service decides (off / test / on); for "on" this is not needed.
+    v2: user.role === "admin",
   });
   if (agentAns) {
     try {
@@ -120,7 +130,10 @@ export async function POST(req: NextRequest) {
       let found = agentAns.candidates
         .map((a) => ({ a, c: repo.candidate(a.id) }))
         .filter((x): x is { a: (typeof agentAns.candidates)[number]; c: NonNullable<typeof x.c> } => !!x.c && reachable(x.c));
-      if (want && found.length) {
+      // 28 Nov 2026: the query agent already filtered by what the whole chat asked ("male" after
+      // an earlier "female" means male). The word check here reads every message at once and
+      // would undo that, so it stays for the first agent only.
+      if (want && found.length && agentAns.agent !== 2) {
         const mine = want === "female" ? "f" : "m";
         const resolved = found.map((x) => fm(x.a.gender) ?? fm(String(x.c.gender ?? "").toLowerCase()));
         const askNames = found.map((x, i) => (resolved[i] ? "" : x.c.fullName ?? ""));
@@ -138,14 +151,19 @@ export async function POST(req: NextRequest) {
       }
       const named = (x: (typeof found)[number]) => realName(x.c.fullName);
       found = [...found.filter(named), ...found.filter((x) => !named(x))];
-      const rows = found.slice(0, cap).map(({ a, c }) => personOf(c, a.fit, a.reason));
+      // "unsure": the agent could not confirm everything asked for this person (something is not on
+      // file). They come after the confirmed people whatever their score, so the screen says why.
+      const rows = found.slice(0, cap).map(({ a, c }) => ({ ...personOf(c, a.fit, a.reason), ...(a.tier === "unconfirmed" ? { unsure: true } : {}) }));
+      // The chat shows plain text: a model's **bold** or `code` marks would show as symbols.
+      const plain = (s: string) => s.replace(/\*\*|__|`/g, "").trim();
       if (rows.length || agentAns.reply) {
         return answer(req, {
           ok: true,
           total: askedLimit ? rows.length : Math.max(rows.length, agentAns.total),
           rows,
           read: agentAns.read || null,
-          reply: agentAns.reply || null,
+          reply: agentAns.reply ? plain(agentAns.reply) : null,
+          trail: agentAns.trail?.length ? agentAns.trail.slice(0, 12) : undefined,
           chips: [],
           refining: false,
           problem: null,

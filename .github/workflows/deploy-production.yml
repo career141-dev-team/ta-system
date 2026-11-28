@@ -318,6 +318,13 @@ jobs:
           scp -q "/tmp/chip-search-$SHA.tgz" deploy-target:/tmp/
           ssh deploy-target "mkdir -p /opt/chip-search/code && tar -xzf /tmp/chip-search-$SHA.tgz -C /opt/chip-search/code && rm -f /tmp/chip-search-$SHA.tgz && sh /opt/chip-search/code/services/chip-search/start.sh"
 
+      # 28 Nov 2026: the query agent's names and CV text file. Written once here, when the server
+      # has none yet (a read-only export, no AI); after that the nightly job keeps it fresh.
+      - name: Names and CV text, first time
+        run: |
+          ssh deploy-target "[ -f /opt/chip-search/data/cvtext.jsonl ] || (nohup sh /opt/chip-search/code/services/chip-search/nightly.sh text > /opt/chip-search/text.log 2>&1 < /dev/null &)"
+          ssh deploy-target "tail -n 5 /opt/chip-search/text.log 2>/dev/null || true"
+
       - name: Chip-search health check
         run: |
           for i in $(seq 1 15); do

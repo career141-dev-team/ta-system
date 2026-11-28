@@ -18,8 +18,10 @@ export type LivePerson = {
   why: string;
   hasCv: boolean;
   career?: { period: string; title: string; company: string }[];
+  /** The search could not confirm everything asked for this person. */
+  unsure?: boolean;
 };
-export type LiveAnswer = { ok: true; total: number; rows: LivePerson[]; read: string | null; reply?: string | null; chips: string[]; refining: boolean; problem: string | null };
+export type LiveAnswer = { ok: true; total: number; rows: LivePerson[]; read: string | null; reply?: string | null; trail?: string[]; chips: string[]; refining: boolean; problem: string | null };
 
 /** What a live message asks for. */
 export type LiveAsk =
@@ -92,6 +94,7 @@ export function personOf(p: LivePerson, cv?: string): Person {
     why: [p.why, p.years != null ? `${p.years} yrs` : "", p.notice ? `notice ${p.notice}` : ""].filter(Boolean).join(" · "),
     ...(cv ? { cv } : {}),
     ...(p.career?.length ? { career: p.career } : {}),
+    ...(p.unsure ? { unsure: true } : {}),
   };
 }
 
