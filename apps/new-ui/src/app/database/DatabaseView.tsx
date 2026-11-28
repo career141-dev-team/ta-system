@@ -86,11 +86,13 @@ const liveNext = (people: Person[]) =>
         { label: "Download their CVs", prompt: "Download their CVs" },
       ]
     : [{ label: "Start over", prompt: "Start over" }];
-const foundLine = (a: LiveAnswer, what = "") =>
+// The line counts the people listed, never a bigger "matches" figure the list does not hold
+// (owner 28 Nov 2026: "843 match" over 45 rows confused the TAs).
+const foundLine = (a: LiveAnswer, what = "", shown = a.rows.length) =>
   a.reply?.trim()
     ? a.reply.trim()
-    : a.total
-      ? `${a.total} ${a.total === 1 ? "person matches" : "people match"}${what}${a.read ? ` - ${a.read}` : ""}.${a.problem ? ` ${a.problem}` : ""}`
+    : shown
+      ? `${shown} ${shown === 1 ? "person" : "people"} found${what}${a.read ? ` - ${a.read}` : ""}.${a.problem ? ` ${a.problem}` : ""}`
       : (a.problem ?? "Nothing in the database matched that search.");
 
 /** A past chat with no saved turns: its words and a button to run it again. */
@@ -421,13 +423,6 @@ export default function DatabaseView() {
       );
       setThinking(false);
       setLook(null);
-      // Download: hand each file to the browser.
-      for (const f of answer.files ?? []) {
-        const a = document.createElement("a");
-        a.href = f.url;
-        a.download = f.name;
-        a.click();
-      }
     }, LOOK_MS);
   };
 
@@ -473,8 +468,8 @@ export default function DatabaseView() {
       const show = (x: LiveAnswer) => {
         const people = cardsOf(x, skip);
         put(
-          { text: foundLine(x, what), chips: chipsOf(x.chips), people, actions: liveNext(people), warn: !x.total && !x.reply, ran, ...(mode === "boolean" ? { boolean: q } : {}) },
-          { query: q, count: x.total },
+          { text: foundLine(x, what, people.length), chips: chipsOf(x.chips), people, actions: liveNext(people), warn: !people.length && !x.reply, ran, ...(mode === "boolean" ? { boolean: q } : {}) },
+          { query: q, count: people.length },
         );
       };
       show(a);
@@ -492,12 +487,18 @@ export default function DatabaseView() {
         put({ text: "A live search is the words you said, so a filter cannot be taken off here. Say it the new way, or start over.", warn: true, ran: keep, actions: [{ label: "Start over", prompt: "Start over" }] });
       else if (ask.kind === "takeOut") put({ text: "Take them out on the opening's Pipeline. Nothing changed here.", warn: true, ran: keep });
       else if (ask.kind === "download") {
-        const who = whoIn(t, last).filter((p) => p.cv);
-        let saved = 0;
-        for (const p of who) if (await saveLiveFile(p.cv!, `${p.name} - CV.pdf`)) saved++;
+        // Buttons, not an automatic download (owner 28 Nov 2026): one per person, and "Download all".
+        const who = whoIn(t, last);
+        const files = filesOf(who);
+        const none = who.length - files.length;
         put({
-          text: !last.length ? "There is nobody on screen yet. Search first." : saved ? `Downloaded ${saved} CV${saved === 1 ? "" : "s"}.${saved < who.length ? ` ${who.length - saved} could not be fetched.` : ""}` : "None of them has a CV file to download.",
-          warn: !saved,
+          text: !last.length
+            ? "There is nobody on screen yet. Search first."
+            : files.length
+              ? `${files.length === 1 ? "Here is 1 CV" : `Here are ${files.length} CVs`}. Press to download.${none ? ` ${none} ${none === 1 ? "has" : "have"} no CV file on record.` : ""}`
+              : "None of them has a CV file to download.",
+          files,
+          warn: !files.length,
           ran: keep,
         });
       } else if (ask.kind === "add") {
@@ -596,6 +597,26 @@ export default function DatabaseView() {
     if (!q) return;
     queueMicrotask(() => sendRef.current(q, { fresh: true, as }));
   }, [live, liveSite]);
+  // One file after another (a browser drops a burst of downloads); signed in with the session.
+  // ponytail: separate PDFs, no zip - add a zip library if the team asks for one file.
+  const downloadCvs = async (files: CvFile[]) => {
+    if (!files.length) return;
+    petSay("working", `Downloading ${files.length} CV${files.length === 1 ? "" : "s"}…`);
+    let saved = 0;
+    for (const f of files) {
+      if (live) {
+        if (await saveLiveFile(f.url, f.name)) saved++;
+      } else {
+        const a = document.createElement("a");
+        a.href = f.url;
+        a.download = f.name;
+        a.click();
+        saved++;
+      }
+      await new Promise((r) => setTimeout(r, 350));
+    }
+    petSay(saved ? "done" : "failed", saved === files.length ? `Downloaded ${saved} CV${saved === 1 ? "" : "s"}.` : `Downloaded ${saved} of ${files.length}. The rest could not be fetched.`);
+  };
   const newSearch = () => {
     setOpenId("");
     setProjectId("");
@@ -800,6 +821,7 @@ export default function DatabaseView() {
                     onPick={pick}
                     onSend={send}
                     busy={thinking}
+                    onDownload={(f) => void downloadCvs(f)}
                   />
                 ),
               )
@@ -1226,6 +1248,7 @@ function Answer({
   onPick,
   onSend,
   busy,
+  onDownload,
 }: {
   t: Extract<Turn, { from: "aura" }>;
   latest: boolean;
@@ -1235,6 +1258,7 @@ function Answer({
   onPick: (p: Person) => void;
   onSend: (text: string) => void;
   busy: boolean;
+  onDownload: (files: CvFile[]) => void;
 }) {
   return (
     <div data-turn className="flex flex-col gap-[max(0.55rem,6px)]">
@@ -1326,8 +1350,10 @@ function Answer({
           </ul>
         )}
         {t.referees && t.referees.length > 0 && <RefereeList list={t.referees} onPick={onPick} />}
+        {t.files && t.files.length > 0 && <CvFiles files={t.files} onDownload={onDownload} />}
         {t.people && t.people.length > 0 && (
           <Results
+            onDownload={(ps) => onDownload(filesOf(ps))}
             people={t.people}
             open={open}
             picked={picked}
@@ -1341,6 +1367,40 @@ function Answer({
     </div>
   );
 }
+
+type CvFile = { name: string; url: string };
+/** The CV files of these people (those with a CV on record). */
+const filesOf = (ps: Person[]): CvFile[] => ps.filter((p) => p.cv).map((p) => ({ name: `${p.name} - CV.pdf`, url: p.cv! }));
+
+/** The CVs asked for in the chat: a button per person and "Download all" (owner 28 Nov 2026). */
+function CvFiles({ files, onDownload }: { files: CvFile[]; onDownload: (f: CvFile[]) => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {files.length > 1 && (
+        <button
+          type="button"
+          onClick={() => onDownload(files)}
+          className="flex h-[max(2.4rem,33px)] items-center gap-2 rounded-full bg-brand px-4 text-small font-medium text-white transition-colors hover:bg-brand-strong"
+        >
+          <DownloadIcon />
+          Download all {files.length}
+        </button>
+      )}
+      {files.map((f) => (
+        <button key={f.url} type="button" onClick={() => onDownload([f])} className={PILL}>
+          <DownloadIcon />
+          {f.name.replace(/ - CV\.pdf$/, "")}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const DownloadIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="size-4 shrink-0">
+    <path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14" />
+  </svg>
+);
 
 /** Circular fit-score ring matching the Opening's Database CVs rows. */
 function ScoreRing({ score }: { score: number }) {
@@ -1368,7 +1428,9 @@ function Results({
   onAll,
   onPick,
   onShortlist,
+  onDownload,
 }: {
+  onDownload: (people: Person[]) => void;
   people: Person[];
   open: boolean;
   picked?: string;
@@ -1379,6 +1441,11 @@ function Results({
 }) {
   const shown = open ? people : people.slice(0, 4);
   const compact = !!picked;
+  // Tick people, then download their CVs together (owner 28 Nov 2026).
+  const [ticked, setTicked] = useState<string[]>([]);
+  const withCv = people.filter((p) => p.cv);
+  const all = withCv.length > 0 && withCv.every((p) => ticked.includes(p.id));
+  const toggle = (id: string) => setTicked((t) => (t.includes(id) ? t.filter((x) => x !== id) : [...t, id]));
   // "See all" / "Show fewer" changes the list in place: the one switch, not a jump.
   const list = useRef<HTMLUListElement>(null);
   useSwap(list, open);
@@ -1391,6 +1458,23 @@ function Results({
   );
   return (
     <div className="flex flex-col gap-[max(0.6rem,6px)]">
+      {withCv.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 text-small">
+          <label className="flex items-center gap-2 text-ink-2">
+            <input type="checkbox" checked={all} onChange={() => setTicked(all ? [] : withCv.map((p) => p.id))} className="size-4 accent-[var(--color-brand)]" />
+            {all ? "Untick all" : `Tick all ${withCv.length}`}
+          </label>
+          <button
+            type="button"
+            disabled={!ticked.length || busy}
+            onClick={() => onDownload(people.filter((p) => ticked.includes(p.id)))}
+            className="ml-auto flex h-[max(2.4rem,33px)] items-center gap-2 rounded-full bg-brand px-4 text-small font-medium text-white transition-colors hover:bg-brand-strong disabled:opacity-40"
+          >
+            <DownloadIcon />
+            {ticked.length ? `Download ${ticked.length} CV${ticked.length === 1 ? "" : "s"}` : "Tick people to download CVs"}
+          </button>
+        </div>
+      )}
       <ul ref={list} className="divide-y divide-border overflow-hidden rounded-md border border-border bg-surface" aria-label="People found">
         {shown.map((p) => {
           const on = picked === p.id;
@@ -1409,6 +1493,15 @@ function Results({
 
           return (
             <li key={p.id} className="group relative">
+              <input
+                type="checkbox"
+                checked={ticked.includes(p.id)}
+                disabled={!p.cv}
+                onChange={() => toggle(p.id)}
+                aria-label={p.cv ? `Tick ${p.name}` : `${p.name} has no CV file on record`}
+                title={p.cv ? `Tick ${p.name} to download the CV` : "No CV file on record"}
+                className="absolute left-3 top-1/2 z-10 size-4 -translate-y-1/2 accent-[var(--color-brand)] disabled:opacity-30"
+              />
               <button
                 type="button"
                 data-card
@@ -1416,7 +1509,7 @@ function Results({
                 aria-current={on ? "true" : undefined}
                 title={p.cv ? "Open the CV" : "No CV file on record"}
                 className={
-                  "grid w-full items-center gap-x-[max(1rem,10px)] py-3.5 pl-5 pr-[max(8.5rem,104px)] text-left transition-colors " +
+                  "grid w-full items-center gap-x-[max(1rem,10px)] py-3.5 pl-10 pr-[max(8.5rem,104px)] text-left transition-colors " +
                   (compact
                     ? "grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] max-md:grid-cols-1"
                     : "grid-cols-[minmax(0,1.25fr)_minmax(0,0.38fr)_minmax(0,1.1fr)_minmax(0,0.95fr)] max-xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] max-xl:[&>:nth-child(2)]:hidden max-xl:[&>:nth-child(4)]:hidden max-md:grid-cols-1") +
