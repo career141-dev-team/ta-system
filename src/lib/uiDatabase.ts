@@ -43,6 +43,8 @@ export type UiPerson = {
   why: string;
   hasCv: boolean;
   career?: UiCareerRole[];
+  /** The agent could not confirm everything asked for this person: something is not on file. */
+  unsure?: boolean;
 };
 
 const noticeOf = (c: Candidate) =>

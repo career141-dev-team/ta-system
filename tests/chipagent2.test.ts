@@ -98,6 +98,19 @@ console.log("nobody outside the final query is shown, whatever the model says");
   ok("people on screen can be answered about; confirmed ones come first", r?.candidates.map((c) => `${c.id}:${c.tier}`).join() === "batti-f:confirmed,kandy-f:unconfirmed", JSON.stringify(r?.candidates));
   ok("the model is shown who is on screen", /ON SCREEN NOW \(2\)/.test(String(m.seen[0].messages[0].content)));
 }
+{
+  // The live fault (28 Nov): "Manish Mittal where is his location" answered "not found" with his CV open beside the chat.
+  let card: any;
+  const m = scripted([
+    () => ({ content: [tool("read_people", { ids: ["batti-f"] })] }),
+    (msgs) => { card = lastResult(msgs); return { content: [tool("finish", { reply: "She is in Batticaloa.", searched: "Nimali Perera", candidates: [{ id: "batti-f", fit: 90, reason: "the person asked about" }] })] }; },
+  ]);
+  const r = await createQueryAgent(cards, direct, "", m.call)({ turns: ["accountants", "Nimali Perera where is her location"], currentIds: ["batti-f", "kandy-f"], names: { "batti-f": "Nimali Perera" } });
+  const first = String(m.seen[0].messages[0].content);
+  ok("a name on screen is shown to the model beside that person", /#1 \[batti-f\] Nimali Perera - Accountant/.test(first) && /#2 \[kandy-f\] Accountant/.test(first), first.slice(-300));
+  ok("so a question about a named person is answered from their card", card.people?.[0]?.place === "Batticaloa" && r?.candidates[0]?.id === "batti-f");
+  ok("the model is told the tables hold no names", /hold no names/.test(m.seen[0].system));
+}
 
 console.log("honest when it goes wrong");
 {

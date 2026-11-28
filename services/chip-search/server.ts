@@ -375,20 +375,22 @@ const server = http.createServer(async (req, res) => {
       if (process.env.C141_CHIP_AGENT === "off") return send(res, 503, { ok: false, message: "Agent disabled." });
       const currentIds = Array.isArray(body.currentIds) ? body.currentIds.map(String).filter(Boolean).slice(0, 40) : [];
       const genders = body.genders && typeof body.genders === "object" ? body.genders : {};
+      const names: Record<string, string> = {};
+      if (body.names && typeof body.names === "object") for (const id of currentIds) if (typeof body.names[id] === "string") names[id] = body.names[id].slice(0, 80);
       const wantGender = body.wantGender === "female" || body.wantGender === "male" ? body.wantGender : null;
       const limit = Number.isFinite(Number(body.limit)) && Number(body.limit) > 0 ? Math.min(60, Math.round(Number(body.limit))) : null;
       // The query agent when it is switched on; if it cannot answer, the first agent does, so the chat is never worse off.
       const v2 = !!agent2 && (AGENT2_MODE === "on" || (AGENT2_MODE === "test" && body.v2 === true));
-      const cacheKey = JSON.stringify({ turns, currentIds, wantGender, limit, g: Object.keys(genders).length, v2 });
+      const cacheKey = JSON.stringify({ turns, currentIds, wantGender, limit, g: Object.keys(genders).length, n: Object.keys(names).length, v2 });
       const cached = agentCache.get(cacheKey);
       if (cached && Date.now() - cached.at < AGENT_CACHE_MS) return send(res, 200, cached.r);
       const before = lastSearch.get(turns.slice(0, -1).join("\n"));
-      const r2 = v2 ? await agent2!({ turns, currentIds, genders, limit, last: before && Date.now() - before.at < LAST_MS ? before.last : null }) : null;
+      const r2 = v2 ? await agent2!({ turns, currentIds, genders, names, limit, last: before && Date.now() - before.at < LAST_MS ? before.last : null }) : null;
       if (r2?.last) {
         if (lastSearch.size > 500) lastSearch.clear();
         lastSearch.set(key, { at: Date.now(), last: r2.last });
       }
-      const r = r2 ?? (await agent({ turns, currentIds, genders, wantGender, limit }));
+      const r = r2 ?? (await agent({ turns, currentIds, genders, names, wantGender, limit }));
       if (!r) return send(res, 502, { ok: false, message: "Agent could not answer." });
       if (agentCache.size > 100) agentCache.clear();
       agentCache.set(cacheKey, { at: Date.now(), r });

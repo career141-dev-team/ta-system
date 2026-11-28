@@ -48,6 +48,8 @@ export type AgentInput = {
   turns: string[];
   currentIds?: string[];
   genders?: Record<string, "f" | "m">;
+  /** Names of the people on screen, by id (the cards hold none), so "where is Manish based" finds the person. */
+  names?: Record<string, string>;
   wantGender?: "female" | "male" | null;
   limit?: number | null;
 };
@@ -224,7 +226,7 @@ export function createAgent(cards: any[], search: ReturnType<typeof createSearch
             .map((id, i) => {
               const c = byId.get(id);
               const s = summaryOf(c, genders);
-              return `#${i + 1} [${id}] ${s.title} @ ${s.company} | ${s.place ?? "?"} | ${s.years ?? "?"} yrs | ${s.gender} | quals: ${s.quals.join(", ") || "-"}`;
+              return `#${i + 1} [${id}] ${input.names?.[id] ? `${input.names[id]} - ` : ""}${s.title} @ ${s.company} | ${s.place ?? "?"} | ${s.years ?? "?"} yrs | ${s.gender} | quals: ${s.quals.join(", ") || "-"}`;
             })
             .join("\n"),
       );

@@ -45,7 +45,8 @@ How to work:
 - Before you answer with people, read their cards with read_people and judge each against the request. Leave out anyone who does not fit. When what was asked is in no column, search the CV text if the tables list it, and read the CV before you rely on a match.
 - A question that needs a number or a comparison, not a list, is answered in reply with no candidates.
 - Finish with the finish tool. final_sql is one SELECT returning the id of every person who meets everything that was asked; only people it returns can be shown. searched says in plain words what you searched, for the recruiter to check.
-- Never mention SQL, tables or columns to the recruiter. Write the reply as one colleague to another, short.`;
+- The tables hold no names. A person named in a message is one of the people on screen when the name matches one listed there: answer about that person from their card. If the name is not among them, say you can only look people up by name from the list on screen, and ask them to open the person or search by title and employer.
+- Never mention SQL, tables or columns to the recruiter. Write the reply as one colleague to another, short, in plain text with no markdown.`;
 
 const TOOLS = [
   {
@@ -130,7 +131,7 @@ export function createQueryAgent(cards: any[], query: Query, tables: string, cal
     if (current.length) {
       parts.push(`ON SCREEN NOW (${current.length}):\n${current.map((id, i) => {
         const c = cardOf(byId.get(id), genders);
-        return `#${i + 1} [${id}] ${c.title} @ ${c.jobs[0]?.company ?? "-"} | ${c.place ?? "place not on file"} | ${c.years ?? "?"} yrs | ${c.gender}`;
+        return `#${i + 1} [${id}] ${input.names?.[id] ? `${input.names[id]} - ` : ""}${c.title} @ ${c.jobs[0]?.company ?? "-"} | ${c.place ?? "place not on file"} | ${c.years ?? "?"} yrs | ${c.gender}`;
       }).join("\n")}`);
     }
     if (input.last?.sql) parts.push(`YOUR LAST SEARCH IN THIS CHAT, before the newest message: ${input.last.searched}\nIts query: ${input.last.sql}\nIf the newest message narrows or changes that search, start from this query.`);

@@ -424,7 +424,9 @@ export default function DatabaseView() {
     if (kind) setLook({ id: nid(), kind, real: 0 });
     petSay("working", "Looking through the database…");
     const search = async (q: string, mode: "natural" | "boolean", what = "", skip = "") => {
-      const currentIds = last.length ? last.map((p) => p.id) : undefined;
+      // The person open beside the chat goes first: "where is he based" is about them, and only the first 40 are sent.
+      const onScreen = [...new Set([...(picked ? [picked.id] : []), ...last.map((p) => p.id)])];
+      const currentIds = onScreen.length ? onScreen : undefined;
       const a = await searchLive({ q, mode, ...(currentIds ? { currentIds } : {}) });
       if (!a.ok) return put({ text: a.message, warn: true, ran: keep });
       const ran = mode === "natural" ? q : undefined;
@@ -1085,8 +1087,10 @@ function Results({
   return (
     <div className="flex flex-col gap-[max(0.6rem,6px)]">
       <ul className="overflow-hidden rounded-lg border border-border bg-surface divide-y divide-border" aria-label="People found">
-        {shown.map((p) => {
+        {shown.map((p, i) => {
           const on = picked === p.id;
+          // People the search could not fully confirm come after the rest whatever their score: say so once, above the first.
+          const unsureStarts = !!p.unsure && !shown[i - 1]?.unsure;
           const career = p.career?.length
             ? p.career.slice(0, 3)
             : p.title || p.company
@@ -1102,6 +1106,11 @@ function Results({
 
           return (
             <li key={p.id} className="group relative">
+              {unsureStarts && (
+                <p className="border-b border-border bg-surface-2 px-5 py-1.5 text-caption text-ink-3">
+                  Not everything you asked is on file for the people below
+                </p>
+              )}
               <button
                 type="button"
                 data-card

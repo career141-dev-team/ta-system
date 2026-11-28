@@ -28,6 +28,8 @@ export type Person = {
   why?: string;
   /** Roles, newest first, for the Database CVs rows (sample; the backend gives the real ones). */
   career?: { period: string; title: string; company: string }[];
+  /** The search could not confirm everything asked for this person (something is not on file). */
+  unsure?: boolean;
 };
 
 export const POOL: Person[] = [

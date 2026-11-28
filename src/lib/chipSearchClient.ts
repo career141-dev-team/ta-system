@@ -70,6 +70,8 @@ export async function chipAgent(body: {
   turns: string[];
   currentIds?: string[];
   genders?: Record<string, "f" | "m">;
+  /** The names of the people on screen, by id, so a name in the message can be matched to them. */
+  names?: Record<string, string>;
   wantGender?: "female" | "male" | null;
   limit?: number | null;
 }): Promise<ChipAgentAnswer | null> {
