@@ -121,6 +121,10 @@ export type Read = {
   priority: Priority;
   team: string[];
   musts: string;
+  /** 28 Nov 2026 (owner): nice-to-haves, the salary / package, and details of the opening's own (label: value). */
+  nice: string;
+  salary: string;
+  extra: { label: string; value: string }[];
   hiringFor: string;
   gender: string;
   autoFollowUp: boolean;
@@ -139,6 +143,9 @@ export const EMPTY: Read = {
   priority: 3,
   team: [],
   musts: "",
+  nice: "",
+  salary: "",
+  extra: [],
   // The TA System's default is a local hire.
   hiringFor: "Local",
   gender: "Any",

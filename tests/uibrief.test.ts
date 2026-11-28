@@ -62,6 +62,13 @@ eq("a correction shows the fields so far and the sentence", turn2.includes("CURR
 
 // ── The action: signed in first, the allowance, the ledger, a time limit ──
 const src = fs.readFileSync("convex/ui/brief.ts", "utf8");
+// 28 Nov 2026: nice-to-haves, the salary and other details come back in their own fields.
+const more = cleanBrief({ role: "Accountant", nice: "SAP · Tamil", salary: "LKR 300,000", extra: [{ label: "Reports to", value: "CFO" }, { label: "", value: "dropped" }, { label: "Days", value: "" }] }, CLIENTS, TEAM, "Accountant");
+eq("nice-to-haves are their own field", more?.fields.nice, "SAP · Tamil");
+eq("the salary is its own field", more?.fields.salary, "LKR 300,000");
+eq("extra details keep only full label/value pairs", more?.fields.extra, [{ label: "Reports to", value: "CFO" }]);
+eq("the new fields are marked as read", ["nice", "salary", "extra"].every((k) => more?.read.includes(k)), true);
+eq("a failed Haiku read falls back to DeepSeek", src.includes("getOpenRouterClient(TIMEOUT_MS)") && src.includes("openRouterKeyPresent()"), true);
 eq("asks ui/me:whoAmI before anything", src.indexOf("api.ui.me.whoAmI") < src.indexOf("getAnthropicClient(TIMEOUT"), true);
 eq("stops at the desk's daily AI allowance", src.includes("AI_DAY_LIMIT_USD"), true);
 eq("every call is in the ledger as 'brief'", src.includes('feature: "brief"'), true);

@@ -16,7 +16,7 @@ import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-import { anthropicOn, getAnthropicClient } from "../lib/llm";
+import { anthropicOn, DEEPSEEK_MODEL, getAnthropicClient, getOpenRouterClient, openRouterKeyPresent } from "../lib/llm";
 import { jsonIn } from "../lib/claudeFirst";
 import { colomboDayStart } from "../../src/lib/calendar";
 import { AI_DAY_LIMIT_USD, costOf } from "./auraRules";
@@ -37,6 +37,9 @@ const fields = v.object({
   musts: v.string(),
   hiringFor: v.union(v.literal("Local"), v.literal("Expat")),
   gender: v.union(v.literal("Any"), v.literal("Female"), v.literal("Male")),
+  nice: v.optional(v.string()),
+  salary: v.optional(v.string()),
+  extra: v.optional(v.array(v.object({ label: v.string(), value: v.string() }))),
 });
 
 export const read = action({
@@ -53,7 +56,7 @@ export const read = action({
     if (!text && !said) return refused("Paste the job description or tell AURA about the role.");
     const me = (await ctx.runQuery(api.ui.me.whoAmI, {})) as { ok: true; id: string } | { ok: false; message: string };
     if (!me.ok) return refused(me.message);
-    if (!anthropicOn()) return refused("AURA's AI is not switched on yet. Ask your admin to add the Anthropic key.");
+    if (!anthropicOn() && !openRouterKeyPresent()) return refused("AURA's AI is not switched on yet. Ask your admin to add the Anthropic key.");
     const now = Date.now();
     const day = colomboDayStart(now);
     const spent = (await ctx.runQuery(internal.ui.auraLedger.spentToday, { day })) as number;
@@ -66,16 +69,31 @@ export const read = action({
     const log = (i: number, o: number, ok: boolean, error?: string) =>
       ctx.runMutation(internal.ui.auraLedger.record, { userId, feature: "brief", day, inputTokens: i, outputTokens: o, costUsd: costOf(i, o), ok, ...(error ? { error: error.slice(0, 300) } : {}) });
 
-    try {
-      const res = await getAnthropicClient(TIMEOUT_MS).chat.completions.create({
-        model: "claude-haiku-5-5",
-        max_tokens: 800,
+    const messages = [
+      { role: "system" as const, content: correcting ? `${BRIEF_SYSTEM}\n\n${CHANGE_NOTE}` : BRIEF_SYSTEM },
+      { role: "user" as const, content: briefTurn({ text, clients, team, current: correcting ? args.current : undefined, said: correcting ? said : undefined }) },
+    ];
+    // 28 Nov 2026: Claude Haiku first; when it fails (the Anthropic account out of credit gave
+    // "AURA could not read it just now" on every brief), OpenRouter DeepSeek reads it instead,
+    // as the rest of the app's AI does since #111/#112.
+    const call = (anthropic: boolean) =>
+      (anthropic ? getAnthropicClient(TIMEOUT_MS) : getOpenRouterClient(TIMEOUT_MS)).chat.completions.create({
+        model: anthropic ? "claude-haiku-5-5" : DEEPSEEK_MODEL,
+        max_tokens: 1200,
         response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: correcting ? `${BRIEF_SYSTEM}\n\n${CHANGE_NOTE}` : BRIEF_SYSTEM },
-          { role: "user", content: briefTurn({ text, clients, team, current: correcting ? args.current : undefined, said: correcting ? said : undefined }) },
-        ],
+        messages,
       });
+
+    try {
+      let res;
+      try {
+        if (!anthropicOn()) throw new Error("no Anthropic key");
+        res = await call(true);
+      } catch (first) {
+        if (!openRouterKeyPresent()) throw first;
+        console.warn(`[ui/brief] Haiku failed, trying DeepSeek: ${first instanceof Error ? first.message : String(first)}`);
+        res = await call(false);
+      }
       const used = res.usage ?? { prompt_tokens: 0, completion_tokens: 0 };
       const got = cleanBrief(jsonIn(res.choices[0]?.message?.content ?? ""), clients, team, `${text}
 ${said ?? ""}`, correcting ? args.current : undefined);

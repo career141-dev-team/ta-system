@@ -23,6 +23,10 @@ export type BriefFields = {
   musts: string;
   hiringFor: "Local" | "Expat";
   gender: "Any" | "Female" | "Male";
+  /** 28 Nov 2026 (owner): nice-to-haves, the salary / package, and any other detail the JD states as label/value. */
+  nice?: string;
+  salary?: string;
+  extra?: { label: string; value: string }[];
 };
 export type BriefAnswer = { fields: BriefFields; read: string[]; reply: string };
 
@@ -33,13 +37,16 @@ Fields:
 - "locations": [{"city","people"}] - the cities where the people will work and how many in each; people defaults to 1. Not countries.
 - "priority": 1-5 only if the words say P1-P5 or a deadline (2 weeks=1, 3 weeks=2, 1 month=3, 6 weeks=4, 2 months=5); else null.
 - "team": recruiters to put on it, only names from TEAM that the words ask for.
-- "musts": the must-haves in one short line separated by " · " (experience years as written, e.g. "1–3 years", key skills, qualifications, salary as written with its currency). Leave out nice-to-haves.
+- "musts": the must-haves in one short line separated by " · " (experience years as written, e.g. "1–3 years", key skills, qualifications). Leave out nice-to-haves and the salary.
+- "nice": the nice-to-haves (preferred, an advantage, a plus) in one short line separated by " · "; "" when none.
+- "salary": the salary or package as written with its currency, e.g. "LKR 300,000–400,000 + vehicle"; "" when not said.
+- "extra": up to 8 other details the words state that fit no field above, as [{"label","value"}] with short labels, e.g. Reports to, Working days, Languages, Education, Benefits, Start date. [] when none.
 - "hiringFor": "Expat" only if the words ask for a foreigner/expat, else "Local".
 - "gender": "Female" or "Male" only if the words ask for one, else "Any".
 - "reply": one short plain sentence to the recruiter saying what you filled or changed, and what is still missing.
 Never invent anything the words do not say. Answer JSON only.`;
 
-export const CHANGE_NOTE = `The recruiter is correcting the fields you filled. CURRENT holds them. Apply only what the new sentence asks, keep every other field as it is, and answer the whole set of fields.`;
+export const CHANGE_NOTE = `The recruiter is correcting the fields you filled. CURRENT holds them. Apply only what the new sentence asks, keep every other field as it is, and answer the whole set of fields. The recruiter may add a field of their own, rename one, change its value or take it off: "extra" is the whole list after the change (keep the others exactly). Taking off nice-to-haves or the salary is "".`;
 
 const clip = (s: string, n: number) => s.slice(0, n);
 
@@ -130,6 +137,19 @@ export function cleanBrief(raw: unknown, clients: string[], team: string[], word
   if (typeof r.musts === "string" && musts !== base.musts) (out.musts = musts), took("musts");
   if (r.hiringFor === "Expat" || r.hiringFor === "Local") out.hiringFor = r.hiringFor;
   if (r.gender === "Female" || r.gender === "Male" || r.gender === "Any") out.gender = r.gender;
+
+  const nice = str(r.nice, 400);
+  if (typeof r.nice === "string" && nice !== (base.nice ?? "")) (out.nice = nice), took("nice");
+  const salary = str(r.salary, 160);
+  if (typeof r.salary === "string" && salary !== (base.salary ?? "")) (out.salary = salary), took("salary");
+  if (Array.isArray(r.extra)) {
+    const extra = r.extra
+      .map((e) => (e && typeof e === "object" ? (e as Record<string, unknown>) : null))
+      .map((e) => ({ label: str(e?.label, 40), value: str(e?.value, 200) }))
+      .filter((e) => e.label && e.value)
+      .slice(0, 8);
+    if (JSON.stringify(extra) !== JSON.stringify(base.extra ?? [])) (out.extra = extra), took("extra");
+  }
 
   const reply = str(r.reply, 300) || (read.length ? "Filled what the brief says - check it before you create." : "Nothing changed.");
   return { fields: out, read, reply };

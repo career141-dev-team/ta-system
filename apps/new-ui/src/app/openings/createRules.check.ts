@@ -23,4 +23,7 @@ const g = createFields({ role: "X", client: "", locations: [], team: [], musts: 
 assert.equal(g.targetGender, "Female");
 assert.equal("workLocations" in g, false);
 assert.equal("autoFollowUp" in g, false);
+// 28 Nov 2026: nice-to-haves, the salary and the opening's own details go into the notes.
+const h = createFields({ role: "X", client: "", locations: [], team: [], musts: "", hiringFor: "Local", gender: "Any", autoFollowUp: false, nice: "SAP", salary: "LKR 300k", extra: [{ label: "Reports to", value: "CFO" }, { label: "Empty", value: " " }] }, "", "c2", tas);
+assert.ok(h.notes.includes("Nice to have: SAP") && h.notes.includes("Salary / package: LKR 300k") && h.notes.includes("Reports to: CFO") && !h.notes.includes("Empty"));
 console.log("createRules: all checks passed");
