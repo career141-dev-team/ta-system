@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import Image from "next/image";
-import { gsap, motionOK, swapIn, useGSAP } from "@/lib/gsap";
+import { gsap, motionOK, swapIn, useGSAP, useSwap } from "@/lib/gsap";
 import { useWorkdayGate } from "@/lib/workday";
 import { useLiftMenu } from "../openings/[id]/liftMenu";
 import { jdText } from "../openings/[id]/jdState";
@@ -20,9 +20,10 @@ import {
   type Reply,
 } from "./aura";
 import { POOL, filterReply, panelOf } from "./aura";
-import FilterBar from "./FilterBar";
+import FilterBar, { PILL } from "./FilterBar";
 import { petSay } from "@/lib/pet";
-import { candidateCall, cvHeaders, cvUrl, door, OLD_SERVER, queryOnce, saveLiveFile, useDoorMutation, useDoorQuery, useLive } from "@/lib/backend";
+import { zip } from "@/lib/zip";
+import { candidateCall, cvHeaders, cvUrl, door, OLD_SERVER, queryOnce, useDoorMutation, useDoorQuery, useLive } from "@/lib/backend";
 import { useSignedInPerson } from "@/lib/role";
 import { useSpeech } from "@/lib/useSpeech";
 import type { MyDay } from "@/lib/askAura";
@@ -62,13 +63,17 @@ type Thread = {
   saved?: boolean;
   /** Which history list it sits in (owner 28 Nov 2026: Candidates and Referees keep separate lists). */
   mode?: Mode;
+  /** The project it sits in (owner 28 Nov 2026, like ChatGPT Projects). */
+  projectId?: string;
 };
+/** A folder of chats for one position, with guidelines every search in it keeps. */
+type Project = { id: string; name: string; guide: string };
 
 // Signed in, the chat searches the real database through old AURA's own search
 // (ta-system #42, /api/ui/database): the engine and the desk rules.
 const DB_URL = `${OLD_SERVER}/api/ui/database`;
 const NO_LINE = "Could not reach the TA System. Check your connection and try again.";
-async function searchLive(body: { q: string; mode: "natural" | "boolean"; full?: boolean; currentIds?: string[] }): Promise<LiveAnswer | { ok: false; message: string }> {
+async function searchLive(body: { q: string; mode: "natural" | "boolean"; full?: boolean; currentIds?: string[]; guide?: string }): Promise<LiveAnswer | { ok: false; message: string }> {
   const res = await fetch(DB_URL, { method: "POST", headers: { "Content-Type": "application/json", ...(await cvHeaders(DB_URL)) }, body: JSON.stringify(body) }).catch(() => null);
   const got = (await res?.json().catch(() => null)) as (LiveAnswer | { ok: false; message: string }) | null;
   return got ?? { ok: false, message: NO_LINE };
@@ -82,11 +87,13 @@ const liveNext = (people: Person[]) =>
         { label: "Download their CVs", prompt: "Download their CVs" },
       ]
     : [{ label: "Start over", prompt: "Start over" }];
-const foundLine = (a: LiveAnswer, what = "") =>
+// The line counts the people listed, never a bigger "matches" figure the list does not hold
+// (owner 28 Nov 2026: "843 match" over 45 rows confused the TAs).
+const foundLine = (a: LiveAnswer, what = "", shown = a.rows.length) =>
   a.reply?.trim()
     ? a.reply.trim()
-    : a.total
-      ? `${a.total} ${a.total === 1 ? "person matches" : "people match"}${what}${a.read ? ` - ${a.read}` : ""}.${a.problem ? ` ${a.problem}` : ""}`
+    : shown
+      ? `${shown} ${shown === 1 ? "person" : "people"} found${what}${a.read ? ` - ${a.read}` : ""}.${a.problem ? ` ${a.problem}` : ""}`
       : (a.problem ?? "Nothing in the database matched that search.");
 
 /** A past chat with no saved turns: its words and a button to run it again. */
@@ -218,7 +225,7 @@ export default function DatabaseView() {
   const [threads, setThreads] = useState<typeof START>(liveSite ? [] : START);
   const [openId, setOpenId] = useState(liveSite ? "" : "sap");
   const recent = useDoorQuery(door.searchRecent, live ? {} : "skip") as
-    | { ok: true; searches: { id: string; chatId?: string | null; title?: string | null; query: string; count: number; at: number; saved?: boolean }[] }
+    | { ok: true; searches: { id: string; chatId?: string | null; title?: string | null; query: string; count: number; at: number; saved?: boolean; projectId?: string | null }[] }
     | { ok: false }
     | undefined;
   const day = useDoorQuery(door.myDay, live ? {} : "skip") as ({ ok: true } & MyDay) | { ok: false } | undefined;
@@ -261,6 +268,7 @@ export default function DatabaseView() {
               turns,
               q: r.query,
               ...(r.saved ? { saved: true } : {}),
+              ...(r.projectId ? { projectId: r.projectId } : {}),
             };
           })
           .filter((t) => !existingIds.has(t.id));
@@ -270,6 +278,41 @@ export default function DatabaseView() {
     });
   }, [live, recent, personKey]);
   const removeChat = useDoorMutation(door.searchRemove);
+  // Projects (owner 28 Nov 2026, like ChatGPT Projects): signed in they are the person's own, kept in
+  // the backend; signed out a few made-up ones live only on this screen.
+  const liveProjects = useDoorQuery(door.searchProjects, live ? {} : "skip") as { ok: true; projects: Project[] } | { ok: false } | undefined;
+  const [localProjects, setLocalProjects] = useState<Project[]>([]);
+  const projects = live ? (liveProjects?.ok ? liveProjects.projects : []) : localProjects;
+  const saveProjectDoor = useDoorMutation(door.searchSaveProject);
+  const removeProjectDoor = useDoorMutation(door.searchRemoveProject);
+  const moveChatDoor = useDoorMutation(door.searchMoveChat);
+  // The project page is open (no chat): its guidelines and its chats.
+  const [projectId, setProjectId] = useState("");
+  const saveProject = async (p: { id?: string; name: string; guide?: string }): Promise<string | null> => {
+    if (!live) {
+      const id = p.id ?? `p_${Date.now().toString(36)}`;
+      setLocalProjects((all) => (p.id ? all.map((x) => (x.id === p.id ? { ...x, name: p.name, guide: p.guide ?? x.guide } : x)) : [{ id, name: p.name, guide: p.guide ?? "" }, ...all]));
+      return id;
+    }
+    const r = (await saveProjectDoor(p)) as { ok: boolean; id?: string; message?: string };
+    if (!r?.ok) {
+      petSay("failed", r?.message ?? "Could not save the project.");
+      return null;
+    }
+    return r.id ?? null;
+  };
+  const removeProject = async (id: string) => {
+    setThreads((all) => all.map((x) => (x.projectId === id ? { ...x, projectId: undefined } : x)));
+    setProjectId("");
+    if (!live) setLocalProjects((all) => all.filter((x) => x.id !== id));
+    else await removeProjectDoor({ id });
+  };
+  const moveChat = async (chatId: string, to: string | null) => {
+    setThreads((all) => all.map((x) => (x.id === chatId ? { ...x, projectId: to ?? undefined } : x)));
+    if (!live) return;
+    const r = (await moveChatDoor({ chatId, ...(to ? { projectId: to } : {}) })) as { ok: boolean; message?: string };
+    if (!r?.ok) petSay("failed", r?.message ?? "Could not move the chat.");
+  };
   const [mode, setMode] = useState<Mode>("people");
   const [thinking, setThinking] = useState(false);
   const [look, setLook] = useState<Look | null>(null);
@@ -285,6 +328,16 @@ export default function DatabaseView() {
   };
   const chats = !picked || chatsOpen;
   const thread = threads.find((t) => t.id === openId) ?? null;
+  // 28 Nov (TA feedback): referees ticked in one search stay ticked when the next
+  // search runs in the same chat, so one export holds them all instead of a file
+  // per search. Kept per chat; every referee shown in the chat can be picked.
+  const [refTicks, setRefTicks] = useState<Record<string, string[]>>({});
+  const tickKey = openId ?? "";
+  const basket = {
+    ids: refTicks[tickKey] ?? [],
+    set: (f: (ids: string[]) => string[]) => setRefTicks((all) => ({ ...all, [tickKey]: f(all[tickKey] ?? []) })),
+    all: [...new Map((thread?.turns ?? []).flatMap((t) => (t.from === "aura" ? t.referees ?? [] : [])).map((r) => [r.id, r])).values()],
+  };
   const scroller = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLTextAreaElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -331,14 +384,15 @@ export default function DatabaseView() {
       id = newChatId(mode_);
       turns = [];
       setThreads((all) => [
-        { id, title: titleOf(t), when: "today", turns: [], q: t, mode: mode_ },
+        { id, title: titleOf(t), when: "today", turns: [], q: t, mode: mode_, ...(projectId ? { projectId } : {}) },
         ...all,
       ]);
       setOpenId(id);
     }
+    const inProject = cur ? cur.projectId : projectId || undefined;
     if (live && mode_ === "people") {
       setThreads((all) => all.map((x) => (x.id === id ? { ...x, turns: [...x.turns, { id: nid(), from: "me", text: t }] } : x)));
-      void answerLive(id, t, turns);
+      void answerLive(id, t, turns, projects.find((p) => p.id === inProject)?.guide ?? "");
       return;
     }
     const { chips, last } = contextOf(turns);
@@ -380,20 +434,13 @@ export default function DatabaseView() {
       );
       setThinking(false);
       setLook(null);
-      // Download: hand each file to the browser.
-      for (const f of answer.files ?? []) {
-        const a = document.createElement("a");
-        a.href = f.url;
-        a.download = f.name;
-        a.click();
-      }
     }, LOOK_MS);
   };
 
   // One message on the real database. Searches go to old AURA's own search; adding to
   // a job is the Database shortlist (shortlistMatch, ta-system #30); CVs come with the
   // person's session. Each search is kept (ui/searches:record) for "searches today".
-  const answerLive = async (id: string, t: string, turns: Turn[]) => {
+  const answerLive = async (id: string, t: string, turns: Turn[], guide = "") => {
     const lastRan = [...turns].reverse().find((x) => x.from === "aura") as Extract<Turn, { from: "aura" }> | undefined;
     const { last } = contextOf(turns);
     const ask = readLive(t, lastRan?.ran ?? "");
@@ -412,6 +459,7 @@ export default function DatabaseView() {
               query: nextQ,
               count: persist.count,
               turnsJson: serializeTurns(nextTurns),
+              ...(x.projectId ? { projectId: x.projectId } : {}),
             });
           }
           return { ...x, q: nextQ, turns: nextTurns };
@@ -427,14 +475,14 @@ export default function DatabaseView() {
       // The person open beside the chat goes first: "where is he based" is about them, and only the first 40 are sent.
       const onScreen = [...new Set([...(picked ? [picked.id] : []), ...last.map((p) => p.id)])];
       const currentIds = onScreen.length ? onScreen : undefined;
-      const a = await searchLive({ q, mode, ...(currentIds ? { currentIds } : {}) });
+      const a = await searchLive({ q, mode, ...(currentIds ? { currentIds } : {}), ...(guide ? { guide } : {}) });
       if (!a.ok) return put({ text: a.message, warn: true, ran: keep });
       const ran = mode === "natural" ? q : undefined;
       const show = (x: LiveAnswer) => {
         const people = cardsOf(x, skip);
         put(
-          { text: foundLine(x, what), chips: chipsOf(x.chips), people, actions: liveNext(people), warn: !x.total && !x.reply, ran, ...(x.reply && x.read ? { searched: x.read } : {}), ...(x.trail?.length ? { trail: x.trail } : {}), ...(mode === "boolean" ? { boolean: q } : {}) },
-          { query: q, count: x.total },
+          { text: foundLine(x, what, people.length), chips: chipsOf(x.chips), people, actions: liveNext(people), warn: !people.length && !x.reply, ran, ...(x.reply && x.read ? { searched: x.read } : {}), ...(x.trail?.length ? { trail: x.trail } : {}), ...(mode === "boolean" ? { boolean: q } : {}) },
+          { query: q, count: people.length },
         );
       };
       show(a);
@@ -443,7 +491,7 @@ export default function DatabaseView() {
       // and the steps (one line now, under the quick list) say so.
       setThinking(false);
       setLook((l) => l && { ...l, real: 3 });
-      const full = await searchLive({ q, mode, full: true, ...(currentIds ? { currentIds } : {}) });
+      const full = await searchLive({ q, mode, full: true, ...(currentIds ? { currentIds } : {}), ...(guide ? { guide } : {}) });
       if (full.ok) show(full);
     };
     try {
@@ -452,12 +500,18 @@ export default function DatabaseView() {
         put({ text: "A live search is the words you said, so a filter cannot be taken off here. Say it the new way, or start over.", warn: true, ran: keep, actions: [{ label: "Start over", prompt: "Start over" }] });
       else if (ask.kind === "takeOut") put({ text: "Take them out on the opening's Pipeline. Nothing changed here.", warn: true, ran: keep });
       else if (ask.kind === "download") {
-        const who = whoIn(t, last).filter((p) => p.cv);
-        let saved = 0;
-        for (const p of who) if (await saveLiveFile(p.cv!, `${p.name} - CV.pdf`)) saved++;
+        // Buttons, not an automatic download (owner 28 Nov 2026): one per person, and "Download all".
+        const who = whoIn(t, last);
+        const files = filesOf(who);
+        const none = who.length - files.length;
         put({
-          text: !last.length ? "There is nobody on screen yet. Search first." : saved ? `Downloaded ${saved} CV${saved === 1 ? "" : "s"}.${saved < who.length ? ` ${who.length - saved} could not be fetched.` : ""}` : "None of them has a CV file to download.",
-          warn: !saved,
+          text: !last.length
+            ? "There is nobody on screen yet. Search first."
+            : files.length
+              ? `${files.length === 1 ? "Here is 1 CV" : `Here are ${files.length} CVs`}. Press to download.${none ? ` ${none} ${none === 1 ? "has" : "have"} no CV file on record.` : ""}`
+              : "None of them has a CV file to download.",
+          files,
+          warn: !files.length,
           ran: keep,
         });
       } else if (ask.kind === "add") {
@@ -556,12 +610,95 @@ export default function DatabaseView() {
     if (!q) return;
     queueMicrotask(() => sendRef.current(q, { fresh: true, as }));
   }, [live, liveSite]);
+  // One CV downloads as its PDF; two or more as ONE zip (28 Nov 2026: checked live - Chrome let the
+  // first of two downloads through and silently blocked the second as an "automatic download").
+  // A file waiting for the person's own click: Chrome blocks a save that starts too long after the
+  // click (checked live 28 Nov 2026: six CVs took ~9 s one by one and the zip save came "not active").
+  const [ready, setReady] = useState<{ url: string; name: string; label: string } | null>(null);
+  const deliver = (blob: Blob, name: string, label: string) => {
+    const url = URL.createObjectURL(blob);
+    if (navigator.userActivation && !navigator.userActivation.isActive) {
+      setReady({ url, name, label });
+      petSay("done", `${label} ready. Press Save to download.`);
+      return;
+    }
+    saveBlob(url, name);
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    petSay("done", `Downloaded ${label}.`);
+  };
+  // One CV downloads as its own file; two or more as ONE zip (Chrome lets one download through per click).
+  // All fetched at once, each named by its real type (a Word CV was saved as ".pdf" and would not open).
+  const downloadCvs = async (files: CvFile[]) => {
+    if (!files.length) return;
+    petSay("working", `Downloading ${files.length} CV${files.length === 1 ? "" : "s"}…`);
+    const got = (
+      await Promise.all(
+        files.map(async (f) => {
+          const res = await fetch(f.url, live ? { headers: await cvHeaders(f.url) } : undefined).catch(() => null);
+          if (!res?.ok) return null;
+          const name = f.name.replace(/\.pdf$/i, extOf(res.headers.get("content-type")));
+          return { name, data: new Uint8Array(await res.arrayBuffer()), type: res.headers.get("content-type") ?? "application/pdf" };
+        }),
+      )
+    ).filter((x): x is NonNullable<typeof x> => !!x);
+    if (!got.length) {
+      petSay("failed", files.length === 1 ? "That CV could not be fetched. Try again." : "None of those CVs could be fetched. Try again.");
+      return;
+    }
+    const short = got.length < files.length ? ` ${files.length - got.length} could not be fetched.` : "";
+    if (got.length === 1) deliver(new Blob([got[0].data], { type: got[0].type }), got[0].name, `1 CV${short}`);
+    else deliver(new Blob([zip(got)], { type: "application/zip" }), `CVs (${got.length}).zip`, `${got.length} CVs in one zip${short}`);
+  };
   const newSearch = () => {
     setOpenId("");
+    setProjectId("");
     setText("");
     setShowHistory(false);
     requestAnimationFrame(() => box.current?.focus());
   };
+  // One chat row, the same in the history list and inside a project.
+  const chatItem = (t: Thread) => (
+    <ChatItem
+      key={t.id}
+      title={t.title}
+      on={openId === t.id}
+      projects={projects}
+      inProject={t.projectId}
+      onMove={(to) => void moveChat(t.id, to)}
+      onOpen={() => {
+        // Reopening a past chat loads its persisted turns & cached results instantly (never re-runs a search).
+        setOpenId(t.id);
+        setShowHistory(false);
+        if (live && t.saved && !t.turns.length) {
+          void queryOnce(door.searchTurns, { chatId: t.id }).then((got) => {
+            const saved = parseSavedTurns<Turn>((got as { turnsJson?: string | null } | undefined)?.turnsJson);
+            const turns = saved.length ? freshIds(saved) : olderChat(t.id, t.q ?? t.title);
+            setThreads((all) => all.map((x) => (x.id === t.id && !x.turns.length ? { ...x, turns, saved: false } : x)));
+          });
+        }
+      }}
+      onRename={(title) => {
+        setThreads((all) =>
+          all.map((x) => (x.id === t.id ? { ...x, title } : x)),
+        );
+        if (live) {
+          void record({
+            chatId: t.id,
+            title,
+            query: t.q ?? title,
+            count: contextOf(t.turns).last.length,
+            turnsJson: serializeTurns(t.turns),
+          });
+        }
+      }}
+      onDelete={() => {
+        // Signed in the past search is deleted from the person's own history too.
+        if (live) void removeChat({ query: t.q ?? "", chatId: t.id });
+        setThreads((all) => all.filter((x) => x.id !== t.id));
+        if (openId === t.id) setOpenId("");
+      }}
+    />
+  );
   const lastAura = thread
     ? [...thread.turns].reverse().find((t) => t.from === "aura")?.id
     : undefined;
@@ -621,55 +758,33 @@ export default function DatabaseView() {
             (showHistory ? "" : "max-md:hidden")
           }
         >
-          {!threads.some((t) => modeOf(t) === mode) && (
+          <ProjectList
+            projects={projects}
+            open={!openId ? projectId : (thread?.projectId ?? "")}
+            onOpen={(id) => {
+              setOpenId("");
+              setProjectId(id);
+              setShowHistory(false);
+            }}
+            onMake={async (name) => {
+              const id = await saveProject({ name });
+              if (id) {
+                setOpenId("");
+                setProjectId(id);
+              }
+            }}
+          />
+          {!threads.some((t) => modeOf(t) === mode && !t.projectId) && (
             <p className="px-[max(0.9rem,10px)] text-small text-ink-3">{mode === "referees" ? "No referee searches yet." : "No candidate searches yet."}</p>
           )}
-          {(["today", "earlier"] as const).filter((when) => threads.some((t) => t.when === when && modeOf(t) === mode)).map((when) => (
+          {(["today", "earlier"] as const).filter((when) => threads.some((t) => t.when === when && modeOf(t) === mode && !t.projectId)).map((when) => (
             <div key={when} className="mb-2 flex flex-col gap-1">
               <p className="mb-1 px-[max(0.9rem,10px)] text-[max(0.8125rem,11.5px)] font-medium uppercase tracking-wide text-ink-3">
                 {when}
               </p>
               {threads
-                .filter((t) => t.when === when && modeOf(t) === mode)
-                .map((t) => (
-                  <ChatItem
-                    key={t.id}
-                    title={t.title}
-                    on={openId === t.id}
-                    onOpen={() => {
-                      // Reopening a past chat loads its persisted turns & cached results instantly (never re-runs a search).
-                      setOpenId(t.id);
-                      setShowHistory(false);
-                      if (live && t.saved && !t.turns.length) {
-                        void queryOnce(door.searchTurns, { chatId: t.id }).then((got) => {
-                          const saved = parseSavedTurns<Turn>((got as { turnsJson?: string | null } | undefined)?.turnsJson);
-                          const turns = saved.length ? freshIds(saved) : olderChat(t.id, t.q ?? t.title);
-                          setThreads((all) => all.map((x) => (x.id === t.id && !x.turns.length ? { ...x, turns, saved: false } : x)));
-                        });
-                      }
-                    }}
-                    onRename={(title) => {
-                      setThreads((all) =>
-                        all.map((x) => (x.id === t.id ? { ...x, title } : x)),
-                      );
-                      if (live) {
-                        void record({
-                          chatId: t.id,
-                          title,
-                          query: t.q ?? title,
-                          count: contextOf(t.turns).last.length,
-                          turnsJson: serializeTurns(t.turns),
-                        });
-                      }
-                    }}
-                    onDelete={() => {
-                      // Signed in the past search is deleted from the person's own history too.
-                      if (live) void removeChat({ query: t.q ?? "", chatId: t.id });
-                      setThreads((all) => all.filter((x) => x.id !== t.id));
-                      if (openId === t.id) setOpenId("");
-                    }}
-                  />
-                ))}
+                .filter((t) => t.when === when && modeOf(t) === mode && !t.projectId)
+                .map((t) => chatItem(t))}
             </div>
           ))}
         </nav>
@@ -687,7 +802,31 @@ export default function DatabaseView() {
           className="min-h-0 flex-1 overflow-y-auto px-[max(1.5rem,12px)] pb-6 pt-[max(2.25rem,20px)]"
         >
           <div className={(picked ? "max-w-[56rem]" : "max-w-[70rem]") + " mx-auto flex w-full flex-col gap-[max(2.1rem,18px)]"}>
-            {!thread ? (
+            {thread?.projectId && projects.some((p) => p.id === thread.projectId) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setProjectId(thread.projectId!);
+                  setOpenId("");
+                }}
+                title="Open the project and its guidelines"
+                className="flex items-center gap-2 self-start rounded-full bg-surface-2 px-3 py-1.5 text-small text-ink-2 transition-colors hover:text-ink"
+              >
+                <FolderIcon />
+                {projects.find((p) => p.id === thread.projectId)!.name}
+                {projects.find((p) => p.id === thread.projectId)!.guide && <span className="text-ink-3">· guidelines on</span>}
+              </button>
+            )}
+            {!thread && projects.some((p) => p.id === projectId) ? (
+              <ProjectHome
+                key={projectId}
+                project={projects.find((p) => p.id === projectId)!}
+                chats={threads.filter((t) => t.projectId === projectId)}
+                chatItem={chatItem}
+                onSave={(name, guide) => saveProject({ id: projectId, name, guide })}
+                onDelete={() => void removeProject(projectId)}
+              />
+            ) : !thread ? (
               <Welcome mode={mode} live={live} onTry={send} />
             ) : (
               thread.turns.map((t) =>
@@ -714,6 +853,8 @@ export default function DatabaseView() {
                     onPick={pick}
                     onSend={send}
                     busy={thinking}
+                    basket={basket}
+                    onDownload={(f) => void downloadCvs(f)}
                   />
                 ),
               )
@@ -727,6 +868,25 @@ export default function DatabaseView() {
           </div>
         </div>
 
+        {ready && (
+          <div className="mx-auto mb-2 flex w-full max-w-[56rem] items-center gap-3 rounded-md border border-brand/30 bg-brand-tint px-4 py-2.5 text-small text-ink">
+            <span className="min-w-0 flex-1">{ready.label} ready.</span>
+            <button
+              type="button"
+              onClick={() => {
+                saveBlob(ready.url, ready.name);
+                setTimeout(() => URL.revokeObjectURL(ready.url), 10_000);
+                setReady(null);
+              }}
+              className="flex h-[max(2.4rem,33px)] items-center rounded-full bg-brand px-4 text-small font-medium text-white transition-colors hover:bg-brand-strong"
+            >
+              Save
+            </button>
+            <button type="button" onClick={() => setReady(null)} aria-label="Close" className="rounded-full p-1.5 text-ink-3 hover:bg-surface hover:text-ink">
+              <XIcon />
+            </button>
+          </div>
+        )}
         <Composer
           value={text}
           onChange={setText}
@@ -764,16 +924,23 @@ export default function DatabaseView() {
 function ChatItem({
   title,
   on,
+  projects,
+  inProject,
+  onMove,
   onOpen,
   onRename,
   onDelete,
 }: {
   title: string;
   on: boolean;
+  projects: Project[];
+  inProject?: string;
+  onMove: (to: string | null) => void;
   onOpen: () => void;
   onRename: (t: string) => void;
   onDelete: () => void;
 }) {
+  const { open: moving, setOpen: setMoving, root: moveRoot, panel: movePanel, shown: moveShown } = useLiftMenu();
   const [editing, setEditing] = useState(false);
   // Delete needs a second press (a deleted chat is gone for good).
   const [sure, setSure] = useState(false);
@@ -835,16 +1002,233 @@ function ChatItem({
       >
         <PencilIcon />
       </button>
+      {(projects.length > 0 || inProject) && (
+        <div ref={moveRoot} className="relative shrink-0">
+          <button
+            type="button"
+            onClick={() => setMoving(!moving)}
+            aria-expanded={moving}
+            aria-haspopup="menu"
+            aria-label={`Move "${title}" to a project`}
+            title="Move to a project"
+            className={"mr-0.5 flex rounded-full p-1.5 text-ink-3 transition-opacity hover:bg-surface hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 max-md:opacity-100 " + (moving ? "opacity-100" : "opacity-0")}
+          >
+            <FolderIcon />
+          </button>
+          {moveShown && (
+            <div ref={movePanel} role="menu" className="absolute right-0 top-full z-30 mt-1 flex min-w-[12rem] flex-col rounded-md border border-border bg-surface p-1.5 shadow-float">
+              <p className="px-3 pb-1 pt-1.5 text-caption font-medium uppercase text-ink-3">Move to</p>
+              {projects
+                .filter((p) => p.id !== inProject)
+                .map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMoving(false);
+                      onMove(p.id);
+                    }}
+                    className="flex items-center gap-2 rounded-sm px-3 py-2 text-left text-small text-ink-2 hover:bg-surface-2 hover:text-ink"
+                  >
+                    <FolderIcon />
+                    <span className="truncate">{p.name}</span>
+                  </button>
+                ))}
+              {inProject && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMoving(false);
+                    onMove(null);
+                  }}
+                  className="rounded-sm px-3 py-2 text-left text-small text-ink-2 hover:bg-surface-2 hover:text-ink"
+                >
+                  Take out of the project
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
       <button
         type="button"
         onClick={() => (sure ? onDelete() : setSure(true))}
         onBlur={() => setSure(false)}
         aria-label={sure ? `Press again to delete "${title}"` : `Delete "${title}"`}
         title={sure ? "Press again to delete" : "Delete this chat"}
-        className={"mr-1.5 shrink-0 rounded-full px-1.5 py-1 text-caption transition-opacity hover:bg-surface focus-visible:opacity-100 max-md:opacity-100 " + (sure ? "font-medium text-danger opacity-100" : "text-ink-3 opacity-0 hover:text-ink group-hover:opacity-100")}
+        className={"mr-1.5 flex shrink-0 items-center rounded-full p-1.5 text-caption transition-opacity hover:bg-surface focus-visible:opacity-100 max-md:opacity-100 " + (sure ? "font-medium text-danger opacity-100" : "text-ink-3 opacity-0 hover:text-ink group-hover:opacity-100")}
       >
-        {sure ? "Delete?" : "✕"}
+        {sure ? "Delete?" : <XIcon />}
       </button>
+    </div>
+  );
+}
+
+/** Projects in the chat list (owner 28 Nov 2026, like ChatGPT Projects): a folder per
+ *  position; "New" asks only for a name, the guidelines are written on its page. */
+function ProjectList({
+  projects,
+  open,
+  onOpen,
+  onMake,
+}: {
+  projects: Project[];
+  open: string;
+  onOpen: (id: string) => void;
+  onMake: (name: string) => void;
+}) {
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState("");
+  const make = () => {
+    const n = name.trim();
+    setNaming(false);
+    setName("");
+    if (n) onMake(n.slice(0, 80));
+  };
+  return (
+    <div className="mb-3 flex flex-col gap-1">
+      <div className="mb-1 flex items-center justify-between px-[max(0.9rem,10px)]">
+        <p className="text-[max(0.8125rem,11.5px)] font-medium uppercase tracking-wide text-ink-3">Projects</p>
+        <button
+          type="button"
+          onClick={() => setNaming(true)}
+          className="flex items-center gap-1 rounded-full px-2 py-0.5 text-small text-brand transition-colors hover:bg-surface-2"
+        >
+          <PlusIcon />
+          New
+        </button>
+      </div>
+      {naming && (
+        <input
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={make}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") make();
+            if (e.key === "Escape") {
+              setNaming(false);
+              setName("");
+            }
+          }}
+          maxLength={80}
+          placeholder="e.g. Senior Accountant - Hemas"
+          aria-label="Project name"
+          className="rounded-md bg-surface px-[max(0.9rem,10px)] py-[max(0.7rem,8px)] text-body text-ink outline-none ring-2 ring-brand/30 placeholder:text-ink-3"
+        />
+      )}
+      {projects.map((p) => (
+        <button
+          key={p.id}
+          type="button"
+          onClick={() => onOpen(p.id)}
+          aria-current={open === p.id ? "true" : undefined}
+          title={p.name}
+          className={
+            "flex items-center gap-2.5 rounded-md px-[max(0.9rem,10px)] py-[max(0.7rem,8px)] text-left text-body transition-colors " +
+            (open === p.id ? "bg-surface-2 text-ink" : "text-ink-2 hover:bg-surface-2/60 hover:text-ink")
+          }
+        >
+          <FolderIcon />
+          <span className="truncate">{p.name}</span>
+        </button>
+      ))}
+      {!projects.length && !naming && (
+        <p className="px-[max(0.9rem,10px)] text-small text-ink-3">Keep the searches for one position together.</p>
+      )}
+    </div>
+  );
+}
+
+/** One project's page: its name, the guidelines every search in it keeps, and its chats.
+ *  A message typed here starts a new chat inside the project. */
+function ProjectHome({
+  project,
+  chats,
+  chatItem,
+  onSave,
+  onDelete,
+}: {
+  project: Project;
+  chats: Thread[];
+  chatItem: (t: Thread) => ReactNode;
+  onSave: (name: string, guide: string) => Promise<string | null>;
+  onDelete: () => void;
+}) {
+  const [name, setName] = useState(project.name);
+  const [guide, setGuide] = useState(project.guide);
+  const [saved, setSaved] = useState("");
+  const [sure, setSure] = useState(false);
+  const changed = name.trim() !== project.name || guide.trim() !== project.guide;
+  const save = async () => {
+    if (!name.trim() || !changed) return;
+    const ok = await onSave(name.trim(), guide.trim());
+    setSaved(ok ? "Saved. Every search in this project keeps these now." : "");
+  };
+  return (
+    <div className="flex flex-col gap-[max(1.4rem,14px)] pt-[4vh]">
+      <div className="flex items-center gap-3">
+        <span className="flex size-[max(2.75rem,36px)] shrink-0 items-center justify-center rounded-full bg-brand-soft text-brand">
+          <FolderIcon />
+        </span>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={() => void save()}
+          onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+          maxLength={80}
+          aria-label="Project name"
+          className="min-w-0 flex-1 rounded-sm bg-transparent px-1 text-h2 text-ink outline-none focus:bg-surface-2"
+        />
+        <button
+          type="button"
+          onClick={() => (sure ? onDelete() : setSure(true))}
+          onBlur={() => setSure(false)}
+          title="Delete the project. Its chats go back to your history."
+          className={"shrink-0 rounded-full px-3 py-1.5 text-small transition-colors hover:bg-surface-2 " + (sure ? "font-medium text-danger" : "text-ink-3 hover:text-ink")}
+        >
+          {sure ? "Press again to delete" : "Delete project"}
+        </button>
+      </div>
+      <section className="flex flex-col gap-2 rounded-md border border-border bg-surface p-[max(1.1rem,12px)]">
+        <label htmlFor="project-guide" className="text-small font-medium text-ink">
+          Guidelines for this project
+        </label>
+        <p className="text-small text-ink-3">AURA keeps these in every search here: the job, the client, the place, years, must-haves, who to leave out.</p>
+        <textarea
+          id="project-guide"
+          value={guide}
+          onChange={(e) => {
+            setGuide(e.target.value);
+            setSaved("");
+          }}
+          rows={4}
+          maxLength={2000}
+          placeholder="Senior accountant for Hemas. Colombo or Gampaha. 5-8 years. CIMA or ACCA a must. Not from audit firms."
+          className="resize-y rounded-sm bg-surface-2 px-3 py-2.5 text-body text-ink outline-none placeholder:text-ink-3 focus:ring-2 focus:ring-brand/30"
+        />
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            disabled={!changed || !name.trim()}
+            onClick={() => void save()}
+            className="flex h-[max(2.4rem,33px)] items-center rounded-full bg-brand px-4 text-small font-medium text-white transition-colors hover:bg-brand-strong disabled:opacity-40"
+          >
+            Save guidelines
+          </button>
+          {saved && <span className="text-small text-success">{saved}</span>}
+        </div>
+      </section>
+      <section className="flex flex-col gap-1">
+        <p className="mb-1 text-[max(0.8125rem,11.5px)] font-medium uppercase tracking-wide text-ink-3">Chats in this project</p>
+        {chats.length ? (
+          chats.map((t) => chatItem(t))
+        ) : (
+          <p className="text-small text-ink-3">None yet. Type below to start the first search here, or move a chat in with its folder button.</p>
+        )}
+      </section>
     </div>
   );
 }
@@ -871,8 +1255,11 @@ function Welcome({
           "(SAP OR ERP) AND Colombo NOT Accenture",
         ]
       : ["CIMA finance managers", '"S/4HANA" AND manufacturing'];
+  // Candidates <-> Referees: the welcome changes by the one switch.
+  const me = useRef<HTMLDivElement>(null);
+  useSwap(me, mode);
   return (
-    <div className="flex flex-col items-center gap-3 pt-[10vh] text-center">
+    <div ref={me} className="flex flex-col items-center gap-3 pt-[10vh] text-center">
       <Image
         src="/aura-mark.png"
         alt=""
@@ -892,7 +1279,7 @@ function Welcome({
             key={t}
             type="button"
             onClick={() => onTry(t)}
-            className="rounded-full border border-border px-3.5 py-1.5 text-small text-ink-2 hover:border-border-strong hover:bg-surface-2 hover:text-ink"
+            className={PILL}
           >
             {t}
           </button>
@@ -913,6 +1300,8 @@ function Answer({
   onPick,
   onSend,
   busy,
+  basket,
+  onDownload,
 }: {
   t: Extract<Turn, { from: "aura" }>;
   latest: boolean;
@@ -922,6 +1311,8 @@ function Answer({
   onPick: (p: Person) => void;
   onSend: (text: string) => void;
   busy: boolean;
+  basket: Basket;
+  onDownload: (files: CvFile[]) => void;
 }) {
   return (
     <div data-turn className="flex flex-col gap-[max(0.55rem,6px)]">
@@ -1023,9 +1414,11 @@ function Answer({
             ))}
           </ul>
         )}
-        {t.referees && t.referees.length > 0 && <RefereeList list={t.referees} onPick={onPick} />}
+        {t.referees && t.referees.length > 0 && <RefereeList list={t.referees} onPick={onPick} basket={basket} />}
+        {t.files && t.files.length > 0 && <CvFiles files={t.files} onDownload={onDownload} />}
         {t.people && t.people.length > 0 && (
           <Results
+            onDownload={(ps) => onDownload(filesOf(ps))}
             people={t.people}
             open={open}
             picked={picked}
@@ -1039,6 +1432,50 @@ function Answer({
     </div>
   );
 }
+
+type CvFile = { name: string; url: string };
+/** The file ending for what the server sent: CVs are PDFs or Word files. */
+const extOf = (type: string | null) =>
+  /wordprocessingml/i.test(type ?? "") ? ".docx" : /msword/i.test(type ?? "") ? ".doc" : /rtf/i.test(type ?? "") ? ".rtf" : ".pdf";
+/** Hand a file address to the browser to save. */
+const saveBlob = (url: string, name: string) => {
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+};
+/** The CV files of these people (those with a CV on record). */
+const filesOf = (ps: Person[]): CvFile[] => ps.filter((p) => p.cv).map((p) => ({ name: `${p.name} - CV.pdf`, url: p.cv! }));
+
+/** The CVs asked for in the chat: a button per person and "Download all" (owner 28 Nov 2026). */
+function CvFiles({ files, onDownload }: { files: CvFile[]; onDownload: (f: CvFile[]) => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {files.length > 1 && (
+        <button
+          type="button"
+          onClick={() => onDownload(files)}
+          className="flex h-[max(2.4rem,33px)] items-center gap-2 rounded-full bg-brand px-4 text-small font-medium text-white transition-colors hover:bg-brand-strong"
+        >
+          <DownloadIcon />
+          Download all {files.length}
+        </button>
+      )}
+      {files.map((f) => (
+        <button key={f.url} type="button" onClick={() => onDownload([f])} className={PILL}>
+          <DownloadIcon />
+          {f.name.replace(/ - CV\.pdf$/, "")}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const DownloadIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="size-4 shrink-0">
+    <path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14" />
+  </svg>
+);
 
 /** Circular fit-score ring matching the Opening's Database CVs rows. */
 function ScoreRing({ score }: { score: number }) {
@@ -1066,7 +1503,9 @@ function Results({
   onAll,
   onPick,
   onShortlist,
+  onDownload,
 }: {
+  onDownload: (people: Person[]) => void;
   people: Person[];
   open: boolean;
   picked?: string;
@@ -1077,6 +1516,14 @@ function Results({
 }) {
   const shown = open ? people : people.slice(0, 4);
   const compact = !!picked;
+  // Tick people, then download their CVs together (owner 28 Nov 2026).
+  const [ticked, setTicked] = useState<string[]>([]);
+  const withCv = people.filter((p) => p.cv);
+  const all = withCv.length > 0 && withCv.every((p) => ticked.includes(p.id));
+  const toggle = (id: string) => setTicked((t) => (t.includes(id) ? t.filter((x) => x !== id) : [...t, id]));
+  // "See all" / "Show fewer" changes the list in place: the one switch, not a jump.
+  const list = useRef<HTMLUListElement>(null);
+  useSwap(list, open);
   const tick = (ok: boolean) => (
     <span aria-hidden="true" className={"flex size-[1.05rem] shrink-0 items-center justify-center rounded-full " + (ok ? "bg-success-soft text-success" : "bg-warn-soft text-warn")}>
       <svg viewBox="0 0 12 12" className="size-2.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -1086,7 +1533,24 @@ function Results({
   );
   return (
     <div className="flex flex-col gap-[max(0.6rem,6px)]">
-      <ul className="overflow-hidden rounded-lg border border-border bg-surface divide-y divide-border" aria-label="People found">
+      {withCv.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 text-small">
+          <label className="flex items-center gap-2 text-ink-2">
+            <input type="checkbox" checked={all} onChange={() => setTicked(all ? [] : withCv.map((p) => p.id))} className="size-[max(1.3rem,20px)] cursor-pointer accent-[var(--color-brand)]" />
+            {all ? "Untick all" : `Tick all ${withCv.length}`}
+          </label>
+          <button
+            type="button"
+            disabled={!ticked.length || busy}
+            onClick={() => onDownload(people.filter((p) => ticked.includes(p.id)))}
+            className="ml-auto flex h-[max(2.4rem,33px)] items-center gap-2 rounded-full bg-brand px-4 text-small font-medium text-white transition-colors hover:bg-brand-strong disabled:opacity-40"
+          >
+            <DownloadIcon />
+            {ticked.length ? `Download ${ticked.length} CV${ticked.length === 1 ? "" : "s"}` : "Tick people to download CVs"}
+          </button>
+        </div>
+      )}
+      <ul ref={list} className="divide-y divide-border overflow-hidden rounded-md border border-border bg-surface" aria-label="People found">
         {shown.map((p, i) => {
           const on = picked === p.id;
           // People the search could not fully confirm come after the rest whatever their score: say so once, above the first.
@@ -1111,6 +1575,15 @@ function Results({
                   Not everything you asked is on file for the people below
                 </p>
               )}
+              <input
+                type="checkbox"
+                checked={ticked.includes(p.id)}
+                disabled={!p.cv}
+                onChange={() => toggle(p.id)}
+                aria-label={p.cv ? `Tick ${p.name}` : `${p.name} has no CV file on record`}
+                title={p.cv ? `Tick ${p.name} to download the CV` : "No CV file on record"}
+                className="absolute left-4 top-1/2 z-10 size-[max(1.3rem,20px)] -translate-y-1/2 cursor-pointer accent-[var(--color-brand)] disabled:cursor-not-allowed disabled:opacity-30"
+              />
               <button
                 type="button"
                 data-card
@@ -1118,7 +1591,7 @@ function Results({
                 aria-current={on ? "true" : undefined}
                 title={p.cv ? "Open the CV" : "No CV file on record"}
                 className={
-                  "grid w-full items-center gap-x-[max(1rem,10px)] py-3.5 pl-5 pr-[max(8.5rem,104px)] text-left transition-colors " +
+                  "grid w-full items-center gap-x-[max(1rem,10px)] py-3.5 pl-[max(3.6rem,46px)] pr-[max(8.5rem,104px)] text-left transition-colors " +
                   (compact
                     ? "grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] max-md:grid-cols-1"
                     : "grid-cols-[minmax(0,1.25fr)_minmax(0,0.38fr)_minmax(0,1.1fr)_minmax(0,0.95fr)] max-xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] max-xl:[&>:nth-child(2)]:hidden max-xl:[&>:nth-child(4)]:hidden max-md:grid-cols-1") +
@@ -1167,7 +1640,7 @@ function Results({
                 )}
               </button>
 
-              <div className={"absolute right-4 top-1/2 flex -translate-y-1/2 items-center gap-2 " + (on ? "" : "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100")}>
+              <div className={"absolute right-4 top-1/2 flex -translate-y-1/2 items-center gap-2 transition-opacity duration-150 " + (on ? "" : "pointer-events-none opacity-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100")}>
                 <button
                   type="button"
                   disabled={busy}
@@ -1398,6 +1871,9 @@ function Composer({
   // phrase, so a spoken JD was cut off in the middle. Now it listens until stop.
   const mic = useSpeech((t) => onChange((box.current?.value ? box.current.value + " " : "") + t));
   const { ok: speech, on: listening } = mic;
+  // AURA's next steps change with each answer: the one switch, not a blink.
+  const next = useRef<HTMLDivElement>(null);
+  useSwap(next, suggestions?.map((a) => a.label).join("|"));
   const press = () => {
     if (!value.trim() || busy) return;
     onSend();
@@ -1407,17 +1883,19 @@ function Composer({
       <AuraBarGlow className="bottom-[max(1.2rem,8px)]" />
       {/* One row above the typing bar: the filters at the left, AURA's next steps at the right. */}
       {(hasPeople || (suggestions && suggestions.length > 0)) && (
-        <div className="mx-auto mb-3 flex w-full max-w-[56rem] flex-wrap items-center justify-between gap-x-4 gap-y-3">
-          {hasPeople ? <FilterBar panel={panel} busy={busy} className="" onApply={onPanel} /> : <span />}
+        <div className="mx-auto mb-3 flex w-full max-w-[56rem] items-center gap-4">
+          {hasPeople && <FilterBar panel={panel} busy={busy} className="shrink-0" onApply={onPanel} />}
+          {/* One row at every width (28 Nov 2026: on a laptop the next steps fell to a second line
+              and pushed the talk up): they slide sideways when there is no room. */}
           {suggestions && suggestions.length > 0 && (
-            <div className="flex flex-wrap justify-end gap-2">
+            <div ref={next} className="ml-auto flex min-w-0 gap-2 overflow-x-auto [scrollbar-width:none]">
               {suggestions.map((a) => (
                 <button
                   key={a.label}
                   type="button"
                   disabled={busy}
                   onClick={() => onSuggest(a.prompt)}
-                  className="rounded-full border border-border bg-surface px-3.5 py-1.5 text-small text-ink-2 transition-colors hover:border-brand hover:text-brand disabled:opacity-40"
+                  className={PILL}
                 >
                   {a.label}
                 </button>
@@ -1462,7 +1940,7 @@ function Composer({
           maxLength={2000}
           placeholder={
             mode === "people"
-              ? "Skills, a title, a place, or words from a CV — or paste a JD"
+              ? "Skills, a title, a place — or paste a JD"
               : "Title or company — “HR Managers at Dialog”"
           }
           aria-label="Ask AURA"
@@ -1519,6 +1997,11 @@ const ico = {
   strokeLinejoin: "round",
   "aria-hidden": true,
 } as const;
+const FolderIcon = () => (
+  <svg {...ico} className="size-[max(1rem,14px)] shrink-0">
+    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+  </svg>
+);
 const PlusIcon = () => (
   <svg {...ico} className="size-[max(1.1rem,15px)]">
     <path d="M5 12h14M12 5v14" />
@@ -1608,7 +2091,7 @@ function ModeSwitch({ mode, onPick }: { mode: Mode; onPick: (m: Mode) => void })
     { dependencies: [mode], scope: row, revertOnUpdate: false },
   );
   return (
-    <div ref={row} role="radiogroup" aria-label="What to search" className="relative flex shrink-0 items-center gap-1 rounded-full bg-surface-2 p-1 md:ml-auto">
+    <div ref={row} role="radiogroup" aria-label="What to search" className="relative flex h-[max(3.1rem,40px)] shrink-0 items-center gap-1 rounded-full bg-surface-2 p-1 md:ml-auto">
       <span ref={thumb} aria-hidden="true" data-still className="absolute bottom-1 left-0 top-1 rounded-full bg-surface shadow-float" />
       {MODES.map(([k, label, icon, hint]) => (
         <button
@@ -1619,7 +2102,7 @@ function ModeSwitch({ mode, onPick }: { mode: Mode; onPick: (m: Mode) => void })
           aria-label={label}
           title={`${label} - ${hint}`}
           onClick={() => mode !== k && onPick(k)}
-          className={"relative flex size-[max(2.9rem,38px)] items-center justify-center rounded-full transition-colors duration-200 " + (mode === k ? "text-brand" : "text-ink-3 hover:text-ink")}
+          className={"relative flex size-[max(2.6rem,34px)] items-center justify-center rounded-full transition-colors duration-200 " + (mode === k ? "text-brand" : "text-ink-3 hover:text-ink")}
         >
           {icon}
         </button>
@@ -1631,17 +2114,21 @@ function ModeSwitch({ mode, onPick }: { mode: Mode; onPick: (m: Mode) => void })
 /** Referees named on our CVs: what the CV said (title at company, and when it was
  *  read), phone and email with copy, who named them, a CV we may hold under the same
  *  name; tick and export to Excel (old ReferralCard / ExportBar). */
-function RefereeList({ list, onPick }: { list: Referee[]; onPick: (p: Person) => void }) {
-  const [ticked, setTicked] = useState<string[]>([]);
+type Basket = { ids: string[]; set: (f: (ids: string[]) => string[]) => void; all: Referee[] };
+
+function RefereeList({ list, onPick, basket }: { list: Referee[]; onPick: (p: Person) => void; basket: Basket }) {
+  const ticked = basket.ids;
+  const setTicked = basket.set;
   const [copied, setCopied] = useState("");
-  const all = ticked.length === list.length;
+  const all = list.every((r) => ticked.includes(r.id));
+  const earlier = ticked.filter((id) => !list.some((r) => r.id === id)).length;
   const copy = (v: string) => {
     void navigator.clipboard?.writeText(v);
     setCopied(v);
     setTimeout(() => setCopied((c) => (c === v ? "" : c)), 1400);
   };
   const exportNow = () => {
-    const url = URL.createObjectURL(new Blob([toCsv(list.filter((r) => ticked.includes(r.id)))], { type: "text/csv;charset=utf-8" }));
+    const url = URL.createObjectURL(new Blob([toCsv(basket.all.filter((r) => ticked.includes(r.id)))], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a");
     a.href = url;
     a.download = `referees-${ticked.length}.csv`;
@@ -1657,10 +2144,18 @@ function RefereeList({ list, onPick }: { list: Referee[]; onPick: (p: Person) =>
     <div className="flex max-w-[48rem] flex-col gap-2">
       <div className="flex flex-wrap items-center gap-3 text-small">
         <label className="flex items-center gap-2 text-ink-2">
-          <input type="checkbox" checked={all} onChange={() => setTicked(all ? [] : list.map((r) => r.id))} className="size-4 accent-[var(--color-brand)]" />
+          <input type="checkbox" checked={all} onChange={() => setTicked((t) => (all ? t.filter((id) => !list.some((r) => r.id === id)) : [...new Set([...t, ...list.map((r) => r.id)])]))} className="size-[max(1.3rem,20px)] cursor-pointer accent-[var(--color-brand)]" />
           Tick all
         </label>
-        <button type="button" disabled={!ticked.length} onClick={exportNow} className="ml-auto rounded-full bg-ink px-4 py-1.5 text-small font-medium text-white hover:bg-black disabled:opacity-40">
+        {earlier > 0 && (
+          <span className="text-caption text-ink-3">
+            {earlier} ticked in earlier searches ·{" "}
+            <button type="button" onClick={() => setTicked(() => [])} className="text-brand hover:underline">
+              Clear all
+            </button>
+          </span>
+        )}
+        <button type="button" disabled={!ticked.length} onClick={exportNow} className="ml-auto flex h-[max(2.4rem,33px)] items-center rounded-full bg-brand px-4 text-small font-medium text-white hover:bg-brand-strong disabled:opacity-40">
           {ticked.length ? `Export ${ticked.length} to Excel` : "Tick referees to export"}
         </button>
       </div>
@@ -1670,10 +2165,10 @@ function RefereeList({ list, onPick }: { list: Referee[]; onPick: (p: Person) =>
           // A CV we hold under the same name - maybe them (never claimed to be).
           const cv = POOL.find((p) => p.name.toLowerCase() === r.name.toLowerCase());
           return (
-            <li key={r.id} className={"rounded-lg border px-4 py-3 transition-colors " + (on ? "border-brand bg-brand-tint" : "border-border bg-surface")}>
+            <li key={r.id} className={"rounded-md border px-4 py-3 transition-colors " + (on ? "border-brand bg-brand-tint" : "border-border bg-surface")}>
               <div className="flex flex-wrap items-start gap-x-5 gap-y-2">
                 <label className="flex min-w-0 flex-1 cursor-pointer gap-3">
-                  <input type="checkbox" checked={on} onChange={() => setTicked((t) => (on ? t.filter((x) => x !== r.id) : [...t, r.id]))} aria-label={`Tick ${r.name} to export`} className="mt-1 size-4 shrink-0 accent-[var(--color-brand)]" />
+                  <input type="checkbox" checked={on} onChange={() => setTicked((t) => (on ? t.filter((x) => x !== r.id) : [...t, r.id]))} aria-label={`Tick ${r.name} to export`} className="mt-1 size-[max(1.3rem,20px)] shrink-0 cursor-pointer accent-[var(--color-brand)]" />
                   <span className="min-w-0">
                     <span className="block text-body font-medium text-ink">{r.name}</span>
                     <span className="block text-small text-ink-2">

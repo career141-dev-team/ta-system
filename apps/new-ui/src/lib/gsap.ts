@@ -136,7 +136,8 @@ export function useGlide() {
  * Opened again before it is gone, it comes straight back.
  * `vars` must be a constant (defined outside the component).
  */
-export function useExit(open: boolean, ref: RefObject<HTMLElement | null>, vars: gsap.TweenVars) {
+/** `vars` may be a function, read when the exit runs (a menu that knows only once open which way it opened). */
+export function useExit(open: boolean, ref: RefObject<HTMLElement | null>, varsIn: gsap.TweenVars | (() => gsap.TweenVars)) {
   const [was, setWas] = useState(open);
   const [leaving, setLeaving] = useState(false);
   if (open !== was) {
@@ -147,6 +148,7 @@ export function useExit(open: boolean, ref: RefObject<HTMLElement | null>, vars:
 
   useEffect(() => {
     if (!leaving) return;
+    const vars = typeof varsIn === "function" ? varsIn() : varsIn;
     if (ref.current) {
       exited.current = true;
       gsap.to(ref.current, { ...vars, duration: DUR.fast, ease: EASE.in, overwrite: true });
@@ -156,7 +158,7 @@ export function useExit(open: boolean, ref: RefObject<HTMLElement | null>, vars:
       setLeaving(false);
     }, 250);
     return () => clearTimeout(t);
-  }, [leaving, ref, vars]);
+  }, [leaving, ref, varsIn]);
 
   // Re-opened mid-exit: undo the exit's properties (an entrance that runs on
   // `open` takes over from this with its own).
@@ -164,10 +166,11 @@ export function useExit(open: boolean, ref: RefObject<HTMLElement | null>, vars:
     const el = ref.current;
     if (!open || !el || !exited.current) return;
     exited.current = false;
+    const vars = typeof varsIn === "function" ? varsIn() : varsIn;
     const back: gsap.TweenVars = {};
-    for (const k of Object.keys(vars)) back[k] = k === "opacity" || k === "autoAlpha" || k.startsWith("scale") ? 1 : 0;
+    for (const k of Object.keys(vars)) if (k !== "transformOrigin") back[k] = k === "opacity" || k === "autoAlpha" || k.startsWith("scale") ? 1 : 0;
     gsap.to(el, { ...back, duration: DUR.fast, overwrite: true });
-  }, [open, ref, vars]);
+  }, [open, ref, varsIn]);
 
   return open || leaving;
 }

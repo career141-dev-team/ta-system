@@ -19,6 +19,13 @@ ok("the body: words needed, the last 12 messages, two modes only", () => {
   assert.equal(readSearchBody({ q: "  \n " }).ok, false);
   assert.equal(readSearchBody({ q: "x", mode: "meaning" }).ok, false);
   assert.equal(readSearchBody({ q: "x".repeat(2001) }).ok, false);
+  // A project's guidelines ride beside the words (28 Nov 2026), trimmed and capped, never required.
+  const g = readSearchBody({ q: "accountant", guide: "  Colombo only, CIMA a must  " });
+  assert.ok(g.ok && g.body.guide === "Colombo only, CIMA a must");
+  const ng = readSearchBody({ q: "accountant", guide: 5 });
+  assert.ok(ng.ok && ng.body.guide === undefined);
+  const lg = readSearchBody({ q: "accountant", guide: "x".repeat(5000) });
+  assert.ok(lg.ok && lg.body.guide?.length === 2000);
   const many = readSearchBody({ q: Array.from({ length: 20 }, (_, i) => `turn ${i}`).join("\n") });
   assert.ok(many.ok && many.body.q.split("\n").length === MAX_TURNS && many.body.q.endsWith("turn 19"));
   const b = readSearchBody({ q: "SAP consultants\n\nin Colombo", mode: "boolean", full: true });
@@ -44,7 +51,7 @@ ok("the route: sign-in and database.read first, the old engine and desk rules", 
 });
 
 ok("searches: own rows only, and today's count in my day", () => {
-  assert.equal((searches.match(/await who\(ctx\)/g) ?? []).length, 4); // record, remove, recent, turns
+  assert.equal((searches.match(/await who\(ctx\)/g) ?? []).length, 8); // record, remove, recent, turns + projects, saveProject, removeProject, moveChat
   assert.ok(searches.includes('q.eq("userId", w.user._id)'));
   assert.ok(myDay.includes('withIndex("by_user", (q) => q.eq("userId", me).gte("_creationTime", dayStart))'));
   assert.ok(myDay.includes("searchesToday: searches.length"));

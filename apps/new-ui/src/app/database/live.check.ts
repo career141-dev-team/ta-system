@@ -47,3 +47,10 @@ eq(
 const saved = serializeTurns([{ id: "t1", from: "me", text: "hi" }, { id: "t2", from: "aura", text: "found 2" }]);
 eq("saved turns round-trip", parseSavedTurns<{ id: string }>(saved).map((t) => t.id), ["t1", "t2"]);
 eq("corrupt turnsJson returns empty", parseSavedTurns("not-json"), []);
+// CVs through the chat (28 Nov 2026).
+const two = [{ id: "a", name: "Kasun Perera" }, { id: "b", name: "Ishara Silva" }, { id: "c", name: "Nimali Abeysekara" }] as never[];
+eq("download Kasun's CV names one person", whoIn("download Kasun's CV", two).map((p: { id: string }) => p.id), ["a"]);
+eq("all their CVs is everyone", whoIn("download all their CVs", two).map((p: { id: string }) => p.id), ["a", "b", "c"]);
+eq("top 2", whoIn("download the top 2 CVs", two).map((p: { id: string }) => p.id), ["a", "b"]);
+eq("CVs of X reads as a download", readLive("CVs of Ishara please", "").kind, "download");
+eq("a search is still a search", readLive("SAP leads in Colombo", "").kind, "search");

@@ -42,7 +42,15 @@ export function ContactLinks({
     ),
     cvHref && (
       <a key="cv" href={cvHref} target="_blank" rel="noreferrer" className={link}>
-        CV ↗
+        View CV ↗
+      </a>
+    ),
+    // 28 Nov: in bulk hiring the summary is enough, and opening the CV just to
+    // press download cost a recruiter 3-5 s per person. The route already saves
+    // the file under its own name with download=1.
+    cvHref && (
+      <a key="cv-download" href={`${cvHref}${cvHref.includes("?") ? "&" : "?"}download=1`} className={link}>
+        Download CV
       </a>
     ),
   ].filter(Boolean);
