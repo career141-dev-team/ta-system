@@ -10,8 +10,11 @@ D=/opt/chip-search
 MODE="${1:-}"
 R2ENV=""
 [ -f "$D/r2.env" ] && R2ENV="--env-file $D/r2.env"
+# The CV texts copied from Cloudflare on 25 Nov (about 60,000) start the disk copy, once.
+[ -d "$D/data/raw" ] || { [ -d /root/chips/raw ] && cp -al /root/chips/raw "$D/data/raw" 2>/dev/null || mkdir -p "$D/data/raw"; }
 PG=career141-postgres-1
-docker exec -i "$PG" sh -c 'psql -U "$POSTGRES_USER" -d convex_self_hosted -q' < "$D/code/services/chip-search/export.sql"
+# ON_ERROR_STOP: a failed export ends the job here, before any file of ours is touched.
+docker exec -i "$PG" sh -c 'psql -U "$POSTGRES_USER" -d convex_self_hosted -q -v ON_ERROR_STOP=1' < "$D/code/services/chip-search/export.sql"
 docker cp "$PG:/tmp/chip-cand.jsonl" "$D/data/cand.jsonl"
 docker cp "$PG:/tmp/chip-res.jsonl" "$D/data/res.jsonl"
 docker exec "$PG" rm -f /tmp/chip-cand.jsonl /tmp/chip-res.jsonl

@@ -119,6 +119,9 @@ export async function POST(req: NextRequest) {
     names: screenNames,
     wantGender: want,
     limit: askedLimit,
+    // 28 Nov 2026, the trial: the query agent has never met real people's prompts, so only an
+    // admin's chat asks for it. The service decides (off / test / on); for "on" this is not needed.
+    v2: user.role === "admin",
   });
   if (agentAns) {
     try {

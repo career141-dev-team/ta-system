@@ -74,6 +74,8 @@ export async function chipAgent(body: {
   names?: Record<string, string>;
   wantGender?: "female" | "male" | null;
   limit?: number | null;
+  /** Ask for the query agent (the service gives it in "test" mode only to calls that ask). */
+  v2?: boolean;
 }): Promise<ChipAgentAnswer | null> {
   if (process.env.C141_CHIP_SEARCH === "off" || process.env.C141_CHIP_AGENT === "off") return null;
   const a = await postJson<ChipAgentAnswer>("/agent", body);
