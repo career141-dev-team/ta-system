@@ -328,6 +328,16 @@ export default function DatabaseView() {
   };
   const chats = !picked || chatsOpen;
   const thread = threads.find((t) => t.id === openId) ?? null;
+  // 28 Nov (TA feedback): referees ticked in one search stay ticked when the next
+  // search runs in the same chat, so one export holds them all instead of a file
+  // per search. Kept per chat; every referee shown in the chat can be picked.
+  const [refTicks, setRefTicks] = useState<Record<string, string[]>>({});
+  const tickKey = openId ?? "";
+  const basket = {
+    ids: refTicks[tickKey] ?? [],
+    set: (f: (ids: string[]) => string[]) => setRefTicks((all) => ({ ...all, [tickKey]: f(all[tickKey] ?? []) })),
+    all: [...new Map((thread?.turns ?? []).flatMap((t) => (t.from === "aura" ? t.referees ?? [] : [])).map((r) => [r.id, r])).values()],
+  };
   const scroller = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLTextAreaElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -841,6 +851,7 @@ export default function DatabaseView() {
                     onPick={pick}
                     onSend={send}
                     busy={thinking}
+                    basket={basket}
                     onDownload={(f) => void downloadCvs(f)}
                   />
                 ),
@@ -1287,6 +1298,7 @@ function Answer({
   onPick,
   onSend,
   busy,
+  basket,
   onDownload,
 }: {
   t: Extract<Turn, { from: "aura" }>;
@@ -1297,6 +1309,7 @@ function Answer({
   onPick: (p: Person) => void;
   onSend: (text: string) => void;
   busy: boolean;
+  basket: Basket;
   onDownload: (files: CvFile[]) => void;
 }) {
   return (
@@ -1388,7 +1401,7 @@ function Answer({
             ))}
           </ul>
         )}
-        {t.referees && t.referees.length > 0 && <RefereeList list={t.referees} onPick={onPick} />}
+        {t.referees && t.referees.length > 0 && <RefereeList list={t.referees} onPick={onPick} basket={basket} />}
         {t.files && t.files.length > 0 && <CvFiles files={t.files} onDownload={onDownload} />}
         {t.people && t.people.length > 0 && (
           <Results
@@ -2081,17 +2094,21 @@ function ModeSwitch({ mode, onPick }: { mode: Mode; onPick: (m: Mode) => void })
 /** Referees named on our CVs: what the CV said (title at company, and when it was
  *  read), phone and email with copy, who named them, a CV we may hold under the same
  *  name; tick and export to Excel (old ReferralCard / ExportBar). */
-function RefereeList({ list, onPick }: { list: Referee[]; onPick: (p: Person) => void }) {
-  const [ticked, setTicked] = useState<string[]>([]);
+type Basket = { ids: string[]; set: (f: (ids: string[]) => string[]) => void; all: Referee[] };
+
+function RefereeList({ list, onPick, basket }: { list: Referee[]; onPick: (p: Person) => void; basket: Basket }) {
+  const ticked = basket.ids;
+  const setTicked = basket.set;
   const [copied, setCopied] = useState("");
-  const all = ticked.length === list.length;
+  const all = list.every((r) => ticked.includes(r.id));
+  const earlier = ticked.filter((id) => !list.some((r) => r.id === id)).length;
   const copy = (v: string) => {
     void navigator.clipboard?.writeText(v);
     setCopied(v);
     setTimeout(() => setCopied((c) => (c === v ? "" : c)), 1400);
   };
   const exportNow = () => {
-    const url = URL.createObjectURL(new Blob([toCsv(list.filter((r) => ticked.includes(r.id)))], { type: "text/csv;charset=utf-8" }));
+    const url = URL.createObjectURL(new Blob([toCsv(basket.all.filter((r) => ticked.includes(r.id)))], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a");
     a.href = url;
     a.download = `referees-${ticked.length}.csv`;
@@ -2107,9 +2124,17 @@ function RefereeList({ list, onPick }: { list: Referee[]; onPick: (p: Person) =>
     <div className="flex max-w-[48rem] flex-col gap-2">
       <div className="flex flex-wrap items-center gap-3 text-small">
         <label className="flex items-center gap-2 text-ink-2">
-          <input type="checkbox" checked={all} onChange={() => setTicked(all ? [] : list.map((r) => r.id))} className="size-[max(1.3rem,20px)] cursor-pointer accent-[var(--color-brand)]" />
+          <input type="checkbox" checked={all} onChange={() => setTicked((t) => (all ? t.filter((id) => !list.some((r) => r.id === id)) : [...new Set([...t, ...list.map((r) => r.id)])]))} className="size-[max(1.3rem,20px)] cursor-pointer accent-[var(--color-brand)]" />
           Tick all
         </label>
+        {earlier > 0 && (
+          <span className="text-caption text-ink-3">
+            {earlier} ticked in earlier searches ·{" "}
+            <button type="button" onClick={() => setTicked(() => [])} className="text-brand hover:underline">
+              Clear all
+            </button>
+          </span>
+        )}
         <button type="button" disabled={!ticked.length} onClick={exportNow} className="ml-auto flex h-[max(2.4rem,33px)] items-center rounded-full bg-brand px-4 text-small font-medium text-white hover:bg-brand-strong disabled:opacity-40">
           {ticked.length ? `Export ${ticked.length} to Excel` : "Tick referees to export"}
         </button>
