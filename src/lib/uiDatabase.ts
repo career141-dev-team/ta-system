@@ -11,7 +11,9 @@ export const MAX_CHARS = 2000;
 /** People sent back per answer; the chat shows four and "see all". */
 export const ROWS = 60;
 
-export type SearchBody = { q: string; mode: "natural" | "boolean"; full: boolean; currentIds?: string[] };
+export type SearchBody = { q: string; mode: "natural" | "boolean"; full: boolean; currentIds?: string[]; guide?: string };
+/** A project's guidelines (28 Nov 2026): what every search in that project keeps in mind. */
+export const MAX_GUIDE = 2000;
 
 export function readSearchBody(body: unknown): { ok: true; body: SearchBody } | { ok: false; message: string } {
   const b = (body ?? {}) as Record<string, unknown>;
@@ -26,6 +28,8 @@ export function readSearchBody(body: unknown): { ok: true; body: SearchBody } | 
     : [];
   const parsed: SearchBody = { q, mode: b.mode === "boolean" ? "boolean" : "natural", full: b.full === true };
   if (currentIds.length) parsed.currentIds = currentIds;
+  const guide = typeof b.guide === "string" ? b.guide.trim().slice(0, MAX_GUIDE) : "";
+  if (guide) parsed.guide = guide;
   return { ok: true, body: parsed };
 }
 

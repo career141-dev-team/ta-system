@@ -2430,6 +2430,8 @@ export default defineSchema({
     chatId: v.optional(v.string()),
     title: v.optional(v.string()),
     turnsJson: v.optional(v.string()),
+    // The project (a folder with its own guidelines) this chat sits in (28 Nov 2026).
+    projectId: v.optional(v.id("searchProjects")),
     results: v.optional(v.array(v.object({
       cvId: v.string(),
       score: v.number(),
@@ -2464,6 +2466,14 @@ export default defineSchema({
       missingSkills: v.array(v.string()),
       reason: v.string(),
     }))),
+  }).index("by_user", ["userId"]),
+  // Database chat projects (owner 28 Nov 2026, like ChatGPT Projects): a TA's own folder of
+  // search chats for one position, with guidelines every search inside it keeps.
+  searchProjects: defineTable({
+    userId: v.id("users"),
+    name: v.string(),
+    guide: v.optional(v.string()),
+    at: v.number(),
   }).index("by_user", ["userId"]),
 
   oauthStates: defineTable({

@@ -25,7 +25,7 @@ export const PARTNER_READ_TABLES = [
   "ingestionBatches", "ingestionLog", "systemLogs", "activityLog", "candidateConsent",
   "esaRecords", "documents", "workableImports", "herculesImports", "zipImportJobs",
   "mailboxScanJobs", "cvs", "pipeline", "followUpSequences", "notifications",
-  "dashboardStatsCache", "mailboxLog", "appSettings", "searchHistory", "oauthStates",
+  "dashboardStatsCache", "mailboxLog", "appSettings", "searchHistory", "searchProjects", "oauthStates",
   "graphSubscriptions", "m365Accounts", "whatsappSessions", "systemStats", "dailyStats",
   "nvidiaTokenLogs", "tokenStatsCache", "dailyTokenStats", "messageTemplates",
   "whatsappNumbers", "cvScans", "locationResolutionCache", "criteriaExpansionCache",

@@ -62,13 +62,17 @@ type Thread = {
   saved?: boolean;
   /** Which history list it sits in (owner 28 Nov 2026: Candidates and Referees keep separate lists). */
   mode?: Mode;
+  /** The project it sits in (owner 28 Nov 2026, like ChatGPT Projects). */
+  projectId?: string;
 };
+/** A folder of chats for one position, with guidelines every search in it keeps. */
+type Project = { id: string; name: string; guide: string };
 
 // Signed in, the chat searches the real database through old AURA's own search
 // (ta-system #42, /api/ui/database): the engine and the desk rules.
 const DB_URL = `${OLD_SERVER}/api/ui/database`;
 const NO_LINE = "Could not reach the TA System. Check your connection and try again.";
-async function searchLive(body: { q: string; mode: "natural" | "boolean"; full?: boolean; currentIds?: string[] }): Promise<LiveAnswer | { ok: false; message: string }> {
+async function searchLive(body: { q: string; mode: "natural" | "boolean"; full?: boolean; currentIds?: string[]; guide?: string }): Promise<LiveAnswer | { ok: false; message: string }> {
   const res = await fetch(DB_URL, { method: "POST", headers: { "Content-Type": "application/json", ...(await cvHeaders(DB_URL)) }, body: JSON.stringify(body) }).catch(() => null);
   const got = (await res?.json().catch(() => null)) as (LiveAnswer | { ok: false; message: string }) | null;
   return got ?? { ok: false, message: NO_LINE };
@@ -218,7 +222,7 @@ export default function DatabaseView() {
   const [threads, setThreads] = useState<typeof START>(liveSite ? [] : START);
   const [openId, setOpenId] = useState(liveSite ? "" : "sap");
   const recent = useDoorQuery(door.searchRecent, live ? {} : "skip") as
-    | { ok: true; searches: { id: string; chatId?: string | null; title?: string | null; query: string; count: number; at: number; saved?: boolean }[] }
+    | { ok: true; searches: { id: string; chatId?: string | null; title?: string | null; query: string; count: number; at: number; saved?: boolean; projectId?: string | null }[] }
     | { ok: false }
     | undefined;
   const day = useDoorQuery(door.myDay, live ? {} : "skip") as ({ ok: true } & MyDay) | { ok: false } | undefined;
@@ -261,6 +265,7 @@ export default function DatabaseView() {
               turns,
               q: r.query,
               ...(r.saved ? { saved: true } : {}),
+              ...(r.projectId ? { projectId: r.projectId } : {}),
             };
           })
           .filter((t) => !existingIds.has(t.id));
@@ -270,6 +275,41 @@ export default function DatabaseView() {
     });
   }, [live, recent, personKey]);
   const removeChat = useDoorMutation(door.searchRemove);
+  // Projects (owner 28 Nov 2026, like ChatGPT Projects): signed in they are the person's own, kept in
+  // the backend; signed out a few made-up ones live only on this screen.
+  const liveProjects = useDoorQuery(door.searchProjects, live ? {} : "skip") as { ok: true; projects: Project[] } | { ok: false } | undefined;
+  const [localProjects, setLocalProjects] = useState<Project[]>([]);
+  const projects = live ? (liveProjects?.ok ? liveProjects.projects : []) : localProjects;
+  const saveProjectDoor = useDoorMutation(door.searchSaveProject);
+  const removeProjectDoor = useDoorMutation(door.searchRemoveProject);
+  const moveChatDoor = useDoorMutation(door.searchMoveChat);
+  // The project page is open (no chat): its guidelines and its chats.
+  const [projectId, setProjectId] = useState("");
+  const saveProject = async (p: { id?: string; name: string; guide?: string }): Promise<string | null> => {
+    if (!live) {
+      const id = p.id ?? `p_${Date.now().toString(36)}`;
+      setLocalProjects((all) => (p.id ? all.map((x) => (x.id === p.id ? { ...x, name: p.name, guide: p.guide ?? x.guide } : x)) : [{ id, name: p.name, guide: p.guide ?? "" }, ...all]));
+      return id;
+    }
+    const r = (await saveProjectDoor(p)) as { ok: boolean; id?: string; message?: string };
+    if (!r?.ok) {
+      petSay("failed", r?.message ?? "Could not save the project.");
+      return null;
+    }
+    return r.id ?? null;
+  };
+  const removeProject = async (id: string) => {
+    setThreads((all) => all.map((x) => (x.projectId === id ? { ...x, projectId: undefined } : x)));
+    setProjectId("");
+    if (!live) setLocalProjects((all) => all.filter((x) => x.id !== id));
+    else await removeProjectDoor({ id });
+  };
+  const moveChat = async (chatId: string, to: string | null) => {
+    setThreads((all) => all.map((x) => (x.id === chatId ? { ...x, projectId: to ?? undefined } : x)));
+    if (!live) return;
+    const r = (await moveChatDoor({ chatId, ...(to ? { projectId: to } : {}) })) as { ok: boolean; message?: string };
+    if (!r?.ok) petSay("failed", r?.message ?? "Could not move the chat.");
+  };
   const [mode, setMode] = useState<Mode>("people");
   const [thinking, setThinking] = useState(false);
   const [look, setLook] = useState<Look | null>(null);
@@ -331,14 +371,15 @@ export default function DatabaseView() {
       id = newChatId(mode_);
       turns = [];
       setThreads((all) => [
-        { id, title: titleOf(t), when: "today", turns: [], q: t, mode: mode_ },
+        { id, title: titleOf(t), when: "today", turns: [], q: t, mode: mode_, ...(projectId ? { projectId } : {}) },
         ...all,
       ]);
       setOpenId(id);
     }
+    const inProject = cur ? cur.projectId : projectId || undefined;
     if (live && mode_ === "people") {
       setThreads((all) => all.map((x) => (x.id === id ? { ...x, turns: [...x.turns, { id: nid(), from: "me", text: t }] } : x)));
-      void answerLive(id, t, turns);
+      void answerLive(id, t, turns, projects.find((p) => p.id === inProject)?.guide ?? "");
       return;
     }
     const { chips, last } = contextOf(turns);
@@ -393,7 +434,7 @@ export default function DatabaseView() {
   // One message on the real database. Searches go to old AURA's own search; adding to
   // a job is the Database shortlist (shortlistMatch, ta-system #30); CVs come with the
   // person's session. Each search is kept (ui/searches:record) for "searches today".
-  const answerLive = async (id: string, t: string, turns: Turn[]) => {
+  const answerLive = async (id: string, t: string, turns: Turn[], guide = "") => {
     const lastRan = [...turns].reverse().find((x) => x.from === "aura") as Extract<Turn, { from: "aura" }> | undefined;
     const { last } = contextOf(turns);
     const ask = readLive(t, lastRan?.ran ?? "");
@@ -412,6 +453,7 @@ export default function DatabaseView() {
               query: nextQ,
               count: persist.count,
               turnsJson: serializeTurns(nextTurns),
+              ...(x.projectId ? { projectId: x.projectId } : {}),
             });
           }
           return { ...x, q: nextQ, turns: nextTurns };
@@ -425,7 +467,7 @@ export default function DatabaseView() {
     petSay("working", "Looking through the database…");
     const search = async (q: string, mode: "natural" | "boolean", what = "", skip = "") => {
       const currentIds = last.length ? last.map((p) => p.id) : undefined;
-      const a = await searchLive({ q, mode, ...(currentIds ? { currentIds } : {}) });
+      const a = await searchLive({ q, mode, ...(currentIds ? { currentIds } : {}), ...(guide ? { guide } : {}) });
       if (!a.ok) return put({ text: a.message, warn: true, ran: keep });
       const ran = mode === "natural" ? q : undefined;
       const show = (x: LiveAnswer) => {
@@ -441,7 +483,7 @@ export default function DatabaseView() {
       // and the steps (one line now, under the quick list) say so.
       setThinking(false);
       setLook((l) => l && { ...l, real: 3 });
-      const full = await searchLive({ q, mode, full: true, ...(currentIds ? { currentIds } : {}) });
+      const full = await searchLive({ q, mode, full: true, ...(currentIds ? { currentIds } : {}), ...(guide ? { guide } : {}) });
       if (full.ok) show(full);
     };
     try {
@@ -556,10 +598,54 @@ export default function DatabaseView() {
   }, [live, liveSite]);
   const newSearch = () => {
     setOpenId("");
+    setProjectId("");
     setText("");
     setShowHistory(false);
     requestAnimationFrame(() => box.current?.focus());
   };
+  // One chat row, the same in the history list and inside a project.
+  const chatItem = (t: Thread) => (
+    <ChatItem
+      key={t.id}
+      title={t.title}
+      on={openId === t.id}
+      projects={projects}
+      inProject={t.projectId}
+      onMove={(to) => void moveChat(t.id, to)}
+      onOpen={() => {
+        // Reopening a past chat loads its persisted turns & cached results instantly (never re-runs a search).
+        setOpenId(t.id);
+        setShowHistory(false);
+        if (live && t.saved && !t.turns.length) {
+          void queryOnce(door.searchTurns, { chatId: t.id }).then((got) => {
+            const saved = parseSavedTurns<Turn>((got as { turnsJson?: string | null } | undefined)?.turnsJson);
+            const turns = saved.length ? freshIds(saved) : olderChat(t.id, t.q ?? t.title);
+            setThreads((all) => all.map((x) => (x.id === t.id && !x.turns.length ? { ...x, turns, saved: false } : x)));
+          });
+        }
+      }}
+      onRename={(title) => {
+        setThreads((all) =>
+          all.map((x) => (x.id === t.id ? { ...x, title } : x)),
+        );
+        if (live) {
+          void record({
+            chatId: t.id,
+            title,
+            query: t.q ?? title,
+            count: contextOf(t.turns).last.length,
+            turnsJson: serializeTurns(t.turns),
+          });
+        }
+      }}
+      onDelete={() => {
+        // Signed in the past search is deleted from the person's own history too.
+        if (live) void removeChat({ query: t.q ?? "", chatId: t.id });
+        setThreads((all) => all.filter((x) => x.id !== t.id));
+        if (openId === t.id) setOpenId("");
+      }}
+    />
+  );
   const lastAura = thread
     ? [...thread.turns].reverse().find((t) => t.from === "aura")?.id
     : undefined;
@@ -619,55 +705,33 @@ export default function DatabaseView() {
             (showHistory ? "" : "max-md:hidden")
           }
         >
-          {!threads.some((t) => modeOf(t) === mode) && (
+          <ProjectList
+            projects={projects}
+            open={!openId ? projectId : (thread?.projectId ?? "")}
+            onOpen={(id) => {
+              setOpenId("");
+              setProjectId(id);
+              setShowHistory(false);
+            }}
+            onMake={async (name) => {
+              const id = await saveProject({ name });
+              if (id) {
+                setOpenId("");
+                setProjectId(id);
+              }
+            }}
+          />
+          {!threads.some((t) => modeOf(t) === mode && !t.projectId) && (
             <p className="px-[max(0.9rem,10px)] text-small text-ink-3">{mode === "referees" ? "No referee searches yet." : "No candidate searches yet."}</p>
           )}
-          {(["today", "earlier"] as const).filter((when) => threads.some((t) => t.when === when && modeOf(t) === mode)).map((when) => (
+          {(["today", "earlier"] as const).filter((when) => threads.some((t) => t.when === when && modeOf(t) === mode && !t.projectId)).map((when) => (
             <div key={when} className="mb-2 flex flex-col gap-1">
               <p className="mb-1 px-[max(0.9rem,10px)] text-[max(0.8125rem,11.5px)] font-medium uppercase tracking-wide text-ink-3">
                 {when}
               </p>
               {threads
-                .filter((t) => t.when === when && modeOf(t) === mode)
-                .map((t) => (
-                  <ChatItem
-                    key={t.id}
-                    title={t.title}
-                    on={openId === t.id}
-                    onOpen={() => {
-                      // Reopening a past chat loads its persisted turns & cached results instantly (never re-runs a search).
-                      setOpenId(t.id);
-                      setShowHistory(false);
-                      if (live && t.saved && !t.turns.length) {
-                        void queryOnce(door.searchTurns, { chatId: t.id }).then((got) => {
-                          const saved = parseSavedTurns<Turn>((got as { turnsJson?: string | null } | undefined)?.turnsJson);
-                          const turns = saved.length ? freshIds(saved) : olderChat(t.id, t.q ?? t.title);
-                          setThreads((all) => all.map((x) => (x.id === t.id && !x.turns.length ? { ...x, turns, saved: false } : x)));
-                        });
-                      }
-                    }}
-                    onRename={(title) => {
-                      setThreads((all) =>
-                        all.map((x) => (x.id === t.id ? { ...x, title } : x)),
-                      );
-                      if (live) {
-                        void record({
-                          chatId: t.id,
-                          title,
-                          query: t.q ?? title,
-                          count: contextOf(t.turns).last.length,
-                          turnsJson: serializeTurns(t.turns),
-                        });
-                      }
-                    }}
-                    onDelete={() => {
-                      // Signed in the past search is deleted from the person's own history too.
-                      if (live) void removeChat({ query: t.q ?? "", chatId: t.id });
-                      setThreads((all) => all.filter((x) => x.id !== t.id));
-                      if (openId === t.id) setOpenId("");
-                    }}
-                  />
-                ))}
+                .filter((t) => t.when === when && modeOf(t) === mode && !t.projectId)
+                .map((t) => chatItem(t))}
             </div>
           ))}
         </nav>
@@ -685,7 +749,31 @@ export default function DatabaseView() {
           className="min-h-0 flex-1 overflow-y-auto px-[max(1.5rem,12px)] pb-6 pt-[max(2.25rem,20px)]"
         >
           <div className={(picked ? "max-w-[56rem]" : "max-w-[70rem]") + " mx-auto flex w-full flex-col gap-[max(2.1rem,18px)]"}>
-            {!thread ? (
+            {thread?.projectId && projects.some((p) => p.id === thread.projectId) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setProjectId(thread.projectId!);
+                  setOpenId("");
+                }}
+                title="Open the project and its guidelines"
+                className="flex items-center gap-2 self-start rounded-full bg-surface-2 px-3 py-1.5 text-small text-ink-2 transition-colors hover:text-ink"
+              >
+                <FolderIcon />
+                {projects.find((p) => p.id === thread.projectId)!.name}
+                {projects.find((p) => p.id === thread.projectId)!.guide && <span className="text-ink-3">· guidelines on</span>}
+              </button>
+            )}
+            {!thread && projects.some((p) => p.id === projectId) ? (
+              <ProjectHome
+                key={projectId}
+                project={projects.find((p) => p.id === projectId)!}
+                chats={threads.filter((t) => t.projectId === projectId)}
+                chatItem={chatItem}
+                onSave={(name, guide) => saveProject({ id: projectId, name, guide })}
+                onDelete={() => void removeProject(projectId)}
+              />
+            ) : !thread ? (
               <Welcome mode={mode} live={live} onTry={send} />
             ) : (
               thread.turns.map((t) =>
@@ -762,16 +850,23 @@ export default function DatabaseView() {
 function ChatItem({
   title,
   on,
+  projects,
+  inProject,
+  onMove,
   onOpen,
   onRename,
   onDelete,
 }: {
   title: string;
   on: boolean;
+  projects: Project[];
+  inProject?: string;
+  onMove: (to: string | null) => void;
   onOpen: () => void;
   onRename: (t: string) => void;
   onDelete: () => void;
 }) {
+  const { open: moving, setOpen: setMoving, root: moveRoot, panel: movePanel, shown: moveShown } = useLiftMenu();
   const [editing, setEditing] = useState(false);
   // Delete needs a second press (a deleted chat is gone for good).
   const [sure, setSure] = useState(false);
@@ -833,6 +928,56 @@ function ChatItem({
       >
         <PencilIcon />
       </button>
+      {(projects.length > 0 || inProject) && (
+        <div ref={moveRoot} className="relative shrink-0">
+          <button
+            type="button"
+            onClick={() => setMoving(!moving)}
+            aria-expanded={moving}
+            aria-haspopup="menu"
+            aria-label={`Move "${title}" to a project`}
+            title="Move to a project"
+            className={"mr-0.5 flex rounded-full p-1.5 text-ink-3 transition-opacity hover:bg-surface hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 max-md:opacity-100 " + (moving ? "opacity-100" : "opacity-0")}
+          >
+            <FolderIcon />
+          </button>
+          {moveShown && (
+            <div ref={movePanel} role="menu" className="absolute right-0 top-full z-30 mt-1 flex min-w-[12rem] flex-col rounded-md border border-border bg-surface p-1.5 shadow-float">
+              <p className="px-3 pb-1 pt-1.5 text-caption font-medium uppercase text-ink-3">Move to</p>
+              {projects
+                .filter((p) => p.id !== inProject)
+                .map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMoving(false);
+                      onMove(p.id);
+                    }}
+                    className="flex items-center gap-2 rounded-sm px-3 py-2 text-left text-small text-ink-2 hover:bg-surface-2 hover:text-ink"
+                  >
+                    <FolderIcon />
+                    <span className="truncate">{p.name}</span>
+                  </button>
+                ))}
+              {inProject && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMoving(false);
+                    onMove(null);
+                  }}
+                  className="rounded-sm px-3 py-2 text-left text-small text-ink-2 hover:bg-surface-2 hover:text-ink"
+                >
+                  Take out of the project
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
       <button
         type="button"
         onClick={() => (sure ? onDelete() : setSure(true))}
@@ -843,6 +988,173 @@ function ChatItem({
       >
         {sure ? "Delete?" : <XIcon />}
       </button>
+    </div>
+  );
+}
+
+/** Projects in the chat list (owner 28 Nov 2026, like ChatGPT Projects): a folder per
+ *  position; "New" asks only for a name, the guidelines are written on its page. */
+function ProjectList({
+  projects,
+  open,
+  onOpen,
+  onMake,
+}: {
+  projects: Project[];
+  open: string;
+  onOpen: (id: string) => void;
+  onMake: (name: string) => void;
+}) {
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState("");
+  const make = () => {
+    const n = name.trim();
+    setNaming(false);
+    setName("");
+    if (n) onMake(n.slice(0, 80));
+  };
+  return (
+    <div className="mb-3 flex flex-col gap-1">
+      <div className="mb-1 flex items-center justify-between px-[max(0.9rem,10px)]">
+        <p className="text-[max(0.8125rem,11.5px)] font-medium uppercase tracking-wide text-ink-3">Projects</p>
+        <button
+          type="button"
+          onClick={() => setNaming(true)}
+          className="flex items-center gap-1 rounded-full px-2 py-0.5 text-small text-brand transition-colors hover:bg-surface-2"
+        >
+          <PlusIcon />
+          New
+        </button>
+      </div>
+      {naming && (
+        <input
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={make}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") make();
+            if (e.key === "Escape") {
+              setNaming(false);
+              setName("");
+            }
+          }}
+          maxLength={80}
+          placeholder="e.g. Senior Accountant - Hemas"
+          aria-label="Project name"
+          className="rounded-md bg-surface px-[max(0.9rem,10px)] py-[max(0.7rem,8px)] text-body text-ink outline-none ring-2 ring-brand/30 placeholder:text-ink-3"
+        />
+      )}
+      {projects.map((p) => (
+        <button
+          key={p.id}
+          type="button"
+          onClick={() => onOpen(p.id)}
+          aria-current={open === p.id ? "true" : undefined}
+          title={p.name}
+          className={
+            "flex items-center gap-2.5 rounded-md px-[max(0.9rem,10px)] py-[max(0.7rem,8px)] text-left text-body transition-colors " +
+            (open === p.id ? "bg-surface-2 text-ink" : "text-ink-2 hover:bg-surface-2/60 hover:text-ink")
+          }
+        >
+          <FolderIcon />
+          <span className="truncate">{p.name}</span>
+        </button>
+      ))}
+      {!projects.length && !naming && (
+        <p className="px-[max(0.9rem,10px)] text-small text-ink-3">Keep the searches for one position together.</p>
+      )}
+    </div>
+  );
+}
+
+/** One project's page: its name, the guidelines every search in it keeps, and its chats.
+ *  A message typed here starts a new chat inside the project. */
+function ProjectHome({
+  project,
+  chats,
+  chatItem,
+  onSave,
+  onDelete,
+}: {
+  project: Project;
+  chats: Thread[];
+  chatItem: (t: Thread) => ReactNode;
+  onSave: (name: string, guide: string) => Promise<string | null>;
+  onDelete: () => void;
+}) {
+  const [name, setName] = useState(project.name);
+  const [guide, setGuide] = useState(project.guide);
+  const [saved, setSaved] = useState("");
+  const [sure, setSure] = useState(false);
+  const changed = name.trim() !== project.name || guide.trim() !== project.guide;
+  const save = async () => {
+    if (!name.trim() || !changed) return;
+    const ok = await onSave(name.trim(), guide.trim());
+    setSaved(ok ? "Saved. Every search in this project keeps these now." : "");
+  };
+  return (
+    <div className="flex flex-col gap-[max(1.4rem,14px)] pt-[4vh]">
+      <div className="flex items-center gap-3">
+        <span className="flex size-[max(2.75rem,36px)] shrink-0 items-center justify-center rounded-full bg-brand-soft text-brand">
+          <FolderIcon />
+        </span>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={() => void save()}
+          onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+          maxLength={80}
+          aria-label="Project name"
+          className="min-w-0 flex-1 rounded-sm bg-transparent px-1 text-h2 text-ink outline-none focus:bg-surface-2"
+        />
+        <button
+          type="button"
+          onClick={() => (sure ? onDelete() : setSure(true))}
+          onBlur={() => setSure(false)}
+          title="Delete the project. Its chats go back to your history."
+          className={"shrink-0 rounded-full px-3 py-1.5 text-small transition-colors hover:bg-surface-2 " + (sure ? "font-medium text-danger" : "text-ink-3 hover:text-ink")}
+        >
+          {sure ? "Press again to delete" : "Delete project"}
+        </button>
+      </div>
+      <section className="flex flex-col gap-2 rounded-md border border-border bg-surface p-[max(1.1rem,12px)]">
+        <label htmlFor="project-guide" className="text-small font-medium text-ink">
+          Guidelines for this project
+        </label>
+        <p className="text-small text-ink-3">AURA keeps these in every search here: the job, the client, the place, years, must-haves, who to leave out.</p>
+        <textarea
+          id="project-guide"
+          value={guide}
+          onChange={(e) => {
+            setGuide(e.target.value);
+            setSaved("");
+          }}
+          rows={4}
+          maxLength={2000}
+          placeholder="Senior accountant for Hemas. Colombo or Gampaha. 5-8 years. CIMA or ACCA a must. Not from audit firms."
+          className="resize-y rounded-sm bg-surface-2 px-3 py-2.5 text-body text-ink outline-none placeholder:text-ink-3 focus:ring-2 focus:ring-brand/30"
+        />
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            disabled={!changed || !name.trim()}
+            onClick={() => void save()}
+            className="flex h-[max(2.4rem,33px)] items-center rounded-full bg-brand px-4 text-small font-medium text-white transition-colors hover:bg-brand-strong disabled:opacity-40"
+          >
+            Save guidelines
+          </button>
+          {saved && <span className="text-small text-success">{saved}</span>}
+        </div>
+      </section>
+      <section className="flex flex-col gap-1">
+        <p className="mb-1 text-[max(0.8125rem,11.5px)] font-medium uppercase tracking-wide text-ink-3">Chats in this project</p>
+        {chats.length ? (
+          chats.map((t) => chatItem(t))
+        ) : (
+          <p className="text-small text-ink-3">None yet. Type below to start the first search here, or move a chat in with its folder button.</p>
+        )}
+      </section>
     </div>
   );
 }
@@ -1510,6 +1822,11 @@ const ico = {
   strokeLinejoin: "round",
   "aria-hidden": true,
 } as const;
+const FolderIcon = () => (
+  <svg {...ico} className="size-[max(1rem,14px)] shrink-0">
+    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+  </svg>
+);
 const PlusIcon = () => (
   <svg {...ico} className="size-[max(1.1rem,15px)]">
     <path d="M5 12h14M12 5v14" />
