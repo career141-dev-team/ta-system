@@ -22,6 +22,7 @@ import {
 import { POOL, filterReply, panelOf } from "./aura";
 import FilterBar, { PILL } from "./FilterBar";
 import { petSay } from "@/lib/pet";
+import { zip } from "@/lib/zip";
 import { candidateCall, cvHeaders, cvUrl, door, OLD_SERVER, queryOnce, saveLiveFile, useDoorMutation, useDoorQuery, useLive } from "@/lib/backend";
 import { useSignedInPerson } from "@/lib/role";
 import { useSpeech } from "@/lib/useSpeech";
@@ -597,25 +598,32 @@ export default function DatabaseView() {
     if (!q) return;
     queueMicrotask(() => sendRef.current(q, { fresh: true, as }));
   }, [live, liveSite]);
-  // One file after another (a browser drops a burst of downloads); signed in with the session.
-  // ponytail: separate PDFs, no zip - add a zip library if the team asks for one file.
+  // One CV downloads as its PDF; two or more as ONE zip (28 Nov 2026: checked live - Chrome let the
+  // first of two downloads through and silently blocked the second as an "automatic download").
   const downloadCvs = async (files: CvFile[]) => {
     if (!files.length) return;
     petSay("working", `Downloading ${files.length} CV${files.length === 1 ? "" : "s"}…`);
-    let saved = 0;
-    for (const f of files) {
-      if (live) {
-        if (await saveLiveFile(f.url, f.name)) saved++;
-      } else {
-        const a = document.createElement("a");
-        a.href = f.url;
-        a.download = f.name;
-        a.click();
-        saved++;
-      }
-      await new Promise((r) => setTimeout(r, 350));
+    if (files.length === 1) {
+      const f = files[0];
+      let ok = true;
+      if (live) ok = await saveLiveFile(f.url, f.name);
+      else saveBlob(f.url, f.name);
+      petSay(ok ? "done" : "failed", ok ? "Downloaded 1 CV." : "That CV could not be fetched. Try again.");
+      return;
     }
-    petSay(saved ? "done" : "failed", saved === files.length ? `Downloaded ${saved} CV${saved === 1 ? "" : "s"}.` : `Downloaded ${saved} of ${files.length}. The rest could not be fetched.`);
+    const got: { name: string; data: Uint8Array }[] = [];
+    for (const f of files) {
+      const res = await fetch(f.url, live ? { headers: await cvHeaders(f.url) } : undefined).catch(() => null);
+      if (res?.ok) got.push({ name: f.name, data: new Uint8Array(await res.arrayBuffer()) });
+    }
+    if (!got.length) {
+      petSay("failed", "None of those CVs could be fetched. Try again.");
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([zip(got)], { type: "application/zip" }));
+    saveBlob(url, `CVs (${got.length}).zip`);
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    petSay("done", got.length === files.length ? `Downloaded ${got.length} CVs in one zip.` : `Downloaded ${got.length} of ${files.length} CVs in one zip. The rest could not be fetched.`);
   };
   const newSearch = () => {
     setOpenId("");
@@ -1369,6 +1377,13 @@ function Answer({
 }
 
 type CvFile = { name: string; url: string };
+/** Hand a file address to the browser to save. */
+const saveBlob = (url: string, name: string) => {
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+};
 /** The CV files of these people (those with a CV on record). */
 const filesOf = (ps: Person[]): CvFile[] => ps.filter((p) => p.cv).map((p) => ({ name: `${p.name} - CV.pdf`, url: p.cv! }));
 
@@ -1461,7 +1476,7 @@ function Results({
       {withCv.length > 0 && (
         <div className="flex flex-wrap items-center gap-3 text-small">
           <label className="flex items-center gap-2 text-ink-2">
-            <input type="checkbox" checked={all} onChange={() => setTicked(all ? [] : withCv.map((p) => p.id))} className="size-4 accent-[var(--color-brand)]" />
+            <input type="checkbox" checked={all} onChange={() => setTicked(all ? [] : withCv.map((p) => p.id))} className="size-[max(1.3rem,20px)] cursor-pointer accent-[var(--color-brand)]" />
             {all ? "Untick all" : `Tick all ${withCv.length}`}
           </label>
           <button
@@ -1500,7 +1515,7 @@ function Results({
                 onChange={() => toggle(p.id)}
                 aria-label={p.cv ? `Tick ${p.name}` : `${p.name} has no CV file on record`}
                 title={p.cv ? `Tick ${p.name} to download the CV` : "No CV file on record"}
-                className="absolute left-3 top-1/2 z-10 size-4 -translate-y-1/2 accent-[var(--color-brand)] disabled:opacity-30"
+                className="absolute left-4 top-1/2 z-10 size-[max(1.3rem,20px)] -translate-y-1/2 cursor-pointer accent-[var(--color-brand)] disabled:cursor-not-allowed disabled:opacity-30"
               />
               <button
                 type="button"
@@ -1509,7 +1524,7 @@ function Results({
                 aria-current={on ? "true" : undefined}
                 title={p.cv ? "Open the CV" : "No CV file on record"}
                 className={
-                  "grid w-full items-center gap-x-[max(1rem,10px)] py-3.5 pl-10 pr-[max(8.5rem,104px)] text-left transition-colors " +
+                  "grid w-full items-center gap-x-[max(1rem,10px)] py-3.5 pl-[max(3.6rem,46px)] pr-[max(8.5rem,104px)] text-left transition-colors " +
                   (compact
                     ? "grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] max-md:grid-cols-1"
                     : "grid-cols-[minmax(0,1.25fr)_minmax(0,0.38fr)_minmax(0,1.1fr)_minmax(0,0.95fr)] max-xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] max-xl:[&>:nth-child(2)]:hidden max-xl:[&>:nth-child(4)]:hidden max-md:grid-cols-1") +
@@ -2058,7 +2073,7 @@ function RefereeList({ list, onPick }: { list: Referee[]; onPick: (p: Person) =>
     <div className="flex max-w-[48rem] flex-col gap-2">
       <div className="flex flex-wrap items-center gap-3 text-small">
         <label className="flex items-center gap-2 text-ink-2">
-          <input type="checkbox" checked={all} onChange={() => setTicked(all ? [] : list.map((r) => r.id))} className="size-4 accent-[var(--color-brand)]" />
+          <input type="checkbox" checked={all} onChange={() => setTicked(all ? [] : list.map((r) => r.id))} className="size-[max(1.3rem,20px)] cursor-pointer accent-[var(--color-brand)]" />
           Tick all
         </label>
         <button type="button" disabled={!ticked.length} onClick={exportNow} className="ml-auto flex h-[max(2.4rem,33px)] items-center rounded-full bg-brand px-4 text-small font-medium text-white hover:bg-brand-strong disabled:opacity-40">
@@ -2074,7 +2089,7 @@ function RefereeList({ list, onPick }: { list: Referee[]; onPick: (p: Person) =>
             <li key={r.id} className={"rounded-md border px-4 py-3 transition-colors " + (on ? "border-brand bg-brand-tint" : "border-border bg-surface")}>
               <div className="flex flex-wrap items-start gap-x-5 gap-y-2">
                 <label className="flex min-w-0 flex-1 cursor-pointer gap-3">
-                  <input type="checkbox" checked={on} onChange={() => setTicked((t) => (on ? t.filter((x) => x !== r.id) : [...t, r.id]))} aria-label={`Tick ${r.name} to export`} className="mt-1 size-4 shrink-0 accent-[var(--color-brand)]" />
+                  <input type="checkbox" checked={on} onChange={() => setTicked((t) => (on ? t.filter((x) => x !== r.id) : [...t, r.id]))} aria-label={`Tick ${r.name} to export`} className="mt-1 size-[max(1.3rem,20px)] shrink-0 cursor-pointer accent-[var(--color-brand)]" />
                   <span className="min-w-0">
                     <span className="block text-body font-medium text-ink">{r.name}</span>
                     <span className="block text-small text-ink-2">
