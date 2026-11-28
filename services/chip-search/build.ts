@@ -33,6 +33,9 @@ const norm = (s: string) => (s || "").toLowerCase().replace(/\([^)]*\)/g, " ").r
 const IT = /\b(it|i\.t\.|ict|information technology|information systems|it infrastructure)\b/i;
 const BOSS = /\b(manager|head|director|lead|chief|cio|cto)\b/i;
 
+/** Whether the record holds an email / a phone (export.sql, 28 Nov 2026). Nothing when an older export has no flags. */
+export const contactFlags = (c: any): { hasEmail?: boolean; hasPhone?: boolean } => (typeof c?.hasEmail === "boolean" ? { hasEmail: c.hasEmail, hasPhone: c.hasPhone === true } : {});
+
 /** The model's answer into a card, with the same checks the first build ran (run.ts + fix4). */
 export function card(r: { id: string; text: string; date: string; c: any }, answer: string | null): any {
   const p: any = finishProfile({ id: r.id, cvText: r.text, cvDate: r.date, taYears: taYears(r.c), mergedInto: merged(r.c) ? "merged" : null, cvFileMissing: false }, jsonOf(answer));
@@ -47,6 +50,7 @@ export function card(r: { id: string; text: string; date: string; c: any }, answ
   p.personKey = r.c.fileHash || `${norm(t)}|${norm(now)}|${p.years ?? ""}|${p.place ?? ""}`;
   p.titleKey = `${norm(t)}|${norm(now)}|${p.years ?? ""}`;
   p.builtAt = new Date().toISOString().slice(0, 10);
+  Object.assign(p, contactFlags(r.c));
   return p;
 }
 
@@ -87,10 +91,13 @@ let dropped = 0;
 const rl = readline.createInterface({ input: fs.createReadStream(CARDS, "utf8"), crlfDelay: Infinity });
 for await (const l of rl) {
   if (!l) continue;
-  let id = "";
-  try { id = JSON.parse(l).id; } catch { continue; }
+  let o: any;
+  try { o = JSON.parse(l); } catch { continue; }
+  const id: string = o.id;
   if (!recs.has(id)) { dropped++; continue; }
-  keep.push(l);
+  // A kept card is not rebuilt, but an email or phone can be added to the record any day.
+  const f = contactFlags(recs.get(id)!.c);
+  keep.push(f.hasEmail === undefined || (o.hasEmail === f.hasEmail && o.hasPhone === f.hasPhone) ? l : JSON.stringify(Object.assign(o, f)));
   have.add(id);
 }
 const todo = [...recs.values()].filter((r) => !have.has(r.id));

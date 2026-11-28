@@ -218,6 +218,8 @@ let search: Search | null = null;
 let agent: Agent | null = null;
 let cards = 0;
 let loadedAt = "";
+let table: import("node:sqlite").DatabaseSync | null = null;
+let tableRows: number | null = null;
 let loading: Promise<void> | null = null;
 // Ranked lists waiting for their AI check (/check), by the search words.
 const ranked = new Map<string, any>();
@@ -244,6 +246,20 @@ async function load(): Promise<void> {
   cards = list.length;
   loadedAt = new Date().toISOString();
   log(`loaded ${cards} cards in ${Date.now() - t0} ms`);
+  // 28 Nov 2026: the same cards as a table the agent will query (table.ts). Nothing reads it
+  // yet; it is built here so /health shows it works on the server before the agent gets it.
+  // Imported here, not at the top: without node:sqlite the search must still start.
+  try {
+    const t1 = Date.now();
+    const { buildTable, runQuery } = await import("./table");
+    table = buildTable(list);
+    const n = runQuery(table, "select count(*) from people");
+    tableRows = n.ok ? Number(n.rows[0][0]) : null;
+    log(`table built: ${tableRows} people in ${Date.now() - t1} ms`);
+  } catch (e) {
+    table = null; tableRows = null;
+    log("table not built", String(e));
+  }
 }
 const reload = () => (loading ??= load().catch((e) => log("load failed", String(e))).finally(() => { loading = null; }));
 
@@ -274,7 +290,7 @@ const send = (res: http.ServerResponse, status: number, body: unknown) => {
 
 const server = http.createServer(async (req, res) => {
   try {
-    if (req.method === "GET" && req.url === "/health") return send(res, 200, { ok: !!search, cards, loadedAt, spendUsd: spend.day === today() ? Number(spend.usd.toFixed(3)) : 0 });
+    if (req.method === "GET" && req.url === "/health") return send(res, 200, { ok: !!search, cards, loadedAt, tableRows, spendUsd: spend.day === today() ? Number(spend.usd.toFixed(3)) : 0 });
     if (req.method === "POST" && req.url === "/reload") { reload(); return send(res, 202, { ok: true }); }
     if (req.method !== "POST" || (req.url !== "/search" && req.url !== "/check" && req.url !== "/agent")) return send(res, 404, { ok: false, message: "Not found." });
     let raw = "";
