@@ -270,6 +270,9 @@ export type Reply = {
   actions?: Action[];
   /** A Boolean string as run, shown under the line. */
   boolean?: string;
+  /** What AURA searched, in plain words, and each step with its count (the query agent). */
+  searched?: string;
+  trail?: string[];
   /** Files to hand to the browser to download. */
   files?: { name: string; url: string }[];
   /** Something was refused or not found. */

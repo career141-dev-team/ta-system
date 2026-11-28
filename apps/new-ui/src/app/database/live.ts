@@ -19,7 +19,7 @@ export type LivePerson = {
   hasCv: boolean;
   career?: { period: string; title: string; company: string }[];
 };
-export type LiveAnswer = { ok: true; total: number; rows: LivePerson[]; read: string | null; reply?: string | null; chips: string[]; refining: boolean; problem: string | null };
+export type LiveAnswer = { ok: true; total: number; rows: LivePerson[]; read: string | null; reply?: string | null; trail?: string[]; chips: string[]; refining: boolean; problem: string | null };
 
 /** What a live message asks for. */
 export type LiveAsk =

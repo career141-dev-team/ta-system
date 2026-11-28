@@ -20,7 +20,7 @@ import { createSearch } from "../../convex/lib/search/chipSearch";
 import os from "node:os";
 import path from "node:path";
 import { createAgent, type AgentModelCaller, type AgentModelResponse, type AgentResult } from "./agent";
-import { createQueryAgent } from "./agent2";
+import { createQueryAgent, type LastSearch } from "./agent2";
 import { createQuerier } from "./query";
 
 const FILE = process.env.CHIP_CARDS || "/data/cards.jsonl";
@@ -274,6 +274,11 @@ const ranked = new Map<string, any>();
 // Cached agent answers (15 min) so repeating the exact same prompt returns consistent results.
 const agentCache = new Map<string, { at: number; r: AgentResult }>();
 const AGENT_CACHE_MS = 15 * 60_000;
+// The query agent's last search per chat (28 Nov 2026), kept under the chat's words so far. The next
+// message (the same words plus one) finds it, so a follow-up changes that search instead of starting
+// over. In memory only: after a restart the agent reads the conversation alone, which also works.
+const lastSearch = new Map<string, { at: number; last: LastSearch }>();
+const LAST_MS = 2 * 60 * 60_000;
 
 /** Reads the cards line by line (the file is ~400 MB); the model's raw answer is dropped to save memory. */
 async function load(): Promise<void> {
@@ -369,7 +374,13 @@ const server = http.createServer(async (req, res) => {
       const cacheKey = JSON.stringify({ turns, currentIds, wantGender, limit, g: Object.keys(genders).length, v2 });
       const cached = agentCache.get(cacheKey);
       if (cached && Date.now() - cached.at < AGENT_CACHE_MS) return send(res, 200, cached.r);
-      const r = (v2 ? await agent2!({ turns, currentIds, genders, limit }) : null) ?? (await agent({ turns, currentIds, genders, wantGender, limit }));
+      const before = lastSearch.get(turns.slice(0, -1).join("\n"));
+      const r2 = v2 ? await agent2!({ turns, currentIds, genders, limit, last: before && Date.now() - before.at < LAST_MS ? before.last : null }) : null;
+      if (r2?.last) {
+        if (lastSearch.size > 500) lastSearch.clear();
+        lastSearch.set(key, { at: Date.now(), last: r2.last });
+      }
+      const r = r2 ?? (await agent({ turns, currentIds, genders, wantGender, limit }));
       if (!r) return send(res, 502, { ok: false, message: "Agent could not answer." });
       if (agentCache.size > 100) agentCache.clear();
       agentCache.set(cacheKey, { at: Date.now(), r });

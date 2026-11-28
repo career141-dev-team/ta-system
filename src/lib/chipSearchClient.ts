@@ -33,6 +33,10 @@ export type ChipAgentAnswer = {
   candidates: ChipAgentCandidate[];
   steps: number;
   ms: number;
+  /** 2 = the query agent (services/chip-search/agent2.ts): it filtered by its own query, so the caller must not filter again by its own rules. */
+  agent?: number;
+  /** Each query the agent ran, in its own plain words, with what it found. */
+  trail?: string[];
 };
 
 const URL_DEFAULT = "http://chip-search:3311/search";

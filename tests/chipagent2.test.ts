@@ -130,6 +130,29 @@ ok("no answer from the model is no answer (the caller falls back)", (await creat
   ok("a model that never finishes is told to, then given up on", hurried && r === null);
 }
 
+console.log("the chat: what it searched, and the search before");
+{
+  const m = scripted([
+    () => ({ content: [tool("query", { sql: "select count(*) from people where province='Eastern'", why: "People in the Eastern Province" }), tool("query", { sql: EASTERN_F, why: "Women among them" })] }),
+    () => ({ content: [tool("finish", { reply: "Two.", searched: "Eastern · female: 2", final_sql: EASTERN_F, candidates: [{ id: "batti-f", fit: 90, reason: "r" }] })] }),
+  ]);
+  const r = await createQueryAgent(cards, direct, "", m.call)({ turns: ["eastern", "only female"] });
+  ok("each query is kept in the agent's plain words with what it found", JSON.stringify(r?.trail) === JSON.stringify(["People in the Eastern Province: 3", "Women among them: 2"]), JSON.stringify(r?.trail));
+  ok("the answer says it came from the query agent, and hands back its search", r?.agent === 2 && r.last?.sql === EASTERN_F && r.last.searched === "Eastern · female: 2");
+
+  const next = scripted([() => ({ content: [tool("finish", { reply: "One with an email.", searched: "Eastern · female · with email: 1", final_sql: EASTERN_F + " and has_email=1", candidates: [{ id: "batti-f", fit: 90, reason: "r" }, { id: "ampara-f", fit: 80, reason: "no email" }] })] })]);
+  const r2 = await createQueryAgent(cards, direct, "", next.call)({ turns: ["eastern", "only female", "with email"], last: r!.last });
+  const first = String(next.seen[0].messages[0].content);
+  ok("the next message is given the search before it", first.includes("YOUR LAST SEARCH IN THIS CHAT") && first.includes(EASTERN_F));
+  ok("and the follow-up narrows it: the one without an email is gone", r2?.candidates.map((c) => c.id).join() === "batti-f" && r2.total === 1);
+}
+{
+  const m = scripted([() => ({ content: [{ type: "text", text: "Three of them." }] })]);
+  const keep = { searched: "Eastern", sql: "select id from people where province='Eastern'" };
+  const r = await createQueryAgent(cards, direct, "", m.call)({ turns: ["eastern", "how many is that"], last: keep });
+  ok("a question in between does not lose the search", r?.last?.sql === keep.sql);
+}
+
 console.log("the worker: read only, and stopped when too slow");
 {
   const file = path.join(os.tmpdir(), `chip-agent2-test-${process.pid}.db`);

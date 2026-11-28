@@ -117,7 +117,10 @@ export async function POST(req: NextRequest) {
       let found = agentAns.candidates
         .map((a) => ({ a, c: repo.candidate(a.id) }))
         .filter((x): x is { a: (typeof agentAns.candidates)[number]; c: NonNullable<typeof x.c> } => !!x.c && reachable(x.c));
-      if (want && found.length) {
+      // 28 Nov 2026: the query agent already filtered by what the whole chat asked ("male" after
+      // an earlier "female" means male). The word check here reads every message at once and
+      // would undo that, so it stays for the first agent only.
+      if (want && found.length && agentAns.agent !== 2) {
         const mine = want === "female" ? "f" : "m";
         const resolved = found.map((x) => fm(x.a.gender) ?? fm(String(x.c.gender ?? "").toLowerCase()));
         const askNames = found.map((x, i) => (resolved[i] ? "" : x.c.fullName ?? ""));
@@ -143,6 +146,7 @@ export async function POST(req: NextRequest) {
           rows,
           read: agentAns.read || null,
           reply: agentAns.reply || null,
+          trail: agentAns.trail?.length ? agentAns.trail.slice(0, 12) : undefined,
           chips: [],
           refining: false,
           problem: null,

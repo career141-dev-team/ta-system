@@ -50,7 +50,7 @@ const TOOLS = [
   {
     name: "query",
     description: "Run one read-only SELECT on the tables. Returns the columns, up to 200 rows, and whether there were more. An error comes back as text: correct the query and run it again. Stopped after 2 seconds.",
-    input_schema: { type: "object", properties: { sql: { type: "string" } }, required: ["sql"] },
+    input_schema: { type: "object", properties: { sql: { type: "string" }, why: { type: "string", description: "What this query checks, in a few plain words for the recruiter, e.g. 'Accountants in the Eastern Province'. No SQL words." } }, required: ["sql", "why"] },
   },
   {
     name: "read_people",
@@ -86,6 +86,10 @@ const TOOLS = [
   },
 ];
 
+/** What the chat keeps from one answer and hands back with the next message, so "only the ones with email" changes the last search instead of starting over. */
+export type LastSearch = { searched: string; sql: string };
+export type QueryAgentResult = AgentResult & { agent: 2; trail: string[]; last: LastSearch | null };
+
 const gWord = (g: unknown): "female" | "male" | null => (g === "f" || g === "female" ? "female" : g === "m" || g === "male" ? "male" : null);
 const clip = (v: unknown) => (typeof v === "string" && v.length > 300 ? `${v.slice(0, 300)}…` : v);
 
@@ -111,13 +115,15 @@ export function createQueryAgent(cards: any[], query: Query, tables: string, cal
     };
   };
 
-  return async function runQueryAgent(input: AgentInput): Promise<AgentResult | null> {
+  return async function runQueryAgent(input: AgentInput & { last?: LastSearch | null }): Promise<QueryAgentResult | null> {
     const t0 = Date.now();
     const genders = input.genders ?? {};
     const current = (input.currentIds ?? []).filter((id) => byId.has(id)).slice(0, 40);
     // Everyone a query or a card read returned this turn, plus who is on screen. Nobody else can be shown.
     const seen = new Set<string>(current);
     const note = (v: unknown) => { if (typeof v === "string" && byId.has(v)) seen.add(v); };
+    // Each query in the agent's own plain words with what it found: shown to the recruiter as "how I searched".
+    const trail: string[] = [];
 
     const parts = [`CONVERSATION (oldest first):\n${input.turns.map((t, i) => `${i + 1}. ${t}`).join("\n")}`];
     if (current.length) {
@@ -126,6 +132,7 @@ export function createQueryAgent(cards: any[], query: Query, tables: string, cal
         return `#${i + 1} [${id}] ${c.title} @ ${c.jobs[0]?.company ?? "-"} | ${c.place ?? "place not on file"} | ${c.years ?? "?"} yrs | ${c.gender}`;
       }).join("\n")}`);
     }
+    if (input.last?.sql) parts.push(`YOUR LAST SEARCH IN THIS CHAT, before the newest message: ${input.last.searched}\nIts query: ${input.last.sql}\nIf the newest message narrows or changes that search, start from this query.`);
     const messages: AgentMessage[] = [{ role: "user", content: parts.join("\n\n") }];
 
     for (let step = 1; step <= MAX_STEPS; step++) {
@@ -168,6 +175,9 @@ export function createQueryAgent(cards: any[], query: Query, tables: string, cal
           candidates,
           steps: step,
           ms: Date.now() - t0,
+          agent: 2,
+          trail,
+          last: allowed ? { searched: String(inp.searched ?? "").trim(), sql: finalSql } : input.last ?? null,
         };
       }
 
@@ -180,6 +190,9 @@ export function createQueryAgent(cards: any[], query: Query, tables: string, cal
           const a = await query(String(call.input.sql ?? ""));
           if (a.ok) {
             for (const row of a.rows) for (const v of row) note(v);
+            const one = a.rows.length === 1 && a.rows[0].length === 1 && typeof a.rows[0][0] === "number" ? a.rows[0][0] : null;
+            const why = String(call.input.why ?? "").trim().slice(0, 120);
+            if (why) trail.push(`${why}: ${one ?? `${a.rows.length}${a.more ? "+" : ""}`}`);
             out = { columns: a.columns, rows: a.rows.map((r) => r.map(clip)), returned: a.rows.length, more: a.more };
           } else out = { error: a.error };
         } else if (call.name === "read_people") {

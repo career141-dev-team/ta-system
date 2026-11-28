@@ -431,7 +431,7 @@ export default function DatabaseView() {
       const show = (x: LiveAnswer) => {
         const people = cardsOf(x, skip);
         put(
-          { text: foundLine(x, what), chips: chipsOf(x.chips), people, actions: liveNext(people), warn: !x.total && !x.reply, ran, ...(mode === "boolean" ? { boolean: q } : {}) },
+          { text: foundLine(x, what), chips: chipsOf(x.chips), people, actions: liveNext(people), warn: !x.total && !x.reply, ran, ...(x.reply && x.read ? { searched: x.read } : {}), ...(x.trail?.length ? { trail: x.trail } : {}), ...(mode === "boolean" ? { boolean: q } : {}) },
           { query: q, count: x.total },
         );
       };
@@ -934,6 +934,17 @@ function Answer({
         </p>
       </div>
       <div className="flex flex-col gap-[max(0.55rem,6px)] pl-[max(3.4rem,46px)] max-md:pl-0">
+        {t.searched && <p className="text-small text-ink-2">Searched: {t.searched}</p>}
+        {t.trail && t.trail.length > 0 && (
+          <details className="text-small text-ink-3">
+            <summary className="cursor-pointer select-none">How I searched</summary>
+            <ol className="mt-1 flex list-decimal flex-col gap-0.5 pl-5">
+              {t.trail.map((s, i) => (
+                <li key={i}>{s}</li>
+              ))}
+            </ol>
+          </details>
+        )}
         {t.boolean && (
           <code className="self-start rounded-sm bg-surface-2 px-2.5 py-1 font-mono text-mono text-ink-2">
             {t.boolean}
