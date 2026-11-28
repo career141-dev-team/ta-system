@@ -45,7 +45,8 @@ export function readLive(raw: string, prior: string): LiveAsk {
   if (sl) return { kind: "add", who: sl[1], job: sl[2].replace(/^(?:the|a)\s+/i, "") };
   if (/^take\s+.+\s+out of\s+/i.test(t)) return { kind: "takeOut" };
   if (/^(?:remove|drop|without|no longer)\s+/i.test(t) && prior) return { kind: "remove" };
-  if (/download/i.test(t)) return { kind: "download", who: t };
+  // "Download Kasun's CV", "CVs of the top 3", "give me all their CVs" (owner 28 Nov 2026: CVs through the chat).
+  if (/download|\bcvs?\s+(?:of|for)\b|\b(?:send|give|get)\s+me\b.*\bcvs?\b/i.test(t)) return { kind: "download", who: t };
   const like = t.match(/(?:people|someone|others|more)\s+like\s+(.+?)[.?]?$|similar to\s+(.+?)[.?]?$/i);
   if (like) return { kind: "like", name: (like[1] ?? like[2]).trim() };
   const lines = t
@@ -97,13 +98,21 @@ export function personOf(p: LivePerson, cv?: string): Person {
 /** The engine's chips, shown as they were read (not removable: the search is the words). */
 export const chipsOf = (labels: string[]): Chip[] => labels.map((label) => ({ label, added: false, test: "live" }));
 
+/** The first name as a whole word: "Kasun's CV", "Kasun," and "Kasun" all count (28 Nov 2026). */
+export const firstNameIn = (low: string, name: string) => {
+  const first = name.split(" ")[0].toLowerCase().replace(/[^a-z]/g, "");
+  return first.length > 1 && new RegExp(`(^|[^a-z])${first}([^a-z]|$)`).test(low);
+};
+
 /** "them / the top 3 / Kasun": who on screen a message means. */
 export function whoIn(text: string, last: Person[]): Person[] {
   const low = text.toLowerCase();
-  const named = last.filter((p) => low.includes(p.name.toLowerCase()) || low.includes(`${p.name.split(" ")[0].toLowerCase()} `));
+  const named = last.filter((p) => low.includes(p.name.toLowerCase()) || firstNameIn(low, p.name));
   if (named.length) return named;
   const n = Number(low.match(/top\s+(\d+)/)?.[1] ?? 0);
-  return n ? last.slice(0, n) : last.slice(0, 10);
+  if (n) return last.slice(0, n);
+  // "all", "every", "everyone": every person in the last answer, not only the first ten.
+  return /\b(?:all|every|everyone|everybody)\b/.test(low) ? last : last.slice(0, 10);
 }
 
 /** The position a phrase names, by a word of its title or client. */

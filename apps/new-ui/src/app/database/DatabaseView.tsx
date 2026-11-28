@@ -22,6 +22,7 @@ import {
 import { POOL, filterReply, panelOf } from "./aura";
 import FilterBar, { PILL } from "./FilterBar";
 import { petSay } from "@/lib/pet";
+import { zip } from "@/lib/zip";
 import { candidateCall, cvHeaders, cvUrl, door, OLD_SERVER, queryOnce, saveLiveFile, useDoorMutation, useDoorQuery, useLive } from "@/lib/backend";
 import { useSignedInPerson } from "@/lib/role";
 import { useSpeech } from "@/lib/useSpeech";
@@ -86,11 +87,13 @@ const liveNext = (people: Person[]) =>
         { label: "Download their CVs", prompt: "Download their CVs" },
       ]
     : [{ label: "Start over", prompt: "Start over" }];
-const foundLine = (a: LiveAnswer, what = "") =>
+// The line counts the people listed, never a bigger "matches" figure the list does not hold
+// (owner 28 Nov 2026: "843 match" over 45 rows confused the TAs).
+const foundLine = (a: LiveAnswer, what = "", shown = a.rows.length) =>
   a.reply?.trim()
     ? a.reply.trim()
-    : a.total
-      ? `${a.total} ${a.total === 1 ? "person matches" : "people match"}${what}${a.read ? ` - ${a.read}` : ""}.${a.problem ? ` ${a.problem}` : ""}`
+    : shown
+      ? `${shown} ${shown === 1 ? "person" : "people"} found${what}${a.read ? ` - ${a.read}` : ""}.${a.problem ? ` ${a.problem}` : ""}`
       : (a.problem ?? "Nothing in the database matched that search.");
 
 /** A past chat with no saved turns: its words and a button to run it again. */
@@ -431,13 +434,6 @@ export default function DatabaseView() {
       );
       setThinking(false);
       setLook(null);
-      // Download: hand each file to the browser.
-      for (const f of answer.files ?? []) {
-        const a = document.createElement("a");
-        a.href = f.url;
-        a.download = f.name;
-        a.click();
-      }
     }, LOOK_MS);
   };
 
@@ -483,8 +479,8 @@ export default function DatabaseView() {
       const show = (x: LiveAnswer) => {
         const people = cardsOf(x, skip);
         put(
-          { text: foundLine(x, what), chips: chipsOf(x.chips), people, actions: liveNext(people), warn: !x.total && !x.reply, ran, ...(mode === "boolean" ? { boolean: q } : {}) },
-          { query: q, count: x.total },
+          { text: foundLine(x, what, people.length), chips: chipsOf(x.chips), people, actions: liveNext(people), warn: !people.length && !x.reply, ran, ...(mode === "boolean" ? { boolean: q } : {}) },
+          { query: q, count: people.length },
         );
       };
       show(a);
@@ -502,12 +498,18 @@ export default function DatabaseView() {
         put({ text: "A live search is the words you said, so a filter cannot be taken off here. Say it the new way, or start over.", warn: true, ran: keep, actions: [{ label: "Start over", prompt: "Start over" }] });
       else if (ask.kind === "takeOut") put({ text: "Take them out on the opening's Pipeline. Nothing changed here.", warn: true, ran: keep });
       else if (ask.kind === "download") {
-        const who = whoIn(t, last).filter((p) => p.cv);
-        let saved = 0;
-        for (const p of who) if (await saveLiveFile(p.cv!, `${p.name} - CV.pdf`)) saved++;
+        // Buttons, not an automatic download (owner 28 Nov 2026): one per person, and "Download all".
+        const who = whoIn(t, last);
+        const files = filesOf(who);
+        const none = who.length - files.length;
         put({
-          text: !last.length ? "There is nobody on screen yet. Search first." : saved ? `Downloaded ${saved} CV${saved === 1 ? "" : "s"}.${saved < who.length ? ` ${who.length - saved} could not be fetched.` : ""}` : "None of them has a CV file to download.",
-          warn: !saved,
+          text: !last.length
+            ? "There is nobody on screen yet. Search first."
+            : files.length
+              ? `${files.length === 1 ? "Here is 1 CV" : `Here are ${files.length} CVs`}. Press to download.${none ? ` ${none} ${none === 1 ? "has" : "have"} no CV file on record.` : ""}`
+              : "None of them has a CV file to download.",
+          files,
+          warn: !files.length,
           ran: keep,
         });
       } else if (ask.kind === "add") {
@@ -606,6 +608,33 @@ export default function DatabaseView() {
     if (!q) return;
     queueMicrotask(() => sendRef.current(q, { fresh: true, as }));
   }, [live, liveSite]);
+  // One CV downloads as its PDF; two or more as ONE zip (28 Nov 2026: checked live - Chrome let the
+  // first of two downloads through and silently blocked the second as an "automatic download").
+  const downloadCvs = async (files: CvFile[]) => {
+    if (!files.length) return;
+    petSay("working", `Downloading ${files.length} CV${files.length === 1 ? "" : "s"}…`);
+    if (files.length === 1) {
+      const f = files[0];
+      let ok = true;
+      if (live) ok = await saveLiveFile(f.url, f.name);
+      else saveBlob(f.url, f.name);
+      petSay(ok ? "done" : "failed", ok ? "Downloaded 1 CV." : "That CV could not be fetched. Try again.");
+      return;
+    }
+    const got: { name: string; data: Uint8Array }[] = [];
+    for (const f of files) {
+      const res = await fetch(f.url, live ? { headers: await cvHeaders(f.url) } : undefined).catch(() => null);
+      if (res?.ok) got.push({ name: f.name, data: new Uint8Array(await res.arrayBuffer()) });
+    }
+    if (!got.length) {
+      petSay("failed", "None of those CVs could be fetched. Try again.");
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([zip(got)], { type: "application/zip" }));
+    saveBlob(url, `CVs (${got.length}).zip`);
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    petSay("done", got.length === files.length ? `Downloaded ${got.length} CVs in one zip.` : `Downloaded ${got.length} of ${files.length} CVs in one zip. The rest could not be fetched.`);
+  };
   const newSearch = () => {
     setOpenId("");
     setProjectId("");
@@ -811,6 +840,7 @@ export default function DatabaseView() {
                     onSend={send}
                     busy={thinking}
                     basket={basket}
+                    onDownload={(f) => void downloadCvs(f)}
                   />
                 ),
               )
@@ -1238,6 +1268,7 @@ function Answer({
   onSend,
   busy,
   basket,
+  onDownload,
 }: {
   t: Extract<Turn, { from: "aura" }>;
   latest: boolean;
@@ -1248,6 +1279,7 @@ function Answer({
   onSend: (text: string) => void;
   busy: boolean;
   basket: Basket;
+  onDownload: (files: CvFile[]) => void;
 }) {
   return (
     <div data-turn className="flex flex-col gap-[max(0.55rem,6px)]">
@@ -1339,8 +1371,10 @@ function Answer({
           </ul>
         )}
         {t.referees && t.referees.length > 0 && <RefereeList list={t.referees} onPick={onPick} basket={basket} />}
+        {t.files && t.files.length > 0 && <CvFiles files={t.files} onDownload={onDownload} />}
         {t.people && t.people.length > 0 && (
           <Results
+            onDownload={(ps) => onDownload(filesOf(ps))}
             people={t.people}
             open={open}
             picked={picked}
@@ -1354,6 +1388,47 @@ function Answer({
     </div>
   );
 }
+
+type CvFile = { name: string; url: string };
+/** Hand a file address to the browser to save. */
+const saveBlob = (url: string, name: string) => {
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+};
+/** The CV files of these people (those with a CV on record). */
+const filesOf = (ps: Person[]): CvFile[] => ps.filter((p) => p.cv).map((p) => ({ name: `${p.name} - CV.pdf`, url: p.cv! }));
+
+/** The CVs asked for in the chat: a button per person and "Download all" (owner 28 Nov 2026). */
+function CvFiles({ files, onDownload }: { files: CvFile[]; onDownload: (f: CvFile[]) => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {files.length > 1 && (
+        <button
+          type="button"
+          onClick={() => onDownload(files)}
+          className="flex h-[max(2.4rem,33px)] items-center gap-2 rounded-full bg-brand px-4 text-small font-medium text-white transition-colors hover:bg-brand-strong"
+        >
+          <DownloadIcon />
+          Download all {files.length}
+        </button>
+      )}
+      {files.map((f) => (
+        <button key={f.url} type="button" onClick={() => onDownload([f])} className={PILL}>
+          <DownloadIcon />
+          {f.name.replace(/ - CV\.pdf$/, "")}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const DownloadIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="size-4 shrink-0">
+    <path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14" />
+  </svg>
+);
 
 /** Circular fit-score ring matching the Opening's Database CVs rows. */
 function ScoreRing({ score }: { score: number }) {
@@ -1381,7 +1456,9 @@ function Results({
   onAll,
   onPick,
   onShortlist,
+  onDownload,
 }: {
+  onDownload: (people: Person[]) => void;
   people: Person[];
   open: boolean;
   picked?: string;
@@ -1392,6 +1469,11 @@ function Results({
 }) {
   const shown = open ? people : people.slice(0, 4);
   const compact = !!picked;
+  // Tick people, then download their CVs together (owner 28 Nov 2026).
+  const [ticked, setTicked] = useState<string[]>([]);
+  const withCv = people.filter((p) => p.cv);
+  const all = withCv.length > 0 && withCv.every((p) => ticked.includes(p.id));
+  const toggle = (id: string) => setTicked((t) => (t.includes(id) ? t.filter((x) => x !== id) : [...t, id]));
   // "See all" / "Show fewer" changes the list in place: the one switch, not a jump.
   const list = useRef<HTMLUListElement>(null);
   useSwap(list, open);
@@ -1404,6 +1486,23 @@ function Results({
   );
   return (
     <div className="flex flex-col gap-[max(0.6rem,6px)]">
+      {withCv.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 text-small">
+          <label className="flex items-center gap-2 text-ink-2">
+            <input type="checkbox" checked={all} onChange={() => setTicked(all ? [] : withCv.map((p) => p.id))} className="size-[max(1.3rem,20px)] cursor-pointer accent-[var(--color-brand)]" />
+            {all ? "Untick all" : `Tick all ${withCv.length}`}
+          </label>
+          <button
+            type="button"
+            disabled={!ticked.length || busy}
+            onClick={() => onDownload(people.filter((p) => ticked.includes(p.id)))}
+            className="ml-auto flex h-[max(2.4rem,33px)] items-center gap-2 rounded-full bg-brand px-4 text-small font-medium text-white transition-colors hover:bg-brand-strong disabled:opacity-40"
+          >
+            <DownloadIcon />
+            {ticked.length ? `Download ${ticked.length} CV${ticked.length === 1 ? "" : "s"}` : "Tick people to download CVs"}
+          </button>
+        </div>
+      )}
       <ul ref={list} className="divide-y divide-border overflow-hidden rounded-md border border-border bg-surface" aria-label="People found">
         {shown.map((p) => {
           const on = picked === p.id;
@@ -1422,6 +1521,15 @@ function Results({
 
           return (
             <li key={p.id} className="group relative">
+              <input
+                type="checkbox"
+                checked={ticked.includes(p.id)}
+                disabled={!p.cv}
+                onChange={() => toggle(p.id)}
+                aria-label={p.cv ? `Tick ${p.name}` : `${p.name} has no CV file on record`}
+                title={p.cv ? `Tick ${p.name} to download the CV` : "No CV file on record"}
+                className="absolute left-4 top-1/2 z-10 size-[max(1.3rem,20px)] -translate-y-1/2 cursor-pointer accent-[var(--color-brand)] disabled:cursor-not-allowed disabled:opacity-30"
+              />
               <button
                 type="button"
                 data-card
@@ -1429,7 +1537,7 @@ function Results({
                 aria-current={on ? "true" : undefined}
                 title={p.cv ? "Open the CV" : "No CV file on record"}
                 className={
-                  "grid w-full items-center gap-x-[max(1rem,10px)] py-3.5 pl-5 pr-[max(8.5rem,104px)] text-left transition-colors " +
+                  "grid w-full items-center gap-x-[max(1rem,10px)] py-3.5 pl-[max(3.6rem,46px)] pr-[max(8.5rem,104px)] text-left transition-colors " +
                   (compact
                     ? "grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] max-md:grid-cols-1"
                     : "grid-cols-[minmax(0,1.25fr)_minmax(0,0.38fr)_minmax(0,1.1fr)_minmax(0,0.95fr)] max-xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] max-xl:[&>:nth-child(2)]:hidden max-xl:[&>:nth-child(4)]:hidden max-md:grid-cols-1") +
@@ -1982,7 +2090,7 @@ function RefereeList({ list, onPick, basket }: { list: Referee[]; onPick: (p: Pe
     <div className="flex max-w-[48rem] flex-col gap-2">
       <div className="flex flex-wrap items-center gap-3 text-small">
         <label className="flex items-center gap-2 text-ink-2">
-          <input type="checkbox" checked={all} onChange={() => setTicked((t) => (all ? t.filter((id) => !list.some((r) => r.id === id)) : [...new Set([...t, ...list.map((r) => r.id)])]))} className="size-4 accent-[var(--color-brand)]" />
+          <input type="checkbox" checked={all} onChange={() => setTicked((t) => (all ? t.filter((id) => !list.some((r) => r.id === id)) : [...new Set([...t, ...list.map((r) => r.id)])]))} className="size-[max(1.3rem,20px)] cursor-pointer accent-[var(--color-brand)]" />
           Tick all
         </label>
         {earlier > 0 && (
@@ -2006,7 +2114,7 @@ function RefereeList({ list, onPick, basket }: { list: Referee[]; onPick: (p: Pe
             <li key={r.id} className={"rounded-md border px-4 py-3 transition-colors " + (on ? "border-brand bg-brand-tint" : "border-border bg-surface")}>
               <div className="flex flex-wrap items-start gap-x-5 gap-y-2">
                 <label className="flex min-w-0 flex-1 cursor-pointer gap-3">
-                  <input type="checkbox" checked={on} onChange={() => setTicked((t) => (on ? t.filter((x) => x !== r.id) : [...t, r.id]))} aria-label={`Tick ${r.name} to export`} className="mt-1 size-4 shrink-0 accent-[var(--color-brand)]" />
+                  <input type="checkbox" checked={on} onChange={() => setTicked((t) => (on ? t.filter((x) => x !== r.id) : [...t, r.id]))} aria-label={`Tick ${r.name} to export`} className="mt-1 size-[max(1.3rem,20px)] shrink-0 cursor-pointer accent-[var(--color-brand)]" />
                   <span className="min-w-0">
                     <span className="block text-body font-medium text-ink">{r.name}</span>
                     <span className="block text-small text-ink-2">

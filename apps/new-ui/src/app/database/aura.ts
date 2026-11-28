@@ -13,6 +13,8 @@
 // Sample people and a stand-in for the real reading: nothing reads the database
 // yet, and AURA says so rather than inventing anyone.
 
+import { firstNameIn } from "./live";
+
 export type Person = {
   id: string;
   name: string;
@@ -431,12 +433,12 @@ function whoOf(text: string, last: Person[]): Person[] {
   const named = POOL.filter(
     (p) =>
       text.toLowerCase().includes(p.name.toLowerCase()) ||
-      text.toLowerCase().includes(p.name.split(" ")[0].toLowerCase() + " "),
+      firstNameIn(text.toLowerCase(), p.name),
   );
   if (named.length) return named;
   const n = Number(text.match(/top\s+(\d+)/i)?.[1] ?? 0);
   if (n) return last.slice(0, n);
-  return last.slice(0, 10);
+  return /\b(?:all|every|everyone|everybody)\b/i.test(text) ? last : last.slice(0, 10);
 }
 
 export type Context = {
@@ -529,7 +531,7 @@ export function reply(raw: string, ctx: Context): Reply {
   if (out) return { text: `Taken out of ${out[2]}. Nothing else changed.` };
 
   // The CV files of the people on screen.
-  if (/download/i.test(text)) {
+  if (/download|\bcvs?\s+(?:of|for)\b|\b(?:send|give|get)\s+me\b.*\bcvs?\b/i.test(text)) {
     const who = whoOf(text, last);
     const files = who
       .filter((p) => p.cv)
@@ -542,7 +544,7 @@ export function reply(raw: string, ctx: Context): Reply {
       };
     return {
       text: files.length
-        ? `Downloading ${files.length} CV${files.length === 1 ? "" : "s"}.${none ? ` ${none} ${none === 1 ? "has" : "have"} no CV file on record.` : ""}`
+        ? `${files.length === 1 ? "Here is 1 CV" : `Here are ${files.length} CVs`}. Press to download.${none ? ` ${none} ${none === 1 ? "has" : "have"} no CV file on record.` : ""}`
         : "None of them has a CV file on record.",
       files,
       warn: !files.length,
