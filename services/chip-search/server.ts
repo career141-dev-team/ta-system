@@ -18,12 +18,16 @@ import fs from "node:fs";
 import readline from "node:readline";
 import { createSearch } from "../../convex/lib/search/chipSearch";
 import os from "node:os";
+import { fork } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { createAgent, type AgentModelCaller, type AgentModelResponse, type AgentResult } from "./agent";
 import { createQueryAgent, type LastSearch } from "./agent2";
 import { createQuerier } from "./query";
 
 const FILE = process.env.CHIP_CARDS || "/data/cards.jsonl";
+// Each candidate's CV text for the query agent's word search, written nightly by build.ts beside the cards.
+const CVTEXT_FILE = process.env.CHIP_CVTEXT || path.join(path.dirname(FILE), "cvtext.jsonl");
 const PORT = Number(process.env.CHIP_PORT || 3311);
 const KEY = (process.env.ANTHROPIC_API_KEY || "").trim();
 const OPENROUTER_KEY = (process.env.OPENROUTER_API_KEY || "").trim();
@@ -268,6 +272,7 @@ let tableFile = "";
 let cards = 0;
 let loadedAt = "";
 let tableRows: number | null = null;
+let cvTextRows: number | null = null;
 let loading: Promise<void> | null = null;
 // Ranked lists waiting for their AI check (/check), by the search words.
 const ranked = new Map<string, any>();
@@ -302,25 +307,28 @@ async function load(): Promise<void> {
   // 28 Nov 2026: the same cards as a table the query agent searches (table.ts, agent2.ts).
   // Built into a file in the container's own temp folder, which the query worker opens
   // read-only (query.ts); the old file goes once the new one is in use.
-  // Imported here, not at the top: without node:sqlite the search must still start.
+  // Built by table-build.ts in a process of its own: with the CV text and its word index it is
+  // many seconds of work that would otherwise hold every search. Until it is ready the table
+  // from the last load (if any) keeps answering.
   try {
-    const t1 = Date.now();
-    const { buildTable, runQuery, describeTable } = await import("./table");
     const file = path.join(os.tmpdir(), `chip-table-${Date.now()}.db`);
-    const db = buildTable(list, file);
-    const n = runQuery(db, "select count(*) from people");
-    const tables = describeTable(db);
-    db.close();
+    const built = await new Promise<{ rows: number; cvRows: number; tables: string; note: string; ms: number }>((done, fail) => {
+      const child = fork(fileURLToPath(new URL("./table-build.ts", import.meta.url)), [FILE, CVTEXT_FILE, file], { stdio: ["ignore", "inherit", "inherit", "ipc"] });
+      const timer = setTimeout(() => { child.kill("SIGKILL"); fail(new Error("the build took over 10 minutes")); }, 10 * 60_000);
+      child.once("message", (m) => { clearTimeout(timer); done(m as never); });
+      child.once("error", (e) => { clearTimeout(timer); fail(e); });
+      child.once("exit", (code) => { if (code) { clearTimeout(timer); fail(new Error(`the build ended with code ${code}`)); } });
+    });
     const old = { querier, tableFile };
     querier = createQuerier(file);
     tableFile = file;
-    agent2 = createQueryAgent(list, querier.query, tables, callAgent2Model);
-    tableRows = n.ok ? Number(n.rows[0][0]) : null;
+    agent2 = createQueryAgent(list, querier.query, built.tables, callAgent2Model);
+    tableRows = built.rows;
+    cvTextRows = built.cvRows;
     old.querier?.close();
-    if (old.tableFile) fs.rm(old.tableFile, { force: true }, () => {});
-    log(`table built: ${tableRows} people in ${Date.now() - t1} ms`);
+    if (old.tableFile) fs.rm(old.tableFile, { force: true, maxRetries: 10, retryDelay: 200 }, () => {});
+    log(`table built: ${tableRows} people, ${cvTextRows} with CV text, in ${built.ms} ms${built.note ? ` (${built.note})` : ""}`);
   } catch (e) {
-    agent2 = null; tableRows = null;
     log("table not built", String(e));
   }
 }
@@ -353,7 +361,7 @@ const send = (res: http.ServerResponse, status: number, body: unknown) => {
 
 const server = http.createServer(async (req, res) => {
   try {
-    if (req.method === "GET" && req.url === "/health") return send(res, 200, { ok: !!search, cards, loadedAt, tableRows, agent2: agent2 ? AGENT2_MODE || "off" : "not built", spendUsd: spend.day === today() ? Number(spend.usd.toFixed(3)) : 0 });
+    if (req.method === "GET" && req.url === "/health") return send(res, 200, { ok: !!search, cards, loadedAt, tableRows, cvTextRows, agent2: agent2 ? AGENT2_MODE || "off" : "not built", spendUsd: spend.day === today() ? Number(spend.usd.toFixed(3)) : 0 });
     if (req.method === "POST" && req.url === "/reload") { reload(); return send(res, 202, { ok: true }); }
     if (req.method !== "POST" || (req.url !== "/search" && req.url !== "/check" && req.url !== "/agent")) return send(res, 404, { ok: false, message: "Not found." });
     let raw = "";

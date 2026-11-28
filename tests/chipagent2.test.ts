@@ -11,6 +11,8 @@ import path from "node:path";
 import { createQueryAgent } from "../services/chip-search/agent2";
 import { buildTable, runQuery, describeTable } from "../services/chip-search/table";
 import { createQuerier, type Query } from "../services/chip-search/query";
+import { scrub, searchText } from "../services/chip-search/read";
+import { fork } from "node:child_process";
 import type { AgentModelCaller, AgentModelResponse, AgentMessage } from "../services/chip-search/agent";
 import { resolvePlace } from "../convex/lib/search/lists/places";
 
@@ -151,6 +153,55 @@ console.log("the chat: what it searched, and the search before");
   const keep = { searched: "Eastern", sql: "select id from people where province='Eastern'" };
   const r = await createQueryAgent(cards, direct, "", m.call)({ turns: ["eastern", "how many is that"], last: keep });
   ok("a question in between does not lose the search", r?.last?.sql === keep.sql);
+}
+
+console.log("CV text: what no column holds");
+{
+  ok("emails, phones and NIC numbers are taken out; dates stay", scrub("Call +94 (77) 123-4567 or a.b@x.lk, NIC 199012345678, worked 2015-06 - 2020-03, 12 years") === "Call [number] or [email], NIC [number], worked 2015-06 - 2020-03, 12 years", scrub("Call +94 (77) 123-4567 or a.b@x.lk, NIC 199012345678, worked 2015-06 - 2020-03, 12 years"));
+  const st = searchText({ currentJobTitle: "Accountant", languages: ["Tamil", "English"] }, [], "Led a team of 20. Phone 0771234567");
+  ok("the record and the CV's own text become one searchable text, scrubbed", /Languages: Tamil, English/.test(st) && /team of 20/.test(st) && !/0771234567/.test(st), st);
+
+  const cvdb = buildTable(cards, ":memory:", [
+    { id: "batti-f", t: "Accountant. Languages: Tamil, English. Led a team of 20 at a hospital." },
+    { id: "kandy-f", t: "Accountant. Languages: Sinhala, English." },
+    { id: "nobody", t: "Tamil speaker who is not in the table." },
+  ]);
+  const cvq: Query = async (sql, maxRows) => runQuery(cvdb, sql, maxRows);
+  const speak = runQuery(cvdb, "select person_id from cv_text where cv_text match 'tamil'");
+  ok("a word in the CV finds the person, and only people in the table", speak.ok && JSON.stringify(speak.rows) === JSON.stringify([["batti-f"]]), JSON.stringify(speak));
+  const phrase = runQuery(cvdb, `select p.id from cv_text c join people p on p.id = c.person_id where cv_text match '"team of 20"' and p.province = 'Eastern'`);
+  ok("an exact phrase, joined to the columns", phrase.ok && phrase.rows.length === 1 && phrase.rows[0][0] === "batti-f", JSON.stringify(phrase));
+  ok("the agent is told the CV text exists and how to search it", /cv_text/.test(describeTable(cvdb)) && /2 people have CV text/.test(describeTable(cvdb)));
+  ok("with no CV text the agent is not told of a table that is not there", !/cv_text/.test(describeTable(db)));
+
+  let read: any;
+  const m = scripted([
+    () => ({ content: [tool("read_people", { ids: ["batti-f", "ampara-f"], with_cv: true })] }),
+    (msgs) => { read = lastResult(msgs); return { content: [{ type: "text", text: "Done." }] }; },
+  ]);
+  await createQueryAgent(cards, cvq, "", m.call)({ turns: ["who speaks tamil"] });
+  ok("the agent can read a CV; a person with none says so", /team of 20/.test(read.people[0].cv) && read.people[1].cv === "no CV text on file", JSON.stringify(read).slice(0, 300));
+}
+
+console.log("the table built in its own process, from the files");
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "chip-build-test-"));
+  const cardsFile = path.join(dir, "cards.jsonl"), cvFile = path.join(dir, "cvtext.jsonl"), out = path.join(dir, "t.db");
+  fs.writeFileSync(cardsFile, cards.map((c) => JSON.stringify(c)).join("\n") + "\nnot json\n");
+  fs.writeFileSync(cvFile, JSON.stringify({ id: "batti-f", t: "Speaks Tamil." }) + "\n");
+  const run = (cv: string) => new Promise<any>((done, fail) => {
+    const c = fork("services/chip-search/table-build.ts", [cardsFile, cv, out], { stdio: ["ignore", "inherit", "inherit", "ipc"] });
+    c.once("message", done); c.once("error", fail); c.once("exit", (code) => code && fail(new Error(`exit ${code}`)));
+  });
+  const a = await run(cvFile);
+  ok("everyone and the CV text are in the file; a broken line is skipped", a.rows === 5 && a.cvRows === 1 && /cv_text/.test(a.tables), JSON.stringify({ ...a, tables: "" }));
+  const q = createQuerier(out);
+  const hit = await q.query("select person_id from cv_text where cv_text match 'tamil'");
+  ok("and the query process reads it", hit.ok && hit.rows[0]?.[0] === "batti-f", JSON.stringify(hit));
+  q.close();
+  const b = await run("-");
+  ok("with no CV text file the table is still built", b.rows === 5 && b.cvRows === 0 && /no CV text file/.test(b.note));
+  await new Promise((r) => fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }, r));
 }
 
 console.log("the worker: read only, and stopped when too slow");

@@ -16,7 +16,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
-import { lines, histories, cvText, cvDate } from "./read";
+import { lines, histories, cvText, cvDate, searchText } from "./read";
 import { PROFILE_SYSTEM, profileUser, finishProfile, jsonOf } from "../../convex/lib/search/profile";
 
 const DIR = process.env.CHIP_DIR || "/data";
@@ -77,12 +77,22 @@ async function haiku(user: string): Promise<string | null> {
 const [mode] = process.argv.slice(2);
 const hist = histories(path.join(DIR, "res.jsonl"));
 const recs = new Map<string, { id: string; text: string; date: string; c: any }>();
+// 28 Nov 2026: every candidate's text for the query agent's search (cvtext.jsonl, one {id, t}
+// a line), written fresh each night from the export. No AI. Swapped in only with a full export.
+const CVTEXT = path.join(DIR, "cvtext.jsonl");
+const cvOut = mode === "plan" ? null : fs.openSync(CVTEXT + ".new", "w");
 for (const c of lines(path.join(DIR, "cand.jsonl"))) {
   if (!c._id) continue;
   const h = hist.get(c._id);
   recs.set(c._id, { id: c._id, text: cvText(c, h?.h), date: cvDate(c, h?.t), c });
+  if (cvOut != null && !merged(c)) {
+    const t = searchText(c, h?.h, h?.x);
+    if (t) fs.writeSync(cvOut, JSON.stringify({ id: c._id, t }) + "\n");
+  }
 }
+if (cvOut != null) fs.closeSync(cvOut);
 if (recs.size < 1000) { log(`export holds only ${recs.size} candidates - not trusting it, nothing changed`); process.exit(1); }
+if (cvOut != null) fs.renameSync(CVTEXT + ".new", CVTEXT);
 
 // The cards we keep: every one whose candidate is still in the export.
 const keep: string[] = [];

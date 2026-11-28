@@ -14,18 +14,41 @@ export function lines(file: string): any[] {
   return out;
 }
 
-export function histories(file: string): Map<string, { t: number; h: any[] }> {
-  const m = new Map<string, { t: number; h: any[] }>();
+export function histories(file: string): Map<string, { t: number; h: any[]; x?: string }> {
+  const m = new Map<string, { t: number; h: any[]; x?: string }>();
   for (const r of lines(file)) {
-    if (!r.c || !Array.isArray(r.h)) continue;
+    if (!r.c) continue;
+    const h = Array.isArray(r.h) ? r.h : null;
+    const x = typeof r.x === "string" && r.x.trim() ? r.x : undefined;
+    if (!h && !x) continue;
     const t = Number(r.t) || 0;
     const had = m.get(r.c);
-    if (!had || t > had.t) m.set(r.c, { t, h: r.h });
+    // The newest row's job history; the CV's own text from whichever row holds it.
+    if (!had || t > had.t) m.set(r.c, { t, h: h ?? had?.h ?? [], x: x ?? had?.x });
+    else if (x && !had.x) had.x = x;
   }
   return m;
 }
 
 const cut = (s: unknown, n: number) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, n) : "");
+
+/**
+ * Emails, phone numbers and NIC-length numbers out of CV text (28 Nov 2026):
+ * the text goes into the table the query agent searches, and that table holds
+ * no contact details. Up to two separators between digits, so "+94 (77) 123-4567"
+ * goes and "2015-06 - 2020-03" stays. Names in the CV's own text cannot be taken out.
+ */
+export const scrub = (s: string) => s.replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, "[email]").replace(/\+?\d(?:[ .()-]{0,2}\d){8,14}[VvXx]?/g, "[number]");
+
+const SEARCH_TEXT_MAX = 4000;
+/**
+ * What the query agent can search and read for things no column holds (a
+ * language, a tool, a school, "led a team of 20"): the record as CV-like text,
+ * then the CV's own text where the database has it. Scrubbed and capped.
+ */
+export function searchText(c: any, jobs: any[] | undefined, raw?: string): string {
+  return scrub(`${cvText(c, jobs)}${raw ? `\n${raw.replace(/\s+/g, " ").trim()}` : ""}`).slice(0, SEARCH_TEXT_MAX);
+}
 
 /** One candidate as short CV-like text for the profile builder. No contact details. */
 export function cvText(c: any, jobs: any[] | undefined): string {

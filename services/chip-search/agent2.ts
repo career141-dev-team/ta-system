@@ -30,6 +30,7 @@ const MAX_STEPS = 8;
 const HURRY_MS = 35_000;
 const SHOWN_MAX = 60;
 const FINAL_MAX = 5000;
+const CV_READ_MAX = 3000;
 
 const system = (tables: string) => `You are AURA, searching a recruitment firm's CV database in Sri Lanka for a recruiter. You search by writing SQL yourself.
 
@@ -41,7 +42,7 @@ How to work:
 - Use the query tool. Count first, then fetch. Job titles are written many ways, so match titles with several LIKE patterns or the role column, and check the count looks sane.
 - A null means the fact is not on file. It is neither yes nor no. When a condition leaves people out only because the fact is missing, count them and say so in your reply.
 - Too few or none: say so plainly. Then find what is nearest by loosening one condition at a time (a town to its district, a district to its province), say which condition you loosened, and offer it. Never fill the list with people who fail something that was asked.
-- Before you answer with people, read their cards with read_people and judge each against the request. Leave out anyone who does not fit.
+- Before you answer with people, read their cards with read_people and judge each against the request. Leave out anyone who does not fit. When what was asked is in no column, search the CV text if the tables list it, and read the CV before you rely on a match.
 - A question that needs a number or a comparison, not a list, is answered in reply with no candidates.
 - Finish with the finish tool. final_sql is one SELECT returning the id of every person who meets everything that was asked; only people it returns can be shown. searched says in plain words what you searched, for the recruiter to check.
 - Never mention SQL, tables or columns to the recruiter. Write the reply as one colleague to another, short.`;
@@ -54,8 +55,8 @@ const TOOLS = [
   },
   {
     name: "read_people",
-    description: "The full card of up to 30 people by id: every job with employer and dates, qualifications, skills, place, years, level, gender.",
-    input_schema: { type: "object", properties: { ids: { type: "array", items: { type: "string" } } }, required: ["ids"] },
+    description: "The full card of up to 30 people by id: every job with employer and dates, qualifications, skills, place, years, level, gender. With with_cv, also each person's CV text (up to 10 people) - ask for it when what was asked is only in the CV.",
+    input_schema: { type: "object", properties: { ids: { type: "array", items: { type: "string" } }, with_cv: { type: "boolean" } }, required: ["ids"] },
   },
   {
     name: "finish",
@@ -196,9 +197,16 @@ export function createQueryAgent(cards: any[], query: Query, tables: string, cal
             out = { columns: a.columns, rows: a.rows.map((r) => r.map(clip)), returned: a.rows.length, more: a.more };
           } else out = { error: a.error };
         } else if (call.name === "read_people") {
-          const found = (Array.isArray(call.input.ids) ? call.input.ids : []).map((id) => byId.get(String(id))).filter(Boolean).slice(0, 30);
+          const withCv = call.input.with_cv === true;
+          const found = (Array.isArray(call.input.ids) ? call.input.ids : []).map((id) => byId.get(String(id))).filter(Boolean).slice(0, withCv ? 10 : 30);
           for (const c of found) seen.add(c.id);
-          out = { people: found.map((c) => cardOf(c, genders)) };
+          // The ids are our own (looked up in the cards above), so they can go into the query as they are.
+          const cv = new Map<string, string>();
+          if (withCv && found.length) {
+            const a = await query(`select person_id, substr(body, 1, ${CV_READ_MAX}) from cv_text where person_id in (${found.map((c) => `'${String(c.id).replace(/'/g, "''")}'`).join(",")})`, 10);
+            if (a.ok) for (const r of a.rows) cv.set(String(r[0]), String(r[1] ?? ""));
+          }
+          out = { people: found.map((c) => (withCv ? { ...cardOf(c, genders), cv: cv.get(c.id) ?? "no CV text on file" } : cardOf(c, genders))) };
         } else out = { error: "No such tool." };
         results.push({ type: "tool_result", tool_use_id: call.id, content: JSON.stringify(out) });
       }

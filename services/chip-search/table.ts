@@ -82,8 +82,22 @@ export function placeColumns(placeId: string | null | undefined, countryCode?: s
   return out;
 }
 
+/**
+ * The CV text table (28 Nov 2026), for what no column holds: a language, a
+ * tool, a school, "led a team of 20". Full-text indexed (FTS5), so a word
+ * search over every CV takes milliseconds. Left out, with the reason logged by
+ * the caller, when this Node's SQLite has no FTS5 or no text file exists yet.
+ */
+const CV_TEXT = `create virtual table cv_text using fts5(person_id unindexed, body, tokenize = 'unicode61 remove_diacritics 2')`;
+const CV_TEXT_NOTE = `
+Table cv_text (person_id, body): each person's CV as text, with contact details removed. Use it for anything no column holds - a language, a tool, a school, an employer's kind of work, a kind of experience.
+  Search: select person_id from cv_text where cv_text match 'tamil'          -- a word
+          ... match '"team of 20"'    -- an exact phrase     ... match 'sap OR oracle'     ... match 'audit NEAR/5 bank'
+  See why it matched: select person_id, snippet(cv_text, 1, '[', ']', ' ... ', 12) from cv_text where cv_text match '...'
+  Join it to the other tables on person_id = people.id. A CV that does not mention something is not proof the person lacks it: say "not mentioned" rather than "no".`;
+
 /** Builds the read-only table from the cards. Merged duplicates and people whose CV file is lost are left out. */
-export function buildTable(cards: any[], file = ":memory:"): DatabaseSync {
+export function buildTable(cards: Iterable<any>, file = ":memory:", cvText?: Iterable<{ id: string; t: string }>): DatabaseSync {
   const db = new DatabaseSync(file);
   // A throwaway copy rebuilt from the cards on every load: no journal, no waiting for the disk.
   db.exec("pragma journal_mode = off");
@@ -122,6 +136,14 @@ export function buildTable(cards: any[], file = ":memory:"): DatabaseSync {
   }
   db.exec("commit");
   db.exec(INDEXES);
+  if (cvText) {
+    db.exec(CV_TEXT);
+    const known = db.prepare("select 1 from people where id = ?");
+    const put = db.prepare("insert into cv_text (person_id, body) values (?, ?)");
+    db.exec("begin");
+    for (const r of cvText) if (r?.id && r.t && known.get(r.id)) put.run(r.id, r.t);
+    db.exec("commit");
+  }
   db.exec("pragma query_only = on");
   return db;
 }
@@ -133,9 +155,11 @@ export function describeTable(db: DatabaseSync): string {
     return a.ok ? a.rows.map((r) => `${r[0]} (${r[1]})`).join(", ") : "";
   };
   const total = runQuery(db, "select count(*) from people");
+  const cv = runQuery(db, "select count(*) from cv_text");
   return [
     `Tables (SQLite, read only), ${total.ok ? total.rows[0][0] : "?"} people:`,
     SCHEMA.trim(),
+    ...(cv.ok && Number(cv.rows[0][0]) > 0 ? [`${CV_TEXT_NOTE.trim()}\n  ${cv.rows[0][0]} people have CV text.`] : []),
     "A null means not on file, never 'no'.",
     `Sri Lanka provinces: ${list("select province, count(*) from people where country_code='LK' and province is not null group by 1 order by 2 desc")}`,
     `Sri Lanka districts: ${list("select district, count(*) from people where district is not null group by 1 order by 2 desc")}`,
