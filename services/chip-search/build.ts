@@ -1,6 +1,7 @@
 /**
  * The nightly card builder (26 Nov 2026). Reads tonight's read-only export of
- * candidates and their job histories (export.sql, names/emails/phones removed),
+ * candidates and their job histories (export.sql, emails/phones removed; the name is
+ * used only for the query agent's table, never for a card),
  * and gives every candidate that has no card yet a card from Haiku. Cards of
  * candidates no longer in the export are dropped. A card is NOT rebuilt when its
  * record changes: many cards were made from the full CV file (passes 2-3,
@@ -87,7 +88,9 @@ for (const c of lines(path.join(DIR, "cand.jsonl"))) {
   recs.set(c._id, { id: c._id, text: cvText(c, h?.h), date: cvDate(c, h?.t), c });
   if (cvOut != null && !merged(c)) {
     const t = searchText(c, h?.h, h?.x);
-    if (t) fs.writeSync(cvOut, JSON.stringify({ id: c._id, t }) + "\n");
+    // The name, so "do we have Manish Mittal" can be asked of the agent. "Unnamed candidate" is what an empty name was filled with.
+    const n = typeof c.fullName === "string" && c.fullName.trim() && c.fullName.trim() !== "Unnamed candidate" ? c.fullName.trim().slice(0, 120) : undefined;
+    if (t || n) fs.writeSync(cvOut, JSON.stringify({ id: c._id, t, n }) + "\n");
   }
 }
 if (cvOut != null) fs.closeSync(cvOut);

@@ -109,7 +109,7 @@ console.log("nobody outside the final query is shown, whatever the model says");
   const first = String(m.seen[0].messages[0].content);
   ok("a name on screen is shown to the model beside that person", /#1 \[batti-f\] Nimali Perera - Accountant/.test(first) && /#2 \[kandy-f\] Accountant/.test(first), first.slice(-300));
   ok("so a question about a named person is answered from their card", card.people?.[0]?.place === "Batticaloa" && r?.candidates[0]?.id === "batti-f");
-  ok("the model is told the tables hold no names", /hold no names/.test(m.seen[0].system));
+  ok("the model is told where names are", /people\.name/.test(m.seen[0].system));
 }
 
 console.log("honest when it goes wrong");
@@ -168,6 +168,25 @@ console.log("the chat: what it searched, and the search before");
   ok("a question in between does not lose the search", r?.last?.sql === keep.sql);
 }
 
+console.log("names: anyone can be asked for by name");
+{
+  const ndb = buildTable(cards, ":memory:", [{ id: "kandy-f", n: "Manisha de Silva" }, { id: "india-f", n: "Manish Mittal" }, { id: "nobody", n: "Not In The Table" }], { cvText: false });
+  const nq: Query = async (sql, maxRows) => runQuery(ndb, sql, maxRows);
+  const hit = runQuery(ndb, "select id from people where name like '%mittal%' and name like '%manish%'");
+  ok("a person is found by name, each word on its own", hit.ok && JSON.stringify(hit.rows) === JSON.stringify([["india-f"]]), JSON.stringify(hit));
+  ok("someone with no name on record stays a null, and is still there", (runQuery(ndb, "select count(*) from people where name is null") as any).rows[0][0] === 3);
+  ok("names go in even when the CV text cannot", !runQuery(ndb, "select count(*) from cv_text").ok);
+  ok("the agent is told how names are spelled", /Names are spelled many ways/.test(describeTable(ndb)));
+  let got: any;
+  const m = scripted([
+    () => ({ content: [tool("query", { sql: "select id from people where name like '%mittal%'", why: "People called Mittal" })] }),
+    () => ({ content: [tool("read_people", { ids: ["india-f"] })] }),
+    (msgs) => { got = lastResult(msgs); return { content: [tool("finish", { reply: "Manish Mittal is in Chennai, India.", searched: "Name: Manish Mittal: 1", final_sql: "select id from people where name like '%mittal%'", candidates: [{ id: "india-f", fit: 95, reason: "the person asked about" }] })] }; },
+  ]);
+  const r = await createQueryAgent(cards, nq, "", m.call)({ turns: ["Manish Mittal where is his location"] });
+  ok("the owner's question: found by name with nobody on screen, and the card carries the name", got.people?.[0]?.name === "Manish Mittal" && got.people[0].place === "Chennai" && r?.candidates[0]?.id === "india-f" && r.total === 1, JSON.stringify(got).slice(0, 200));
+}
+
 console.log("CV text: what no column holds");
 {
   ok("emails, phones and NIC numbers are taken out; dates stay", scrub("Call +94 (77) 123-4567 or a.b@x.lk, NIC 199012345678, worked 2015-06 - 2020-03, 12 years") === "Call [number] or [email], NIC [number], worked 2015-06 - 2020-03, 12 years", scrub("Call +94 (77) 123-4567 or a.b@x.lk, NIC 199012345678, worked 2015-06 - 2020-03, 12 years"));
@@ -206,7 +225,9 @@ console.log("the table built in its own process, from the files");
     const c = fork("services/chip-search/table-build.ts", [cardsFile, cv, out], { stdio: ["ignore", "inherit", "inherit", "ipc"] });
     c.once("message", done); c.once("error", fail); c.once("exit", (code) => code && fail(new Error(`exit ${code}`)));
   });
+  fs.appendFileSync(cvFile, JSON.stringify({ id: "kandy-f", n: "Manisha de Silva" }) + "\n");
   const a = await run(cvFile);
+  ok("the name with no CV text is in too", a.names === 1);
   ok("everyone and the CV text are in the file; a broken line is skipped", a.rows === 5 && a.cvRows === 1 && /cv_text/.test(a.tables), JSON.stringify({ ...a, tables: "" }));
   const q = createQuerier(out);
   const hit = await q.query("select person_id from cv_text where cv_text match 'tamil'");

@@ -45,7 +45,7 @@ How to work:
 - Before you answer with people, read their cards with read_people and judge each against the request. Leave out anyone who does not fit. When what was asked is in no column, search the CV text if the tables list it, and read the CV before you rely on a match.
 - A question that needs a number or a comparison, not a list, is answered in reply with no candidates.
 - Finish with the finish tool. final_sql is one SELECT returning the id of every person who meets everything that was asked; only people it returns can be shown. searched says in plain words what you searched, for the recruiter to check.
-- The tables hold no names. A person named in a message is one of the people on screen when the name matches one listed there: answer about that person from their card. If the name is not among them, say you can only look people up by name from the list on screen, and ask them to open the person or search by title and employer.
+- A person named in a message: first see if the name matches one of the people on screen, and answer about that person from their card. Otherwise look the name up in people.name.
 - Never mention SQL, tables or columns to the recruiter. Write the reply as one colleague to another, short, in plain text with no markdown.`;
 
 const TOOLS = [
@@ -207,7 +207,13 @@ export function createQueryAgent(cards: any[], query: Query, tables: string, cal
             const a = await query(`select person_id, substr(body, 1, ${CV_READ_MAX}) from cv_text where person_id in (${found.map((c) => `'${String(c.id).replace(/'/g, "''")}'`).join(",")})`, 10);
             if (a.ok) for (const r of a.rows) cv.set(String(r[0]), String(r[1] ?? ""));
           }
-          out = { people: found.map((c) => (withCv ? { ...cardOf(c, genders), cv: cv.get(c.id) ?? "no CV text on file" } : cardOf(c, genders))) };
+          // The cards in memory hold no names; the table does.
+          const nm = new Map<string, string>();
+          if (found.length) {
+            const a = await query(`select id, name from people where name is not null and id in (${found.map((c) => `'${String(c.id).replace(/'/g, "''")}'`).join(",")})`, 30);
+            if (a.ok) for (const r of a.rows) nm.set(String(r[0]), String(r[1]));
+          }
+          out = { people: found.map((c) => ({ ...(nm.has(c.id) || input.names?.[c.id] ? { name: nm.get(c.id) ?? input.names?.[c.id] } : {}), ...cardOf(c, genders), ...(withCv ? { cv: cv.get(c.id) ?? "no CV text on file" } : {}) })) };
         } else out = { error: "No such tool." };
         results.push({ type: "tool_result", tool_use_id: call.id, content: JSON.stringify(out) });
       }

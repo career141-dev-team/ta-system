@@ -312,7 +312,7 @@ async function load(): Promise<void> {
   // from the last load (if any) keeps answering.
   try {
     const file = path.join(os.tmpdir(), `chip-table-${Date.now()}.db`);
-    const built = await new Promise<{ rows: number; cvRows: number; tables: string; note: string; ms: number }>((done, fail) => {
+    const built = await new Promise<{ rows: number; names: number; cvRows: number; tables: string; note: string; ms: number }>((done, fail) => {
       const child = fork(fileURLToPath(new URL("./table-build.ts", import.meta.url)), [FILE, CVTEXT_FILE, file], { stdio: ["ignore", "inherit", "inherit", "ipc"] });
       const timer = setTimeout(() => { child.kill("SIGKILL"); fail(new Error("the build took over 10 minutes")); }, 10 * 60_000);
       child.once("message", (m) => { clearTimeout(timer); done(m as never); });
@@ -327,7 +327,7 @@ async function load(): Promise<void> {
     cvTextRows = built.cvRows;
     old.querier?.close();
     if (old.tableFile) fs.rm(old.tableFile, { force: true, maxRetries: 10, retryDelay: 200 }, () => {});
-    log(`table built: ${tableRows} people, ${cvTextRows} with CV text, in ${built.ms} ms${built.note ? ` (${built.note})` : ""}`);
+    log(`table built: ${tableRows} people, ${built.names} with a name, ${cvTextRows} with CV text, in ${built.ms} ms${built.note ? ` (${built.note})` : ""}`);
   } catch (e) {
     log("table not built", String(e));
   }

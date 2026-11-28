@@ -9,8 +9,10 @@
  *
  * Read only: `pragma query_only` is set once the rows are in, and `runQuery`
  * (sql.ts) takes one SELECT. The agent's queries run in a worker with a time
- * limit (query.ts), on a file copy opened read-only. No names, emails or phones: the cards never held them;
- * has_email / has_phone are yes/no flags from the nightly export.
+ * limit (query.ts), on a file copy opened read-only. No emails or phones:
+ * has_email / has_phone are yes/no flags from the nightly export. The person's name is
+ * here (owner, 28 Nov 2026: "Manish Mittal where is his location" must be answerable),
+ * from the same nightly file as the CV text; the cards themselves still hold none.
  *
  * Used by the query agent (agent2.ts).
  */
@@ -23,6 +25,7 @@ export { runQuery, type QueryAnswer } from "./sql";
 const SCHEMA = `
 create table people (
   id text primary key,
+  name text,             -- full name as on the record; null when it has none
   title text,            -- job title now
   role text,             -- role group id, e.g. accountant
   family text,           -- e.g. Finance & Accounting
@@ -97,13 +100,13 @@ Table cv_text (person_id, body): each person's CV as text, with contact details 
   Join it to the other tables on person_id = people.id. A CV that does not mention something is not proof the person lacks it: say "not mentioned" rather than "no".`;
 
 /** Builds the read-only table from the cards. Merged duplicates and people whose CV file is lost are left out. */
-export function buildTable(cards: Iterable<any>, file = ":memory:", cvText?: Iterable<{ id: string; t: string }>): DatabaseSync {
+export function buildTable(cards: Iterable<any>, file = ":memory:", extra?: Iterable<{ id: string; t?: string; n?: string }>, opts: { cvText?: boolean } = {}): DatabaseSync {
   const db = new DatabaseSync(file);
   // A throwaway copy rebuilt from the cards on every load: no journal, no waiting for the disk.
   db.exec("pragma journal_mode = off");
   db.exec("pragma synchronous = off");
   db.exec(SCHEMA);
-  const person = db.prepare("insert or ignore into people values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+  const person = db.prepare("insert or ignore into people values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
   const job = db.prepare("insert into jobs values (?,?,?,?,?,?,?,?,?,?)");
   const jct = db.prepare("insert into job_company_types values (?,?,?)");
   const qual = db.prepare("insert into qualifications values (?,?,?)");
@@ -120,7 +123,7 @@ export function buildTable(cards: Iterable<any>, file = ":memory:", cvText?: Ite
     const lv = num(c.level) ?? num(jobs[0]?.level);
     const age = c.dob && Number.isFinite(Date.parse(c.dob)) ? Math.floor(year - Date.parse(c.dob) / (365.25 * 864e5)) : null;
     person.run(
-      c.id, str(c.title) ?? str(jobs[0]?.title), str(c.roles?.[0]), str(c.family), lv, lv != null ? LEVELS[lv]?.label ?? null : null,
+      c.id, null, str(c.title) ?? str(jobs[0]?.title), str(c.roles?.[0]), str(c.family), lv, lv != null ? LEVELS[lv]?.label ?? null : null,
       num(c.years), age, c.gender === "female" || c.gender === "male" ? c.gender : null,
       pl.town, pl.district, pl.province, pl.country, pl.country_code, str(c.nationality),
       num(c.noticeDays), num(c.salary?.usdMonthly), str(jobs[0]?.company),
@@ -136,12 +139,20 @@ export function buildTable(cards: Iterable<any>, file = ":memory:", cvText?: Ite
   }
   db.exec("commit");
   db.exec(INDEXES);
-  if (cvText) {
-    db.exec(CV_TEXT);
+  // Names and CV text come from one file (build.ts writes it nightly; the cards hold neither).
+  // The names go in even when the CV text cannot (`cvText: false`: no FTS5 in this Node).
+  if (extra) {
+    const withText = opts.cvText !== false;
+    if (withText) db.exec(CV_TEXT);
+    const name = db.prepare("update people set name = ? where id = ?");
     const known = db.prepare("select 1 from people where id = ?");
-    const put = db.prepare("insert into cv_text (person_id, body) values (?, ?)");
+    const put = withText ? db.prepare("insert into cv_text (person_id, body) values (?, ?)") : null;
     db.exec("begin");
-    for (const r of cvText) if (r?.id && r.t && known.get(r.id)) put.run(r.id, r.t);
+    for (const r of extra) {
+      if (!r?.id || !known.get(r.id)) continue;
+      if (r.n) name.run(String(r.n), r.id);
+      if (put && r.t) put.run(r.id, r.t);
+    }
     db.exec("commit");
   }
   db.exec("pragma query_only = on");
@@ -161,6 +172,7 @@ export function describeTable(db: DatabaseSync): string {
     SCHEMA.trim(),
     ...(cv.ok && Number(cv.rows[0][0]) > 0 ? [`${CV_TEXT_NOTE.trim()}\n  ${cv.rows[0][0]} people have CV text.`] : []),
     "A null means not on file, never 'no'.",
+    "Names are spelled many ways (initials first or last, a middle name, Mohamed / Mohammed): match each word of a name on its own with LIKE, and show near matches as 'maybe' rather than saying nobody is there.",
     `Sri Lanka provinces: ${list("select province, count(*) from people where country_code='LK' and province is not null group by 1 order by 2 desc")}`,
     `Sri Lanka districts: ${list("select district, count(*) from people where district is not null group by 1 order by 2 desc")}`,
     `Countries: ${list("select country, count(*) from people where country is not null group by 1 order by 2 desc limit 25")}`,

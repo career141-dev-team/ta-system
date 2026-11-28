@@ -42,11 +42,11 @@ function* linesOf(file: string): Generator<any> {
 const [cardsFile, cvFile, out] = process.argv.slice(2);
 const t0 = Date.now();
 const count = (db: ReturnType<typeof buildTable>, sql: string) => { const a = runQuery(db, sql); return a.ok ? Number(a.rows[0][0]) : 0; };
+const hasCv = !!cvFile && cvFile !== "-" && fs.existsSync(cvFile);
 const build = (withCv: boolean) => {
   fs.rmSync(out, { force: true });
-  return buildTable(linesOf(cardsFile), out, withCv ? linesOf(cvFile) : undefined);
+  return buildTable(linesOf(cardsFile), out, hasCv ? linesOf(cvFile) : undefined, { cvText: withCv });
 };
-const hasCv = !!cvFile && cvFile !== "-" && fs.existsSync(cvFile);
 let db: ReturnType<typeof buildTable>;
 let note = hasCv ? "" : "no CV text file yet";
 try {
@@ -57,7 +57,7 @@ try {
   note = `CV text left out: ${e instanceof Error ? e.message : String(e)}`;
   db = build(false);
 }
-const answer = { rows: count(db, "select count(*) from people"), cvRows: hasCv && !note ? count(db, "select count(*) from cv_text") : 0, tables: describeTable(db), note, ms: Date.now() - t0 };
+const answer = { rows: count(db, "select count(*) from people"), names: count(db, "select count(*) from people where name is not null"), cvRows: hasCv && !note ? count(db, "select count(*) from cv_text") : 0, tables: describeTable(db), note, ms: Date.now() - t0 };
 db.close();
 if (process.send) process.send(answer, () => process.exit(0));
 else console.log(JSON.stringify({ ...answer, tables: `${answer.tables.length} characters` }));
