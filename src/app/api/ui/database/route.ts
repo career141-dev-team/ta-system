@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
   if (!may.ok) return answer(req, { ok: false, message: may.message }, 403);
   const read = readSearchBody(await req.json().catch(() => null));
   if (!read.ok) return answer(req, read, 400);
-  const { q, mode, full, currentIds } = read.body;
+  const { q, mode, full, currentIds, guide } = read.body;
   // 23 Nov: the tables (vocabulary, openings) only. This route reads applications for one thing, the
   // availability rule (free / in a pipeline / placed before) in searchDatabase, and its rows carry no
   // pipeline markers, so the ~10k applications are loaded below only when the search asks for that rule.
@@ -86,10 +86,13 @@ export async function POST(req: NextRequest) {
   const realName = (n?: string | null) => !!n?.trim() && n.trim() !== "Unnamed candidate";
   const reachable = (c: { fullName?: string | null; email?: string | null; phone?: string | null }) =>
     !!(realName(c.fullName) || c.email?.trim() || c.phone?.trim());
-  const want = genderAsked(q);
-  const askedLimit = limitAsked(q, ROWS);
+  // A project's guidelines (28 Nov 2026, like ChatGPT Projects) are read as the first thing said in
+  // the chat, so every search in the project keeps them; the TA's own later words still win.
+  const said = guide ? `${guide}\n${q}` : q;
+  const want = genderAsked(said);
+  const askedLimit = limitAsked(said, ROWS);
   const cap = askedLimit ?? ROWS;
-  const turns = q.split("\n");
+  const turns = guide ? [`Project guidelines (keep them for every search here): ${guide}`, ...q.split("\n")] : q.split("\n");
 
   // 27 Nov 2026: try the tool-calling agent over the 94,830-card chip search engine first.
   // It handles arbitrary constraints ("Healthcare or Hospitality only", "show top 10",
@@ -200,17 +203,17 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const criteria = parseConversation(q, repo.vocabulary()).criteria;
+  const criteria = parseConversation(said, repo.vocabulary()).criteria;
   if (criteria.availability !== "any") await primeStore({ allApplications: true });
-  let engine: EngineSearch | null = cachedEngineSearch(q, criteria, ENGINE_LIMIT);
+  let engine: EngineSearch | null = cachedEngineSearch(said, criteria, ENGINE_LIMIT);
   let refining = false;
   let problem: string | null = null;
   try {
-    if (!engine && full) engine = await engineSearch(q, criteria, ENGINE_LIMIT);
+    if (!engine && full) engine = await engineSearch(said, criteria, ENGINE_LIMIT);
     if (!engine) {
       // Started now so the full answer is held when the chat asks for it next.
-      engineSearch(q, criteria, ENGINE_LIMIT).catch(() => undefined);
-      engine = await quickEngineSearch(q, criteria, ENGINE_LIMIT);
+      engineSearch(said, criteria, ENGINE_LIMIT).catch(() => undefined);
+      engine = await quickEngineSearch(said, criteria, ENGINE_LIMIT);
       refining = true;
     }
   } catch (e) {
@@ -218,7 +221,7 @@ export async function POST(req: NextRequest) {
     problem = `Ranked on words only - the matching engine could not run (${safeErrorMessage(e, "try again")}).`;
     refining = false;
     try {
-      await primeStore({ candidateIds: await keywordRetrieve([conversationText(q), ...criteria.titles, ...criteria.skills.slice(0, 3)], 150) });
+      await primeStore({ candidateIds: await keywordRetrieve([conversationText(said), ...criteria.titles, ...criteria.skills.slice(0, 3)], 150) });
     } catch (inner) {
       return answer(req, { ok: false, message: safeErrorMessage(inner, "The database could not be searched. Try again.") }, 502);
     }
