@@ -24,6 +24,7 @@ import { PLACE_BY_ID } from "../../convex/lib/search/lists/places";
 import { LEVELS } from "../../convex/lib/search/lists/levels";
 import type { AgentCandidate, AgentContentBlock, AgentInput, AgentMessage, AgentModelCaller, AgentResult, AgentTextBlock, AgentToolBlock } from "./agent";
 import type { Query } from "./query";
+import type { Similar } from "./vectors";
 
 const MAX_STEPS = 8;
 // The chat waits 60 s for this service (chipSearchClient WAIT_MS). Past this the agent is told to answer with what it has.
@@ -95,9 +96,41 @@ export type QueryAgentResult = AgentResult & { agent: 2; trail: string[]; last: 
 const gWord = (g: unknown): "female" | "male" | null => (g === "f" || g === "female" ? "female" : g === "m" || g === "male" ? "male" : null);
 const clip = (v: unknown) => (typeof v === "string" && v.length > 300 ? `${v.slice(0, 300)}…` : v);
 
-export function createQueryAgent(cards: any[], query: Query, tables: string, callModel: AgentModelCaller) {
+/**
+ * Two tools the agent has only when the service can give them (28 Nov 2026):
+ *  - rank: the chip search's tuned scoring (title first, then town, industry, level, years - 63% useful
+ *    in the 200-job blind test) on the list the agent's own query kept. Without it a list of 2,000
+ *    is cut to whatever 60 the query happened to return first.
+ *  - similar: the nearest people by meaning, from the CV vectors (vectors.ts).
+ */
+export type Extras = {
+  rank?: (ids: Set<string>, job: string) => Promise<{ placed: number; hits: { id: string; score: number; why: string[] }[] }>;
+  similar?: Similar;
+};
+const LIST_MAX = 5000;
+const RANK_TOOL = {
+  name: "rank",
+  description: "Put a big list in order of fit for a job, with the firm's tested scoring (job title first, then town, industry, level, years). Use it whenever your query keeps more people than you can read (over 60) - never just take the first rows. Returns the best 60 with a score and reasons, and how many in the list it could place.",
+  input_schema: { type: "object", properties: { sql: { type: "string", description: "A SELECT returning the id of everyone in the list (up to 5,000)." }, job: { type: "string", description: "The job and what matters for it, as a recruiter would type it, e.g. 'Senior accountant, Colombo, 5-8 years, CIMA, manufacturing'." } }, required: ["sql", "job"] },
+};
+const SIMILAR_TOOL = {
+  name: "similar",
+  description: "The people nearest in meaning to a sentence, judged on their whole CV - for a kind of person or experience that is neither a column nor a fixed word ('has run a hospital finance team'). With sql, only among the people that query returns. Returns up to 60 with a closeness from 0 to 1; read their cards before relying on it.",
+  input_schema: { type: "object", properties: { text: { type: "string", description: "One sentence describing the person wanted." }, sql: { type: "string", description: "Optional: a SELECT returning ids (up to 5,000) to search among." } }, required: ["text"] },
+};
+
+export function createQueryAgent(cards: any[], query: Query, tables: string, callModel: AgentModelCaller, extras: Extras = {}) {
   const byId = new Map<string, any>(cards.map((c) => [c.id, c]));
-  const sys = system(tables);
+  const sys = system(tables)
+    + (extras.rank ? "\n- A list too big to read is put in order with rank before you choose from it." : "")
+    + (extras.similar ? "\n- For a kind of person or experience, rather than a fact or a word, use similar - on its own, or among the people your query kept." : "");
+  const tools = [TOOLS[0], TOOLS[1], ...(extras.rank ? [RANK_TOOL] : []), ...(extras.similar ? [SIMILAR_TOOL] : []), TOOLS[2]];
+  const brief = (c: any) => ({ title: c.title || c.jobs?.[0]?.title || "", company: c.jobs?.[0]?.company || "", place: PLACE_BY_ID.get(c.place)?.name ?? null, years: c.years ?? null });
+  /** The ids a SELECT returns, as people we hold. */
+  const idsOf = async (sql: string): Promise<{ ids: string[] } | { error: string }> => {
+    const a = await query(sql, LIST_MAX);
+    return a.ok ? { ids: [...new Set(a.rows.map((r) => String(r[0])).filter((id) => byId.has(id)))] } : { error: a.error };
+  };
 
   const cardOf = (c: any, genders: Record<string, "f" | "m">) => {
     const lv = c.level ?? c.jobs?.[0]?.level;
@@ -138,7 +171,7 @@ export function createQueryAgent(cards: any[], query: Query, tables: string, cal
     const messages: AgentMessage[] = [{ role: "user", content: parts.join("\n\n") }];
 
     for (let step = 1; step <= MAX_STEPS; step++) {
-      const res = await callModel({ system: sys, messages, tools: TOOLS });
+      const res = await callModel({ system: sys, messages, tools });
       if (!res || !Array.isArray(res.content)) return null;
       const calls = res.content.filter((b): b is AgentToolBlock => b.type === "tool_use");
       const text = res.content.filter((b): b is AgentTextBlock => b.type === "text").map((b) => b.text).join("\n").trim();
@@ -214,6 +247,29 @@ export function createQueryAgent(cards: any[], query: Query, tables: string, cal
             if (a.ok) for (const r of a.rows) nm.set(String(r[0]), String(r[1]));
           }
           out = { people: found.map((c) => ({ ...(nm.has(c.id) || input.names?.[c.id] ? { name: nm.get(c.id) ?? input.names?.[c.id] } : {}), ...cardOf(c, genders), ...(withCv ? { cv: cv.get(c.id) ?? "no CV text on file" } : {}) })) };
+        } else if (call.name === "rank" && extras.rank) {
+          const list = await idsOf(String(call.input.sql ?? ""));
+          if ("error" in list) out = { error: list.error };
+          else {
+            const r = await extras.rank(new Set(list.ids), String(call.input.job ?? ""));
+            for (const h of r.hits) seen.add(h.id);
+            trail.push(`Ranked ${list.ids.length} people by fit`);
+            out = { in_list: list.ids.length, placed: r.placed, not_placed: list.ids.length - r.placed, note: "Not placed = the scoring found no title match for them; they are still in your list.", best: r.hits.map((h) => ({ id: h.id, score: h.score, why: h.why, ...brief(byId.get(h.id)) })) };
+          }
+        } else if (call.name === "similar" && extras.similar) {
+          const sql = String(call.input.sql ?? "").trim();
+          const list = sql ? await idsOf(sql) : null;
+          if (list && "error" in list) out = { error: list.error };
+          else {
+            const r = await extras.similar(String(call.input.text ?? ""), list ? list.ids : null, SHOWN_MAX);
+            if (!r.ok) out = { error: r.error };
+            else {
+              const hits = r.hits.filter((h) => byId.has(h.id));
+              for (const h of hits) seen.add(h.id);
+              trail.push(`Nearest in meaning${list ? ` among ${list.ids.length}` : ""}: ${hits.length}`);
+              out = { ...(list ? { searched_among: list.ids.length } : {}), people: hits.map((h) => ({ id: h.id, closeness: h.similarity, ...brief(byId.get(h.id)) })) };
+            }
+          }
         } else out = { error: "No such tool." };
         results.push({ type: "tool_result", tool_use_id: call.id, content: JSON.stringify(out) });
       }

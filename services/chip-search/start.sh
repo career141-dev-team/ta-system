@@ -10,4 +10,7 @@ docker run -d --name chip-search --restart unless-stopped --network career141_de
   -e ANTHROPIC_API_KEY="$(grep '^ANTHROPIC_API_KEY=' /opt/ta-prod/.env.production | cut -d= -f2- || true)" \
   -e OPENROUTER_API_KEY="$(grep '^OPENROUTER_API_KEY=' /opt/ta-prod/.env.production | cut -d= -f2- || true)" \
   -e CHIP_CARDS=/data/cards.jsonl \
+  -e QDRANT_URL="${CHIP_QDRANT_URL:-http://qdrant:6333}" \
+  -e QDRANT_API_KEY="$(grep '^QDRANT_API_KEY=' /opt/ta-prod/.env.production | cut -d= -f2- || true)" \
+  -e C141_CHIP_AGENT2="${C141_CHIP_AGENT2:-}" \
   node:22-alpine node --experimental-strip-types --no-warnings --import ./reg.mjs server.ts

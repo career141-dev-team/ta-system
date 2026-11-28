@@ -14,18 +14,19 @@ export function lines(file: string): any[] {
   return out;
 }
 
-export function histories(file: string): Map<string, { t: number; h: any[]; x?: string }> {
-  const m = new Map<string, { t: number; h: any[]; x?: string }>();
+export function histories(file: string): Map<string, { t: number; h: any[]; x?: string; k?: string }> {
+  const m = new Map<string, { t: number; h: any[]; x?: string; k?: string }>();
   for (const r of lines(file)) {
     if (!r.c) continue;
     const h = Array.isArray(r.h) ? r.h : null;
     const x = typeof r.x === "string" && r.x.trim() ? r.x : undefined;
-    if (!h && !x) continue;
+    const k = typeof r.k === "string" && r.k ? r.k : undefined;
+    if (!h && !x && !k) continue;
     const t = Number(r.t) || 0;
     const had = m.get(r.c);
-    // The newest row's job history; the CV's own text from whichever row holds it.
-    if (!had || t > had.t) m.set(r.c, { t, h: h ?? had?.h ?? [], x: x ?? had?.x });
-    else if (x && !had.x) had.x = x;
+    // The newest row's job history and CV text key; the CV's own text from whichever row holds it.
+    if (!had || t > had.t) m.set(r.c, { t, h: h ?? had?.h ?? [], x: x ?? had?.x, k: k ?? had?.k });
+    else { if (x && !had.x) had.x = x; if (k && !had.k) had.k = k; }
   }
   return m;
 }
@@ -40,7 +41,8 @@ const cut = (s: unknown, n: number) => (typeof s === "string" ? s.replace(/\s+/g
  */
 export const scrub = (s: string) => s.replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, "[email]").replace(/\+?\d(?:[ .()-]{0,2}\d){8,14}[VvXx]?/g, "[number]");
 
-const SEARCH_TEXT_MAX = 4000;
+// Room for the record and about two pages of the CV itself.
+const SEARCH_TEXT_MAX = 8000;
 /**
  * What the query agent can search and read for things no column holds (a
  * language, a tool, a school, "led a team of 20"): the record as CV-like text,

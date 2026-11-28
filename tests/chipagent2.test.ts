@@ -12,6 +12,8 @@ import { createQueryAgent } from "../services/chip-search/agent2";
 import { buildTable, runQuery, describeTable } from "../services/chip-search/table";
 import { createQuerier, type Query } from "../services/chip-search/query";
 import { scrub, searchText } from "../services/chip-search/read";
+import { sign, r2FromEnv, cachePath, rawText } from "../services/chip-search/r2";
+import { createSimilar } from "../services/chip-search/vectors";
 import { fork } from "node:child_process";
 import type { AgentModelCaller, AgentModelResponse, AgentMessage } from "../services/chip-search/agent";
 import { resolvePlace } from "../convex/lib/search/lists/places";
@@ -236,6 +238,66 @@ console.log("the table built in its own process, from the files");
   const b = await run("-");
   ok("with no CV text file the table is still built", b.rows === 5 && b.cvRows === 0 && /no CV text file/.test(b.note));
   await new Promise((r) => fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }, r));
+}
+
+console.log("CV text from Cloudflare");
+{
+  // Amazon's own published example for a signed GET (S3 "GET Object" in the Signature V4 examples).
+  const auth = sign({ method: "GET", path: "/test.txt", region: "us-east-1", accessKey: "AKIAIOSFODNN7EXAMPLE", secret: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", amzDate: "20130524T000000Z",
+    headers: { host: "examplebucket.s3.amazonaws.com", range: "bytes=0-9", "x-amz-content-sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "x-amz-date": "20130524T000000Z" } });
+  ok("the request is signed as Amazon's example says", auth.endsWith("Signature=f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41"), auth);
+  ok("no keys set means no Cloudflare, not a crash", r2FromEnv({}) === null && r2FromEnv({ R2_ENDPOINT: "https://x", R2_BUCKET_NAME: "b", R2_ACCESS_KEY_ID: "k", R2_SECRET_ACCESS_KEY: "s" })?.bucket === "b");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "chip-raw-test-"));
+  ok("a key cannot step out of the folder", cachePath(dir, "cv-rawtext/../../etc/passwd") === null && cachePath(dir, "/etc/passwd") === null && !!cachePath(dir, "cv-rawtext/abc/def.txt"));
+  fs.mkdirSync(path.join(dir, "abc"));
+  fs.writeFileSync(path.join(dir, "abc", "def.txt"), "Led a team of 20.");
+  const onDisk = await rawText("cv-rawtext/abc/def.txt", dir, null);
+  ok("a CV already copied is read from the disk", onDisk.from === "disk" && onDisk.text === "Led a team of 20.");
+  ok("one not copied, with no keys, is 'none' - never an error", (await rawText("cv-rawtext/abc/other.txt", dir, null)).from === "none");
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+console.log("the score tool: a big list in the tuned order");
+{
+  let asked: { ids: string[]; job: string } | null = null;
+  let got: any;
+  const m = scripted([
+    () => ({ content: [tool("rank", { sql: "select id from people where country_code='LK'", job: "Accountant, Eastern Province" })] }),
+    (msgs) => { got = lastResult(msgs); return { content: [tool("finish", { reply: "Best first.", searched: "Accountants in Sri Lanka, ranked", final_sql: "select id from people where country_code='LK'", candidates: [{ id: "kandy-f", fit: 80, reason: "top of the ranking" }] })] }; },
+  ]);
+  const r = await createQueryAgent(cards, direct, "", m.call, { rank: async (ids, job) => { asked = { ids: [...ids].sort(), job }; return { placed: 2, hits: [{ id: "kandy-f", score: 210, why: ["exact job title now"] }, { id: "batti-f", score: 190, why: ["job title now"] }] }; } })({ turns: ["accountants in sri lanka"] });
+  ok("the agent's own list goes to the scoring", asked!.ids.join() === "ampara-f,batti-f,kandy-f,katt-m" && asked!.job === "Accountant, Eastern Province", JSON.stringify(asked));
+  ok("the ranked people come back with score, reasons and who was not placed", got.in_list === 4 && got.placed === 2 && got.not_placed === 2 && got.best[0].id === "kandy-f" && got.best[0].score === 210 && got.best[0].place === "Kandy", JSON.stringify(got).slice(0, 260));
+  ok("a ranked person can be shown", r?.candidates[0]?.id === "kandy-f" && r.trail.includes("Ranked 4 people by fit"));
+  const names = (x: unknown[]) => (x as { name: string }[]).map((t) => t.name).join();
+  let offered = "";
+  await createQueryAgent(cards, direct, "", async (q) => { offered = names(q.tools); return null; })({ turns: ["x"] });
+  ok("without the scoring or the vectors the agent is not offered them", offered === "query,read_people,finish", offered);
+}
+
+console.log("the vector tool: by meaning, among the people the query kept");
+{
+  const calls: { url: string; body: any }[] = [];
+  const fake = (async (url: any, init: any) => {
+    const body = JSON.parse(init.body);
+    calls.push({ url: String(url), body });
+    if (String(url).includes("embeddings")) return new Response(JSON.stringify({ data: [{ embedding: Array.from({ length: 1536 }, (_, i) => i) }] }), { status: 200 });
+    return new Response(JSON.stringify({ result: [{ id: 1, score: 0.812, payload: { candidateId: "batti-f" } }, { id: 2, score: 0.4, payload: { candidateId: "gone" } }] }), { status: 200 });
+  }) as typeof fetch;
+  ok("no key or no address means no vector tool", createSimilar({}, fake) === null && createSimilar({ OPENROUTER_API_KEY: "k" }, fake) === null);
+  const similar = createSimilar({ OPENROUTER_API_KEY: "k", QDRANT_URL: "http://qdrant:6333/" }, fake)!;
+  let got: any;
+  const m = scripted([
+    () => ({ content: [tool("similar", { text: "has run a hospital finance team", sql: "select id from people where province='Eastern'" })] }),
+    (msgs) => { got = lastResult(msgs); return { content: [{ type: "text", text: "Done." }] }; },
+  ]);
+  await createQueryAgent(cards, direct, "", m.call, { similar })({ turns: ["who has run a hospital finance team in the east"] });
+  ok("the sentence is embedded with the model the CVs were, cut to 1,024", calls[0].body.model === "openai/text-embedding-3-small" && calls[1].body.vector.length === 1024 && calls[1].body.vector[1023] === 1023);
+  ok("the search is limited to the people the query kept", calls[1].url === "http://qdrant:6333/collections/candidate_vectors/points/search" && [...calls[1].body.filter.must[0].match.any].sort().join() === "ampara-f,batti-f,katt-m");
+  ok("someone Qdrant returns that we do not hold is left out", got.searched_among === 3 && got.people.length === 1 && got.people[0].id === "batti-f" && got.people[0].closeness === 0.81, JSON.stringify(got));
+  const down = createSimilar({ OPENROUTER_API_KEY: "k", QDRANT_URL: "http://q" }, (async () => new Response("{}", { status: 500 })) as typeof fetch)!;
+  const bad = await down("x y", null, 5);
+  ok("a failure is said in words, for the agent to carry on without it", !bad.ok && /meaning/.test(bad.error));
 }
 
 console.log("the worker: read only, and stopped when too slow");

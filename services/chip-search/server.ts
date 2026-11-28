@@ -24,6 +24,7 @@ import path from "node:path";
 import { createAgent, type AgentModelCaller, type AgentModelResponse, type AgentResult } from "./agent";
 import { createQueryAgent, type LastSearch } from "./agent2";
 import { createQuerier } from "./query";
+import { createSimilar } from "./vectors";
 
 const FILE = process.env.CHIP_CARDS || "/data/cards.jsonl";
 // Each candidate's CV text for the query agent's word search, written nightly by build.ts beside the cards.
@@ -273,6 +274,7 @@ let cards = 0;
 let loadedAt = "";
 let tableRows: number | null = null;
 let cvTextRows: number | null = null;
+let meaningSearch = false;
 let loading: Promise<void> | null = null;
 // Ranked lists waiting for their AI check (/check), by the search words.
 const ranked = new Map<string, any>();
@@ -322,7 +324,18 @@ async function load(): Promise<void> {
     const old = { querier, tableFile };
     querier = createQuerier(file);
     tableFile = file;
-    agent2 = createQueryAgent(list, querier.query, built.tables, callAgent2Model);
+    // The chip search's own scoring, for the agent to order a big list with (agent2.ts Extras).
+    const scorer = search;
+    const similar = createSimilar();
+    agent2 = createQueryAgent(list, querier.query, built.tables, callAgent2Model, {
+      rank: async (ids, job) => {
+        const r = await scorer!([job], { inspect: false });
+        const hits = (r.all as any[]).filter((h) => ids.has(h.card.id));
+        return { placed: hits.length, hits: hits.slice(0, 60).map((h) => ({ id: h.card.id, score: h.score, why: h.why })) };
+      },
+      ...(similar ? { similar } : {}),
+    });
+    meaningSearch = !!similar;
     tableRows = built.rows;
     cvTextRows = built.cvRows;
     old.querier?.close();
@@ -361,7 +374,7 @@ const send = (res: http.ServerResponse, status: number, body: unknown) => {
 
 const server = http.createServer(async (req, res) => {
   try {
-    if (req.method === "GET" && req.url === "/health") return send(res, 200, { ok: !!search, cards, loadedAt, tableRows, cvTextRows, agent2: agent2 ? AGENT2_MODE || "off" : "not built", spendUsd: spend.day === today() ? Number(spend.usd.toFixed(3)) : 0 });
+    if (req.method === "GET" && req.url === "/health") return send(res, 200, { ok: !!search, cards, loadedAt, tableRows, cvTextRows, meaningSearch, agent2: agent2 ? AGENT2_MODE || "off" : "not built", spendUsd: spend.day === today() ? Number(spend.usd.toFixed(3)) : 0 });
     if (req.method === "POST" && req.url === "/reload") { reload(); return send(res, 202, { ok: true }); }
     if (req.method !== "POST" || (req.url !== "/search" && req.url !== "/check" && req.url !== "/agent")) return send(res, 404, { ok: false, message: "Not found." });
     let raw = "";

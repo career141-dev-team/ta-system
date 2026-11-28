@@ -13,11 +13,13 @@
  *
  *   node build.ts          build and swap
  *   node build.ts plan     counts only
+ *   node build.ts text     names and CV text only (no cards, no AI)
  */
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { lines, histories, cvText, cvDate, searchText } from "./read";
+import { r2FromEnv, rawText } from "./r2";
 import { PROFILE_SYSTEM, profileUser, finishProfile, jsonOf } from "../../convex/lib/search/profile";
 
 const DIR = process.env.CHIP_DIR || "/data";
@@ -81,21 +83,42 @@ const recs = new Map<string, { id: string; text: string; date: string; c: any }>
 // 28 Nov 2026: every candidate's text for the query agent's search (cvtext.jsonl, one {id, t}
 // a line), written fresh each night from the export. No AI. Swapped in only with a full export.
 const CVTEXT = path.join(DIR, "cvtext.jsonl");
-const cvOut = mode === "plan" ? null : fs.openSync(CVTEXT + ".new", "w");
+// The CV's own words are in Cloudflare R2, not in the database (r2.ts): read from the copy on
+// this disk, else fetched once and kept there.
+const RAW_DIR = process.env.CHIP_RAW_DIR || path.join(DIR, "raw");
+const forText: { id: string; c: any; jobs: any[] | undefined; x?: string; key?: string }[] = [];
 for (const c of lines(path.join(DIR, "cand.jsonl"))) {
   if (!c._id) continue;
   const h = hist.get(c._id);
   recs.set(c._id, { id: c._id, text: cvText(c, h?.h), date: cvDate(c, h?.t), c });
-  if (cvOut != null && !merged(c)) {
-    const t = searchText(c, h?.h, h?.x);
-    // The name, so "do we have Manish Mittal" can be asked of the agent. "Unnamed candidate" is what an empty name was filled with.
-    const n = typeof c.fullName === "string" && c.fullName.trim() && c.fullName.trim() !== "Unnamed candidate" ? c.fullName.trim().slice(0, 120) : undefined;
-    if (t || n) fs.writeSync(cvOut, JSON.stringify({ id: c._id, t, n }) + "\n");
-  }
+  if (mode !== "plan" && !merged(c)) forText.push({ id: c._id, c, jobs: h?.h, x: h?.x, key: typeof c.rawTextKey === "string" && c.rawTextKey ? c.rawTextKey : h?.k });
 }
-if (cvOut != null) fs.closeSync(cvOut);
 if (recs.size < 1000) { log(`export holds only ${recs.size} candidates - not trusting it, nothing changed`); process.exit(1); }
-if (cvOut != null) fs.renameSync(CVTEXT + ".new", CVTEXT);
+if (mode !== "plan") {
+  const r2 = r2FromEnv();
+  const out = fs.openSync(CVTEXT + ".new", "w");
+  const got = { disk: 0, cloudflare: 0, none: 0, failed: 0 };
+  let at = 0;
+  await Promise.all(Array.from({ length: 16 }, async () => {
+    while (at < forText.length) {
+      const p = forText[at++];
+      let raw = p.x;
+      if (!raw && p.key) {
+        try { const r = await rawText(p.key, RAW_DIR, r2); raw = r.text; got[r.from]++; }
+        catch (e) { if (!got.failed++) log("a CV text could not be fetched (counted, the rest carry on):", String(e)); }
+      } else if (!raw) got.none++;
+      const t = searchText(p.c, p.jobs, raw);
+      // The name, so "do we have Manish Mittal" can be asked of the agent. "Unnamed candidate" is what an empty name was filled with.
+      const n = typeof p.c.fullName === "string" && p.c.fullName.trim() && p.c.fullName.trim() !== "Unnamed candidate" ? p.c.fullName.trim().slice(0, 120) : undefined;
+      if (t || n) fs.writeSync(out, JSON.stringify({ id: p.id, t, n }) + "\n");
+    }
+  }));
+  fs.closeSync(out);
+  fs.renameSync(CVTEXT + ".new", CVTEXT);
+  log(`cv text for ${forText.length} people: ${got.disk} CVs from this disk, ${got.cloudflare} fetched from Cloudflare, ${got.none} with no CV text, ${got.failed} failed${r2 ? "" : " (Cloudflare keys not set: only the disk copy was read)"}`);
+}
+// "text": names and CV text only, for a run by hand in the day. No card is built, so no AI is used.
+if (mode === "text") process.exit(0);
 
 // The cards we keep: every one whose candidate is still in the export.
 const keep: string[] = [];
