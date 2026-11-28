@@ -74,7 +74,7 @@ const TOOLS = [
         final_sql: { type: "string", description: "One SELECT returning the id column of everyone who meets all that was asked. Leave out when the answer is not a list of people." },
         candidates: {
           type: "array",
-          description: `The people to show, best first, at most ${SHOWN_MAX}.`,
+          description: `The people to show, best first, at most ${SHOWN_MAX}. Always given: an empty list only when the answer is a number or a comparison with no one to list.`,
           items: {
             type: "object",
             properties: {
@@ -87,7 +87,7 @@ const TOOLS = [
           },
         },
       },
-      required: ["reply", "searched"],
+      required: ["reply", "searched", "candidates"],
     },
   },
 ];
@@ -162,6 +162,10 @@ export function createQueryAgent(cards: any[], query: Query, tables: string, cal
     const note = (v: unknown) => { if (typeof v === "string" && byId.has(v)) seen.add(v); };
     // Each query in the agent's own plain words with what it found: shown to the recruiter as "how I searched".
     const trail: string[] = [];
+    // The people the last rank / similar call returned, best first: what to show if the agent names
+    // people in its reply and hands none over (seen live, 28 Nov: "someone who has run a hospital
+    // finance team" - ten people described, no rows).
+    let lastPeople: { id: string; fit: number }[] = [];
 
     const parts = [`CONVERSATION (oldest first):\n${input.turns.map((t, i) => `${i + 1}. ${t}`).join("\n")}`];
     if (current.length) {
@@ -193,6 +197,7 @@ export function createQueryAgent(cards: any[], query: Query, tables: string, cal
         }
         const dedup = new Set<string>();
         const picked: AgentCandidate[] = [];
+        const reply0 = String(inp.reply ?? text ?? "").trim();
         for (const item of Array.isArray(inp.candidates) ? inp.candidates : []) {
           const r = (item ?? {}) as Record<string, unknown>;
           const id = String(r.id ?? "").trim();
@@ -205,11 +210,18 @@ export function createQueryAgent(cards: any[], query: Query, tables: string, cal
         // 28 Nov 2026, the first live run: the agent filtered right but listed the people in its reply and
         // gave no candidates, so the screen was empty under "I found 52 accountants". When the final query
         // found people and none were handed over, the final query's own people are shown, in its order.
-        if (!picked.length && allowed?.size) {
-          for (const id of allowed) {
-            if (picked.length >= SHOWN_MAX) break;
-            if (byId.has(id)) picked.push({ id, tier: "confirmed", fit: 70, reason: "", gender: gWord(genders[id] ?? byId.get(id)?.gender) });
-          }
+        if (!picked.length) {
+          const add = (id: string, fit: number) => {
+            if (picked.length < SHOWN_MAX && byId.has(id) && !dedup.has(id)) { dedup.add(id); picked.push({ id, tier: "confirmed", fit, reason: "", gender: gWord(genders[id] ?? byId.get(id)?.gender) }); }
+          };
+          if (allowed?.size) {
+            // A list too long to hand over as it came: the tested scoring puts the best first (52 accountants
+            // in the Eastern Province came out in the query's order, an Operation Officer on top, all "70").
+            if (allowed.size > 12 && extras.rank) {
+              try { const r = await extras.rank(allowed, input.turns.join(". ")); r.hits.forEach((h, i) => add(h.id, Math.max(60, 90 - i))); } catch { /* the query's own order below */ }
+            }
+            for (const id of allowed) add(id, picked.length ? 55 : 70);
+          } else if (reply0 && lastPeople.length) for (const x of lastPeople) add(x.id, x.fit);
         }
         // Confirmed people first, the agent's own order kept inside each group.
         const candidates = [...picked.filter((c) => c.tier === "confirmed"), ...picked.filter((c) => c.tier !== "confirmed")].slice(0, input.limit ?? SHOWN_MAX);
@@ -265,6 +277,7 @@ export function createQueryAgent(cards: any[], query: Query, tables: string, cal
           else {
             const r = await extras.rank(new Set(list.ids), String(call.input.job ?? ""));
             for (const h of r.hits) seen.add(h.id);
+            lastPeople = r.hits.map((h, i) => ({ id: h.id, fit: Math.max(60, 90 - i) }));
             trail.push(`Ranked ${list.ids.length} people by fit`);
             out = { in_list: list.ids.length, placed: r.placed, not_placed: list.ids.length - r.placed, note: "Not placed = the scoring found no title match for them; they are still in your list.", best: r.hits.map((h) => ({ id: h.id, score: h.score, why: h.why, ...brief(byId.get(h.id)) })) };
           }
@@ -278,6 +291,7 @@ export function createQueryAgent(cards: any[], query: Query, tables: string, cal
             else {
               const hits = r.hits.filter((h) => byId.has(h.id));
               for (const h of hits) seen.add(h.id);
+              lastPeople = hits.map((h) => ({ id: h.id, fit: Math.max(40, Math.min(95, Math.round(h.similarity * 100) + 30)) }));
               trail.push(`Nearest in meaning${list ? ` among ${list.ids.length}` : ""}: ${hits.length}`);
               out = { ...(list ? { searched_among: list.ids.length } : {}), people: hits.map((h) => ({ id: h.id, closeness: h.similarity, ...brief(byId.get(h.id)) })) };
             }
