@@ -35,6 +35,7 @@ export const available = query({
     const w = await who(ctx);
     if (!w.ok) return w;
     const me = w.user;
+    // A lead, Director, Ops or admin is put on openings, not asking (an admin on "View as TA" is still an admin here).
     if (!["ta", "ta_support"].includes(roleOf(me))) return { ok: true as const, canRequest: false, openings: [] };
 
     const [jobs, mine, requests] = await Promise.all([
@@ -53,17 +54,19 @@ export const available = query({
     for (const job of jobs) {
       if (isGone(job) || job.isConfidential) continue;
       if (on.has(job._id as string) || (job.assignedTaIds ?? []).includes(me._id)) continue;
-      if (!job.taLeadId) continue;
-      const key = job.taLeadId as string;
-      if (!leads.has(key)) leads.set(key, await ctx.db.get(job.taLeadId));
-      const lead = leads.get(key);
-      if (!lead?.isActive || roleOf(lead) !== "ta_lead") continue;
+      // 28 Nov 2026 (owner: "they need to see what other openings are there first"): every open
+      // opening is listed. One with no active TA Lead used to be left out - on a desk where most
+      // openings have none, the list read "No open roles"; its request now goes to the admins.
+      const key = (job.taLeadId ?? "") as string;
+      if (key && !leads.has(key)) leads.set(key, await ctx.db.get(job.taLeadId!));
+      const lead = key ? leads.get(key) : null;
+      const leadOk = !!lead?.isActive && roleOf(lead) === "ta_lead";
       const r = latest.get(job._id as string);
       openings.push({
         id: job._id as string,
         title: job.title,
         clientName: job.clientName,
-        leadName: lead.fullName,
+        leadName: leadOk ? lead!.fullName : "",
         status: (r?.status ?? null) as "pending" | "approved" | "rejected" | null,
       });
     }

@@ -54,6 +54,7 @@ const db = {
       },
       collect: async () => structuredClone(rows(table).filter((row) => predicates.every((test) => test(row)))),
       first: async () => (await query.collect())[0] ?? null,
+      take: async (n: number) => (await query.collect()).slice(0, n),
     };
     return query;
   },
@@ -179,10 +180,10 @@ try {
   await run("decide", { actorId: "admin", requestId: retried.id, approve: true });
   assert.equal(rows("jobAssignments").length, 1, "retrying an approval does not duplicate the assignment");
 
-  await assert.rejects(
-    run("request", { actorId: "support", openingId: "noLead" }),
-    /does not have an active TA Lead/,
-  );
+  // 28 Nov 2026: an opening with no TA Lead is still requestable; the admins answer it.
+  const noLead = await run("request", { actorId: "support", openingId: "noLead" });
+  assert.equal(rows("openingAccessRequests").find((row) => row._id === noLead.id)!.leadId, "admin");
+  assert.equal(rows("notifications").at(-1)!.userId, "admin");
 
   console.log("opening access request workflow passed");
 } finally {

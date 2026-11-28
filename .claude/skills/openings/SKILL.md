@@ -252,6 +252,7 @@ Capabilities from `src/lib/auth.ts` (`can`); seat from `seatFor` (`src/lib/visib
 - 2026-11-10 A LinkedIn post's edit form shows two link boxes: 1 Recruiter link (`externalUrl`, routing) and 2 Public job link (`publicUrl`, sent to candidates on WhatsApp). The card shows both and warns when the public one is missing.
 - 2026-11-10 website switch: `jobs.websiteListedAt`, `ta/website:setListed`/`listed`, `GET /integrations/v1/website/jobs`, People page ticks (section 8b).
 - 2026-11-10 `publicJd`: the website JD without the client or the pay.
+- 2026-11-28 access requests: an opening with no active TA Lead is requestable too - `ta/openingAccess:request` holds it on the first active admin and bells every active admin (admins already decide any request); the new UI's `ui/access:available` lists every active, non-confidential opening the TA is not on, with "No TA Lead - an admin answers". The old page's `listAvailable` still lists only openings with a TA Lead.
 
 <!-- skill-meta
 verified-commit: afba39bc

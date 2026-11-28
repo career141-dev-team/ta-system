@@ -145,9 +145,15 @@ export const request = internalMutation({
     if (!job || !requestable(job)) throw new Error("That opening is not available for access requests.");
     if (await isAssigned(ctx, job, requester._id)) return { ok: true, alreadyAssigned: true };
 
-    const lead = job.taLeadId ? await ctx.db.get(job.taLeadId) : null;
-    if (!lead?.isActive || roleOf(lead) !== "ta_lead") {
-      throw new Error("This opening does not have an active TA Lead. Ask an administrator to assign one.");
+    // 28 Nov 2026: an opening with no active TA Lead is still requestable; the admins answer it
+    // (decide() already lets any admin decide). The first active admin holds it, every admin is belled.
+    const own = job.taLeadId ? await ctx.db.get(job.taLeadId) : null;
+    const admins = own?.isActive && roleOf(own) === "ta_lead"
+      ? []
+      : (await ctx.db.query("users").take(1000)).filter((u) => u.isActive && roleOf(u) === "admin");
+    const lead = admins.length ? admins[0] : own;
+    if (!lead?.isActive || (roleOf(lead) !== "ta_lead" && roleOf(lead) !== "admin")) {
+      throw new Error("This opening has no TA Lead and no admin to answer it. Ask an administrator.");
     }
     const reason = args.reason?.trim() ?? "";
     if (reason.length > 1000) throw new Error("Keep the reason under 1,000 characters.");
@@ -169,15 +175,17 @@ export const request = internalMutation({
       requestReason: reason || undefined,
       requestedAt: now,
     });
-    await ctx.db.insert("notifications", {
-      userId: lead._id,
-      type: "opening_access_requested",
-      title: "Opening access requested",
-      body: `${requester.fullName} requested access to ${job.title}.`,
-      jobId: job._id,
-      read: false,
-      createdAt: new Date(now).toISOString(),
-    });
+    for (const to of admins.length ? admins : [lead]) {
+      await ctx.db.insert("notifications", {
+        userId: to._id,
+        type: "opening_access_requested",
+        title: "Opening access requested",
+        body: `${requester.fullName} requested access to ${job.title}.${admins.length ? " It has no TA Lead, so an admin answers it." : ""}`,
+        jobId: job._id,
+        read: false,
+        createdAt: new Date(now).toISOString(),
+      });
+    }
     await ctx.db.insert("activityLog", {
       actorId: requester._id,
       actorName: requester.fullName,
