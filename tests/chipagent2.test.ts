@@ -114,6 +114,18 @@ console.log("nobody outside the final query is shown, whatever the model says");
   ok("the model is told where names are", /people\.name/.test(m.seen[0].system));
 }
 
+console.log("the first live run's fault: people described in the reply, none handed over");
+{
+  const m = scripted([() => ({ content: [tool("finish", { reply: "I found 2 women in the Eastern Province.", searched: "Eastern · female: 2", final_sql: EASTERN_F })] })]);
+  const r = await createQueryAgent(cards, direct, "", m.call)({ turns: ["female accountants in eastern"] });
+  ok("the final query's own people are shown", r?.candidates.map((c) => c.id).sort().join() === "ampara-f,batti-f" && r.total === 2, JSON.stringify(r?.candidates));
+  ok("the model is told to hand people over by id, and what a null email flag means", /selects people\.id/.test(m.seen[0].system) && /not known yet/.test(m.seen[0].system));
+  const fdb = buildTable(cards.map((c) => ({ ...c, hasEmail: undefined })), ":memory:", [{ id: "kandy-f", e: true, p: false }, { id: "india-f", e: false }], { cvText: false });
+  const flags = runQuery(fdb, "select id, has_email, has_phone from people where id in ('kandy-f','india-f','batti-f') order by id");
+  ok("email / phone flags come with the names file; no line means not known", flags.ok && JSON.stringify(flags.rows) === JSON.stringify([["batti-f", null, null], ["india-f", 0, 0], ["kandy-f", 1, 0]]), JSON.stringify(flags));
+  ok("the agent is told how many have an email, and how many are not known yet", /Has an email: .*not known yet \(3\)/.test(describeTable(fdb)), describeTable(fdb).split("\n").find((l) => l.startsWith("Has an email")));
+}
+
 console.log("honest when it goes wrong");
 {
   let err: any;
