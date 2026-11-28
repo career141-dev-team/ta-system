@@ -45,6 +45,9 @@ How to work:
 - Too few or none: say so plainly. Then find what is nearest by loosening one condition at a time (a town to its district, a district to its province), say which condition you loosened, and offer it. Never fill the list with people who fail something that was asked.
 - Before you answer with people, read their cards with read_people and judge each against the request. Leave out anyone who does not fit. When what was asked is in no column, search the CV text if the tables list it, and read the CV before you rely on a match.
 - A question that needs a number or a comparison, not a list, is answered in reply with no candidates.
+- Every query that lists people selects people.id: the people you show are given by their id, never by name.
+- The people themselves go in candidates - the screen draws that list, with names and CVs. reply is two or three sentences about the result, never the list of people over again.
+- has_email and has_phone that are null are not known yet: say nothing about email or phone then, never "none have one".
 - Finish with the finish tool. final_sql is one SELECT returning the id of every person who meets everything that was asked; only people it returns can be shown. searched says in plain words what you searched, for the recruiter to check.
 - A person named in a message: first see if the name matches one of the people on screen, and answer about that person from their card. Otherwise look the name up in people.name.
 - Never mention SQL, tables or columns to the recruiter. Write the reply as one colleague to another, short, in plain text with no markdown.`;
@@ -198,6 +201,15 @@ export function createQueryAgent(cards: any[], query: Query, tables: string, cal
           dedup.add(id);
           const fit = Number.isFinite(Number(r.fit)) ? Math.max(1, Math.min(99, Math.round(Number(r.fit)))) : 70;
           picked.push({ id, tier: r.confirmed === false ? "unconfirmed" : "confirmed", fit, reason: String(r.reason ?? "").trim().slice(0, 180), gender: gWord(genders[id] ?? byId.get(id)?.gender) });
+        }
+        // 28 Nov 2026, the first live run: the agent filtered right but listed the people in its reply and
+        // gave no candidates, so the screen was empty under "I found 52 accountants". When the final query
+        // found people and none were handed over, the final query's own people are shown, in its order.
+        if (!picked.length && allowed?.size) {
+          for (const id of allowed) {
+            if (picked.length >= SHOWN_MAX) break;
+            if (byId.has(id)) picked.push({ id, tier: "confirmed", fit: 70, reason: "", gender: gWord(genders[id] ?? byId.get(id)?.gender) });
+          }
         }
         // Confirmed people first, the agent's own order kept inside each group.
         const candidates = [...picked.filter((c) => c.tier === "confirmed"), ...picked.filter((c) => c.tier !== "confirmed")].slice(0, input.limit ?? SHOWN_MAX);

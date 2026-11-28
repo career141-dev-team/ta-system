@@ -100,7 +100,7 @@ Table cv_text (person_id, body): each person's CV as text, with contact details 
   Join it to the other tables on person_id = people.id. A CV that does not mention something is not proof the person lacks it: say "not mentioned" rather than "no".`;
 
 /** Builds the read-only table from the cards. Merged duplicates and people whose CV file is lost are left out. */
-export function buildTable(cards: Iterable<any>, file = ":memory:", extra?: Iterable<{ id: string; t?: string; n?: string }>, opts: { cvText?: boolean } = {}): DatabaseSync {
+export function buildTable(cards: Iterable<any>, file = ":memory:", extra?: Iterable<{ id: string; t?: string; n?: string; e?: boolean; p?: boolean }>, opts: { cvText?: boolean } = {}): DatabaseSync {
   const db = new DatabaseSync(file);
   // A throwaway copy rebuilt from the cards on every load: no journal, no waiting for the disk.
   db.exec("pragma journal_mode = off");
@@ -145,12 +145,14 @@ export function buildTable(cards: Iterable<any>, file = ":memory:", extra?: Iter
     const withText = opts.cvText !== false;
     if (withText) db.exec(CV_TEXT);
     const name = db.prepare("update people set name = ? where id = ?");
+    const contact = db.prepare("update people set has_email = ?, has_phone = ? where id = ?");
     const known = db.prepare("select 1 from people where id = ?");
     const put = withText ? db.prepare("insert into cv_text (person_id, body) values (?, ?)") : null;
     db.exec("begin");
     for (const r of extra) {
       if (!r?.id || !known.get(r.id)) continue;
       if (r.n) name.run(String(r.n), r.id);
+      if (typeof r.e === "boolean") contact.run(r.e ? 1 : 0, r.p === true ? 1 : 0, r.id);
       if (put && r.t) put.run(r.id, r.t);
     }
     db.exec("commit");
@@ -177,6 +179,7 @@ export function describeTable(db: DatabaseSync): string {
     `Sri Lanka districts: ${list("select district, count(*) from people where district is not null group by 1 order by 2 desc")}`,
     `Countries: ${list("select country, count(*) from people where country is not null group by 1 order by 2 desc limit 25")}`,
     `Gender: ${list("select coalesce(gender,'not on file'), count(*) from people group by 1")}`,
+    `Has an email: ${list("select case has_email when 1 then 'yes' when 0 then 'no' else 'not known yet' end, count(*) from people group by 1")}`,
     `Employer types: ${list("select type, count(distinct person_id) from job_company_types group by 1 order by 2 desc")}`,
     `Qualifications: ${list("select qual, count(*) from qualifications group by 1 order by 2 desc limit 40")}`,
     `Role groups: ${list("select role, count(*) from people where role is not null group by 1 order by 2 desc limit 80")}`,

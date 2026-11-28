@@ -110,7 +110,9 @@ if (mode !== "plan") {
       const t = searchText(p.c, p.jobs, raw);
       // The name, so "do we have Manish Mittal" can be asked of the agent. "Unnamed candidate" is what an empty name was filled with.
       const n = typeof p.c.fullName === "string" && p.c.fullName.trim() && p.c.fullName.trim() !== "Unnamed candidate" ? p.c.fullName.trim().slice(0, 120) : undefined;
-      if (t || n) fs.writeSync(out, JSON.stringify({ id: p.id, t, n }) + "\n");
+      // e / p: whether the record holds an email / a phone (the cards get these only when a card is built).
+      const f = contactFlags(p.c);
+      fs.writeSync(out, JSON.stringify({ id: p.id, t, n, e: f.hasEmail, p: f.hasPhone }) + "\n");
     }
   }));
   fs.closeSync(out);
