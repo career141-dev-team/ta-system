@@ -17,7 +17,11 @@ import http from "node:http";
 import fs from "node:fs";
 import readline from "node:readline";
 import { createSearch } from "../../convex/lib/search/chipSearch";
+import os from "node:os";
+import path from "node:path";
 import { createAgent, type AgentModelCaller, type AgentModelResponse, type AgentResult } from "./agent";
+import { createQueryAgent } from "./agent2";
+import { createQuerier } from "./query";
 
 const FILE = process.env.CHIP_CARDS || "/data/cards.jsonl";
 const PORT = Number(process.env.CHIP_PORT || 3311);
@@ -26,6 +30,11 @@ const OPENROUTER_KEY = (process.env.OPENROUTER_API_KEY || "").trim();
 const PREFER_OPENROUTER = (process.env.C141_LLM_PROVIDER || "").trim().toLowerCase() === "openrouter";
 const MODEL = process.env.CHIP_MODEL || "claude-haiku-5-5";
 const AGENT_MODEL = process.env.CHIP_AGENT_MODEL || "claude-sonnet-5-5";
+// The query agent (agent2.ts, 28 Nov 2026). Off until it has won the blind test:
+// "on" = every /agent call, "test" = only calls that ask for it (body.v2), anything else = the first agent.
+const AGENT2_MODE = (process.env.C141_CHIP_AGENT2 || "").trim().toLowerCase();
+const AGENT2_MODEL = process.env.CHIP_AGENT2_MODEL || "claude-sonnet-5-5";
+const AGENT2_EFFORT = process.env.CHIP_AGENT2_EFFORT || "medium";
 const DEEPSEEK_MODEL = process.env.CHIP_FALLBACK_MODEL || "deepseek/deepseek-v4-flash";
 // A day's AI spend stops at this; the search then runs on the word rules alone.
 const DAILY_USD = Number(process.env.CHIP_DAILY_USD || 10);
@@ -36,9 +45,10 @@ const log = (...a: unknown[]) => console.log(new Date().toISOString(), ...a);
 
 let spend = { day: "", usd: 0 };
 const today = () => new Date().toISOString().slice(0, 10);
-const addSpend = (u: { input_tokens?: number; output_tokens?: number; prompt_tokens?: number; completion_tokens?: number } | undefined, model = MODEL) => {
+const addSpend = (u: { input_tokens?: number; output_tokens?: number; prompt_tokens?: number; completion_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number } | undefined, model = MODEL) => {
   if (spend.day !== today()) spend = { day: today(), usd: 0 };
-  const inTok = u?.input_tokens ?? u?.prompt_tokens ?? 0;
+  // Cached prompt text (the query agent's table description) is billed apart from input_tokens: 1.25x to write, 0.1x to read.
+  const inTok = (u?.input_tokens ?? u?.prompt_tokens ?? 0) + 1.25 * (u?.cache_creation_input_tokens ?? 0) + 0.1 * (u?.cache_read_input_tokens ?? 0);
   const outTok = u?.output_tokens ?? u?.completion_tokens ?? 0;
   const sonnet = /sonnet/i.test(model);
   const deepseek = /deepseek/i.test(model);
@@ -212,13 +222,51 @@ const callAgentModel: AgentModelCaller = async ({ system, messages, tools }) => 
   return callAgentOpenRouter(system, messages, tools);
 };
 
+/**
+ * One turn for the query agent (agent2.ts). Thinking is on (adaptive is the only mode this
+ * model takes; no temperature, it is refused). The system text, which holds the table
+ * description, is the same for every search until the cards reload, so it is cached together
+ * with the tools. A refusal or any failure answers null and the caller falls back.
+ */
+const callAgent2Model: AgentModelCaller = async ({ system, messages, tools }) => {
+  if (!KEY && !OPENROUTER_KEY) return null;
+  if (spend.day === today() && spend.usd >= DAILY_USD) return null;
+  if (KEY && !PREFER_OPENROUTER) {
+    try {
+      const r = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "x-api-key": KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+        body: JSON.stringify({
+          model: AGENT2_MODEL,
+          max_tokens: 16000,
+          thinking: { type: "adaptive" },
+          output_config: { effort: AGENT2_EFFORT },
+          system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+          messages,
+          tools,
+        }),
+        signal: AbortSignal.timeout(45_000),
+      });
+      const j = (await r.json()) as AgentModelResponse & { error?: { message?: string } };
+      addSpend(j.usage, AGENT2_MODEL);
+      if (r.ok && j.stop_reason !== "refusal") return j;
+      log("agent2 refused", r.status, j?.error?.message ?? j.stop_reason ?? "");
+    } catch (e) {
+      log("agent2 failed", String(e));
+    }
+  }
+  return callAgentOpenRouter(system, messages, tools);
+};
+
 type Search = ReturnType<typeof createSearch>;
 type Agent = ReturnType<typeof createAgent>;
 let search: Search | null = null;
 let agent: Agent | null = null;
+let agent2: ReturnType<typeof createQueryAgent> | null = null;
+let querier: ReturnType<typeof createQuerier> | null = null;
+let tableFile = "";
 let cards = 0;
 let loadedAt = "";
-let table: import("node:sqlite").DatabaseSync | null = null;
 let tableRows: number | null = null;
 let loading: Promise<void> | null = null;
 // Ranked lists waiting for their AI check (/check), by the search words.
@@ -246,18 +294,28 @@ async function load(): Promise<void> {
   cards = list.length;
   loadedAt = new Date().toISOString();
   log(`loaded ${cards} cards in ${Date.now() - t0} ms`);
-  // 28 Nov 2026: the same cards as a table the agent will query (table.ts). Nothing reads it
-  // yet; it is built here so /health shows it works on the server before the agent gets it.
+  // 28 Nov 2026: the same cards as a table the query agent searches (table.ts, agent2.ts).
+  // Built into a file in the container's own temp folder, which the query worker opens
+  // read-only (query.ts); the old file goes once the new one is in use.
   // Imported here, not at the top: without node:sqlite the search must still start.
   try {
     const t1 = Date.now();
-    const { buildTable, runQuery } = await import("./table");
-    table = buildTable(list);
-    const n = runQuery(table, "select count(*) from people");
+    const { buildTable, runQuery, describeTable } = await import("./table");
+    const file = path.join(os.tmpdir(), `chip-table-${Date.now()}.db`);
+    const db = buildTable(list, file);
+    const n = runQuery(db, "select count(*) from people");
+    const tables = describeTable(db);
+    db.close();
+    const old = { querier, tableFile };
+    querier = createQuerier(file);
+    tableFile = file;
+    agent2 = createQueryAgent(list, querier.query, tables, callAgent2Model);
     tableRows = n.ok ? Number(n.rows[0][0]) : null;
+    old.querier?.close();
+    if (old.tableFile) fs.rm(old.tableFile, { force: true }, () => {});
     log(`table built: ${tableRows} people in ${Date.now() - t1} ms`);
   } catch (e) {
-    table = null; tableRows = null;
+    agent2 = null; tableRows = null;
     log("table not built", String(e));
   }
 }
@@ -290,7 +348,7 @@ const send = (res: http.ServerResponse, status: number, body: unknown) => {
 
 const server = http.createServer(async (req, res) => {
   try {
-    if (req.method === "GET" && req.url === "/health") return send(res, 200, { ok: !!search, cards, loadedAt, tableRows, spendUsd: spend.day === today() ? Number(spend.usd.toFixed(3)) : 0 });
+    if (req.method === "GET" && req.url === "/health") return send(res, 200, { ok: !!search, cards, loadedAt, tableRows, agent2: agent2 ? AGENT2_MODE || "off" : "not built", spendUsd: spend.day === today() ? Number(spend.usd.toFixed(3)) : 0 });
     if (req.method === "POST" && req.url === "/reload") { reload(); return send(res, 202, { ok: true }); }
     if (req.method !== "POST" || (req.url !== "/search" && req.url !== "/check" && req.url !== "/agent")) return send(res, 404, { ok: false, message: "Not found." });
     let raw = "";
@@ -306,10 +364,12 @@ const server = http.createServer(async (req, res) => {
       const genders = body.genders && typeof body.genders === "object" ? body.genders : {};
       const wantGender = body.wantGender === "female" || body.wantGender === "male" ? body.wantGender : null;
       const limit = Number.isFinite(Number(body.limit)) && Number(body.limit) > 0 ? Math.min(60, Math.round(Number(body.limit))) : null;
-      const cacheKey = JSON.stringify({ turns, currentIds, wantGender, limit, g: Object.keys(genders).length });
+      // The query agent when it is switched on; if it cannot answer, the first agent does, so the chat is never worse off.
+      const v2 = !!agent2 && (AGENT2_MODE === "on" || (AGENT2_MODE === "test" && body.v2 === true));
+      const cacheKey = JSON.stringify({ turns, currentIds, wantGender, limit, g: Object.keys(genders).length, v2 });
       const cached = agentCache.get(cacheKey);
       if (cached && Date.now() - cached.at < AGENT_CACHE_MS) return send(res, 200, cached.r);
-      const r = await agent({ turns, currentIds, genders, wantGender, limit });
+      const r = (v2 ? await agent2!({ turns, currentIds, genders, limit }) : null) ?? (await agent({ turns, currentIds, genders, wantGender, limit }));
       if (!r) return send(res, 502, { ok: false, message: "Agent could not answer." });
       if (agentCache.size > 100) agentCache.clear();
       agentCache.set(cacheKey, { at: Date.now(), r });

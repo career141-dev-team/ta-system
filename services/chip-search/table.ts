@@ -8,14 +8,17 @@
  * service loads them (Node's own node:sqlite, no new dependency).
  *
  * Read only: `pragma query_only` is set once the rows are in, and `runQuery`
- * takes one SELECT. No names, emails or phones: the cards never held them;
+ * (sql.ts) takes one SELECT. The agent's queries run in a worker with a time
+ * limit (query.ts), on a file copy opened read-only. No names, emails or phones: the cards never held them;
  * has_email / has_phone are yes/no flags from the nightly export.
  *
- * Nothing uses the table yet. Step 2 gives it to the agent.
+ * Used by the query agent (agent2.ts).
  */
 import { DatabaseSync } from "node:sqlite";
 import { PLACE_BY_ID, COUNTRY_BY_CODE, lineage } from "../../convex/lib/search/lists/places";
 import { LEVELS } from "../../convex/lib/search/lists/levels";
+import { runQuery } from "./sql";
+export { runQuery, type QueryAnswer } from "./sql";
 
 const SCHEMA = `
 create table people (
@@ -80,8 +83,11 @@ export function placeColumns(placeId: string | null | undefined, countryCode?: s
 }
 
 /** Builds the read-only table from the cards. Merged duplicates and people whose CV file is lost are left out. */
-export function buildTable(cards: any[]): DatabaseSync {
-  const db = new DatabaseSync(":memory:");
+export function buildTable(cards: any[], file = ":memory:"): DatabaseSync {
+  const db = new DatabaseSync(file);
+  // A throwaway copy rebuilt from the cards on every load: no journal, no waiting for the disk.
+  db.exec("pragma journal_mode = off");
+  db.exec("pragma synchronous = off");
   db.exec(SCHEMA);
   const person = db.prepare("insert or ignore into people values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
   const job = db.prepare("insert into jobs values (?,?,?,?,?,?,?,?,?,?)");
@@ -118,34 +124,6 @@ export function buildTable(cards: any[]): DatabaseSync {
   db.exec(INDEXES);
   db.exec("pragma query_only = on");
   return db;
-}
-
-export type QueryAnswer = { ok: true; columns: string[]; rows: unknown[][]; more: boolean } | { ok: false; error: string };
-
-/**
- * One read-only query. The error text goes back as it is, so the agent can
- * correct its own query. Rows are capped: a count is asked with count(*).
- * ponytail: no time limit yet - SQLite here is synchronous, so a careless
- * cross join holds the service. Step 2 (when the agent gets this) runs it in a
- * worker with a 2-second limit; until then nothing outside tests calls it.
- */
-export function runQuery(db: DatabaseSync, sql: string, maxRows = 200): QueryAnswer {
-  const q = String(sql ?? "").trim().replace(/;+\s*$/, "");
-  if (!/^(select|with)\b/i.test(q) || q.includes(";")) return { ok: false, error: "One SELECT statement only." };
-  try {
-    const st = db.prepare(q);
-    const rows: unknown[][] = [];
-    let columns: string[] = [];
-    let more = false;
-    for (const r of st.iterate() as Iterable<Record<string, unknown>>) {
-      if (rows.length >= maxRows) { more = true; break; }
-      if (!rows.length) columns = Object.keys(r);
-      rows.push(Object.values(r));
-    }
-    return { ok: true, columns, rows, more };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
-  }
 }
 
 /** What the agent is told about the table: the columns, and the values the short columns really hold. */
