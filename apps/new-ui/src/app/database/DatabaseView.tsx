@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import Image from "next/image";
-import { gsap, motionOK, swapIn, useGSAP } from "@/lib/gsap";
+import { gsap, motionOK, swapIn, useGSAP, useSwap } from "@/lib/gsap";
 import { useWorkdayGate } from "@/lib/workday";
 import { useLiftMenu } from "../openings/[id]/liftMenu";
 import { jdText } from "../openings/[id]/jdState";
@@ -20,7 +20,7 @@ import {
   type Reply,
 } from "./aura";
 import { POOL, filterReply, panelOf } from "./aura";
-import FilterBar from "./FilterBar";
+import FilterBar, { PILL } from "./FilterBar";
 import { petSay } from "@/lib/pet";
 import { candidateCall, cvHeaders, cvUrl, door, OLD_SERVER, queryOnce, saveLiveFile, useDoorMutation, useDoorQuery, useLive } from "@/lib/backend";
 import { useSignedInPerson } from "@/lib/role";
@@ -839,9 +839,9 @@ function ChatItem({
         onBlur={() => setSure(false)}
         aria-label={sure ? `Press again to delete "${title}"` : `Delete "${title}"`}
         title={sure ? "Press again to delete" : "Delete this chat"}
-        className={"mr-1.5 shrink-0 rounded-full px-1.5 py-1 text-caption transition-opacity hover:bg-surface focus-visible:opacity-100 max-md:opacity-100 " + (sure ? "font-medium text-danger opacity-100" : "text-ink-3 opacity-0 hover:text-ink group-hover:opacity-100")}
+        className={"mr-1.5 flex shrink-0 items-center rounded-full p-1.5 text-caption transition-opacity hover:bg-surface focus-visible:opacity-100 max-md:opacity-100 " + (sure ? "font-medium text-danger opacity-100" : "text-ink-3 opacity-0 hover:text-ink group-hover:opacity-100")}
       >
-        {sure ? "Delete?" : "✕"}
+        {sure ? "Delete?" : <XIcon />}
       </button>
     </div>
   );
@@ -869,8 +869,11 @@ function Welcome({
           "(SAP OR ERP) AND Colombo NOT Accenture",
         ]
       : ["CIMA finance managers", '"S/4HANA" AND manufacturing'];
+  // Candidates <-> Referees: the welcome changes by the one switch.
+  const me = useRef<HTMLDivElement>(null);
+  useSwap(me, mode);
   return (
-    <div className="flex flex-col items-center gap-3 pt-[10vh] text-center">
+    <div ref={me} className="flex flex-col items-center gap-3 pt-[10vh] text-center">
       <Image
         src="/aura-mark.png"
         alt=""
@@ -890,7 +893,7 @@ function Welcome({
             key={t}
             type="button"
             onClick={() => onTry(t)}
-            className="rounded-full border border-border px-3.5 py-1.5 text-small text-ink-2 hover:border-border-strong hover:bg-surface-2 hover:text-ink"
+            className={PILL}
           >
             {t}
           </button>
@@ -1064,6 +1067,9 @@ function Results({
 }) {
   const shown = open ? people : people.slice(0, 4);
   const compact = !!picked;
+  // "See all" / "Show fewer" changes the list in place: the one switch, not a jump.
+  const list = useRef<HTMLUListElement>(null);
+  useSwap(list, open);
   const tick = (ok: boolean) => (
     <span aria-hidden="true" className={"flex size-[1.05rem] shrink-0 items-center justify-center rounded-full " + (ok ? "bg-success-soft text-success" : "bg-warn-soft text-warn")}>
       <svg viewBox="0 0 12 12" className="size-2.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -1073,7 +1079,7 @@ function Results({
   );
   return (
     <div className="flex flex-col gap-[max(0.6rem,6px)]">
-      <ul className="overflow-hidden rounded-lg border border-border bg-surface divide-y divide-border" aria-label="People found">
+      <ul ref={list} className="divide-y divide-border overflow-hidden rounded-md border border-border bg-surface" aria-label="People found">
         {shown.map((p) => {
           const on = picked === p.id;
           const career = p.career?.length
@@ -1147,7 +1153,7 @@ function Results({
                 )}
               </button>
 
-              <div className={"absolute right-4 top-1/2 flex -translate-y-1/2 items-center gap-2 " + (on ? "" : "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100")}>
+              <div className={"absolute right-4 top-1/2 flex -translate-y-1/2 items-center gap-2 transition-opacity duration-150 " + (on ? "" : "pointer-events-none opacity-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100")}>
                 <button
                   type="button"
                   disabled={busy}
@@ -1378,6 +1384,9 @@ function Composer({
   // phrase, so a spoken JD was cut off in the middle. Now it listens until stop.
   const mic = useSpeech((t) => onChange((box.current?.value ? box.current.value + " " : "") + t));
   const { ok: speech, on: listening } = mic;
+  // AURA's next steps change with each answer: the one switch, not a blink.
+  const next = useRef<HTMLDivElement>(null);
+  useSwap(next, suggestions?.map((a) => a.label).join("|"));
   const press = () => {
     if (!value.trim() || busy) return;
     onSend();
@@ -1387,17 +1396,19 @@ function Composer({
       <AuraBarGlow className="bottom-[max(1.2rem,8px)]" />
       {/* One row above the typing bar: the filters at the left, AURA's next steps at the right. */}
       {(hasPeople || (suggestions && suggestions.length > 0)) && (
-        <div className="mx-auto mb-3 flex w-full max-w-[56rem] flex-wrap items-center justify-between gap-x-4 gap-y-3">
-          {hasPeople ? <FilterBar panel={panel} busy={busy} className="" onApply={onPanel} /> : <span />}
+        <div className="mx-auto mb-3 flex w-full max-w-[56rem] items-center gap-4">
+          {hasPeople && <FilterBar panel={panel} busy={busy} className="shrink-0" onApply={onPanel} />}
+          {/* One row at every width (28 Nov 2026: on a laptop the next steps fell to a second line
+              and pushed the talk up): they slide sideways when there is no room. */}
           {suggestions && suggestions.length > 0 && (
-            <div className="flex flex-wrap justify-end gap-2">
+            <div ref={next} className="ml-auto flex min-w-0 gap-2 overflow-x-auto [scrollbar-width:none]">
               {suggestions.map((a) => (
                 <button
                   key={a.label}
                   type="button"
                   disabled={busy}
                   onClick={() => onSuggest(a.prompt)}
-                  className="rounded-full border border-border bg-surface px-3.5 py-1.5 text-small text-ink-2 transition-colors hover:border-brand hover:text-brand disabled:opacity-40"
+                  className={PILL}
                 >
                   {a.label}
                 </button>
@@ -1442,7 +1453,7 @@ function Composer({
           maxLength={2000}
           placeholder={
             mode === "people"
-              ? "Skills, a title, a place, or words from a CV — or paste a JD"
+              ? "Skills, a title, a place — or paste a JD"
               : "Title or company — “HR Managers at Dialog”"
           }
           aria-label="Ask AURA"
@@ -1588,7 +1599,7 @@ function ModeSwitch({ mode, onPick }: { mode: Mode; onPick: (m: Mode) => void })
     { dependencies: [mode], scope: row, revertOnUpdate: false },
   );
   return (
-    <div ref={row} role="radiogroup" aria-label="What to search" className="relative flex shrink-0 items-center gap-1 rounded-full bg-surface-2 p-1 md:ml-auto">
+    <div ref={row} role="radiogroup" aria-label="What to search" className="relative flex h-[max(3.1rem,40px)] shrink-0 items-center gap-1 rounded-full bg-surface-2 p-1 md:ml-auto">
       <span ref={thumb} aria-hidden="true" data-still className="absolute bottom-1 left-0 top-1 rounded-full bg-surface shadow-float" />
       {MODES.map(([k, label, icon, hint]) => (
         <button
@@ -1599,7 +1610,7 @@ function ModeSwitch({ mode, onPick }: { mode: Mode; onPick: (m: Mode) => void })
           aria-label={label}
           title={`${label} - ${hint}`}
           onClick={() => mode !== k && onPick(k)}
-          className={"relative flex size-[max(2.9rem,38px)] items-center justify-center rounded-full transition-colors duration-200 " + (mode === k ? "text-brand" : "text-ink-3 hover:text-ink")}
+          className={"relative flex size-[max(2.6rem,34px)] items-center justify-center rounded-full transition-colors duration-200 " + (mode === k ? "text-brand" : "text-ink-3 hover:text-ink")}
         >
           {icon}
         </button>
@@ -1640,7 +1651,7 @@ function RefereeList({ list, onPick }: { list: Referee[]; onPick: (p: Person) =>
           <input type="checkbox" checked={all} onChange={() => setTicked(all ? [] : list.map((r) => r.id))} className="size-4 accent-[var(--color-brand)]" />
           Tick all
         </label>
-        <button type="button" disabled={!ticked.length} onClick={exportNow} className="ml-auto rounded-full bg-ink px-4 py-1.5 text-small font-medium text-white hover:bg-black disabled:opacity-40">
+        <button type="button" disabled={!ticked.length} onClick={exportNow} className="ml-auto flex h-[max(2.4rem,33px)] items-center rounded-full bg-brand px-4 text-small font-medium text-white hover:bg-brand-strong disabled:opacity-40">
           {ticked.length ? `Export ${ticked.length} to Excel` : "Tick referees to export"}
         </button>
       </div>
@@ -1650,7 +1661,7 @@ function RefereeList({ list, onPick }: { list: Referee[]; onPick: (p: Person) =>
           // A CV we hold under the same name - maybe them (never claimed to be).
           const cv = POOL.find((p) => p.name.toLowerCase() === r.name.toLowerCase());
           return (
-            <li key={r.id} className={"rounded-lg border px-4 py-3 transition-colors " + (on ? "border-brand bg-brand-tint" : "border-border bg-surface")}>
+            <li key={r.id} className={"rounded-md border px-4 py-3 transition-colors " + (on ? "border-brand bg-brand-tint" : "border-border bg-surface")}>
               <div className="flex flex-wrap items-start gap-x-5 gap-y-2">
                 <label className="flex min-w-0 flex-1 cursor-pointer gap-3">
                   <input type="checkbox" checked={on} onChange={() => setTicked((t) => (on ? t.filter((x) => x !== r.id) : [...t, r.id]))} aria-label={`Tick ${r.name} to export`} className="mt-1 size-4 shrink-0 accent-[var(--color-brand)]" />

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { DUR, gsap, useExit, useGSAP } from "@/lib/gsap";
+import { DUR, EASE, gsap, useExit, useGSAP } from "@/lib/gsap";
 
 /** How a lifted menu or panel sits before it rises and after it sinks. */
 export const LIFT_OUT = { opacity: 0, y: -6, scale: 0.97 };
@@ -13,7 +13,12 @@ export function useLiftMenu() {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLDivElement>(null);
-  const shown = useExit(open, panel, LIFT_OUT);
+  // Which way it opens (28 Nov 2026): a menu above its button (Database filters, the
+  // person panel's job menu) dropped DOWN onto the button from above. It now rises from
+  // the button's edge and sinks back into it, whichever side it opens on.
+  const dir = useRef({ up: false, left: false });
+  const [outOf] = useState(() => () => ({ ...LIFT_OUT, y: dir.current.up ? 6 : -6, transformOrigin: `${dir.current.up ? "bottom" : "top"} ${dir.current.left ? "left" : "right"}` }));
+  const shown = useExit(open, panel, outOf);
   useEffect(() => {
     if (!open) return;
     const away = (e: PointerEvent) => !root.current?.contains(e.target as Node) && setOpen(false);
@@ -27,9 +32,14 @@ export function useLiftMenu() {
   }, [open]);
   useGSAP(
     () => {
-      if (!open || !panel.current) return;
-      gsap.fromTo(panel.current, LIFT_OUT, { opacity: 1, y: 0, scale: 1, duration: DUR.fast, transformOrigin: "top right" });
-      gsap.from(panel.current.querySelectorAll("[role=menuitem]"), { opacity: 0, y: -4, duration: DUR.fast, stagger: 0.03 });
+      if (!open || !panel.current || !root.current) return;
+      const p = panel.current.getBoundingClientRect();
+      const r = root.current.getBoundingClientRect();
+      const up = p.bottom <= r.top + 1;
+      const left = Math.abs(p.left - r.left) < Math.abs(p.right - r.right);
+      dir.current = { up, left };
+      gsap.fromTo(panel.current, outOf(), { opacity: 1, y: 0, scale: 1, duration: DUR.fast, ease: EASE.out });
+      gsap.from(panel.current.querySelectorAll("[role=menuitem]"), { opacity: 0, y: up ? 4 : -4, duration: DUR.fast, stagger: 0.03 });
     },
     { dependencies: [open], scope: root },
   );
