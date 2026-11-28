@@ -21,6 +21,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import { mapUser } from "../../src/data/convex/map";
 import { can } from "../../src/lib/auth";
 import { isGone } from "../../src/lib/bin";
+import { profileSlug } from "../lib/samePerson";
 import { colomboDayFromValue, colomboDayStart } from "../../src/lib/calendar";
 import { isTicked, strategyAcceptanceStatus } from "../../src/lib/strategyPlanner";
 import { NotSignedIn, uiUser } from "./me";
@@ -185,6 +186,32 @@ export const removeFromOpening = mutation({
       return refused(inWords(error, "They could not be removed."));
     }
     return { ok: true, message: "Removed from the opening — they are under Dropped out, and can be brought back from there." };
+  },
+});
+
+/**
+ * A TA types in the LinkedIn profile a CV did not carry. It goes on the
+ * candidate, and like ta/candidates:rememberLinkedin it never replaces a profile
+ * already there. opening.act, and another recruiter's claim locks it.
+ */
+export const addLinkedin = mutation({
+  args: { applicationId: v.string(), url: v.string() },
+  handler: async (ctx, args): Promise<Done> => {
+    const appId = ctx.db.normalizeId("applications", args.applicationId);
+    const app = appId ? await ctx.db.get(appId) : null;
+    if (!app) return refused("That record no longer exists — it may have been removed.");
+    const o = await forOpening(ctx, app.jobId as string);
+    if (!o.ok) return o;
+    const verdict = can(o.mapped, "opening.act", { openingId: o.jobId as string, assignment: o.assignment });
+    if (!verdict.ok) return refused(verdict.message);
+    if (app.ownerTaId && app.ownerTaId !== o.user._id) return refused("Another recruiter has claimed this candidate.");
+    const slug = profileSlug(args.url.slice(0, 300));
+    if (!slug) return refused("Paste a LinkedIn profile link, like https://www.linkedin.com/in/name.");
+    const c = await ctx.db.get(app.candidateId);
+    if (!c) return refused("That candidate no longer exists.");
+    if (profileSlug(c.linkedinUrl)) return refused("They already have a LinkedIn profile on record.");
+    await ctx.db.patch(c._id, { linkedinUrl: `https://www.linkedin.com/in/${slug}` });
+    return { ok: true, message: "LinkedIn link saved." };
   },
 });
 

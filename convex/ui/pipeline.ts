@@ -20,6 +20,9 @@ import { isGone } from "../../src/lib/bin";
 import { mayReadOpening, NotSignedIn, uiUser } from "./me";
 import { BACKEND_STAGES, BOARD_STAGES, cardLimit, columnCount, COUNT_CAP, inWords, moveRefusal, toCard, type BoardStage } from "./rules";
 
+/** The columns where a candidate is being messaged and a reply is awaited. */
+const FOLLOW_UP_STAGES = new Set<BoardStage>(["ta_follow_up", "ai_follow_up"]);
+
 const LABEL: Record<BoardStage, string> = {
   ta_follow_up: "TA Follow-Up",
   ai_follow_up: "AI Follow-Up",
@@ -75,16 +78,20 @@ export const board = query({
     const columns = await Promise.all(
       wanted.map(async (stage) => {
         const rows: Doc<"applications">[] = [];
+        let replied = 0;
+        let counted = 0;
         for (const backend of BACKEND_STAGES[stage]) {
-          rows.push(
-            ...(await ctx.db
-              .query("applications")
-              .withIndex("by_job_stage", (q) => q.eq("jobId", jobId).eq("currentStage", backend as never))
-              .order("desc")
-              .take(COUNT_CAP + 1)),
-          );
+          const got = await ctx.db
+            .query("applications")
+            .withIndex("by_job_stage", (q) => q.eq("jobId", jobId).eq("currentStage", backend as never))
+            .order("desc")
+            .take(COUNT_CAP + 1);
+          const capped = got.slice(0, COUNT_CAP);
+          counted += capped.length;
+          replied += capped.filter((a) => !!a.lastCandidateReplyAt).length;
+          rows.push(...got);
         }
-        return { stage, rows };
+        return { stage, rows, replied, noReply: counted - replied };
       }),
     );
 
@@ -96,14 +103,17 @@ export const board = query({
     );
 
     const out = await Promise.all(
-      columns.map(async ({ stage, rows }) => {
+      columns.map(async ({ stage, rows, replied, noReply }) => {
         const shown = rows.slice(0, limit);
         const cards = await Promise.all(
           shown.map(async (a) => {
             const candidate = await ctx.db.get(a.candidateId);
             const p = projectApplication(a);
+            // A scoop is the CV a lead sent, not a database match: the old channel
+            // codes read it as Email, so give the board its own source to filter on.
+            const scoop = !!a.scoopReceivedAt || !!a.scoopFromUserId || a.sourceChannel === "scoop";
             return toCard(
-              { ...p, stage },
+              { ...p, stage, sourcingChannel: scoop ? "SCOOPS" : p.sourcingChannel },
               candidate,
               stage === "ta_follow_up" || stage === "ai_follow_up" ? directorReviewBlockers(a, candidate) : [],
               me,
@@ -111,11 +121,20 @@ export const board = query({
             );
           }),
         );
-        return { stage, label: LABEL[stage], ...columnCount(rows.length), cards };
+        return { stage, label: LABEL[stage], ...columnCount(rows.length), replied, noReply, cards };
       }),
     );
 
-    return { ok: true as const, opening: { id: jobId as string, title: job.title }, columns: out };
+    // The pipeline's reply stats: counted off the same rows as the columns, so
+    // they follow a move or a reply without a second read of every application.
+    // Only the follow-up columns: New CVs, Rejected or Placed were never waiting on a
+    // reply, and counting them read as hundreds "not replied" (review of #121, 27 Nov).
+    const chased = columns.filter((c) => FOLLOW_UP_STAGES.has(c.stage));
+    const stats = {
+      replied: chased.reduce((n, c) => n + c.replied, 0),
+      noReply: chased.reduce((n, c) => n + c.noReply, 0),
+    };
+    return { ok: true as const, opening: { id: jobId as string, title: job.title }, columns: out, stats };
   },
 });
 

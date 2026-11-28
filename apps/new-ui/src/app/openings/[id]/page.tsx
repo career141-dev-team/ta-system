@@ -11,6 +11,7 @@ import { ATS_ROWS, HH_ROWS } from "./rows";
 import type { WorkView } from "./view";
 import { CAN_SOURCE } from "@/lib/user";
 import RefereeBadge from "./RefereeBadge";
+import ConfidentialBadge from "./ConfidentialBadge";
 
 // Placeholder: the opening shown in the design. Replaced by the backend read
 // when the owner wires this screen.
@@ -111,6 +112,7 @@ export default async function OpeningPage({ params }: PageProps<"/openings/[id]"
         <Divider />
         <span className="text-title font-semibold"><LiveName field="client" sample={OPENING.client} /></span>
         <RefereeBadge />
+        <ConfidentialBadge />
         <Divider />
         <StatusPill options={STATUS} sample={OPENING.status} pillClass={PILL} />
         <Divider />

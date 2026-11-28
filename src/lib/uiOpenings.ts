@@ -7,7 +7,7 @@
  */
 
 export const OPENING_ACTIONS = {
-  create: ["clientId", "title", "notes", "country", "hiringFor", "targetGender", "autoFollowUp", "workLocations", "assignedTaIds"],
+  create: ["clientId", "title", "notes", "country", "hiringFor", "targetGender", "autoFollowUp", "isConfidential", "workLocations", "assignedTaIds"],
   client: ["name", "industry"],
   bin: ["openingId"],
   restore: ["kind", "id"],

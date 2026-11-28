@@ -3,7 +3,8 @@
 // anyone who found the link could spend Apify credit. Now the browser sends its Clerk
 // token (the same `convex` template the backend door uses) and the backend's own
 // ui/me:whoAmI decides: an active, onboarded AURA user, or no call.
-const BACKEND = "https://ta-system-api.career141.com";
+// Local runs set C141_BACKEND (apps/new-ui/.env.local) so nothing reaches live from a laptop.
+const BACKEND = process.env.C141_BACKEND || "https://ta-system-api.career141.com";
 
 /** Null when the caller is a signed-in AURA user; otherwise the refusal to return. */
 export async function refuseUnlessSignedIn(request: Request): Promise<Response | null> {

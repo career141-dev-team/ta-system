@@ -86,7 +86,8 @@ export const useSignedHeaders = (LIVE
   : () => async () => ({})) as () => () => Promise<Record<string, string>>;
 
 /** The old server, where the email's CV files and workbook are made (D5 step 3). */
-export const OLD_SERVER = "https://ta-system.career141.com";
+// Local runs set NEXT_PUBLIC_C141_OLD_SERVER so nothing reaches live from a laptop.
+export const OLD_SERVER = process.env.NEXT_PUBLIC_C141_OLD_SERVER || "https://ta-system.career141.com";
 
 /** A candidate's CV as a PDF (D6): by application, or a database match by candidate. */
 export const cvUrl = (q: { app?: string; candidate?: string }) =>
@@ -240,6 +241,8 @@ export const door = {
   setPostStatus: makeFunctionReference<"mutation">("ui/posts:setPostStatus"),
   deletePost: makeFunctionReference<"mutation">("ui/posts:deletePost"),
   moveCvs: makeFunctionReference<"mutation">("ui/posts:moveCvs"),
+  moveToOpening: makeFunctionReference<"mutation">("ui/posts:moveToOpening"),
+  addLinkedin: makeFunctionReference<"mutation">("ui/manage:addLinkedin"),
   postsList: makeFunctionReference<"query">("ui/posts:list"),
   today: makeFunctionReference<"query">("ui/day:today"),
   compose: makeFunctionReference<"query">("ui/email:compose"),
@@ -329,10 +332,14 @@ export const STAGE_KEYS = [
 export type DoorCard = {
   id: string; stage: string; name: string; title: string | null; company: string | null;
   location: string | null; years: number | null; noticeDays: number | null; phone: string | null;
-  email: string | null; channel: string | null; setNumber: number | null; addOn: boolean;
+  email: string | null; channel: string | null; replied: boolean; setNumber: number | null; addOn: boolean;
   backup: boolean; linkedinUrl?: string | null; owned: boolean; mine: boolean; lockedBy: string | null; missing: string[];
 };
-export type DoorBoard = Answer<{ opening: { id: string; title: string }; columns: { stage: string; label: string; count: number; capped: boolean; cards: DoorCard[] }[] }>;
+export type DoorBoard = Answer<{
+  opening: { id: string; title: string };
+  columns: { stage: string; label: string; count: number; capped: boolean; replied: number; noReply: number; cards: DoorCard[] }[];
+  stats: { replied: number; noReply: number };
+}>;
 /** One card on the Openings page, as ui/openings:list sends it. */
 export type DoorOpening = { id: string; client: string; title: string; status: "active" | "hold" | "placed" | "lost"; priority: 1 | 2 | 3 | 4 | 5; days: number; team: string[]; made: number; website: boolean };
 export type DoorOpenings = Answer<{ openings: DoorOpening[]; capped: string[] }>;

@@ -1002,6 +1002,7 @@ function saveNewOpening(formData: FormData, user: User): Promise<string | null> 
       hiringFor: String(formData.get("hiringFor") ?? "local"),
       targetGender: String(formData.get("targetGender") ?? "").trim() || null,
       autoFollowUp: formData.get("autoFollowUp") === "on",
+      isConfidential: formData.get("isConfidential") === "on",
       workLocations: readWorkLocations(formData),
       assignedTaIds: formData.getAll("assignedTaIds").map(String),
     },

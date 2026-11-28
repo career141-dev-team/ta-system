@@ -10,7 +10,10 @@ import { useMe } from "@/lib/role";
 import { useFilters } from "@/lib/filters";
 import { useWorkdayGate } from "@/lib/workday";
 import { BackButton, LinkedInIcon } from "./PipelineBoard";
+import { FitTick, Ring } from "./DatabaseCvsView";
 import MoveForm from "./MoveForm";
+import MoveDialog from "./MoveDialog";
+import PillMenu from "./PillMenu";
 import { STAGES } from "./pipelineRules";
 import Toast from "./Toast";
 import { sendToPipeline } from "./pipelineInbox";
@@ -31,7 +34,9 @@ const CvPreview = dynamic(() => import("./CvPreview"), { ssr: false });
 //   - LinkedIn, Meta campaign or Email campaign posts; a campaign has a short code;
 //   - "All posts" is the one pool of applicants across every post;
 //   - Not a fit needs a reason; another TA's applicant is locked;
-//   - Move CVs only from a paused post with applicants, into a live one.
+//   - Move to another post: the ticked CVs, from a paused post into a live one;
+//   - Move to another opening: ticked CVs nobody has started on, into one of its
+//     live posts, where they arrive as New and say where they came from.
 // Placeholder data; with the backend each post reads its own first page of
 // applicants for the open tab, and `more` is the stored count not on that page.
 
@@ -47,13 +52,25 @@ type Applicant = {
   applied: string;
   fit: number;
   years: number;
+  age?: number | null;
+  gender?: string | null;
+  industry?: string | null;
+  qualification?: string | null;
+  education?: string | null;
+  /** The career shown in the result row, newest first (the sample has more than the CV read). */
+  career?: { period: string; title: string; company: string }[];
   /** A few skills for the row (placeholder until the CV is read). */
   skills?: string[];
   /** Notice period in days; 0 = can start now. */
   notice: number;
+  /** False when the record holds no notice period / no years (the 0 above is then not a fact). */
+  noticeOnFile?: boolean;
+  yearsOnFile?: boolean;
   /** The CV file (a demo PDF; made-up people). */
   cv?: string;
   lockedBy?: string;
+  /** Where a TA moved this CV from (another opening's post). */
+  movedFrom?: { opening: string; post: string } | null;
 };
 type Post = {
   id: string;
@@ -67,6 +84,8 @@ type Post = {
   recruiterLink: string;
   publicLink: string;
   status: Status;
+  /** Hire from the referee table (the referees / people who applied) for this role. */
+  referee?: boolean;
   /** CVs that reached this post today. */
   today: number;
   more: Record<Tab, number>;
@@ -80,13 +99,47 @@ const OPEN_SET = 3;
 
 const NEW: Applicant[] = [
   // Names match the demo CV files in public/cvs, so a row opens its own CV.
-  { id: "a1", name: "Kasun Perera", title: "SAP S/4HANA Lead", location: "Colombo", company: "Virtusa", applied: "Applied 2 h ago", fit: 92, years: 9, skills: ["SAP S/4HANA","Finance","Leadership"], notice: 30, cv: "/cvs/s2.pdf" },
-  { id: "a2", name: "Ishara Fernando", title: "SAP Solution Architect", location: "Colombo", company: "Virtusa", applied: "Applied 5 h ago", fit: 88, years: 11, skills: ["SAP","Architecture","Integration"], notice: 60, cv: "/cvs/s3.pdf" },
-  { id: "a3", name: "Tharindu Silva", title: "SAP FICO Manager", location: "Katunayake", company: "Brandix", applied: "Applied yesterday", fit: 77, years: 4, skills: ["SAP FICO","Finance","Reporting"], notice: 0, cv: "/cvs/s4.pdf", lockedBy: "Hasini" },
-  { id: "a4", name: "Ruwan Bandara", title: "SAP Project Manager", location: "Colombo", company: "Hemas", applied: "Applied yesterday", fit: 74, years: 6, skills: ["SAP","Project management","Rollouts"], notice: 90, cv: "/cvs/s6.pdf" },
+  { id: "a1", name: "Kasun Perera", title: "SAP S/4HANA Lead", location: "Colombo", company: "Virtusa", applied: "Applied 2 h ago", fit: 92, years: 9, age: 34, gender: "Male", industry: "IT & Software", qualification: "BSc Computer Science", education: "University of Moratuwa", career: [{ period: "2023 – Now", title: "SAP S/4HANA Lead", company: "Virtusa" }, { period: "2019 – 2023", title: "SAP FICO Consultant", company: "Hemas" }], skills: ["SAP S/4HANA","Finance","Leadership"], notice: 30, cv: "/cvs/s2.pdf" },
+  { id: "a2", name: "Ishara Fernando", title: "SAP Solution Architect", location: "Colombo", company: "Virtusa", applied: "Applied 5 h ago", fit: 88, years: 11, age: 38, gender: "Female", industry: "IT & Software", qualification: "MSc Information Systems", education: "University of Colombo", career: [{ period: "2021 – Now", title: "SAP Solution Architect", company: "Virtusa" }, { period: "2016 – 2021", title: "SAP Basis Lead", company: "Softlogic" }], skills: ["SAP","Architecture","Integration"], notice: 60, cv: "/cvs/s3.pdf" },
+  { id: "a3", name: "Tharindu Silva", title: "SAP FICO Manager", location: "Katunayake", company: "Brandix", applied: "Applied yesterday", fit: 77, years: 4, age: 29, gender: "Male", industry: "Manufacturing", qualification: "BSc Accounting", education: "University of Kelaniya", career: [{ period: "2024 – Now", title: "SAP FICO Manager", company: "Brandix" }, { period: "2022 – 2024", title: "Financial Accountant", company: "MAS Bodyline" }], skills: ["SAP FICO","Finance","Reporting"], notice: 0, cv: "/cvs/s4.pdf", lockedBy: "Hasini" },
+  { id: "a4", name: "Ruwan Bandara", title: "SAP Project Manager", location: "Colombo", company: "Hemas", applied: "Applied yesterday", fit: 74, years: 6, age: 42, gender: "Male", industry: "Finance", qualification: "MBA", education: "University of Sri Jayewardenepura", career: [{ period: "2022 – Now", title: "SAP Project Manager", company: "Hemas" }, { period: "2019 – 2022", title: "ERP Support Lead", company: "Lanka Tiles" }], skills: ["SAP","Project management","Rollouts"], notice: 90, cv: "/cvs/s6.pdf" },
 ];
 const NONE = (): Record<Tab, Applicant[]> => ({ new: [], shortlisted: [], notfit: [] });
 const ZERO = (): Record<Tab, number> => ({ new: 0, shortlisted: 0, notfit: 0 });
+
+type Filters = {
+  q: string; exp: string; fit: string; gender: string; location: string;
+  age: string; industry: string; qualification: string; education: string; notice: string;
+};
+const FILTER_KEYS: (keyof Filters)[] = ["exp", "fit", "gender", "location", "age", "industry", "qualification", "education", "notice"];
+const EMPTY_FILTERS: Filters = { q: "", exp: "", fit: "", gender: "", location: "", age: "", industry: "", qualification: "", education: "", notice: "" };
+const GENDERS = [{ value: "", label: "Any gender" }, { value: "Female", label: "Female" }, { value: "Male", label: "Male" }];
+const AGES = [
+  { value: "", label: "Any age" }, { value: "0-29", label: "Under 30" }, { value: "30-39", label: "30 to 39" },
+  { value: "40-49", label: "40 to 49" }, { value: "50-99", label: "50 or older" },
+];
+const NOTICES = [
+  { value: "", label: "Any notice" }, { value: "0-1", label: "Can start now" },
+  { value: "2-30", label: "Within 30 days" }, { value: "31-60", label: "Within 60 days" },
+];
+// Nothing on file passes: most records hold no age or gender, and a filter that drops
+// them empties the list without saying why (the search fault fixed 25 Nov).
+const inBand = (v: number | null | undefined, band: string) => {
+  if (!band) return true;
+  if (v == null) return true;
+  const [lo, hi] = band.split("-").map(Number);
+  return v >= lo && v <= hi;
+};
+/** Each value once, however a CV spelled its case or spaces, in order. */
+const distinct = (values: (string | null | undefined)[]) => {
+  const seen = new Map<string, string>();
+  for (const v of values) {
+    const t = v?.trim().replace(/\s+/g, " ");
+    if (t && !seen.has(t.toLowerCase())) seen.set(t.toLowerCase(), t);
+  }
+  return [...seen.values()].sort((a, b) => a.localeCompare(b));
+};
+const has = (value: string | null | undefined, word: string) => (value ?? "").toLowerCase().includes(word.toLowerCase());
 
 const POSTS: Post[] = [
   {
@@ -151,7 +204,7 @@ type DoorPosts = Answer<{
 type DoorApps = Answer<{
   me: string;
   names: Record<string, string>;
-  people: { id: string; name: string; title: string | null; company: string | null; location: string | null; years: number | null; noticeDays: number | null; ownerId: string | null; addedAt: number; stage: string }[];
+  people: { id: string; name: string; title: string | null; company: string | null; location: string | null; years: number | null; noticeDays: number | null; gender: string | null; age: number | null; qualification: string | null; education: string | null; certifications: string[]; ownerId: string | null; addedAt: number; stage: string; movedFrom: { opening: string; post: string } | null }[];
 }>;
 // A post's applicant by its stage: still to look at, shortlisted (any stage after), or turned down.
 const tabOf = (stage: string): Tab => (stage === "new_cvs" || stage === "matched_candidates" ? "new" : stage === "rejected" ? "notfit" : "shortlisted");
@@ -171,6 +224,7 @@ export default function LinkedInJobView() {
   const doStatus = useDoorMutation(door.setPostStatus);
   const doDelete = useDoorMutation(door.deletePost);
   const doMove = useDoorMutation(door.moveCvs);
+  const doMoveOut = useDoorMutation(door.moveToOpening);
   const doShortlist = useDoorMutation(door.shortlist);
   const doReject = useDoorMutation(door.move);
   // A post goes live only with the JD approved: the opening's one flag (jdState).
@@ -215,8 +269,11 @@ export default function LinkedInJobView() {
   useSwap(side, `${chosen}-${tab}`);
   // The TA System's list tools, as in Scoops: search and filters on Apply (or Enter),
   // tick several by their initials and Shortlist selected, a click reads the CV.
-  // Search, experience and fit are kept per opening for the visit (src/lib/filters.ts).
-  const { f: draft, set: setFilters } = useFilters("linkedin:" + (typeof window === "undefined" ? "" : (jobFromAddress() ?? "demo")), { q: "", exp: "", fit: "" });
+  // The applicant filters are kept per opening for the visit (src/lib/filters.ts).
+  const { f: draft, set: setFilters } = useFilters(
+    "linkedin:" + (typeof window === "undefined" ? "" : (jobFromAddress() ?? "demo")),
+    EMPTY_FILTERS,
+  );
   const [filtersOpen, setFiltersOpen] = useState(false);
   // "Shortlist selected" turns the tickboxes on; the button then shows the count and
   // runs the shortlist, with a drawn tick (as in Scoops).
@@ -235,6 +292,11 @@ export default function LinkedInJobView() {
     return () => clearTimeout(t);
   }, [done]);
   const [picked, setPicked] = useState<string[]>([]);
+  // "Move to" turns the tickboxes on too; the window then asks where.
+  const [moving, setMoving] = useState<"post" | "opening" | null>(null);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const moveBox = useRef<HTMLDivElement>(null);
+  const moveShown = useExit(moveOpen, moveBox, FADE_OUT);
   const [reading, setReading] = useState<Applicant | null>(null);
   const [readingOpen, setReadingOpen] = useState(false);
   const cvBox = useRef<HTMLDivElement>(null);
@@ -255,8 +317,12 @@ export default function LinkedInJobView() {
       for (const x of realApps.people)
         by[tabOf(x.stage)].push({
           id: x.id, cv: cvUrl({ app: x.id }), name: x.name, title: x.title ?? "", location: x.location ?? "", company: x.company ?? "", applied: ago(x.addedAt),
-          fit: 0, years: x.years ?? 0, notice: x.noticeDays ?? 0,
+          // fit 0 = not scored yet (posts carry no JD score); the row and filters treat it so.
+          fit: 0, years: x.years ?? 0, notice: x.noticeDays ?? 0, yearsOnFile: x.years != null, noticeOnFile: x.noticeDays != null,
+          age: x.age, gender: x.gender, qualification: x.qualification, education: x.education,
+          industry: x.company ?? undefined,
           lockedBy: x.ownerId && x.ownerId !== realApps.me ? firstName(realApps.names[x.ownerId]) ?? "another TA" : undefined,
+          movedFrom: x.movedFrom,
         });
       const pid = post.id;
       setPosts((l) => l.map((p) => (p.id === pid ? { ...p, applicants: by } : p)));
@@ -273,20 +339,50 @@ export default function LinkedInJobView() {
   const rows: { a: Applicant; postId: string; postTitle: string }[] = (all ? posts : post ? [post] : []).flatMap((p) =>
     p.applicants[tab].map((a) => ({ a, postId: p.id, postTitle: p.title })),
   );
+  // Real applicants carry no fit score yet: the Fit filter and tick then stay away.
+  const scored = rows.some(({ a }) => a.fit > 0);
   const q = draft.q.trim().toLowerCase();
   const shown = rows.filter(
     ({ a }) =>
-      (!q || [a.name, a.title, a.company].some((t) => t.toLowerCase().includes(q))) && inRange(a.years, draft.exp) && a.fit >= Number(draft.fit || 0),
+      (!q || [a.name, a.title, a.company].some((t) => t.toLowerCase().includes(q))) &&
+      inRange(a.years, draft.exp) &&
+      (!scored || a.fit >= Number(draft.fit || 0)) &&
+      (!draft.gender || !a.gender || has(a.gender, draft.gender)) &&
+      (!draft.location || has(a.location, draft.location)) &&
+      inBand(a.age, draft.age) &&
+      (!draft.industry || [a.industry, a.company, a.title].some((t) => has(t, draft.industry))) &&
+      (!draft.qualification || has(a.qualification, draft.qualification)) &&
+      (!draft.education || has(a.education, draft.education)) &&
+      inBand(a.noticeOnFile === false ? null : a.notice, draft.notice),
   );
   const keyOf = (postId: string, a: Applicant) => postId + ":" + a.id;
   const free = (a: Applicant) => tab === "new" && !a.lockedBy && !gate;
   const pickable = shown.filter(({ a, postId }) => free(a) && picked.includes(keyOf(postId, a)));
   const tabCount = (t: Tab) => (all ? posts.reduce((n, p) => n + count(p, t), 0) : post ? count(post, t) : 0);
 
+  // What may be ticked for a move: anyone within the opening; across openings only
+  // people nobody has started on (the backend checks again).
+  const movable = (a: Applicant, t: Tab) => moving === "post" || (moving === "opening" && t !== "shortlisted" && !a.lockedBy);
+  // Ticks hold across the tabs of the post.
+  const toMove = post ? TABS.flatMap(([t]) => post.applicants[t].filter((a) => movable(a, t) && picked.includes(keyOf(post.id, a)))) : [];
+  const stopMoving = () => {
+    setMoving(null);
+    setPicked([]);
+  };
+  // Escape leaves tick mode, as Cancel does (the Move window handles its own Escape).
+  useEffect(() => {
+    if (!moving || moveOpen) return;
+    const key = (e: KeyboardEvent) => e.key === "Escape" && (setMoving(null), setPicked([]));
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [moving, moveOpen]);
+
   const patch = (id: string, fn: (p: Post) => Post) => setPosts((list) => list.map((p) => (p.id === id ? fn(p) : p)));
   const choose = (id: string) => {
     setChosen(id);
     setTab("new");
+    stopMoving();
+    setSelecting(false);
   };
 
   // An applicant leaves New for the tab it was sent to. A shortlist claims the
@@ -353,24 +449,35 @@ export default function LinkedInJobView() {
     setChosen(ALL);
     say(p.title, " deleted");
   };
-  // Move CVs: a paused post's applicants join a live post (the TA System's rule).
-  const moveCvs = (from: Post, to: Post) => {
-    const moved = (["new", "shortlisted", "notfit"] as Tab[]).reduce((n, t) => n + count(from, t), 0);
-    if (job) return void saved(doMove({ fromPostId: from.id, toPostId: to.id }), "CVs", ` moved from ${from.title} to ${to.title}`);
+  // The ticked CVs leave this post for another post, here or on another opening.
+  const moveTicked = (toPostId: string, label: string) => {
+    if (!post || !moving || !toMove.length) return;
+    const from = post.id;
+    const ids = toMove.map((a) => a.id);
+    const n = ids.length;
+    const args = { fromPostId: from, toPostId, applicationIds: ids };
+    setMoveOpen(false);
+    stopMoving();
+    if (job)
+      // The lists re-read themselves; the backend's sentence says who stayed.
+      return void (moving === "post" ? doMove(args) : doMoveOut(args)).then((answer) => {
+        const d = answer as DoorDone | undefined;
+        if (d && !d.ok) say("Not moved", ` - ${d.message}`, true);
+        else say(d?.message ?? "Moved", "");
+      }, () => {
+        say("Not moved", " - the server could not do this. Nothing changed.", true);
+      });
+    const gone = (l: Applicant[]) => l.filter((a) => !ids.includes(a.id));
     setPosts((list) =>
-      list.map((p) =>
-        p.id === from.id
-          ? { ...p, applicants: NONE(), more: ZERO() }
-          : p.id === to.id
-            ? {
-                ...p,
-                applicants: { new: [...p.applicants.new, ...from.applicants.new], shortlisted: [...p.applicants.shortlisted, ...from.applicants.shortlisted], notfit: [...p.applicants.notfit, ...from.applicants.notfit] },
-                more: { new: p.more.new + from.more.new, shortlisted: p.more.shortlisted + from.more.shortlisted, notfit: p.more.notfit + from.more.notfit },
-              }
-            : p,
-      ),
+      list.map((p) => {
+        if (p.id === from) return { ...p, applicants: { new: gone(p.applicants.new), shortlisted: gone(p.applicants.shortlisted), notfit: gone(p.applicants.notfit) } };
+        if (p.id !== toPostId) return p;
+        const here = list.find((x) => x.id === from)!.applicants;
+        const joins = (t: Tab) => [...p.applicants[t], ...here[t].filter((a) => ids.includes(a.id))];
+        return { ...p, applicants: { new: joins("new"), shortlisted: joins("shortlisted"), notfit: joins("notfit") } };
+      }),
     );
-    say(`${moved} CV${moved === 1 ? "" : "s"}`, ` moved from ${from.title} to ${to.title}`);
+    say(`${n} CV${n === 1 ? "" : "s"}`, ` moved to ${label}`);
   };
 
   const savePost = (p: Post, isNew: boolean) => {
@@ -469,7 +576,11 @@ export default function LinkedInJobView() {
               onStatus={(s) => setStatus(post, s)}
               onEdit={() => openDialog(post)}
               onDelete={() => remove(post)}
-              onMove={(to) => moveCvs(post, to)}
+              onMove={(kind) => {
+                setSelecting(false);
+                setPicked([]);
+                setMoving(kind);
+              }}
             />
           ) : (
             <div className="flex flex-wrap items-center gap-3">
@@ -519,10 +630,28 @@ export default function LinkedInJobView() {
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="size-[1.1em]" aria-hidden="true">
                 <path d="M4 6h16M7 12h10M10 18h4" />
               </svg>
-              Filters{draft.exp || draft.fit ? ` · ${(draft.exp ? 1 : 0) + (draft.fit ? 1 : 0)}` : ""}
+              Filters{FILTER_KEYS.filter((k) => draft[k]).length ? ` · ${FILTER_KEYS.filter((k) => draft[k]).length}` : ""}
             </button>
             <span className="text-small text-ink-3">{shown.length} shown</span>
-            {tab === "new" &&
+            {moving ? (
+              <span className="ml-auto flex flex-wrap items-center gap-2">
+                <span className="text-small text-ink-3">
+                  {moving === "opening" && tab === "shortlisted" ? "Shortlisted people stay on this opening" : "Tick the CVs to move"}
+                </span>
+                <button type="button" onClick={stopMoving} className="h-[max(2.6rem,34px)] rounded-full px-[max(1rem,12px)] text-small text-ink-2 hover:bg-surface-2 hover:text-ink">
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!toMove.length || !!gate}
+                  title={gate || undefined}
+                  onClick={() => setMoveOpen(true)}
+                  className="h-[max(2.6rem,34px)] rounded-full bg-brand px-[max(1.2rem,13px)] text-small font-medium text-white hover:bg-brand-strong disabled:pointer-events-none disabled:opacity-50"
+                >
+                  Move · {toMove.length} selected
+                </button>
+              </span>
+            ) : tab === "new" &&
               (selecting ? (
                 <span className="ml-auto flex items-center gap-2">
                   {!done && (
@@ -570,61 +699,90 @@ export default function LinkedInJobView() {
           </div>
 
           <div className="flex min-h-0 flex-1 gap-[max(1.25rem,12px)] short:flex-none max-md:flex-col">
-          <ul className="min-h-0 min-w-0 flex-1 space-y-[max(1.25rem,10px)] overflow-y-auto pb-2 [scrollbar-width:none] short:flex-none short:overflow-visible">
-            {(fullKey === listKey ? shown : shown.slice(0, 8)).map(({ a, postId, postTitle }) => (
-              <li key={postId + a.id} className="flex flex-wrap items-center gap-x-[max(1.125rem,10px)] gap-y-3 rounded-md border border-border bg-surface px-[max(1.375rem,12px)] py-4 shadow-card">
-                {selecting && (
-                  <input
-                    type="checkbox"
-                    disabled={!free(a)}
-                    checked={picked.includes(keyOf(postId, a))}
-                    aria-label={`Select ${a.name}`}
-                    onChange={() => setPicked((p) => (p.includes(keyOf(postId, a)) ? p.filter((k) => k !== keyOf(postId, a)) : [...p, keyOf(postId, a)]))}
-                    className="size-[max(1.15rem,16px)] shrink-0 cursor-pointer accent-brand disabled:cursor-default disabled:opacity-30"
-                  />
-                )}
-                <span className="flex size-[max(3rem,36px)] shrink-0 items-center justify-center rounded-full bg-info-soft text-body font-medium text-info">{initials(a.name)}</span>
-                {/* The name opens the CV, with Download in its corner. */}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    setCvFrom(e.currentTarget.closest<HTMLElement>("li, article") ?? e.currentTarget);
-                    setReading(a);
-                    setReadingOpen(true);
-                    setCvN((n) => n + 1);
-                  }}
-                  title="Read the CV"
-                  className="flex min-w-0 flex-col gap-0.5 text-left max-md:flex-1 md:w-[max(16.25rem,170px)] md:shrink-0"
-                >
-                  <span className="block truncate text-h3 font-medium text-ink hover:text-brand">{a.name}</span>
-                  <span className="block truncate text-small text-ink-2">{a.title}</span>
-                  {a.skills && (
-                    <span className="mt-1 flex flex-wrap gap-1">
-                      {a.skills.slice(0, 3).map((k) => (
-                        <span key={k} className="rounded-full bg-surface-2 px-2 py-0.5 text-caption text-ink-2">
-                          {k}
+          <ul className="min-h-0 min-w-0 flex-1 overflow-y-auto pb-2 [scrollbar-width:none] short:flex-none short:overflow-visible">
+            {(fullKey === listKey ? shown : shown.slice(0, 8)).map(({ a, postId, postTitle }) => {
+              // The same row as Database CVs: score, who, career, why (owner's Figma 1515:7533).
+              // No dated history on an applicant yet: the title alone, never a made-up "Now".
+              const career = a.career ?? [{ period: "", title: a.title, company: a.company }];
+              const fit = [
+                a.yearsOnFile === false || !a.years ? { ok: false, t: "years not on file" } : { ok: true, t: `${a.years} years of experience` },
+                a.noticeOnFile === false ? { ok: false, t: "notice not on file" } : { ok: a.notice <= 1, t: a.notice <= 1 ? "can start now" : `notice ${a.notice} days` },
+                ...(a.fit > 0 ? [{ ok: a.fit >= 80, t: `${a.fit} fit for this role` }] : []),
+              ];
+              return (
+                <li key={postId + a.id} className="group relative border-b border-border last:border-0">
+                  <div className="grid w-full grid-cols-[minmax(0,1.2fr)_minmax(0,0.3fr)_minmax(0,1fr)_minmax(0,1fr)] items-center gap-x-[max(1rem,10px)] rounded-md py-4 pl-4 pr-[max(16rem,190px)] text-left max-xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] max-xl:[&>:nth-child(2)]:hidden max-xl:[&>:nth-child(4)]:hidden max-md:grid-cols-1">
+                    <span className="flex min-w-0 items-center gap-4">
+                      {(selecting || moving) && (
+                        <input
+                          type="checkbox"
+                          disabled={moving ? !movable(a, tab) : !free(a)}
+                          checked={picked.includes(keyOf(postId, a))}
+                          aria-label={`Select ${a.name}`}
+                          onChange={() => setPicked((p) => (p.includes(keyOf(postId, a)) ? p.filter((k) => k !== keyOf(postId, a)) : [...p, keyOf(postId, a)]))}
+                          className="size-[max(1.15rem,16px)] shrink-0 cursor-pointer accent-brand disabled:cursor-default disabled:opacity-30"
+                        />
+                      )}
+                      {a.fit > 0 ? (
+                        <Ring score={a.fit} />
+                      ) : (
+                        <span className="flex size-[max(3.25rem,40px)] shrink-0 items-center justify-center rounded-full bg-info-soft text-body font-medium text-info">{initials(a.name)}</span>
+                      )}
+                      {/* The name opens the CV, with Download in its corner. */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          setCvFrom(e.currentTarget.closest<HTMLElement>("li, article") ?? e.currentTarget);
+                          setReading(a);
+                          setReadingOpen(true);
+                          setCvN((n) => n + 1);
+                        }}
+                        title="Read the CV"
+                        className="flex min-w-0 flex-col text-left"
+                      >
+                        <span className="flex items-center gap-2">
+                          <span className="truncate text-h3 font-medium text-ink hover:text-brand">{a.name}</span>
+                          {a.lockedBy && <span className="shrink-0 rounded-full bg-warn-soft px-2 py-0.5 text-caption font-medium text-warn">Shortlisted by {a.lockedBy}</span>}
+                        </span>
+                        <span className="truncate text-small text-ink-3">{a.years} years · {a.location}</span>
+                        {a.movedFrom && (
+                          <span className="mt-1 self-start rounded-full bg-violet-soft px-2 py-0.5 text-caption text-violet">
+                            Moved from {a.movedFrom.opening} · {a.movedFrom.post}
+                          </span>
+                        )}
+                        {a.skills && (
+                          <span className="mt-1 flex flex-wrap gap-1">
+                            {a.skills.slice(0, 3).map((k) => (
+                              <span key={k} className="rounded-full bg-surface-2 px-2 py-0.5 text-caption text-ink-2">{k}</span>
+                            ))}
+                          </span>
+                        )}
+                      </button>
+                    </span>
+                    <span className="flex flex-col gap-1.5 text-small max-md:hidden">
+                      {career.map((c, i) => (
+                        <span key={i} className={"truncate " + (i === 0 ? "font-medium text-brand" : "text-ink-3")}>{c.period}</span>
+                      ))}
+                    </span>
+                    <span className="flex min-w-0 flex-col gap-1.5 text-small max-md:mt-2">
+                      {career.map((c, i) => (
+                        <span key={i} className="truncate text-ink">
+                          {c.title} <span className="ml-1 text-ink-3">{c.company}</span>
                         </span>
                       ))}
                     </span>
-                  )}
-                </button>
-                <div className="flex shrink-0 flex-col gap-1 text-small text-ink-2">
-                  <p>L : {a.location}</p>
-                  <p>C : {a.company}</p>
-                  <p>E : {a.years} years</p>
-                </div>
-                <div aria-hidden="true" className="min-w-px flex-1 max-md:hidden" />
-                <span className={CAPTION + " text-ink-3"}>
-                  {a.applied}
-                  {all && <span className="block">via {postTitle}</span>}
-                </span>
-                <span className={"rounded-sm px-2.5 py-[3px] text-small font-medium " + (a.fit >= 80 ? "bg-brand-soft text-brand" : "bg-surface-2 text-ink-2")}>{a.fit} fit</span>
-                {tab === "new" &&
-                  (a.lockedBy ? (
-                    // Another TA got there first: the TA System's collision lock.
-                    <span className={CHIP + " bg-warn-soft text-warn"}>Shortlisted by {a.lockedBy}</span>
-                  ) : (
-                    <>
+                    <span className="flex min-w-0 flex-col gap-1.5 text-small text-ink-2 max-md:hidden">
+                      {fit.map((x) => (
+                        <span key={x.t} className="flex items-center gap-2">
+                          <FitTick ok={x.ok} />
+                          <span className="truncate">{x.t}</span>
+                        </span>
+                      ))}
+                      <span className="truncate text-ink-3">{a.applied}{all && ` · ${postTitle}`}</span>
+                    </span>
+                  </div>
+                  {tab === "new" && !a.lockedBy && !moving && (
+                    <div className="absolute right-4 top-1/2 flex -translate-y-1/2 items-center gap-2">
                       <button
                         type="button"
                         disabled={!!gate}
@@ -639,12 +797,13 @@ export default function LinkedInJobView() {
                       <button type="button" disabled={!!gate} onClick={() => send(a, postId, "shortlisted")} className={BTN + " bg-brand text-white hover:bg-brand-strong disabled:opacity-40"}>
                         Shortlist
                       </button>
-                    </>
-                  ))}
-              </li>
-            ))}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
             {fullKey !== listKey && shown.length > 8 && (
-              <li className="flex justify-center">
+              <li className="flex justify-center py-3">
                 <button type="button" onClick={() => setFullKey(listKey)} className={GHOST}>
                   Show {shown.length - 8} more
                 </button>
@@ -652,7 +811,19 @@ export default function LinkedInJobView() {
             )}
             {shown.length === 0 && <li className="pt-8 text-center text-small text-ink-3">{rows.length ? "No applicant matches these filters." : "No applicants here."}</li>}
           </ul>
-          {filtersOpen && <FilterDrawer value={draft} onChange={setFilters} onClose={() => setFiltersOpen(false)} />}
+          {filtersOpen && (
+            <FilterDrawer
+              scored={scored}
+              value={draft}
+              onChange={setFilters}
+              onClose={() => setFiltersOpen(false)}
+              options={{
+                locations: distinct(rows.map(({ a }) => a.location)),
+                qualifications: distinct(rows.map(({ a }) => a.qualification)),
+                educations: distinct(rows.map(({ a }) => a.education)),
+              }}
+            />
+          )}
           </div>
         </section>
       </div>
@@ -660,6 +831,16 @@ export default function LinkedInJobView() {
       {notice && <Toast key={notice.n} bold={notice.bold} rest={notice.rest} warn={notice.warn} />}
       {readingShown && reading && <CvPreview key={cvN} ref={cvBox} from={cvFrom} name={reading.name} title={reading.title} src={reading.cv} appId={job ? reading.id : undefined} openingId={job ?? undefined} onClose={() => setReadingOpen(false)} />}
       {dialogShown && editing && <PostDialog ref={dialog} post={editing === "new" ? null : editing} titles={allPosts.filter((p) => editing === "new" || p.id !== editing.id).map((p) => p.title.toLowerCase())} onClose={() => setDialogOpen(false)} onSave={savePost} />}
+      {moveShown && moving && post && (
+        <MoveDialog
+          ref={moveBox}
+          count={toMove.length}
+          openingId={job}
+          posts={moving === "post" ? live.filter((p) => p.id !== post.id) : undefined}
+          onClose={() => setMoveOpen(false)}
+          onMove={moveTicked}
+        />
+      )}
       {askShown && ask && (
         <MoveForm
           ref={askBox}
@@ -714,15 +895,15 @@ function PostHeader({
   onStatus: (s: Status) => void;
   onEdit: () => void;
   onDelete: () => void;
-  onMove: (to: Post) => void;
+  onMove: (kind: "post" | "opening") => void;
 }) {
   const applicants = (["new", "shortlisted", "notfit"] as Tab[]).reduce((n, t) => n + count(post, t), 0);
   const targets = live.filter((p) => p.id !== post.id);
-  // The TA System's rule: CVs move only from a paused post that has them, into a live post.
+  // The TA System's rule within an opening: CVs move only from a paused post that has
+  // them, into a live post. Another opening needs only the CVs.
   const noRights = canEdit ? "" : `Only ${post.owner} or a TA Lead can change this post`;
-  const moveWhy =
-    noRights ||
-    (post.status !== "paused" ? "Pause this post first" : !applicants ? "This post has no CVs to move" : !targets.length ? "There is no live post to move them to" : "");
+  const emptyWhy = noRights || (!applicants ? "This post has no CVs to move" : "");
+  const postWhy = emptyWhy || (post.status !== "paused" ? "Pause this post first" : !targets.length ? "There is no live post to move them to" : "");
   const toLive = post.status !== "live";
   const JD_APPROVED = useJdApproved();
   const liveWhy = toLive && !JD_APPROVED ? "The job description is not approved yet" : "";
@@ -741,7 +922,7 @@ function PostHeader({
           <button type="button" disabled={!!statusWhy} title={statusWhy || undefined} onClick={() => onStatus(toLive ? "live" : "paused")} className={GHOST}>
             {post.status === "live" ? "Pause" : post.status === "closed" ? "Reopen" : post.status === "draft" ? "Go live" : "Resume"}
           </button>
-          <MoveCvs why={moveWhy} targets={targets} onMove={onMove} />
+          <MoveTo why={emptyWhy} postWhy={postWhy} onMove={onMove} />
           {canEdit && <PostMenu post={post} reopenWhy={liveWhy} onEdit={onEdit} onClose={() => onStatus("closed")} onReopen={() => onStatus("live")} onDelete={onDelete} />}
         </div>
       </div>
@@ -793,8 +974,9 @@ function Detail({ label, value, wide, missing, link }: { label: string; value: s
 const MENU = "absolute right-0 top-full z-30 mt-2 min-w-[max(14rem,180px)] rounded-md border border-border bg-surface p-1.5 shadow-float";
 const ITEM = "flex w-full items-center gap-2.5 rounded-sm px-3 py-2 text-left text-small text-ink hover:bg-surface-2";
 
-/** Move CVs to another post: the design's button, opening the live posts to move into. */
-function MoveCvs({ why, targets, onMove }: { why: string; targets: Post[]; onMove: (to: Post) => void }) {
+/** Move to: another post of this opening, or another opening. Either one turns the
+ *  tickboxes on to choose who goes. */
+function MoveTo({ why, postWhy, onMove }: { why: string; postWhy: string; onMove: (kind: "post" | "opening") => void }) {
   const { open, setOpen, root, panel, shown } = useLiftMenu();
   return (
     <div ref={root} className="relative">
@@ -802,23 +984,26 @@ function MoveCvs({ why, targets, onMove }: { why: string; targets: Post[]; onMov
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-[max(1rem,14px)]" aria-hidden="true">
           <path d="M17 3l4 4-4 4M21 7H8M7 21l-4-4 4-4M3 17h13" />
         </svg>
-        Move CVs to another post
+        Move to
       </button>
       {shown && (
         <div ref={panel} role="menu" className={MENU}>
-          <p className="px-3 pb-1 pt-1.5 text-caption font-medium uppercase text-ink-3">Move into</p>
-          {targets.map((t) => (
+          {([["post", "Move to another post", postWhy], ["opening", "Move to another opening", ""]] as const).map(([kind, label, blocked]) => (
             <button
-              key={t.id}
+              key={kind}
               type="button"
               role="menuitem"
+              disabled={!!blocked}
               onClick={() => {
                 setOpen(false);
-                onMove(t);
+                onMove(kind);
               }}
-              className={ITEM}
+              className={ITEM + " disabled:cursor-default disabled:text-ink-3 disabled:hover:bg-transparent"}
             >
-              {t.title}
+              <span>
+                {label}
+                {blocked && <span className="block text-caption">{blocked}</span>}
+              </span>
             </button>
           ))}
         </div>
@@ -888,6 +1073,10 @@ function PostDialog({ ref: root, post, titles, onClose, onSave }: { ref: RefObje
   const me = useMe();
   const JD_APPROVED = useJdApproved();
   const [title, setTitle] = useState(post?.title ?? "");
+  const [referee, setReferee] = useState(post?.referee ?? false);
+  // ponytail: the backend's posts do not keep a referee flag yet, so on a real opening
+  // the switch would look saved and be lost. Sample build only until it is stored.
+  const showReferee = !useLive();
   const channel: Channel = post?.channel ?? "linkedin";
   const liveNow = JD_APPROVED;
   useGSAP(
@@ -934,6 +1123,7 @@ function PostDialog({ ref: root, post, titles, onClose, onSave }: { ref: RefObje
         title: title.trim(),
         recruiterLink: v("recruiterLink"),
         publicLink: v("publicLink"),
+        referee,
         // A renamed post keeps its old title as a matching name, as the TA System
         // does: applications still arrive under the title people saw.
         aliases: [
@@ -987,6 +1177,24 @@ function PostDialog({ ref: root, post, titles, onClose, onSave }: { ref: RefObje
               {channel === "facebook" ? "Put it in the ad's pre-filled WhatsApp message." : "Ask applicants to put it in the email subject."}
             </p>
           )}
+          {showReferee && (
+          <label className="mt-1 flex cursor-pointer items-center gap-3 rounded-md bg-surface-2 px-3 py-2.5 text-body text-ink">
+            <input type="checkbox" checked={referee} onChange={(e) => setReferee(e.target.checked)} className="peer sr-only" />
+            <span
+              aria-hidden="true"
+              className={
+                "relative h-7 w-12 shrink-0 rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-brand peer-focus-visible:ring-offset-2 " +
+                (referee ? "bg-brand" : "bg-border-strong")
+              }
+            >
+              <span className={"absolute top-1 size-5 rounded-full bg-white transition-[left] " + (referee ? "left-6" : "left-1")} />
+            </span>
+            <span className="min-w-0">
+              <span className={CAPTION + " block text-ink-3"}>Referee opening</span>
+              <span className="text-small">{referee ? "On — hire a referee for this role" : "Off — find candidates as usual"}</span>
+            </span>
+          </label>
+          )}
           {!isNew && (
             <>
               {field("aliases", "Also known as · old or boosted titles, comma between", post?.aliases.join(", "), "SAP Lead, S/4 Lead")}
@@ -1034,12 +1242,19 @@ const MenuIcon = ({ d }: { d: string }) => (
 
 /** The applicant filters, opening from the right side of the list: the list gives way
  *  and gets narrower. Filters take effect as they are chosen. */
-function FilterDrawer({ value, onChange, onClose }: { value: { exp: string; fit: string }; onChange: (v: Partial<{ exp: string; fit: string }>) => void; onClose: () => void }) {
+function FilterDrawer({ value, onChange, onClose, options, scored }: {
+  value: Filters;
+  onChange: (v: Partial<Filters>) => void;
+  onClose: () => void;
+  options: { locations: string[]; qualifications: string[]; educations: string[] };
+  /** Some applicant has a fit score; without one the Fit group is left out. */
+  scored: boolean;
+}) {
   const box = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
     if (box.current) gsap.from(box.current, { width: 0, opacity: 0, duration: DUR.base, ease: EASE.out, clearProps: "width,opacity" });
   }, []);
-  const group = (label: string, name: "exp" | "fit", opts: { value: string; label: string }[]) => (
+  const group = (label: string, name: Exclude<keyof Filters, "q" | "industry">, opts: { value: string; label: string }[]) => (
     <fieldset className="flex flex-col gap-1">
       <legend className="mb-1 text-caption font-medium text-ink-3">{label}</legend>
       {opts.map((o) => (
@@ -1050,11 +1265,25 @@ function FilterDrawer({ value, onChange, onClose }: { value: { exp: string; fit:
       ))}
     </fieldset>
   );
+  const pick = (label: string, name: "location" | "qualification" | "education", vals: string[]) => (
+    <label className="block">
+      <span className={CAPTION + " mb-1 block text-ink-3"}>{label}</span>
+      {/* The app's own pill menu, as every other filter (not the browser's dropdown). */}
+      <PillMenu
+        options={[{ value: "", label: `Any ${label.toLowerCase()}` }, ...vals.map((v) => ({ value: v, label: v }))]}
+        initial={value[name]}
+        onChange={(v) => onChange({ [name]: v })}
+        mark="tick"
+        pillClass={FIELD_PILL + " w-full justify-between text-ink-2"}
+      />
+    </label>
+  );
+  const clear = () => onChange(Object.fromEntries(FILTER_KEYS.map((k) => [k, ""])) as Partial<Filters>);
   return (
     <aside ref={box} aria-label="Filters" onKeyDown={(e) => e.key === "Escape" && onClose()} className="flex w-[max(17rem,220px)] shrink-0 flex-col gap-4 overflow-y-auto rounded-md border border-border bg-surface p-4 max-md:w-auto">
       <div className="flex items-center gap-2">
         <p className="text-h3 font-medium text-ink">Filters</p>
-        <button type="button" onClick={() => onChange({ exp: "", fit: "" })} disabled={!value.exp && !value.fit} className="ml-auto text-small font-medium text-brand disabled:text-ink-3">
+        <button type="button" onClick={clear} disabled={!FILTER_KEYS.some((k) => value[k])} className="ml-auto text-small font-medium text-brand disabled:text-ink-3">
           Clear all
         </button>
         <button type="button" onClick={onClose} aria-label="Close filters" className="flex size-7 items-center justify-center rounded-full text-ink-3 hover:bg-surface-2 hover:text-ink">
@@ -1063,12 +1292,24 @@ function FilterDrawer({ value, onChange, onClose }: { value: { exp: string; fit:
           </svg>
         </button>
       </div>
+      <p className="text-caption text-ink-3">People with nothing on file for a filter stay in the list.</p>
       {group("Experience", "exp", EXPERIENCE.map((o) => ({ value: o.value, label: o.label })))}
-      {group("Fit", "fit", [
-        { value: "", label: "Any fit" },
-        { value: "80", label: "Strong fit · 80 or more" },
-        { value: "60", label: "60 or more" },
-      ])}
+      {scored &&
+        group("Fit", "fit", [
+          { value: "", label: "Any fit" },
+          { value: "80", label: "Strong fit · 80 or more" },
+          { value: "60", label: "60 or more" },
+        ])}
+      {group("Gender", "gender", GENDERS)}
+      {group("Age", "age", AGES)}
+      {group("Notice", "notice", NOTICES)}
+      <label className="block">
+        <span className={CAPTION + " mb-1 block text-ink-3"}>Industry or employer</span>
+        <input value={value.industry} onChange={(e) => onChange({ industry: e.target.value })} placeholder="e.g. Manufacturing" className={FIELD} />
+      </label>
+      {pick("Location", "location", options.locations)}
+      {pick("Qualification", "qualification", options.qualifications)}
+      {pick("Education", "education", options.educations)}
     </aside>
   );
 }

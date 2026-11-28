@@ -17,6 +17,7 @@ import { can } from "../../src/lib/auth";
 import { isGone } from "../../src/lib/bin";
 import { makeCampaignCode } from "../../src/lib/routing";
 import { linkedinPostUrl } from "../../src/lib/workdayRequirements";
+import { adjustJobStageStat } from "../jobs/stats";
 import { linkedinJobId } from "../lib/postRouting";
 import { refreshWorkdayChecks } from "../ta/workdays";
 import { mayReadOpening, NotSignedIn, uiUser } from "./me";
@@ -214,9 +215,9 @@ export const deletePost = mutation({
   },
 });
 
-/** Spec §6.1: one click moves a post's CVs onto another post of the same job. */
+/** Spec §6.1: moves a post's CVs (the ticked ones, or all) onto another post of the same job. */
 export const moveCvs = mutation({
-  args: { fromPostId: v.string(), toPostId: v.string() },
+  args: { fromPostId: v.string(), toPostId: v.string(), applicationIds: v.optional(v.array(v.string())) },
   handler: async (ctx, args): Promise<Done> => {
     const p = await postFor(ctx, args.fromPostId);
     if (!p.ok) return p;
@@ -227,10 +228,92 @@ export const moveCvs = mutation({
     if (toId === p.postId) return refused("Choose another post.");
     // ponytail: one transaction; a post with more CVs than one mutation may
     // write would fail here as a whole. Batch it if a post ever holds thousands.
-    const apps = await ctx.db.query("applications").withIndex("by_jobPostId", (q) => q.eq("jobPostId", p.postId)).collect();
+    const all = await ctx.db.query("applications").withIndex("by_jobPostId", (q) => q.eq("jobPostId", p.postId)).collect();
+    const picked = args.applicationIds && new Set(args.applicationIds);
+    const apps = picked ? all.filter((a) => picked.has(a._id)) : all;
+    if (picked && !apps.length) return refused("Those CVs are no longer on this post.");
     for (const a of apps) await ctx.db.patch(a._id, { jobPostId: toId });
     await refreshWorkdayChecks(ctx, p.post.openingId, p.user._id);
     return { ok: true, message: `Moved ${apps.length} ${apps.length === 1 ? "CV" : "CVs"} to "${to.title}".` };
+  },
+});
+
+// Only people nobody has started on: an owner means a set number, follow-up
+// messages and reviews that all belong to this opening.
+const MOVABLE = new Set(["new_cvs", "matched_candidates", "rejected"]);
+
+/** Moves the ticked CVs onto a post of another opening, where they arrive as New. */
+export const moveToOpening = mutation({
+  args: { fromPostId: v.string(), toPostId: v.string(), applicationIds: v.array(v.string()) },
+  handler: async (ctx, args): Promise<Done> => {
+    const p = await postFor(ctx, args.fromPostId);
+    if (!p.ok) return p;
+    const to = await postFor(ctx, args.toPostId);
+    if (!to.ok) return to;
+    const jobId = to.post.openingId;
+    if (jobId === p.post.openingId) return refused("Choose another opening.");
+    if (to.job.status !== "active") return refused("That opening is not active.");
+    if (to.post.status !== "live") return refused("Choose a live post.");
+    // ponytail: one transaction, so a cap; the screen ticks at most a page of 200.
+    if (args.applicationIds.length > 200) return refused("Move at most 200 CVs at a time.");
+
+    const now = Date.now();
+    let moved = 0;
+    let started = 0;
+    let there = 0;
+    for (const raw of new Set(args.applicationIds)) {
+      const id = ctx.db.normalizeId("applications", raw);
+      const a = id ? await ctx.db.get(id) : null;
+      if (!a || a.jobPostId !== p.postId || a.jobId !== p.post.openingId) continue;
+      if (a.ownerTaId || !MOVABLE.has(a.currentStage)) {
+        started++;
+        continue;
+      }
+      const twin = await ctx.db.query("applications").withIndex("by_candidate_job", (q) => q.eq("candidateId", a.candidateId).eq("jobId", jobId)).first();
+      if (twin) {
+        there++;
+        continue;
+      }
+      await ctx.db.patch(a._id, {
+        jobId,
+        jobPostId: to.postId,
+        currentStage: "new_cvs",
+        lastStageChangedAt: now,
+        isActive: true,
+        movedFrom: { jobId: p.post.openingId, jobTitle: p.job.title, postTitle: p.post.title, at: now, by: p.user._id },
+        stageHistory: [
+          ...(a.stageHistory ?? []),
+          { stage: "new_cvs", enteredAt: new Date(now).toISOString(), changedBy: p.user._id, note: `Moved from "${p.job.title}", post "${p.post.title}"` },
+        ],
+        // What was said or scored about them for the old opening stays behind.
+        workLocationId: undefined,
+        workdayReviewedAt: undefined,
+        workdayReviewedBy: undefined,
+        reappliedAt: undefined,
+        aiMatchScore: undefined,
+        aiMatchExplanation: undefined,
+        taMatchScore: undefined,
+        taMatchReason: undefined,
+        taRejectionReason: undefined,
+        rejectedFromStage: undefined,
+        rejectedBy: undefined,
+        rejectedAt: undefined,
+        rejectReason: undefined,
+        answers: undefined,
+        customFollowUpAnswers: undefined,
+      });
+      await adjustJobStageStat(ctx, p.post.openingId, a.currentStage, a.currentStage, false, true);
+      await adjustJobStageStat(ctx, jobId, null, "new_cvs", true);
+      moved++;
+    }
+    const left = [
+      started ? `${started} already being worked on` : "",
+      there ? `${there} already on that opening` : "",
+    ].filter(Boolean).join(", ");
+    if (!moved) return refused(left ? `Nothing moved: ${left}.` : "Those CVs are no longer on this post.");
+    await refreshWorkdayChecks(ctx, p.post.openingId, p.user._id);
+    await refreshWorkdayChecks(ctx, jobId, p.user._id);
+    return { ok: true, message: `Moved ${moved} ${moved === 1 ? "CV" : "CVs"} to "${to.post.title}" on "${to.job.title}".${left ? ` Not moved: ${left}.` : ""}` };
   },
 });
 

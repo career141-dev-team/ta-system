@@ -2,7 +2,9 @@
  * The new UI (new.career141.com) calls a few old-server routes from the browser
  * with the person's Clerk session token (D5/D6, 19 Nov). Only that page may.
  */
-export const UI_ORIGINS = ["https://new.career141.com"];
+// Local runs add their own UI address (e.g. http://localhost:3000) through C141_UI_ORIGINS,
+// comma-separated; unset everywhere else, so production still allows only the page above.
+export const UI_ORIGINS = ["https://new.career141.com", ...(process.env.C141_UI_ORIGINS ?? "").split(",").map((o) => o.trim()).filter(Boolean)];
 
 export function uiCors(origin: string | null, methods = "GET, POST, OPTIONS"): Record<string, string> {
   return origin && UI_ORIGINS.includes(origin)

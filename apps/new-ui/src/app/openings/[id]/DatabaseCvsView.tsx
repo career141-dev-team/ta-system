@@ -296,13 +296,7 @@ export default function DatabaseCvsView() {
     const n = shown[idx + d];
     if (n) setPickedId(n.id);
   };
-  const tick = (ok: boolean) => (
-    <span aria-hidden="true" className={"flex size-[1.05rem] shrink-0 items-center justify-center rounded-full " + (ok ? "bg-success-soft text-success" : "bg-warn-soft text-warn")}>
-      <svg viewBox="0 0 12 12" className="size-2.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-        <path d={ok ? "m2.5 6.2 2.3 2.3 4.7-4.9" : "M3 6h6"} />
-      </svg>
-    </span>
-  );
+  const tick = (ok: boolean) => <FitTick ok={ok} />;
   const pill = "flex h-[2.23rem] shrink-0 items-center justify-center rounded-full px-[1.14rem] text-[max(0.8395rem,11.5px)] font-medium";
   const keyHint = "rounded-xs bg-white/15 px-1.5 py-0.5 text-caption font-medium text-white";
 
@@ -663,7 +657,17 @@ export default function DatabaseCvsView() {
 
 /** The match score ring (Figma 713:1660, from shane123-tech's branch): a 4px arc from
  *  the top, as far round as the score - dark green from 85, leaf green below. */
-function Ring({ score }: { score: number }) {
+export function FitTick({ ok }: { ok: boolean }) {
+  return (
+    <span aria-hidden="true" className={"flex size-[1.05rem] shrink-0 items-center justify-center rounded-full " + (ok ? "bg-success-soft text-success" : "bg-warn-soft text-warn")}>
+      <svg viewBox="0 0 12 12" className="size-2.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <path d={ok ? "m2.5 6.2 2.3 2.3 4.7-4.9" : "M3 6h6"} />
+      </svg>
+    </span>
+  );
+}
+
+export function Ring({ score }: { score: number }) {
   const r = 24;
   const c = 2 * Math.PI * r;
   return (

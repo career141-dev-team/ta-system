@@ -1418,6 +1418,15 @@ export default defineSchema({
     // UI translates it through src/lib/stageMap.ts.
     /** Which advert under the opening this application came through. */
     jobPostId: v.optional(v.id("jobPosts")),
+    /** The opening and post a TA moved this CV from (ui/posts:moveToOpening). The
+     *  titles are kept as they read then, so the note survives a rename or delete. */
+    movedFrom: v.optional(v.object({
+      jobId: v.id("jobs"),
+      jobTitle: v.string(),
+      postTitle: v.string(),
+      at: v.number(),
+      by: v.id("users"),
+    })),
     /** First TA to shortlist owns it — the collision lock. Set in the same
      *  write as `shortlistedAt`. */
     ownerTaId: v.optional(v.id("users")),

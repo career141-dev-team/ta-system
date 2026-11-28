@@ -58,6 +58,7 @@ const ALLOWED_PUBLIC = new Set<string>([
   "ui/manage:submitStrategies",
   "ui/manage:removeFromOpening",
   "ui/manage:notForJob",
+  "ui/manage:addLinkedin",
   "ui/team:team",
   "ui/team:setTeam",
   "ui/team:setStage",
@@ -78,6 +79,7 @@ const ALLOWED_PUBLIC = new Set<string>([
   "ui/posts:setPostStatus",
   "ui/posts:deletePost",
   "ui/posts:moveCvs",
+  "ui/posts:moveToOpening",
   "ui/posts:list",
   "ui/day:today",
   // AURA on Today (19 Nov, E5 group 1): the desk it reads and the one AI ask.

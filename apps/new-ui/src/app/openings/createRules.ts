@@ -8,6 +8,8 @@ export type Person = { id: string; name: string };
 export type Brief = {
   role: string; client: string; locations: { city: string; people: number }[]; team: string[];
   musts: string; hiringFor: string; gender: string; autoFollowUp: boolean;
+  /** Confidential search: the client is not named to candidates (isConfidential). */
+  confidential?: boolean;
 };
 
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -36,6 +38,7 @@ export function createFields(r: Brief, brief: string, clientId: string, tas: Per
     hiringFor: "local",
     targetGender: r.gender === "Female" || r.gender === "Male" ? r.gender : "",
     ...(r.autoFollowUp ? { autoFollowUp: "on" } : {}),
+    ...(r.confidential ? { isConfidential: "on" } : {}),
     ...(r.locations.length
       ? { workLocations: JSON.stringify(r.locations.map((l, i) => ({ id: `loc-${i + 1}`, name: l.city.trim(), vacancies: l.people }))) }
       : {}),

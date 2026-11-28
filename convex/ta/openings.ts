@@ -395,6 +395,8 @@ export const create = internalMutation({
     priorityTier: v.optional(v.string()),
     /** Automatic follow-up reminders after the TA's first Send (ta/followUp.ts `setAuto`). */
     autoFollowUp: v.optional(v.boolean()),
+    /** Confidential search: the client is not named to candidates. */
+    isConfidential: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const user = await requireActor(ctx, args.actorId);
@@ -439,7 +441,7 @@ export const create = internalMutation({
       clientIndustry,
       clientId: clientIdVal,
       recruitmentType: "both",
-      isConfidential: false,
+      isConfidential: args.isConfidential ?? false,
       jobDescription: args.jdMarkdown ?? "",
       requiredSkills: [],
       seniorityLevel: "mid_level",
